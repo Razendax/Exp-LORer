@@ -11,7 +11,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 
 * **Operating System:** Cross-platform (Primary focus on Windows/Linux).
 * **Language:** C++ (C++17 or C++20).
-* **UI Framework:** Qt (Recommended for cross-platform UI, file system models, and built-in multimedia modules) or a combination of native APIs and custom rendering.
+* **UI Framework:** Qt
 
 
 ## 2. Functional Requirements
@@ -86,10 +86,12 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 * **Error Handling:** Graceful handling of permission errors, missing files, or corrupted media formats without crashing the application.
 
 
-## 4. Proposed Technology Stack (Recommendations)
+## 4. Proposed Technology Stack
 
+* **Build System:** cmake
 * **Core Language:** C++17/20
-* **UI & Framework:** Qt 6
+* **Testing Framework:** Google Test (gtest) for unit and integration testing.
+* **UI & Framework:** Qt 6, Qt Widgets
 * **Database:** **SQLite** (embedded, lightweight, zero-configuration file database).
 * **Media Processing (Alternative/Addition):** **FFmpeg libraries** (libavcodec, libavformat) if deeper control over video decoding and custom rendering is required.
 
