@@ -9,9 +9,9 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 
 ### 1.2 Target Platform
 
-* **Operating System:** Cross-platform (Primary focus on Windows/Linux).
-* **Language:** C++ (C++17 or C++20).
-* **UI Framework:** Qt
+* **Operating System:** Cross-platform, delivered in phases — Windows first (primary development and QA target for v1), with Linux support following once the Windows build is stable. All OS-specific code goes through an abstraction layer so a Linux backend can be added later without touching core logic.
+* **Language:** C++20.
+* **UI Framework:** Qt 6 (Qt Widgets for the main application shell; Qt Quick/QML embedded for the media viewer).
 
 
 ## 2. Functional Requirements
@@ -84,14 +84,25 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 
 * **Database Consistency:** The SQLite database must handle concurrent reads/writes safely. Transactions should be used when bulk-tagging files.
 * **Error Handling:** Graceful handling of permission errors, missing files, or corrupted media formats without crashing the application.
+* **Logging & Diagnostics:** Application events, warnings, and errors must be logged to a rotating on-disk log file (plus console output in debug builds) to aid troubleshooting without requiring a debugger.
 
 
 ## 4. Proposed Technology Stack
 
-* **Build System:** cmake
-* **Core Language:** C++17/20
-* **Testing Framework:** Google Test (gtest) for unit and integration testing.
-* **UI & Framework:** Qt 6, Qt Widgets
+* **Build System:** CMake, with **vcpkg** (manifest mode, `vcpkg.json`) managing all third-party dependencies and a `CMakePresets.json` pinning the toolchain.
+* **Core Language:** C++20
+* **Testing Framework:** Google Test (gtest) + Google Mock (gmock) for unit and integration testing.
+* **UI & Framework:** Qt 6 — Qt Widgets (main application shell) + Qt Quick/QML (embedded media viewer).
 * **Database:** **SQLite** (embedded, lightweight, zero-configuration file database).
-* **Media Processing (Alternative/Addition):** **FFmpeg libraries** (libavcodec, libavformat) if deeper control over video decoding and custom rendering is required.
+* **Media Processing (Alternative/Addition):** **FFmpeg libraries** (libavcodec, libavformat) if deeper control over video decoding and custom rendering is required, and/or Qt Multimedia for standard playback.
+* **Logging:** **spdlog**, with a rotating file sink for on-disk logs and a console sink in debug builds.
+
+## 5. V1 Scope Exclusions
+
+The following are explicitly out of scope for the initial release (v1), pending future requirements revision:
+
+* Undo/redo for file operations (delete/move/rename) and tag assignment.
+* Linux-specific trash integration — Windows trash ships first; Linux falls back to permanent delete until implemented.
+* Automated UI testing — manual smoke testing only for v1.
+* Internationalization/localization — UI strings are English-only for v1.
 
