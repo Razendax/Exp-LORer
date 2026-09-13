@@ -1,0 +1,35 @@
+{
+  "$schema": "https://github.com/Kitware/CMake/blob/master/Help/manual/presets/schema.json",
+  "version": 12,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+    },
+    {
+      "name": "windows",
+      "displayName": "Windows (Ninja + vcpkg)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "VCPKG_INSTALL_OPTIONS": "--x-buildtrees-root=C:/bt --clean-after-build",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
+    },
+    {
+      "name": "Release",
+      "displayName": "Release build",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "VCPKG_INSTALL_OPTIONS": "--x-buildtrees-root=C:/bt --clean-after-build",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-release"
+      }
+    }
+  ]
+}
