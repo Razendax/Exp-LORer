@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Configures and builds ExpLORer (CMake + Ninja + vcpkg) using the "windows" preset.
+    Configures and builds Exp-LORer (CMake + Ninja + vcpkg) using the "windows" preset.
 
 .PARAMETER Reconfigure
     Forces a fresh CMake configure step even if a cache already exists.

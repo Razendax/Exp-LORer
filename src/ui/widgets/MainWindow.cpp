@@ -3,6 +3,6 @@
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-    setWindowTitle(tr("ExpLORer"));
+    setWindowTitle(tr("Exp-LORer"));
     resize(1024, 768);
 }

@@ -167,14 +167,14 @@ CREATE TABLE FileTags (
 ## 8. File Identity, Hashing & Thumbnail Caching
 
 * **File identity hash:** A **fast partial hash**, not a cryptographic hash, since files can be large media (video). Computed as a combination of `file size + first 64KB + last 64KB + last-modified timestamp`, mixed with a non-cryptographic hash function (e.g. xxHash64). This is sufficient to detect renames/moves and to disambiguate most files, while remaining O(1) relative to file size. This is a heuristic, not a uniqueness guarantee — a documented limitation, not a bug: two distinct files with identical size/edges/mtime are treated as the same file (acceptable trade-off for a tagging feature, not a security boundary).
-* **Thumbnail cache:** Persisted on disk under the app-local cache directory (Windows: `%LOCALAPPDATA%/ExpLORer/thumbnails/`), keyed by the same file-identity hash. Cache entries store a small JPEG/WebP-encoded thumbnail plus the source file's `size`/`modified_at` so stale thumbnails are regenerated automatically when a file changes. An in-memory LRU (`QPixmapCache` or a custom fixed-byte-budget cache) sits in front of the disk cache for the currently visible viewport.
+* **Thumbnail cache:** Persisted on disk under the app-local cache directory (Windows: `%LOCALAPPDATA%/Exp-LORer/thumbnails/`), keyed by the same file-identity hash. Cache entries store a small JPEG/WebP-encoded thumbnail plus the source file's `size`/`modified_at` so stale thumbnails are regenerated automatically when a file changes. An in-memory LRU (`QPixmapCache` or a custom fixed-byte-budget cache) sits in front of the disk cache for the currently visible viewport.
 * **Cache eviction:** Disk cache is capped by total size (configurable, default 512MB); least-recently-accessed entries are pruned on startup or when the cap is exceeded.
 
 ---
 
 ## 9. Application Data Locations & Configuration
 
-* **Windows:** Database + logs + thumbnail cache live under `%LOCALAPPDATA%/ExpLORer/` (`explorer.db`, `logs/`, `thumbnails/`). Standard `QStandardPaths::AppDataLocation` / `QStandardPaths::CacheLocation` are used so this is portable to Linux (`~/.local/share/ExpLORer`, `~/.cache/ExpLORer`) without code changes.
+* **Windows:** Database + logs + thumbnail cache live under `%LOCALAPPDATA%/Exp-LORer/` (`explorer.db`, `logs/`, `thumbnails/`). Standard `QStandardPaths::AppDataLocation` / `QStandardPaths::CacheLocation` are used so this is portable to Linux (`~/.local/share/Exp-LORer`, `~/.cache/Exp-LORer`) without code changes.
 * **User settings** (window geometry, bookmarks/pinned folders, last directory, thumbnail cache size limit): stored via `QSettings` (INI format for cross-platform consistency rather than the Windows registry).
 * **Recycle Bin / Trash:** "Delete" maps to the native OS trash where available — `IFileOperation`/`SHFileOperation` with `FOF_ALLOWUNDO` on Windows; deferred to the freedesktop.org Trash spec (`libgio`/manual `.local/share/Trash`) when Linux support is implemented. A separate explicit "Delete Permanently" bypasses trash. Both go through `IFileSystemRepository` so the Application layer is unaware of the OS-specific mechanism.
 
@@ -183,7 +183,7 @@ CREATE TABLE FileTags (
 ## 10. Project Directory Structure
 
 ```
-ExpLORer/
+Exp-LORer/
 ├── CMakeLists.txt              # top-level, adds subdirectories below
 ├── CMakePresets.json            # pins vcpkg toolchain + generator per platform
 ├── vcpkg.json                   # manifest: qt6, sqlite3, ffmpeg, spdlog, gtest, xxhash
