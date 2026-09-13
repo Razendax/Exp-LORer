@@ -1,6 +1,6 @@
 ---
 name: cpp-core-guideline
-description: Comprehensive coding standards for modern C++ (C++17/20/23) derived from the [C++ Core Guidelines](https://www.google.com/search?q=https://isocpp.github.io). Enforces type safety, resource safety, immutability, and clarity. Use when writing, reviewing, or refactoring C++ code to enforce modern, safe, and idiomatic practices.
+description: Comprehensive coding standards for modern C++ (C++17/20/23). Enforces type safety, resource safety,immutability, and clarity. Use when writing, reviewing, or refactoring C++ code to enforce modern, safe, and idiomatic practices.
 ---
 
 ## When to Use
