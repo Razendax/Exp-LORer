@@ -99,6 +99,7 @@ To illustrate the Clean Architecture flow, here are two primary operation sequen
 | **Data Repositories** | `SQLiteTagDB`, `OSFileSystem` | Adapters handling raw data reading/writing (SQL and disk I/O). |
 | **Media Adapters** | `ThumbnailGenerator`, `StreamProvider` | Bridges FFmpeg/QtMultimedia to abstract `IMediaDecoder` interface. |
 | **Presentation** | `MainView`, `TagFilterPanel`, `MediaPreviewPane` | Qt-based UI elements binding to ViewModels. |
+| **Workspace/Session** | `WorkspaceController`, `TabViewModel`, `PaneViewModel`, `SplitPaneNode` | UI-session state for multi-tab/split-screen browsing (see §14); no business rules, no Domain/Application changes. |
 
 ---
 
@@ -191,12 +192,15 @@ Exp-LORer/
 │   ├── domain/                  # Entities: FileNode, Tag, MediaMetadata, FileTagAssociation (no Qt/SQLite deps)
 │   ├── application/              # Use cases + Port interfaces (IFileSystemRepository, ITagRepository, IMediaDecoder)
 │   ├── adapters/
-│   │   ├── viewmodels/           # FileTreeViewModel, TagListViewModel, MediaPreviewViewModel
-│   │   ├── persistence/          # SQLiteTagRepository, migration scripts
+│   │   ├── viewmodels/           # FileTreeViewModel, TagListViewModel, MediaPreviewViewModel,
+│   │   │                         # NavigationHistory, SplitPaneNode, PaneViewModel, TabViewModel,
+│   │   │                         # WorkspaceController, WorkspaceLayoutSnapshot (see §14)
+│   │   ├── persistence/          # SQLiteTagRepository, migration scripts, WorkspaceSessionStore (see §14)
 │   │   ├── filesystem/           # StandardFileSystemRepository (std::filesystem + OS trash calls)
 │   │   └── media/                # QtMediaDecoder / FFmpegMediaDecoder, ThumbnailGenerator
 │   ├── ui/
-│   │   ├── widgets/               # MainWindow, TagFilterPanel, dialogs (Qt Widgets, .ui files)
+│   │   ├── widgets/               # MainWindow, TagFilterPanel, dialogs (Qt Widgets, .ui files),
+│   │   │                          # SplitPaneWidget, FileBrowserPaneWidget (see §14)
 │   │   └── qml/                   # MediaViewer.qml and supporting QML components
 │   └── app/
 │       ├── CompositionRoot.cpp/.h # wires concrete adapters into use cases
@@ -238,3 +242,179 @@ To keep the initial implementation bounded, the following are **out of scope for
 * Linux-specific trash integration (Windows trash ships first; Linux falls back to permanent delete until implemented).
 * Automated UI testing.
 * Internationalization/localization (UI strings are English-only for v1; `tr()` wrapping is still used so it isn't precluded later).
+
+---
+
+## 14. Multi-Tab / Split-Screen Extension
+
+This section extends the architecture to support multiple tabs, each containing an independent
+split-pane tree, alongside the existing navigation/tagging/media-viewer design. It does not modify
+the Domain or Application layers.
+
+### 14.1 Scope and Product Decisions
+
+Tabs contain independent split-pane trees (not the reverse — split panes do not contain tabs). The
+tag filter panel and the media preview are each a single shared instance, retargeted to whichever
+pane currently has focus, rather than duplicated per pane. The media viewer is a docked preview pane
+bound to the active pane's selection; full-window mode expands it over the whole `MainWindow` rather
+than opening a second window. View mode (tree/grid) is scoped per-pane.
+
+### 14.2 Key Architectural Decisions
+
+* **Domain and Application layers are unchanged.** Tabs, panes, and workspaces are pure UI-session
+  state with no business rules — no new entities, no new Ports, no new use cases.
+* **`FileNavigationUseCase`, `TagManagementUseCase`, and `MediaProcessingUseCase` must remain
+  stateless** orchestrators over their existing Ports. One shared instance of each serves every pane
+  concurrently; only ViewModels are instantiated per-pane.
+* **Exactly one `MainWindow`.** Tabs and splits render inside its single central widget; no pane/tab
+  component may ever construct a second top-level window (preserves the existing
+  single-instance-foreground assumption from §6/§9).
+* **Tabs own split-pane trees.** Each `TabViewModel` owns one independent `SplitPaneNode` tree;
+  splitting inside a tab never affects other tabs.
+* **Tag filter panel and media preview are single shared instances**, retargeted to whichever pane
+  currently has focus — not duplicated per pane.
+
+### 14.3 New Components by Layer
+
+**`src/domain/`, `src/application/`** — no changes. Existing use cases/Ports are reused as-is,
+constrained to stay stateless so `CompositionRoot` can safely share one instance of each across N
+panes.
+
+**`src/adapters/viewmodels/`** (new files)
+* `NavigationHistory.h/.cpp` — per-pane back/forward stack (Command pattern: `NavigateToPathCommand`
+  objects pushed/popped). Plain C++, no Qt.
+* `SplitPaneNode.h/.cpp` — Composite: abstract `SplitPaneNode`; leaf `PaneNode` (holds a `PaneId`);
+  composite `SplitContainerNode` (orientation + ordered children + size ratios). Plain C++ tree, no
+  `QWidget`/`QObject` — testable/serializable independent of the widget tree.
+* `PaneViewModel.h/.cpp` — `QObject`; owns one `FileTreeViewModel`/`FileGridViewModel` + one
+  `NavigationHistory` + a `PaneId` + its own view-mode state; exposes
+  `navigateTo/goBack/goForward/goUp`; emits `directoryChanged`, `activated`, `selectionChanged`.
+* `TabViewModel.h/.cpp` — `QObject`; owns the root `SplitPaneNode` for one tab, a title, and
+  `activePaneId`; emits `titleChanged`, `layoutChanged`, `activePaneChanged`.
+* `WorkspaceController.h/.cpp` — the Mediator. Owns the ordered `TabViewModel` list + active-tab
+  index; exposes `addTab()/closeTab()/splitPane()/closePane()/activePane()`; retargets the shared
+  `TagListViewModel`/`MediaPreviewViewModel` to the active pane on focus change; produces/consumes a
+  `WorkspaceLayoutSnapshot`.
+* `WorkspaceLayoutSnapshot.h` — plain struct (Memento): recursive split shape + each leaf's
+  path/view-mode + active tab/pane indices. Uses `std::filesystem::path`, no Qt types —
+  QSettings/JSON conversion happens only at the adapter boundary that persists it.
+
+**`src/adapters/persistence/`** (new file)
+* `WorkspaceSessionStore.h/.cpp` — reads/writes `WorkspaceLayoutSnapshot` via `QSettings`, mirroring
+  the existing window-geometry handling (§9). Deliberately **not** a new Port/use case: it is
+  UI-session persistence, not business data, so it does not go through `ITagRepository`/SQLite.
+
+**`src/ui/widgets/`**
+* `MainWindow.h/.cpp` (modified) — hosts a tab strip (`QTabWidget`) of `SplitPaneWidget`s built from
+  a `WorkspaceController` handed in by `CompositionRoot`; gains New Tab/Close Tab/Split/Close-Pane
+  actions; hosts the docked media-preview widget and `TagFilterPanel`, each bound to the one shared
+  ViewModel instance.
+* `SplitPaneWidget.h/.cpp` (new) — recursively builds nested `QSplitter`s from a `TabViewModel`'s
+  `SplitPaneNode` tree.
+* `FileBrowserPaneWidget.h/.cpp` (new) — leaf widget: `QTreeView`/`QListView` bound to its
+  `PaneViewModel`'s `FileTreeViewModel`/`FileGridViewModel`, plus a per-pane breadcrumb/back/forward
+  toolbar.
+* `TagFilterPanel` — existing planned type, unchanged; single dock widget bound to the one shared
+  `TagListViewModel`.
+
+**`src/app/CompositionRoot.h/.cpp`** (modified)
+* Keeps single shared adapter instances (`StandardFileSystemRepository`, `SQLiteTagRepository`,
+  media decoder, shared thread pool) and single shared use-case instances.
+* Gains Factory Methods: `createPaneViewModel(viewMode)`, `createTabViewModel()`,
+  `createWorkspaceController()` — each wires a fresh ViewModel to the shared use cases. No DI
+  framework/Abstract Factory introduced — stays consistent with "single composition root,
+  constructor injection only" (§6).
+
+### 14.4 Component Relationship
+
+```
+MainWindow (single top-level window)
+ └── WorkspaceController (Mediator)
+      ├── TabViewModel #1
+      │     └── SplitPaneNode tree
+      │           └── SplitContainerNode
+      │                 ├── PaneNode → PaneViewModel A → FileTreeViewModel A ─┐
+      │                 └── PaneNode → PaneViewModel B → FileGridViewModel B ─┤
+      │           (each PaneViewModel owns its own NavigationHistory)         │
+      ├── TabViewModel #2 (single unsplit PaneNode)                          │
+      ├── TagListViewModel (shared, 1 instance) ◄── retargeted to active pane
+      └── MediaPreviewViewModel (shared, 1 instance) ◄── retargeted to active pane
+                                                                              │
+                                                                              ▼
+                                                   FileNavigationUseCase (shared, stateless)
+                                                                              │
+                                                                              ▼
+                                                   IFileSystemRepository (shared, CompositionRoot)
+                                                   → shared thread pool → queued signal back to
+                                                     the originating FileTreeViewModel/Grid only
+```
+
+### 14.5 SOLID / Pattern Rationale
+
+* **SRP**: `PaneViewModel` (display/query orchestration) vs. `NavigationHistory` (where you've been)
+  vs. `TabViewModel` (tab metadata + active-pane bookkeeping) vs. `WorkspaceController`
+  (cross-pane/tab mediation) are four distinct reasons to change.
+* **OCP**: new pane flavors are added via new `CompositionRoot` factory methods, not by widening
+  `PaneViewModel`'s constructor contract.
+* **LSP**: `PaneNode`/`SplitContainerNode` are interchangeable to any tree-walker (renderer,
+  serializer) — required for the Composite to work.
+* **ISP**: `IFileSystemRepository`/`ITagRepository`/`IMediaDecoder` get no pane-aware methods — panes
+  are presentation-only and must not leak into Ports built around `FileNode`/`Tag`.
+* **DIP**: `PaneViewModel` never references a concrete sibling `PaneViewModel` or
+  `WorkspaceController` directly; it only emits Qt signals that `WorkspaceController` subscribes to
+  (Observer realizing the Mediator).
+
+**Patterns used**: Composite (`SplitPaneNode` tree), Factory Method
+(`CompositionRoot::createXViewModel()`), Mediator (`WorkspaceController`), Observer (Qt
+signals/slots, the codebase's existing idiom), Command (`NavigationHistory`'s back/forward stacks),
+Memento (`WorkspaceLayoutSnapshot`).
+
+### 14.6 Usage Rules
+
+**Must:**
+* `FileNavigationUseCase`/`TagManagementUseCase`/`MediaProcessingUseCase` stay stateless so one
+  shared instance safely serves concurrent calls from N panes.
+* Cross-pane/tab coordination goes through `WorkspaceController`; `PaneViewModel` communicates only
+  via its own signals.
+* `PaneViewModel`/`TabViewModel`/`WorkspaceController` are created only via `CompositionRoot`'s
+  factory methods — UI widgets request new panes/tabs through `WorkspaceController`'s API, never
+  `new PaneViewModel(...)` directly.
+* `SplitPaneNode` and `WorkspaceLayoutSnapshot` stay plain C++ (no `QWidget`/`QObject` embedded); the
+  `QSplitter` tree is built *from* them, separately.
+* All async pane work flows through the existing shared repository/decoder instances and their
+  shared thread pool — no ad hoc per-pane threads.
+* `WorkspaceLayoutSnapshot` persistence goes through `QSettings` only, never `ITagRepository`/SQLite.
+* Exactly one `MainWindow` per process; tabs/splits render only inside it.
+* Focus changes (pane activation) retarget the shared `TagListViewModel`/`MediaPreviewViewModel`
+  through `WorkspaceController` — no pane holds its own copy of either.
+
+**Must not:**
+* No `PaneId`/`TabId`/`SplitPaneNode` type may appear in any `src/domain` or `src/application`
+  header.
+* No pane/tab/workspace component may create its own `QThread`/`QThreadPool`/`std::thread`.
+* `NavigationHistory` must not perform disk I/O itself — only bookkeeping; validity is re-checked
+  when `navigateTo` re-runs through `FileNavigationUseCase`.
+
+### 14.7 Navigation History, Session Persistence, Threading
+
+* **History is per-pane**: each `PaneViewModel` owns exactly one `NavigationHistory`; closing a pane
+  discards it; there is no global back/forward.
+* **Session persistence** plugs in at `WorkspaceSessionStore` (QSettings-backed): captures tab titles
+  + split shape + each leaf's current path + view mode; restored at startup by replaying
+  `WorkspaceController::restore(snapshot)`, which calls `CompositionRoot::createPaneViewModel()` per
+  leaf then `navigateTo(path)`. Back/forward history stacks are **not** persisted in v1 (rebuilt
+  empty on restore) — deliberate minimalism.
+* **Threading**: simultaneous navigations from different panes become independent tasks on the same
+  shared `IFileSystemRepository`-owned pool; results marshal back via queued signals to the
+  *originating* `FileTreeViewModel`/`Grid` only (each is a distinct `QObject`) — no cross-pane bleed,
+  no per-pane thread pools.
+
+### 14.8 Deferred UX Policy (not architecture-blocking; default stated for now)
+
+* Max pane count / split nesting depth: architecturally unbounded (Composite recurses); suggest a UX
+  cap (~4–6 panes, depth 2) to be enforced in `WorkspaceController::splitPane()`, not in
+  `SplitPaneNode` itself.
+* Closing the last tab: disable "Close Tab" when exactly one tab remains, rather than closing the
+  window or showing an empty state.
+* Cross-pane drag-and-drop (dragging a file between panes to copy/move): out of scope for this
+  extension; if added later, `WorkspaceController` is the natural broker — not assumed here.

@@ -23,6 +23,8 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 * Standard navigation controls (Back, Forward, Up, Path Bar).
 * Ability to bookmark or pin frequently used folders.
 * Support for long paths (beyond the traditional 260-character Windows limit) and Unicode file/folder names throughout navigation, search, and tagging.
+* **Multi-tab browsing:** Multiple independent tabs, each retaining its own navigation history (back/forward stack) and view mode (tree/grid).
+* **Split-screen panes:** Each tab may be split into multiple side-by-side/stacked panes for viewing more than one directory at once; splitting is scoped to the tab it happens in and does not affect other tabs. The tag filter panel and media preview follow whichever pane currently has focus rather than existing per-pane. Session restore (tab titles, split layout, each pane's path and view mode) persists across restarts; per-pane back/forward history does not.
 
 **File Operations:**
 * Create, open, rename, delete (move to trash/permanently delete), and copy/paste files and folders.
