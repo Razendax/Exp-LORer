@@ -16,7 +16,7 @@
       "generator": "Ninja",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "VCPKG_INSTALL_OPTIONS": "--x-buildtrees-root=C:/bt --clean-after-build",
+        "VCPKG_INSTALL_OPTIONS": "--x-buildtrees-root=C:/bt;--clean-after-build",
         "VCPKG_TARGET_TRIPLET": "x64-windows"
       }
     },
@@ -27,7 +27,7 @@
       "generator": "Ninja",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "VCPKG_INSTALL_OPTIONS": "--x-buildtrees-root=C:/bt --clean-after-build",
+        "VCPKG_INSTALL_OPTIONS": "--x-buildtrees-root=C:/bt;--clean-after-build",
         "VCPKG_TARGET_TRIPLET": "x64-windows-release"
       }
     }
