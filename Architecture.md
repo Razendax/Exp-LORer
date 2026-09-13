@@ -50,7 +50,7 @@ This layer converts data from the format most convenient for the use cases and e
 
 **Repository Implementations:**
 * `SQLiteTagRepository`: Implements `ITagRepository`. Maps SQL queries and `sqlite3` (or `QtSql`) results to `Tag` entities.
-* `StandardFileSystemRepository`: Implements `IFileSystemRepository` using C++17/20 `<filesystem>` (`std::filesystem`).
+* `StandardFileSystemRepository`: Implements `IFileSystemRepository` using C++17/20 `<filesystem>` (`std::filesystem`). On Windows, paths are handled as UTF-16 (`std::filesystem::path` natively) and long paths (>260 chars) are supported via the `\\?\` extended-length prefix; paths are converted to UTF-8 only at the SQLite/adapter boundary (see §6).
 * `QtMediaDecoder` / `FFmpegMediaDecoder`: Implements `IMediaDecoder` to generate thumbnails and provide playback streams.
 
 
@@ -112,7 +112,7 @@ To satisfy the non-functional requirement for responsiveness, the architecture e
 
 
 * **Data Synchronization:** Callbacks or Qt Signals/Slots (using queued connections) are used to safely pass `FileNode` entities or playback frames from worker threads back to the Main Thread ViewModels.
-* **Database Concurrency:** The `SQLiteTagRepository` will configure SQLite in Serialized mode (Thread-safe) or utilize a single dedicated database thread to prevent `SQLITE_BUSY` or locking issues during concurrent reads (searching tags) and writes (bulk tagging).
+* **Database Concurrency:** The `SQLiteTagRepository` will configure SQLite in Serialized mode (Thread-safe) or utilize a single dedicated database thread to prevent `SQLITE_BUSY` or locking issues during concurrent reads (searching tags) and writes (bulk tagging). This addresses in-process (multi-threaded) concurrency only; cross-process concurrency is prevented separately by the single-instance enforcement described in §6.
 
 ---
 
@@ -124,6 +124,8 @@ To satisfy the non-functional requirement for responsiveness, the architecture e
 * **Package/Dependency Manager:** **vcpkg** in manifest mode (`vcpkg.json` at repo root). All third-party dependencies (Qt6, SQLite3, FFmpeg, spdlog, GoogleTest/GoogleMock, xxHash) are declared there and consumed via `CMakeLists.txt` using `find_package`. A `CMakePresets.json` should pin the vcpkg toolchain file so a fresh clone only needs `cmake --preset <preset>` to configure.
 * **Logging:** `spdlog` (with `spdlog::sinks::rotating_file_sink` for on-disk logs under the app-data log directory, plus a console sink in debug builds). A thin `ILogger`-free wrapper (`Logging::log(...)`) is used at call sites so spdlog is not directly referenced outside a single adapter header, keeping the Domain/Application layers framework-agnostic.
 * **Dependency Injection:** No DI framework. A single **composition root** (`src/app/CompositionRoot.cpp`, invoked from `main.cpp`) constructs concrete repositories/adapters and injects them into use cases via constructor injection. Use cases and ViewModels only ever depend on interfaces (Ports) from the Application layer.
+* **Path Handling & Long Paths:** Internally, paths are carried as `std::filesystem::path` (native UTF-16 on Windows, native encoding on Linux) through the Domain/Application/Adapters layers — never as raw `std::string` — to avoid lossy conversions. Long paths (>260 characters) are supported on Windows via the `\\?\` extended-length prefix applied in `StandardFileSystemRepository`; callers do not need to know about the prefix. Conversion to UTF-8 happens only at the SQLite storage boundary (`SQLiteTagRepository`), since SQLite stores/compares `TEXT` as UTF-8; the round-trip (UTF-8 → `std::filesystem::path`) happens when rows are read back.
+* **Single-Instance Enforcement:** The application enforces a single running instance per user session using an OS-level primitive — a named mutex (`CreateMutexW`) on Windows, or a `flock`'d PID file under the app-data directory on Linux (see §9). If an instance is already running, the new process forwards its startup arguments (e.g. a path to open) to the existing instance via a local IPC mechanism (e.g. `QLocalSocket`/`QLocalServer`) and exits; the existing instance brings its main window to the foreground. This exists specifically to prevent two processes from writing to `explorer.db` and the thumbnail cache concurrently (see §5, §8).
 
 ---
 

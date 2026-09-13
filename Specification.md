@@ -22,6 +22,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 * Tree view and list/grid view of the local file system.
 * Standard navigation controls (Back, Forward, Up, Path Bar).
 * Ability to bookmark or pin frequently used folders.
+* Support for long paths (beyond the traditional 260-character Windows limit) and Unicode file/folder names throughout navigation, search, and tagging.
 
 **File Operations:**
 * Create, open, rename, delete (move to trash/permanently delete), and copy/paste files and folders.
@@ -79,10 +80,16 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 
 * **Responsiveness:** The UI must remain responsive during heavy file system scans or database queries by utilizing multi-threading (asynchronous directory loading and database operations).
 * **Memory Efficiency:** Smooth image caching and video buffer management to prevent high RAM consumption when browsing large directories of media files.
+* **Performance Targets (v1, loose/indicative — not hard SLAs):** these are sanity-check targets on typical development hardware (NVMe SSD, local directories), not guarantees under network drives or spinning disks:
+  * Directory listing (~10,000 entries, local disk): first visible results within ~500ms; full listing settled within ~2s.
+  * Tag filter query (~100,000 tagged files): results within ~500ms.
+  * Application cold start to usable window: under ~2s.
+  * These are intentionally loose for v1 and may be tightened once real profiling data exists; they exist to catch gross regressions, not to drive premature optimization.
 
 ### 3.2 Reliability and Data Integrity
 
 * **Database Consistency:** The SQLite database must handle concurrent reads/writes safely. Transactions should be used when bulk-tagging files.
+* **Single Instance:** Running multiple instances of the application simultaneously is not supported/allowed. Launching a second instance while one is already running must detect the existing instance and activate its window instead of starting a new process, to avoid concurrent writers to the same database and thumbnail cache.
 * **Error Handling:** Graceful handling of permission errors, missing files, or corrupted media formats without crashing the application.
 * **Logging & Diagnostics:** Application events, warnings, and errors must be logged to a rotating on-disk log file (plus console output in debug builds) to aid troubleshooting without requiring a debugger.
 
