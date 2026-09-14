@@ -50,10 +50,16 @@ public:
     // QItemSelectionModel's current index into a tagging target.
     std::optional<FileNode> entryAt(int row) const;
 
+    // Directory these entries were listed from (last argument passed to setEntries), so views can
+    // detect whether a navigation attempt actually changed directory and locate a row by path
+    // without depending on any single entry being present.
+    const std::filesystem::path& currentDirectory() const noexcept { return m_directory; }
+
 public slots:
     void setEntries(const std::filesystem::path& directory, const std::vector<FileNode>& entries);
 
 private:
+    std::filesystem::path m_directory;
     std::vector<FileNode> m_entries;
     QFileIconProvider m_iconProvider;
 };

@@ -58,6 +58,12 @@ private:
     void emitSelectionChanged(const QModelIndex& current);
     bool handleKeyPress(QKeyEvent* event);
 
+    // Restores a current/selected row after arrow-key navigation in Details view, since
+    // navigating clears the previous selection (TabViewModel::loadAndApply resets it) and would
+    // otherwise leave the tree view with no current index, breaking further arrow navigation.
+    void selectEntryByPath(const std::filesystem::path& path);
+    void selectFirstEntry();
+
     FileListModel* m_model = nullptr;
     QStackedWidget* m_stack = nullptr;
     QListView* m_listView = nullptr;

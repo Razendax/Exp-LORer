@@ -107,7 +107,15 @@ bool FileBrowserView::handleKeyPress(QKeyEvent* event)
     const bool isDetailsView = (m_stack->currentWidget() == m_treeView);
     if (isDetailsView && event->key() == Qt::Key_Left)
     {
+        // Navigation below runs synchronously (direct-connected through TabViewModel), so by the
+        // time emit() returns m_model already reflects the parent directory if navigation
+        // succeeded. Select the folder we just left so it's visible where we came from.
+        const std::filesystem::path childPath = m_model->currentDirectory();
         emit navigateUpRequested();
+        if (m_model->currentDirectory() != childPath)
+        {
+            selectEntryByPath(childPath);
+        }
         return true;
     }
     if (isDetailsView && event->key() == Qt::Key_Right)
@@ -115,7 +123,12 @@ bool FileBrowserView::handleKeyPress(QKeyEvent* event)
         const QModelIndex current = m_selectionModel->currentIndex();
         if (current.isValid() && current.data(FileListModel::IsDirectoryRole).toBool())
         {
+            const std::filesystem::path previousDirectory = m_model->currentDirectory();
             emitActivated(current);
+            if (m_model->currentDirectory() != previousDirectory)
+            {
+                selectFirstEntry();
+            }
         }
         return true; // consumed either way - no-op on a file
     }
@@ -180,4 +193,33 @@ void FileBrowserView::emitActivated(const QModelIndex& index)
 void FileBrowserView::emitSelectionChanged(const QModelIndex& current)
 {
     emit selectionChanged(m_model->entryAt(current.row()));
+}
+
+void FileBrowserView::selectEntryByPath(const std::filesystem::path& path)
+{
+    for (int row = 0; row < m_model->rowCount(); ++row)
+    {
+        const auto entry = m_model->entryAt(row);
+        if (entry && entry->path() == path)
+        {
+            const QModelIndex index = m_model->index(row, 0);
+            m_selectionModel->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+            m_treeView->scrollTo(index);
+            return;
+        }
+    }
+
+    selectFirstEntry();
+}
+
+void FileBrowserView::selectFirstEntry()
+{
+    if (m_model->rowCount() == 0)
+    {
+        return;
+    }
+
+    const QModelIndex index = m_model->index(0, 0);
+    m_selectionModel->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    m_treeView->scrollTo(index);
 }

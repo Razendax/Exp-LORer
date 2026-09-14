@@ -150,9 +150,8 @@ std::optional<FileNode> FileListModel::entryAt(int row) const
 
 void FileListModel::setEntries(const std::filesystem::path& directory, const std::vector<FileNode>& entries)
 {
-    Q_UNUSED(directory);
-
     beginResetModel();
+    m_directory = directory;
     m_entries = entries;
     endResetModel();
 }
