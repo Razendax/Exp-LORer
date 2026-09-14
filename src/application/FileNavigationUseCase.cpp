@@ -91,3 +91,8 @@ Result<void> FileNavigationUseCase::deleteFilePermanently(const std::filesystem:
 {
     return m_fileSystemRepository.deletePermanently(path);
 }
+
+Result<void> FileNavigationUseCase::openFile(const std::filesystem::path& path)
+{
+    return m_fileSystemRepository.openWithDefaultApplication(path);
+}

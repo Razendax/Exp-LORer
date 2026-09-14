@@ -34,6 +34,7 @@ public:
     Result<FileNode> copyFile(const std::filesystem::path& source, const std::filesystem::path& destination);
     Result<void> moveFileToTrash(const std::filesystem::path& path);
     Result<void> deleteFilePermanently(const std::filesystem::path& path);
+    Result<void> openFile(const std::filesystem::path& path);
 
 private:
     IFileSystemRepository& m_fileSystemRepository;

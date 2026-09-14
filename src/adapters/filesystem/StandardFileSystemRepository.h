@@ -16,6 +16,7 @@ public:
 
     Result<void> moveToTrash(const std::filesystem::path& path) override;
     Result<void> deletePermanently(const std::filesystem::path& path) override;
+    Result<void> openWithDefaultApplication(const std::filesystem::path& path) override;
 
     Result<std::uint64_t> computeFileHash(const FileNode& file) const override;
 };

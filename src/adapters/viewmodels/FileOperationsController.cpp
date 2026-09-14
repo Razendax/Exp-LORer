@@ -154,6 +154,15 @@ void FileOperationsController::deletePermanently(const std::filesystem::path& pa
     emit directoryContentsMayHaveChanged(path.parent_path());
 }
 
+void FileOperationsController::openFile(const std::filesystem::path& path)
+{
+    auto result = m_fileNavigationUseCase.openFile(path);
+    if (result.hasError())
+    {
+        emit operationFailed(QString::fromStdString(result.error().message));
+    }
+}
+
 std::filesystem::path FileOperationsController::uniqueDestinationName(const std::filesystem::path& destinationDirectory,
                                                                        const std::filesystem::path& desiredName) const
 {

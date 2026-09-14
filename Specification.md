@@ -28,6 +28,8 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 
 **File Operations:**
 * Create, open, rename, delete (move to trash/permanently delete), and copy/paste files and folders.
+* Double-clicking or pressing Enter/Return on a file opens it with the OS-registered default
+  application; folders navigate into them the same way (Architecture.md §14.11).
 * File properties inspection (size, creation date, modification date, file type).
 * **Keyboard hotkeys** (single selected file/folder at a time in v1): Ctrl+C copy, Ctrl+X cut,
   Ctrl+V paste, Delete moves to the Recycle Bin, Shift+Delete deletes permanently, Backspace goes

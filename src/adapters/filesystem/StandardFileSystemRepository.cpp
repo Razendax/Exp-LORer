@@ -192,6 +192,22 @@ Result<void> StandardFileSystemRepository::moveToTrash(const std::filesystem::pa
 #endif
 }
 
+Result<void> StandardFileSystemRepository::openWithDefaultApplication(const std::filesystem::path& path)
+{
+#ifdef _WIN32
+    const std::wstring nativePath = withLongPathPrefix(path).wstring();
+    const HINSTANCE result = ShellExecuteW(nullptr, L"open", nativePath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    // ShellExecute returns a value > 32 on success (Windows API convention).
+    if (reinterpret_cast<INT_PTR>(result) <= 32)
+    {
+        return Result<void>::failure(Error(ErrorCode::IoError, "Failed to open file with default application"));
+    }
+    return Result<void>::success();
+#else
+    return Result<void>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
+#endif
+}
+
 Result<std::uint64_t> StandardFileSystemRepository::computeFileHash(const FileNode& file) const
 {
     const fs::path target = withLongPathPrefix(file.path());

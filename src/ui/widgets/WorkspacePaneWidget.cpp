@@ -196,10 +196,14 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
         }
     });
 
-    connect(browserView, &FileBrowserView::itemActivated, tab, [tab](const std::filesystem::path& path, bool isDirectory) {
+    connect(browserView, &FileBrowserView::itemActivated, tab, [this, tab](const std::filesystem::path& path, bool isDirectory) {
         if (isDirectory)
         {
             tab->navigateTo(path);
+        }
+        else
+        {
+            m_fileOperationsController->openFile(path);
         }
     });
 

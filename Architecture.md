@@ -34,7 +34,7 @@ This layer orchestrates the flow of data to and from the entities. It defines th
 
 **Gateway Interfaces (Ports):**
 
-* `IFileSystemRepository`: Interface for OS file operations (list, move, delete, copy, hash generation, single-path `stat` — resolving one path to a `FileNode` without listing its parent directory, used to treat a browsed folder itself as a taggable target).
+* `IFileSystemRepository`: Interface for OS file operations (list, move, delete, copy, hash generation, single-path `stat` — resolving one path to a `FileNode` without listing its parent directory, used to treat a browsed folder itself as a taggable target — and `openWithDefaultApplication`, launching the OS-registered handler for a file, see §14.11).
 * `ITagRepository`: Interface for persisting tags and associations.
 * `IMediaDecoder`: Interface for decoding media streams and extracting thumbnails.
 
@@ -554,3 +554,31 @@ already exposed every file operation this needs (`moveFile`/`copyFile`/`moveFile
   This covers a cut/paste spanning two different panes.
 * **Selection stays single-item** for this increment (Ctrl+C/X/Delete act on
   `TabViewModel::selectedEntry()`); multi-select is a natural but separate future increment.
+
+### 14.11 Opening Files with the Default Application
+
+Double-click/Enter on a file launches its OS-registered default application. No new key-capture
+code: `FileBrowserView::itemActivated(path, isDirectory)` already fires on double-click and
+Enter/Return (Qt's built-in `QAbstractItemView::activated`), and in Details view on ArrowRight for a
+directory row only (§14.10) — `WorkspacePaneWidget` previously handled only the `isDirectory == true`
+branch (navigate the tab); it now also handles `isDirectory == false` by opening the file.
+
+* **Port**: `IFileSystemRepository::openWithDefaultApplication(path)` (see §2.2), implemented in
+  `StandardFileSystemRepository` via `ShellExecuteW` on Windows — the same
+  `Shellapi.h`/conditionally-linked `Shell32` already used for `moveToTrash`'s `SHFileOperationW`.
+  Routed through the Port (rather than a widget calling `QDesktopServices::openUrl` directly) to
+  keep the existing pattern: UI/adapters reach the OS shell only through
+  `IFileSystemRepository`/`FileNavigationUseCase`, matching `moveFile`/`copyFile`/`moveFileToTrash`/
+  `deleteFilePermanently`. `ShellExecuteW` hands off to the shell and returns immediately (unlike
+  `SHFileOperationW`'s synchronous I/O), so this runs synchronously on the UI thread, consistent with
+  the existing precedent for the other file operations.
+* **`FileNavigationUseCase::openFile(path)`** thinly delegates to the Port, same shape as
+  `moveFile`/`moveFileToTrash`.
+* **`FileOperationsController::openFile(path)`** (new slot, alongside the §14.10 clipboard/delete
+  slots) calls the use case and emits `operationFailed` on failure (e.g. no registered handler),
+  reusing the existing status-bar wiring; it does not emit `directoryContentsMayHaveChanged` since
+  opening a file doesn't change any directory's listing.
+* **No automated adapter test** for the `ShellExecuteW` call itself — it launches a real external
+  process with no meaningful assertable return in an automated run, so it's manually smoke-tested
+  only (Architecture.md §11's existing carve-out pattern for OS-shell side effects).
+  `FileNavigationUseCase::openFile`'s delegation is covered by a mock-based use-case test.

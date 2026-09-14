@@ -125,3 +125,15 @@ TEST(FileNavigationUseCase, DeleteFilePermanentlyDelegatesToRepository)
 
     EXPECT_TRUE(result.hasValue());
 }
+
+TEST(FileNavigationUseCase, OpenFileDelegatesToRepository)
+{
+    MockFileSystemRepository repository;
+    EXPECT_CALL(repository, openWithDefaultApplication(std::filesystem::path("C:/data/a.txt")))
+        .WillOnce(Return(Result<void>::success()));
+
+    FileNavigationUseCase useCase(repository);
+    auto result = useCase.openFile("C:/data/a.txt");
+
+    EXPECT_TRUE(result.hasValue());
+}

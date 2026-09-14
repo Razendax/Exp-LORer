@@ -29,6 +29,9 @@ public:
     virtual Result<void> moveToTrash(const std::filesystem::path& path) = 0;
     virtual Result<void> deletePermanently(const std::filesystem::path& path) = 0;
 
+    // Launches the OS-registered default application for the file (Architecture.md §14.11).
+    virtual Result<void> openWithDefaultApplication(const std::filesystem::path& path) = 0;
+
     // Fast partial hash (size + first/last 64KB + mtime via xxHash64) per Architecture.md §8 — a
     // rename/move detection heuristic, not a cryptographic or uniqueness guarantee.
     virtual Result<std::uint64_t> computeFileHash(const FileNode& file) const = 0;

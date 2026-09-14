@@ -32,6 +32,7 @@ public slots:
 
     void moveToTrash(const std::filesystem::path& path);
     void deletePermanently(const std::filesystem::path& path);
+    void openFile(const std::filesystem::path& path);
 
 signals:
     // Mirrors TabViewModel::navigationFailed's pattern for status-bar reporting.
