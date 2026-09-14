@@ -29,12 +29,12 @@ This layer orchestrates the flow of data to and from the entities. It defines th
 **Core Use Cases (Interactors):**
 
 * `FileNavigationUseCase`: Handles fetching directory contents, sorting, filtering by extension, and basic CRUD file operations.
-* `TagManagementUseCase`: Handles creating, updating, deleting, and assigning tags to files. Resolves broken paths by checking file hashes.
+* `TagManagementUseCase`: Handles creating, updating, deleting, and assigning tags to files. Resolves broken paths by checking file hashes. Also aggregates tags for the tag panel: `tagsForPathWithAncestors` (a path's own tags plus every ancestor directory's tags, outermost ancestor first) and `searchTags` (ranks `allTags()` against a query: exact match, then prefix, then substring, each group alphabetical).
 * `MediaProcessingUseCase`: Manages the extraction of thumbnails and basic metadata for images and videos.
 
 **Gateway Interfaces (Ports):**
 
-* `IFileSystemRepository`: Interface for OS file operations (list, move, delete, copy, hash generation).
+* `IFileSystemRepository`: Interface for OS file operations (list, move, delete, copy, hash generation, single-path `stat` — resolving one path to a `FileNode` without listing its parent directory, used to treat a browsed folder itself as a taggable target).
 * `ITagRepository`: Interface for persisting tags and associations.
 * `IMediaDecoder`: Interface for decoding media streams and extracting thumbnails.
 
@@ -45,7 +45,7 @@ This layer converts data from the format most convenient for the use cases and e
 **Controllers / ViewModels (Qt Models):**
 * `FileListModel`: a single `QAbstractTableModel` (columns: Name, Size, Type, Date modified) wrapping directory-listing results (`FileNode` lists) supplied by `NavigationViewModel`. One model feeds both `QListView` (icon/list/tiles view modes, which only read column 0) and `QTreeView` (details view mode, all columns) — see §2.3.1. This supersedes an earlier sketch of two separate `FileTreeViewModel`/`FileGridViewModel` types: a single shared model matches how Explorer itself works and avoids duplicating file→row mapping logic.
 * `ViewMode` (`src/adapters/viewmodels/ViewMode.h`): plain enum — `ExtraLargeIcons`, `LargeIcons`, `MediumIcons`, `SmallIcons`, `List`, `Details`, `Tiles`. Presentation-only state, currently held on `NavigationViewModel` (see §2.3.1, §14.1).
-* `TagListViewModel`: Exposes tag data for the UI filter panel (Qt Widgets).
+* `TagListViewModel`: `QObject`-derived, single shared instance owned/retargeted by `WorkspaceController` (see §14.9) to whichever pane/tab has focus. Exposes three sections for the tag panel: `folderTags()` (the focused tab's current folder plus every ancestor's tags, via `TagManagementUseCase::tagsForPathWithAncestors`), `searchResults()` (live-filtered via `TagManagementUseCase::searchTags` as the user types, excluding tags already on the current target), and `selectedItemTags()` (tags of the focused tab's `selectedEntry()`, or the current folder itself when nothing is selected). Slots `addTagToSelection`/`removeTagFromSelection`/`createAndAddTagFromQuery` drive `TagManagementUseCase`.
 * `MediaPreviewViewModel`: `QObject`-derived, `Q_PROPERTY`-exposed state for the image/video viewer, consumed by a QML scene embedded via `QQuickWidget` inside the main Widgets window.
 
 
@@ -117,7 +117,7 @@ To illustrate the Clean Architecture flow, here are two primary operation sequen
 | **Use Cases** | `FileExplorer`, `TagManager` | Orchestrates file manipulation, tag searching, and data flow. |
 | **Data Repositories** | `SQLiteTagDB`, `OSFileSystem` | Adapters handling raw data reading/writing (SQL and disk I/O). |
 | **Media Adapters** | `ThumbnailGenerator`, `StreamProvider` | Bridges FFmpeg/QtMultimedia to abstract `IMediaDecoder` interface. |
-| **Presentation** | `MainView`, `FileBrowserView`, `FileTileDelegate`, `TagFilterPanel`, `MediaPreviewPane` | Qt-based UI elements binding to ViewModels. `FileBrowserView` switches between `QListView`/`QTreeView` per `ViewMode` (see §2.3.1). |
+| **Presentation** | `MainView`, `FileBrowserView`, `FileTileDelegate`, `TagPanelWidget`, `TagChipWidget`, `MediaPreviewPane` | Qt-based UI elements binding to ViewModels. `FileBrowserView` switches between `QListView`/`QTreeView` per `ViewMode` (see §2.3.1). `TagPanelWidget` renders `TagListViewModel`'s three sections using `TagChipWidget` (read-only/addable/removable chip, see §14.9). |
 | **Workspace/Session** | `WorkspaceController`, `WorkspacePaneViewModel`, `TabViewModel` | UI-session state for the fixed 4-pane split-window layout (see §14); no business rules, no Domain/Application changes. |
 
 ---
@@ -212,16 +212,16 @@ Exp-LORer/
 │   ├── application/              # Use cases + Port interfaces (IFileSystemRepository, ITagRepository, IMediaDecoder)
 │   ├── adapters/
 │   │   ├── viewmodels/           # TabViewModel, NavigationHistory, FileListModel, ViewMode,
-│   │   │                         # TagListViewModel, MediaPreviewViewModel,
+│   │   │                         # TagListViewModel, TagColorPalette, MediaPreviewViewModel,
 │   │   │                         # SplitLayout, WorkspacePaneId, WorkspaceLayoutTopology,
-│   │   │                         # WorkspacePaneViewModel, WorkspaceController (see §14)
+│   │   │                         # WorkspacePaneViewModel, WorkspaceController (see §14, §14.9)
 │   │   ├── persistence/          # SQLiteTagRepository, migration scripts
 │   │   ├── filesystem/           # StandardFileSystemRepository (std::filesystem + OS trash calls)
 │   │   └── media/                # QtMediaDecoder / FFmpegMediaDecoder, ThumbnailGenerator
 │   ├── ui/
-│   │   ├── widgets/               # MainWindow, FileBrowserView, FileTileDelegate, TagFilterPanel,
-│   │   │                          # dialogs (Qt Widgets, .ui files), WorkspaceLayoutWidget,
-│   │   │                          # WorkspacePaneWidget (see §14)
+│   │   ├── widgets/               # MainWindow, FileBrowserView, FileTileDelegate, TagPanelWidget,
+│   │   │                          # TagChipWidget, dialogs (Qt Widgets, .ui files),
+│   │   │                          # WorkspaceLayoutWidget, WorkspacePaneWidget (see §14, §14.9)
 │   │   └── qml/                   # MediaViewer.qml and supporting QML components
 │   └── app/
 │       ├── CompositionRoot.cpp/.h # wires concrete adapters into use cases
@@ -478,3 +478,33 @@ stacks, unchanged). Composite and Memento are dropped in this revision — there
   an acceptable, simpler fallback for v1 if auto-seeding is deferred.
 * **Cross-pane drag-and-drop**: out of scope; `WorkspaceController` remains the natural future
   broker.
+
+### 14.9 Tag Panel and Selection Tracking
+
+Fulfills the §14.3/§14.8 retargeting hook: the shared `TagListViewModel` (§2.3) is now built and
+owned by `WorkspaceController`, and `TabViewModel` gains a second piece of per-tab UI-session
+state alongside navigation history — the currently selected row in that tab's `FileBrowserView`.
+
+* **Selection is per-tab state.** `TabViewModel::selectedEntry()`/`setSelectedEntry()`/
+  `selectedEntryChanged` mirror `currentPath`/`currentPathChanged`: owned by the tab, cleared on
+  every `navigateTo`/`goBack`/`goForward`/`goUp` so a stale selection from the previous folder
+  never leaks into the new one. `FileBrowserView` shares one `QItemSelectionModel` between its
+  `QListView` and `QTreeView` (so switching `ViewMode` doesn't drop the selection) and emits
+  `selectionChanged(std::optional<FileNode>)`, which `WorkspacePaneWidget` connects 1:1 to each
+  page's own `TabViewModel::setSelectedEntry` at tab-creation time (unlike the toolbar, which
+  rebinds to whichever tab is active, selection wiring doesn't need to rebind).
+* **`TagListViewModel::setActiveTab(TabViewModel*)`** is `WorkspaceController`'s retargeting slot,
+  invoked whenever `focusedPaneChanged` or any pane's `activeTabChanged` fires (and once at
+  construction): it disconnects the previous tab's `currentPathChanged`/`selectedEntryChanged`,
+  connects the new one, and refreshes all three panel sections immediately.
+* **Resolving the tagging target** (used for the panel's "+"/"x" actions and the
+  selected-item-tags section): `selectedEntry()` if set, otherwise the current folder itself —
+  fetched via a new `IFileSystemRepository::stat`/`FileNavigationUseCase::stat` single-path
+  lookup (distinct from `listDirectory`, which enumerates children, not the directory itself).
+  This is what lets a user tag the folder they're browsing without selecting a child row first.
+* **Persistence**: `SQLiteTagRepository` (§7, §10) is the first concrete `ITagRepository`
+  implementation — the tag panel is the feature that required building it. `CompositionRoot` owns
+  it plus a `TagManagementUseCase`, both threaded through `WorkspaceController`'s constructor.
+* **Threading**: kept synchronous, consistent with `TabViewModel`'s existing (pre-existing, not
+  introduced here) synchronous calls into `FileNavigationUseCase` — §5's background-dispatch
+  model isn't implemented anywhere yet, and this feature doesn't newly diverge from that.

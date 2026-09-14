@@ -198,6 +198,10 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
             tab->navigateTo(path);
         }
     });
+
+    // 1:1 per tab (unlike the toolbar rebinding below, which follows only the active tab) so a
+    // background tab's selection doesn't leak into another tab's, and is preserved when revisited.
+    connect(browserView, &FileBrowserView::selectionChanged, tab, &TabViewModel::setSelectedEntry);
 }
 
 void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)

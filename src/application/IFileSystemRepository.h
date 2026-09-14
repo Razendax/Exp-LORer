@@ -17,6 +17,11 @@ public:
 
     virtual Result<std::vector<FileNode>> listDirectory(const std::filesystem::path& directory) const = 0;
 
+    // Resolves a single path into a FileNode (e.g. to treat a browsed directory itself as a
+    // taggable target when no child row is selected). Unlike listDirectory(), this stats the
+    // path itself rather than enumerating its children.
+    virtual Result<FileNode> stat(const std::filesystem::path& path) const = 0;
+
     virtual Result<FileNode> move(const std::filesystem::path& source, const std::filesystem::path& destination) = 0;
     virtual Result<FileNode> copy(const std::filesystem::path& source, const std::filesystem::path& destination) = 0;
 

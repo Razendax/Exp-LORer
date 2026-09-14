@@ -14,6 +14,9 @@ add_library(explorer_adapters_viewmodels STATIC
     WorkspacePaneViewModel.cpp
     WorkspaceController.h
     WorkspaceController.cpp
+    TagColorPalette.h
+    TagListViewModel.h
+    TagListViewModel.cpp
 )
 
 target_include_directories(explorer_adapters_viewmodels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

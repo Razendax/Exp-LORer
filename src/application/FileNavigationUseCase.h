@@ -25,6 +25,7 @@ public:
     explicit FileNavigationUseCase(IFileSystemRepository& fileSystemRepository);
 
     Result<std::vector<FileNode>> listDirectory(const std::filesystem::path& directory) const;
+    Result<FileNode> stat(const std::filesystem::path& path) const;
 
     static std::vector<FileNode> sortBy(std::vector<FileNode> files, SortCriterion criterion, bool ascending = true);
     static std::vector<FileNode> filterByExtension(std::vector<FileNode> files, const std::string& extension);

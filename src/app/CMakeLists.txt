@@ -7,6 +7,7 @@ add_executable(Exp-LORer
 target_link_libraries(Exp-LORer PRIVATE
     explorer_ui_widgets
     explorer_adapters_filesystem
+    explorer_adapters_persistence
     explorer_adapters_viewmodels
     explorer_application
     Qt6::Widgets
@@ -23,5 +24,17 @@ if(WIN32 AND TARGET Qt6::QWindowsIntegrationPlugin)
                 "$<TARGET_FILE:Qt6::QWindowsIntegrationPlugin>"
                 "$<TARGET_FILE_DIR:Exp-LORer>/platforms/"
         COMMENT "Deploying Qt platform plugin (qwindows.dll)"
+    )
+endif()
+
+# Same applocal-DLL-copy gap as qwindows.dll above: QSqlDatabase loads the SQLite driver
+# (SQLiteTagRepository) from a "sqldrivers" subfolder next to the executable at runtime.
+if(WIN32 AND TARGET Qt6::QSQLiteDriverPlugin)
+    add_custom_command(TARGET Exp-LORer POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Exp-LORer>/sqldrivers"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:Qt6::QSQLiteDriverPlugin>"
+                "$<TARGET_FILE_DIR:Exp-LORer>/sqldrivers/"
+        COMMENT "Deploying Qt SQLite driver plugin (qsqlite.dll)"
     )
 endif()

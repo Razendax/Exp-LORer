@@ -30,6 +30,14 @@ public:
     Result<std::vector<Tag>> tagsForFile(const FileNode& file) const;
     Result<std::vector<FileTagAssociation>> findFilesWithAllTags(const std::vector<Tag::Id>& tagIds) const;
 
+    // Tags of every ancestor directory of `path` (outermost ancestor first, down to the
+    // immediate parent) followed by path's own tags last. A root-level path has no ancestors.
+    Result<std::vector<Tag>> tagsForPathWithAncestors(const std::filesystem::path& path) const;
+
+    // Ranks allTags() against `query`: case-insensitive exact match, then prefix, then substring,
+    // each group alphabetical by name. An empty query returns all tags, alphabetically.
+    Result<std::vector<Tag>> searchTags(const std::string& query) const;
+
 private:
     ITagRepository& m_tagRepository;
     IFileSystemRepository& m_fileSystemRepository;

@@ -116,6 +116,19 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectory(const 
     return Result<std::vector<FileNode>>::success(std::move(files));
 }
 
+Result<FileNode> StandardFileSystemRepository::stat(const std::filesystem::path& path) const
+{
+    const fs::path target = withLongPathPrefix(path);
+
+    std::error_code ec;
+    if (!fs::exists(target, ec))
+    {
+        return Result<FileNode>::failure(Error(ErrorCode::NotFound, path.string() + " does not exist"));
+    }
+
+    return buildFileNode(path, fs::directory_entry(target));
+}
+
 Result<FileNode> StandardFileSystemRepository::move(const std::filesystem::path& source, const std::filesystem::path& destination)
 {
     try

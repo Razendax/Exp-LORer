@@ -9,6 +9,10 @@ add_library(explorer_ui_widgets STATIC
     WorkspacePaneWidget.cpp
     WorkspaceLayoutWidget.h
     WorkspaceLayoutWidget.cpp
+    TagChipWidget.h
+    TagChipWidget.cpp
+    TagPanelWidget.h
+    TagPanelWidget.cpp
 )
 
 target_include_directories(explorer_ui_widgets PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

@@ -7,9 +7,11 @@
 #include <QActionGroup>
 #include <QMenu>
 #include <QMenuBar>
+#include <QSplitter>
 #include <QStatusBar>
 #include <QToolBar>
 
+#include "TagPanelWidget.h"
 #include "WorkspaceController.h"
 #include "WorkspaceLayoutWidget.h"
 #include "WorkspacePaneId.h"
@@ -109,7 +111,14 @@ void MainWindow::createLayoutToolBar()
 void MainWindow::createWorkspace()
 {
     m_workspaceLayoutWidget = new WorkspaceLayoutWidget(m_workspaceController, this);
-    setCentralWidget(m_workspaceLayoutWidget);
+    m_tagPanelWidget = new TagPanelWidget(m_workspaceController->tagListViewModel(), this);
+
+    auto* splitter = new QSplitter(Qt::Horizontal, this);
+    splitter->addWidget(m_workspaceLayoutWidget);
+    splitter->addWidget(m_tagPanelWidget);
+    splitter->setStretchFactor(0, 4);
+    splitter->setStretchFactor(1, 1);
+    setCentralWidget(splitter);
 
     for (WorkspacePaneId id : kAllPanes)
     {

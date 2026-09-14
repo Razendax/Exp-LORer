@@ -1,6 +1,7 @@
 #include "FileBrowserView.h"
 
 #include <QHeaderView>
+#include <QItemSelectionModel>
 #include <QListView>
 #include <QStackedWidget>
 #include <QStyledItemDelegate>
@@ -49,6 +50,12 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent)
     m_treeView->setSortingEnabled(true);
     m_treeView->header()->setSectionsClickable(true);
 
+    // Shared between both views (rather than each QAbstractItemView's own default selection
+    // model) so switching ViewMode doesn't drop the current selection.
+    m_selectionModel = new QItemSelectionModel(m_model, this);
+    m_listView->setSelectionModel(m_selectionModel);
+    m_treeView->setSelectionModel(m_selectionModel);
+
     m_stack = new QStackedWidget(this);
     m_stack->addWidget(m_listView);
     m_stack->addWidget(m_treeView);
@@ -59,6 +66,8 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent)
 
     connect(m_listView, &QAbstractItemView::activated, this, &FileBrowserView::emitActivated);
     connect(m_treeView, &QAbstractItemView::activated, this, &FileBrowserView::emitActivated);
+    connect(m_selectionModel, &QItemSelectionModel::currentChanged, this,
+            [this](const QModelIndex& current, const QModelIndex&) { emitSelectionChanged(current); });
 
     setViewMode(ViewMode::Details);
 }
@@ -115,4 +124,9 @@ void FileBrowserView::emitActivated(const QModelIndex& index)
     const auto path = std::filesystem::path(index.data(FileListModel::FilePathRole).toString().toStdWString());
     const bool isDirectory = index.data(FileListModel::IsDirectoryRole).toBool();
     emit itemActivated(path, isDirectory);
+}
+
+void FileBrowserView::emitSelectionChanged(const QModelIndex& current)
+{
+    emit selectionChanged(m_model->entryAt(current.row()));
 }

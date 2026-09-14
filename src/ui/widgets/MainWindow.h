@@ -9,6 +9,7 @@ class QAction;
 class QActionGroup;
 class WorkspaceController;
 class WorkspaceLayoutWidget;
+class TagPanelWidget;
 
 // Application shell: menu bar (File/Edit/View/Favorites/Tools/Help), a small Layout toolbar, and
 // a WorkspaceLayoutWidget as central widget hosting up to 4 independent WorkspacePaneWidget
@@ -32,6 +33,7 @@ private:
 
     WorkspaceController* m_workspaceController = nullptr;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
+    TagPanelWidget* m_tagPanelWidget = nullptr;
 
     // One QAction per SplitLayout (same order as the anonymous-namespace kLayouts array in the
     // .cpp), shared verbatim between the "Layout" toolbar and the View > Layout submenu so both

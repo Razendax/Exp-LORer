@@ -1,12 +1,16 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 
 #include <QWidget>
 
+#include "FileNode.h"
 #include "ViewMode.h"
 
 class QModelIndex;
+class QItemSelection;
+class QItemSelectionModel;
 class QStackedWidget;
 class QListView;
 class QTreeView;
@@ -31,8 +35,14 @@ signals:
     // this to TabViewModel::navigateTo (file activation is out of scope, no viewer yet).
     void itemActivated(const std::filesystem::path& path, bool isDirectory);
 
+    // Emitted whenever the current row changes (including becoming unselected), resolved via
+    // FileListModel::entryAt. Backs the tag panel's "selected item" target (Architecture.md
+    // §14.9); WorkspacePaneWidget connects this 1:1 to the owning tab's setSelectedEntry.
+    void selectionChanged(const std::optional<FileNode>& entry);
+
 private:
     void emitActivated(const QModelIndex& index);
+    void emitSelectionChanged(const QModelIndex& current);
 
     FileListModel* m_model = nullptr;
     QStackedWidget* m_stack = nullptr;
@@ -40,4 +50,5 @@ private:
     QTreeView* m_treeView = nullptr;
     QAbstractItemDelegate* m_defaultDelegate = nullptr;
     FileTileDelegate* m_tileDelegate = nullptr;
+    QItemSelectionModel* m_selectionModel = nullptr;
 };

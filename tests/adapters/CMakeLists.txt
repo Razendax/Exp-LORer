@@ -1,14 +1,29 @@
 add_executable(explorer_adapters_tests
+    TestMain.cpp
     NavigationHistoryTest.cpp
     StandardFileSystemRepositoryTest.cpp
     WorkspaceLayoutTopologyTest.cpp
+    SQLiteTagRepositoryTest.cpp
 )
 
 target_link_libraries(explorer_adapters_tests PRIVATE
     explorer_adapters_viewmodels
     explorer_adapters_filesystem
+    explorer_adapters_persistence
+    Qt6::Core
     GTest::gtest
-    GTest::gtest_main
 )
 
 gtest_discover_tests(explorer_adapters_tests)
+
+# SQLiteTagRepositoryTest needs the SQLite driver plugin deployed next to the test binary, same
+# gap as the app's own qwindows.dll deployment in src/app/CMakeLists.txt.
+if(WIN32 AND TARGET Qt6::QSQLiteDriverPlugin)
+    add_custom_command(TARGET explorer_adapters_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:explorer_adapters_tests>/sqldrivers"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:Qt6::QSQLiteDriverPlugin>"
+                "$<TARGET_FILE_DIR:explorer_adapters_tests>/sqldrivers/"
+        COMMENT "Deploying Qt SQLite driver plugin (qsqlite.dll)"
+    )
+endif()

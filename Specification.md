@@ -50,6 +50,17 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 * Dedicated view/panel to filter files by one or multiple tags (e.g., show all files tagged with "Work" *AND* "ProjectA").
 * Robust handling of file path changes (handling renames/moves gracefully by tracking file hashes or updating paths in the database).
 
+**Tag Panel:**
+* A panel sharing the window with the workspace pane area shows, for whichever pane/tab currently
+  has focus: (1) the tags of the active pane's current folder together with every ancestor
+  folder's tags (ancestors listed before the folder's own tags); (2) a search box over all tags;
+  (3) the tags matching that search, live-updating as the user types, each addable via a "+" to
+  the currently selected file/folder in the active pane; (4) the tags of only that selected item
+  (not its ancestors), each removable via an "x". Folder tags are not inherited by files/folders
+  nested inside them — they only ever apply to the folder they were assigned to.
+* When no item is selected in the active pane, the panel's add/remove sections (3 and 4) target
+  the currently browsed folder itself, so a folder can be tagged without first navigating into it.
+
 ### 2.3 Built-in Image Viewer
 
 **Supported Formats:** Common image formats including JPEG, PNG, BMP, GIF, and WebP.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 #include <QAbstractTableModel>
@@ -44,6 +45,10 @@ public:
     // Maps the clicked column to a SortCriterion and delegates to FileNavigationUseCase::sortBy
     // (static, no I/O).
     void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;
+
+    // Recovers the full FileNode for a row (already held in m_entries), e.g. to resolve a
+    // QItemSelectionModel's current index into a tagging target.
+    std::optional<FileNode> entryAt(int row) const;
 
 public slots:
     void setEntries(const std::filesystem::path& directory, const std::vector<FileNode>& entries);

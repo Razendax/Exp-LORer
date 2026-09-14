@@ -9,6 +9,7 @@ class StandardFileSystemRepository : public IFileSystemRepository
 {
 public:
     Result<std::vector<FileNode>> listDirectory(const std::filesystem::path& directory) const override;
+    Result<FileNode> stat(const std::filesystem::path& path) const override;
 
     Result<FileNode> move(const std::filesystem::path& source, const std::filesystem::path& destination) override;
     Result<FileNode> copy(const std::filesystem::path& source, const std::filesystem::path& destination) override;

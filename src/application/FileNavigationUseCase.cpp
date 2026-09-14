@@ -24,6 +24,11 @@ Result<std::vector<FileNode>> FileNavigationUseCase::listDirectory(const std::fi
     return m_fileSystemRepository.listDirectory(directory);
 }
 
+Result<FileNode> FileNavigationUseCase::stat(const std::filesystem::path& path) const
+{
+    return m_fileSystemRepository.stat(path);
+}
+
 std::vector<FileNode> FileNavigationUseCase::sortBy(std::vector<FileNode> files, SortCriterion criterion, bool ascending)
 {
     auto less = [criterion](const FileNode& lhs, const FileNode& rhs) {

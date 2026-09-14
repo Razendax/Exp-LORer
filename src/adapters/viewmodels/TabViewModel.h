@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 #include <QObject>
@@ -27,8 +28,14 @@ public:
     std::filesystem::path currentPath() const;
     ViewMode viewMode() const noexcept { return m_viewMode; }
     FileListModel* fileListModel() const noexcept { return m_fileListModel; }
+    const std::optional<FileNode>& selectedEntry() const noexcept { return m_selectedEntry; }
 
 public slots:
+    // Per-tab selection state (Architecture.md §14.9), set by WorkspacePaneWidget from this tab's
+    // FileBrowserView::selectionChanged. Cleared on every navigation (see loadAndApply) so a
+    // stale selection from the previous folder never leaks into the new one.
+    void setSelectedEntry(const std::optional<FileNode>& entry);
+
     // Validates the path via FileNavigationUseCase before recording it in history ("safe
     // navigation"). On failure, history and the current path are left unchanged and
     // navigationFailed is emitted instead. On success, emits currentPathChanged and
@@ -56,6 +63,7 @@ signals:
     void upAvailableChanged(bool available);
     void navigationFailed(const std::filesystem::path& path, const QString& message);
     void viewModeChanged(ViewMode mode);
+    void selectedEntryChanged(const std::optional<FileNode>& entry);
 
 private:
     // Single funnel point for every navigation entry point: fetches directory contents exactly
@@ -69,4 +77,5 @@ private:
     NavigationHistory m_history;
     ViewMode m_viewMode = ViewMode::Details;
     FileListModel* m_fileListModel = nullptr;
+    std::optional<FileNode> m_selectedEntry;
 };

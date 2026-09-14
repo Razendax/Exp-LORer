@@ -138,6 +138,16 @@ void FileListModel::sort(int column, Qt::SortOrder order)
     endResetModel();
 }
 
+std::optional<FileNode> FileListModel::entryAt(int row) const
+{
+    if (row < 0 || static_cast<size_t>(row) >= m_entries.size())
+    {
+        return std::nullopt;
+    }
+
+    return m_entries[static_cast<size_t>(row)];
+}
+
 void FileListModel::setEntries(const std::filesystem::path& directory, const std::vector<FileNode>& entries)
 {
     Q_UNUSED(directory);

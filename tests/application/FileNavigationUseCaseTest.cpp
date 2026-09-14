@@ -42,6 +42,20 @@ TEST(FileNavigationUseCase, ListDirectoryPropagatesError)
     EXPECT_EQ(result.error().code, ErrorCode::IoError);
 }
 
+TEST(FileNavigationUseCase, StatDelegatesToRepository)
+{
+    MockFileSystemRepository repository;
+    FileNode file = makeFile("C:/data", 0, FileType::Directory);
+    EXPECT_CALL(repository, stat(std::filesystem::path("C:/data")))
+        .WillOnce(Return(Result<FileNode>::success(file)));
+
+    FileNavigationUseCase useCase(repository);
+    auto result = useCase.stat("C:/data");
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(result.value().isDirectory());
+}
+
 TEST(FileNavigationUseCase, SortByNameAscending)
 {
     std::vector<FileNode> files{ makeFile("C:/data/b.txt", 1), makeFile("C:/data/a.txt", 2) };

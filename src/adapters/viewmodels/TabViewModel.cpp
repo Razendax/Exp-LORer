@@ -60,6 +60,17 @@ void TabViewModel::goForward()
     loadAndApply(*path, false);
 }
 
+void TabViewModel::setSelectedEntry(const std::optional<FileNode>& entry)
+{
+    if (m_selectedEntry == entry)
+    {
+        return;
+    }
+
+    m_selectedEntry = entry;
+    emit selectedEntryChanged(entry);
+}
+
 void TabViewModel::setViewMode(ViewMode mode)
 {
     if (mode == m_viewMode)
@@ -84,6 +95,8 @@ void TabViewModel::loadAndApply(const std::filesystem::path& path, bool recordHi
     {
         m_history.navigate(path);
     }
+
+    setSelectedEntry(std::nullopt);
 
     emit currentPathChanged(path);
     emit directoryContentsChanged(path, result.value());

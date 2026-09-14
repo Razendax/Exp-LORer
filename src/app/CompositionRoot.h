@@ -3,7 +3,9 @@
 #include <memory>
 
 #include "FileNavigationUseCase.h"
+#include "SQLiteTagRepository.h"
 #include "StandardFileSystemRepository.h"
+#include "TagManagementUseCase.h"
 #include "WorkspacePaneId.h"
 
 class TabViewModel;
@@ -26,4 +28,6 @@ public:
 private:
     StandardFileSystemRepository m_fileSystemRepository;
     FileNavigationUseCase m_fileNavigationUseCase;
+    SQLiteTagRepository m_tagRepository;
+    TagManagementUseCase m_tagManagementUseCase;
 };

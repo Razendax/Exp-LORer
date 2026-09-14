@@ -50,6 +50,33 @@ TEST_F(StandardFileSystemRepositoryTest, ListDirectoryFailsForMissingPath)
     EXPECT_EQ(result.error().code, ErrorCode::NotFound);
 }
 
+TEST_F(StandardFileSystemRepositoryTest, StatResolvesDirectory)
+{
+    auto result = m_repository.stat(m_tempDir);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(result.value().isDirectory());
+}
+
+TEST_F(StandardFileSystemRepositoryTest, StatResolvesFile)
+{
+    writeFile(m_tempDir / "a.txt", "hello");
+
+    auto result = m_repository.stat(m_tempDir / "a.txt");
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_FALSE(result.value().isDirectory());
+    EXPECT_EQ(result.value().size(), 5u);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, StatFailsForMissingPath)
+{
+    auto result = m_repository.stat(m_tempDir / "does-not-exist");
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::NotFound);
+}
+
 TEST_F(StandardFileSystemRepositoryTest, MoveRenamesFile)
 {
     writeFile(m_tempDir / "source.txt", "data");
