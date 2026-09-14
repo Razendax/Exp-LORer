@@ -4,7 +4,13 @@ add_executable(Exp-LORer
     CompositionRoot.cpp
 )
 
-target_link_libraries(Exp-LORer PRIVATE explorer_ui_widgets Qt6::Widgets)
+target_link_libraries(Exp-LORer PRIVATE
+    explorer_ui_widgets
+    explorer_adapters_filesystem
+    explorer_adapters_viewmodels
+    explorer_application
+    Qt6::Widgets
+)
 
 # Qt's platform plugin (qwindows.dll) is loaded dynamically at runtime from a
 # "platforms" subfolder next to the executable. vcpkg's applocal DLL copying
