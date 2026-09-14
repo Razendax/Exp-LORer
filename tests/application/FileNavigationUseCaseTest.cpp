@@ -78,6 +78,42 @@ TEST(FileNavigationUseCase, SortBySizeDescending)
     EXPECT_EQ(sorted[1].size(), 1u);
 }
 
+TEST(FileNavigationUseCase, SortByNameAscendingGroupsFoldersBeforeFiles)
+{
+    std::vector<FileNode> files{
+        makeFile("C:/data/b.txt", 1),
+        makeFile("C:/data/z_folder", 0, FileType::Directory),
+        makeFile("C:/data/a.txt", 2),
+        makeFile("C:/data/a_folder", 0, FileType::Directory),
+    };
+
+    auto sorted = FileNavigationUseCase::sortBy(files, SortCriterion::Name, true);
+
+    ASSERT_EQ(sorted.size(), 4u);
+    EXPECT_EQ(sorted[0].name(), "a_folder");
+    EXPECT_EQ(sorted[1].name(), "z_folder");
+    EXPECT_EQ(sorted[2].name(), "a.txt");
+    EXPECT_EQ(sorted[3].name(), "b.txt");
+}
+
+TEST(FileNavigationUseCase, SortByNameDescendingGroupsFilesBeforeFolders)
+{
+    std::vector<FileNode> files{
+        makeFile("C:/data/b.txt", 1),
+        makeFile("C:/data/z_folder", 0, FileType::Directory),
+        makeFile("C:/data/a.txt", 2),
+        makeFile("C:/data/a_folder", 0, FileType::Directory),
+    };
+
+    auto sorted = FileNavigationUseCase::sortBy(files, SortCriterion::Name, false);
+
+    ASSERT_EQ(sorted.size(), 4u);
+    EXPECT_EQ(sorted[0].name(), "b.txt");
+    EXPECT_EQ(sorted[1].name(), "a.txt");
+    EXPECT_EQ(sorted[2].name(), "z_folder");
+    EXPECT_EQ(sorted[3].name(), "a_folder");
+}
+
 TEST(FileNavigationUseCase, FilterByExtensionIsCaseInsensitive)
 {
     std::vector<FileNode> files{ makeFile("C:/data/a.TXT", 1), makeFile("C:/data/b.jpg", 2) };

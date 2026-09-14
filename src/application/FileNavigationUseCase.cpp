@@ -32,6 +32,14 @@ Result<FileNode> FileNavigationUseCase::stat(const std::filesystem::path& path) 
 std::vector<FileNode> FileNavigationUseCase::sortBy(std::vector<FileNode> files, SortCriterion criterion, bool ascending)
 {
     auto less = [criterion](const FileNode& lhs, const FileNode& rhs) {
+        if (lhs.isDirectory() != rhs.isDirectory())
+        {
+            // Directories are grouped before files; reversing the whole comparator for
+            // descending order (below) flips this alongside the criterion, so folders lead in
+            // ascending order and files lead in descending order.
+            return lhs.isDirectory();
+        }
+
         switch (criterion)
         {
             case SortCriterion::Name:
