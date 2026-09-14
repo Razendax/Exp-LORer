@@ -55,6 +55,11 @@ public slots:
 
     void setViewMode(ViewMode mode);
 
+    // Re-fetches the current directory without touching navigation history. Used after a file
+    // operation (copy/move/delete) may have changed a directory's contents out from under a tab
+    // that has it open (Architecture.md §14.10).
+    void refresh();
+
 signals:
     void currentPathChanged(const std::filesystem::path& path);
     void directoryContentsChanged(const std::filesystem::path& path, const std::vector<FileNode>& entries);

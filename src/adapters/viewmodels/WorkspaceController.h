@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <filesystem>
 
 #include <QObject>
 
@@ -12,6 +13,7 @@ class TagManagementUseCase;
 class WorkspacePaneViewModel;
 class TabViewModel;
 class TagListViewModel;
+class FileOperationsController;
 
 // Mediator owning all 4 WorkspacePaneViewModels (always instantiated, regardless of which are
 // currently visible under the active SplitLayout) plus the active SplitLayout, the focused pane,
@@ -33,6 +35,7 @@ public:
     WorkspacePaneId focusedPane() const noexcept { return m_focusedPane; }
     TabViewModel* focusedTab() const;
     TagListViewModel* tagListViewModel() const noexcept { return m_tagListViewModel; }
+    FileOperationsController* fileOperationsController() const noexcept { return m_fileOperationsController; }
 
 public slots:
     void setLayout(SplitLayout layout);
@@ -45,8 +48,16 @@ signals:
 private:
     void retargetTagListViewModel();
 
+    // Connected to m_fileOperationsController->directoryContentsMayHaveChanged. Refreshes every
+    // live tab, in any pane (visible or hidden), whose currentPath() matches directory, so a
+    // paste/delete affecting a directory open in a different pane than the one it was triggered
+    // from is reflected everywhere (Architecture.md §14.10).
+    void refreshTabsShowing(const std::filesystem::path& directory);
+
+    FileNavigationUseCase& m_fileNavigationUseCase;
     std::array<WorkspacePaneViewModel*, 4> m_panes;
     SplitLayout m_layout = SplitLayout::Single;
     WorkspacePaneId m_focusedPane = WorkspacePaneId::PaneA;
     TagListViewModel* m_tagListViewModel = nullptr;
+    FileOperationsController* m_fileOperationsController = nullptr;
 };

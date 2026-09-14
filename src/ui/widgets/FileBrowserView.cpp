@@ -1,7 +1,9 @@
 #include "FileBrowserView.h"
 
+#include <QEvent>
 #include <QHeaderView>
 #include <QItemSelectionModel>
+#include <QKeyEvent>
 #include <QListView>
 #include <QStackedWidget>
 #include <QStyledItemDelegate>
@@ -69,7 +71,56 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent)
     connect(m_selectionModel, &QItemSelectionModel::currentChanged, this,
             [this](const QModelIndex& current, const QModelIndex&) { emitSelectionChanged(current); });
 
+    m_listView->installEventFilter(this);
+    m_treeView->installEventFilter(this);
+
     setViewMode(ViewMode::Details);
+}
+
+bool FileBrowserView::eventFilter(QObject* watched, QEvent* event)
+{
+    if ((watched == m_listView || watched == m_treeView) && event->type() == QEvent::KeyPress)
+    {
+        if (handleKeyPress(static_cast<QKeyEvent*>(event)))
+        {
+            return true;
+        }
+    }
+
+    return QWidget::eventFilter(watched, event);
+}
+
+bool FileBrowserView::handleKeyPress(QKeyEvent* event)
+{
+    // Must be checked before QKeySequence::Cut: Qt's standard Cut sequence on Windows includes
+    // "Shift+Del" as an alternate binding, which file managers repurpose for permanent delete.
+    if (event->key() == Qt::Key_Delete)
+    {
+        emit deleteRequested(event->modifiers().testFlag(Qt::ShiftModifier));
+        return true;
+    }
+    if (event->matches(QKeySequence::Copy))  { emit copyRequested();  return true; }
+    if (event->matches(QKeySequence::Cut))   { emit cutRequested();   return true; }
+    if (event->matches(QKeySequence::Paste)) { emit pasteRequested(); return true; }
+    if (event->key() == Qt::Key_Backspace)   { emit navigateUpRequested(); return true; }
+
+    const bool isDetailsView = (m_stack->currentWidget() == m_treeView);
+    if (isDetailsView && event->key() == Qt::Key_Left)
+    {
+        emit navigateUpRequested();
+        return true;
+    }
+    if (isDetailsView && event->key() == Qt::Key_Right)
+    {
+        const QModelIndex current = m_selectionModel->currentIndex();
+        if (current.isValid() && current.data(FileListModel::IsDirectoryRole).toBool())
+        {
+            emitActivated(current);
+        }
+        return true; // consumed either way - no-op on a file
+    }
+
+    return false; // unhandled: falls through to Qt's default keyboardSearch() etc.
 }
 
 void FileBrowserView::setViewMode(ViewMode mode)

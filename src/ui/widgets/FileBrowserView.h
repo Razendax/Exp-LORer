@@ -15,6 +15,7 @@ class QStackedWidget;
 class QListView;
 class QTreeView;
 class QAbstractItemDelegate;
+class QKeyEvent;
 class FileListModel;
 class FileTileDelegate;
 
@@ -40,9 +41,22 @@ signals:
     // §14.9); WorkspacePaneWidget connects this 1:1 to the owning tab's setSelectedEntry.
     void selectionChanged(const std::optional<FileNode>& entry);
 
+    // Keyboard hotkeys (Architecture.md §14.10), captured via an event filter on m_listView/
+    // m_treeView rather than QShortcut/QAction so they're only active while the file list itself
+    // has focus (a window-scoped shortcut would also fire while the address bar has focus).
+    void copyRequested();
+    void cutRequested();
+    void pasteRequested();
+    void deleteRequested(bool permanent);   // true for Shift+Delete
+    void navigateUpRequested();             // Backspace, and ArrowLeft in Details view
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     void emitActivated(const QModelIndex& index);
     void emitSelectionChanged(const QModelIndex& current);
+    bool handleKeyPress(QKeyEvent* event);
 
     FileListModel* m_model = nullptr;
     QStackedWidget* m_stack = nullptr;

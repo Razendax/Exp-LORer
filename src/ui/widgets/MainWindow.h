@@ -29,7 +29,7 @@ private:
     void createWorkspace();
 
     void onLayoutChanged(SplitLayout layout);
-    void onNavigationFailed(const QString& message);
+    void onStatusMessage(const QString& message);
 
     WorkspaceController* m_workspaceController = nullptr;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;

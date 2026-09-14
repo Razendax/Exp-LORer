@@ -29,6 +29,13 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 **File Operations:**
 * Create, open, rename, delete (move to trash/permanently delete), and copy/paste files and folders.
 * File properties inspection (size, creation date, modification date, file type).
+* **Keyboard hotkeys** (single selected file/folder at a time in v1): Ctrl+C copy, Ctrl+X cut,
+  Ctrl+V paste, Delete moves to the Recycle Bin, Shift+Delete deletes permanently, Backspace goes
+  to the parent folder. Typing a letter `[a-z]` selects the next item whose name starts with that
+  letter, cycling through matches on repeated presses. In Details view only, ArrowLeft also goes to
+  the parent folder and ArrowRight opens a selected folder (no effect on a selected file). Ctrl+C/
+  X/V read and write the real OS clipboard, so cut/copy/paste interoperate with File Explorer and
+  other applications, not just within Exp-LORer.
 
 **Search and Filter:**
 * Fast filename and extension search within the current directory and subdirectories.

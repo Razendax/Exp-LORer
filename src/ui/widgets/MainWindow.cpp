@@ -11,6 +11,7 @@
 #include <QStatusBar>
 #include <QToolBar>
 
+#include "FileOperationsController.h"
 #include "TagPanelWidget.h"
 #include "WorkspaceController.h"
 #include "WorkspaceLayoutWidget.h"
@@ -122,8 +123,11 @@ void MainWindow::createWorkspace()
 
     for (WorkspacePaneId id : kAllPanes)
     {
-        connect(m_workspaceLayoutWidget->paneWidget(id), &WorkspacePaneWidget::navigationFailed, this, &MainWindow::onNavigationFailed);
+        connect(m_workspaceLayoutWidget->paneWidget(id), &WorkspacePaneWidget::navigationFailed, this, &MainWindow::onStatusMessage);
     }
+
+    connect(m_workspaceController->fileOperationsController(), &FileOperationsController::operationFailed, this,
+            &MainWindow::onStatusMessage);
 }
 
 void MainWindow::onLayoutChanged(SplitLayout layout)
@@ -138,7 +142,7 @@ void MainWindow::onLayoutChanged(SplitLayout layout)
     m_layoutActions[static_cast<int>(index)]->setChecked(true);
 }
 
-void MainWindow::onNavigationFailed(const QString& message)
+void MainWindow::onStatusMessage(const QString& message)
 {
     statusBar()->showMessage(message, 5000);
 }

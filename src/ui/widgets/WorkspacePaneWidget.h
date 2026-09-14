@@ -15,6 +15,7 @@ class QActionGroup;
 class QToolBar;
 class WorkspacePaneViewModel;
 class TabViewModel;
+class FileOperationsController;
 
 // One pane's full self-contained UI: its own toolbar (back/forward/up QActions, address
 // QLineEdit, view-mode QToolButton+menu — the per-pane counterpart of MainWindow's former
@@ -27,7 +28,8 @@ class WorkspacePaneWidget : public QWidget
     Q_OBJECT
 
 public:
-    explicit WorkspacePaneWidget(WorkspacePaneViewModel* pane, QWidget* parent = nullptr);
+    explicit WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOperationsController* fileOperationsController,
+                                  QWidget* parent = nullptr);
 
     WorkspacePaneViewModel* pane() const noexcept { return m_pane; }
 
@@ -54,8 +56,10 @@ private:
     void onAddressBarEdited();
     void onNavigationFailed(const std::filesystem::path& path, const QString& message);
     void onViewModeChanged(ViewMode mode);
+    void onDeleteRequested(TabViewModel* tab, bool permanent);
 
     WorkspacePaneViewModel* m_pane = nullptr;
+    FileOperationsController* m_fileOperationsController = nullptr;
     TabViewModel* m_boundTab = nullptr;
 
     QTabWidget* m_tabWidget = nullptr;

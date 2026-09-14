@@ -71,6 +71,11 @@ void TabViewModel::setSelectedEntry(const std::optional<FileNode>& entry)
     emit selectedEntryChanged(entry);
 }
 
+void TabViewModel::refresh()
+{
+    loadAndApply(currentPath(), false);
+}
+
 void TabViewModel::setViewMode(ViewMode mode)
 {
     if (mode == m_viewMode)

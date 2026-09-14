@@ -1,5 +1,7 @@
 #include "WorkspaceController.h"
 
+#include "FileOperationsController.h"
+#include "TabViewModel.h"
 #include "TagListViewModel.h"
 #include "WorkspacePaneViewModel.h"
 
@@ -14,6 +16,7 @@ namespace
 WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                                            QObject* parent)
     : QObject(parent)
+    , m_fileNavigationUseCase(fileNavigationUseCase)
 {
     m_panes[indexOf(WorkspacePaneId::PaneA)] = new WorkspacePaneViewModel(fileNavigationUseCase, WorkspacePaneId::PaneA, this);
     m_panes[indexOf(WorkspacePaneId::PaneB)] = new WorkspacePaneViewModel(fileNavigationUseCase, WorkspacePaneId::PaneB, this);
@@ -21,12 +24,16 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
     m_panes[indexOf(WorkspacePaneId::PaneD)] = new WorkspacePaneViewModel(fileNavigationUseCase, WorkspacePaneId::PaneD, this);
 
     m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, this);
+    m_fileOperationsController = new FileOperationsController(m_fileNavigationUseCase, this);
 
     connect(this, &WorkspaceController::focusedPaneChanged, this, &WorkspaceController::retargetTagListViewModel);
     for (WorkspacePaneViewModel* pane : m_panes)
     {
         connect(pane, &WorkspacePaneViewModel::activeTabChanged, this, &WorkspaceController::retargetTagListViewModel);
     }
+
+    connect(m_fileOperationsController, &FileOperationsController::directoryContentsMayHaveChanged, this,
+            &WorkspaceController::refreshTabsShowing);
 
     retargetTagListViewModel();
 }
@@ -66,4 +73,19 @@ void WorkspaceController::setFocusedPane(WorkspacePaneId id)
 void WorkspaceController::retargetTagListViewModel()
 {
     m_tagListViewModel->setActiveTab(focusedTab());
+}
+
+void WorkspaceController::refreshTabsShowing(const std::filesystem::path& directory)
+{
+    for (WorkspacePaneViewModel* pane : m_panes)
+    {
+        for (int i = 0; i < pane->tabCount(); ++i)
+        {
+            TabViewModel* tab = pane->tabAt(i);
+            if (tab->currentPath() == directory)
+            {
+                tab->refresh();
+            }
+        }
+    }
 }

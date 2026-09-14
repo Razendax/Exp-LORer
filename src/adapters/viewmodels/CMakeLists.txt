@@ -17,6 +17,8 @@ add_library(explorer_adapters_viewmodels STATIC
     TagColorPalette.h
     TagListViewModel.h
     TagListViewModel.cpp
+    FileOperationsController.h
+    FileOperationsController.cpp
 )
 
 target_include_directories(explorer_adapters_viewmodels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

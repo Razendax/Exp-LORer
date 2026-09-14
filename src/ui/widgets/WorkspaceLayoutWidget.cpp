@@ -25,10 +25,14 @@ WorkspaceLayoutWidget::WorkspaceLayoutWidget(WorkspaceController* controller, QW
     : QWidget(parent)
     , m_controller(controller)
 {
-    m_paneWidgets[indexOf(WorkspacePaneId::PaneA)] = new WorkspacePaneWidget(m_controller->pane(WorkspacePaneId::PaneA), this);
-    m_paneWidgets[indexOf(WorkspacePaneId::PaneB)] = new WorkspacePaneWidget(m_controller->pane(WorkspacePaneId::PaneB), this);
-    m_paneWidgets[indexOf(WorkspacePaneId::PaneC)] = new WorkspacePaneWidget(m_controller->pane(WorkspacePaneId::PaneC), this);
-    m_paneWidgets[indexOf(WorkspacePaneId::PaneD)] = new WorkspacePaneWidget(m_controller->pane(WorkspacePaneId::PaneD), this);
+    m_paneWidgets[indexOf(WorkspacePaneId::PaneA)] =
+        new WorkspacePaneWidget(m_controller->pane(WorkspacePaneId::PaneA), m_controller->fileOperationsController(), this);
+    m_paneWidgets[indexOf(WorkspacePaneId::PaneB)] =
+        new WorkspacePaneWidget(m_controller->pane(WorkspacePaneId::PaneB), m_controller->fileOperationsController(), this);
+    m_paneWidgets[indexOf(WorkspacePaneId::PaneC)] =
+        new WorkspacePaneWidget(m_controller->pane(WorkspacePaneId::PaneC), m_controller->fileOperationsController(), this);
+    m_paneWidgets[indexOf(WorkspacePaneId::PaneD)] =
+        new WorkspacePaneWidget(m_controller->pane(WorkspacePaneId::PaneD), m_controller->fileOperationsController(), this);
 
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(0, 0, 0, 0);

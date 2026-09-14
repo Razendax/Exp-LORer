@@ -118,7 +118,7 @@ To illustrate the Clean Architecture flow, here are two primary operation sequen
 | **Data Repositories** | `SQLiteTagDB`, `OSFileSystem` | Adapters handling raw data reading/writing (SQL and disk I/O). |
 | **Media Adapters** | `ThumbnailGenerator`, `StreamProvider` | Bridges FFmpeg/QtMultimedia to abstract `IMediaDecoder` interface. |
 | **Presentation** | `MainView`, `FileBrowserView`, `FileTileDelegate`, `TagPanelWidget`, `TagChipWidget`, `MediaPreviewPane` | Qt-based UI elements binding to ViewModels. `FileBrowserView` switches between `QListView`/`QTreeView` per `ViewMode` (see §2.3.1). `TagPanelWidget` renders `TagListViewModel`'s three sections using `TagChipWidget` (read-only/addable/removable chip, see §14.9). |
-| **Workspace/Session** | `WorkspaceController`, `WorkspacePaneViewModel`, `TabViewModel` | UI-session state for the fixed 4-pane split-window layout (see §14); no business rules, no Domain/Application changes. |
+| **Workspace/Session** | `WorkspaceController`, `WorkspacePaneViewModel`, `TabViewModel`, `FileOperationsController` | UI-session state for the fixed 4-pane split-window layout (see §14); no business rules, no Domain/Application changes. `FileOperationsController` (see §14.10) drives Ctrl+C/X/V/Delete hotkeys via the real OS clipboard. |
 
 ---
 
@@ -214,7 +214,8 @@ Exp-LORer/
 │   │   ├── viewmodels/           # TabViewModel, NavigationHistory, FileListModel, ViewMode,
 │   │   │                         # TagListViewModel, TagColorPalette, MediaPreviewViewModel,
 │   │   │                         # SplitLayout, WorkspacePaneId, WorkspaceLayoutTopology,
-│   │   │                         # WorkspacePaneViewModel, WorkspaceController (see §14, §14.9)
+│   │   │                         # WorkspacePaneViewModel, WorkspaceController,
+│   │   │                         # FileOperationsController (see §14, §14.9, §14.10)
 │   │   ├── persistence/          # SQLiteTagRepository, migration scripts
 │   │   ├── filesystem/           # StandardFileSystemRepository (std::filesystem + OS trash calls)
 │   │   └── media/                # QtMediaDecoder / FFmpegMediaDecoder, ThumbnailGenerator
@@ -508,3 +509,48 @@ state alongside navigation history — the currently selected row in that tab's 
 * **Threading**: kept synchronous, consistent with `TabViewModel`'s existing (pre-existing, not
   introduced here) synchronous calls into `FileNavigationUseCase` — §5's background-dispatch
   model isn't implemented anywhere yet, and this feature doesn't newly diverge from that.
+
+### 14.10 Keyboard Hotkeys and Clipboard File Operations
+
+Adds keyboard-driven copy/cut/paste/delete/navigation to the file browser, plus the shared
+component that backs copy/cut/paste. No Domain/Application changes — `FileNavigationUseCase`
+already exposed every file operation this needs (`moveFile`/`copyFile`/`moveFileToTrash`/
+`deleteFilePermanently`).
+
+* **Capture mechanism**: `FileBrowserView` installs itself as a `QEvent::KeyPress` event filter on
+  its two child views (`m_listView`, `m_treeView`) rather than using a `QShortcut`/`QAction`. A
+  window- or widget-scoped shortcut for Ctrl+C would also fire while the address bar or tag search
+  box has focus, breaking normal text editing there; filtering key events on just the two file-list
+  views means the hotkeys are active only while the file list itself has keyboard focus, matching
+  Explorer. Unhandled keys (anything but the hotkeys below) fall through to Qt's default
+  processing.
+* **Hotkeys** (`FileBrowserView` new signals `copyRequested`/`cutRequested`/`pasteRequested`/
+  `deleteRequested(bool permanent)`/`navigateUpRequested`, consumed by `WorkspacePaneWidget`):
+  Ctrl+C copy, Ctrl+X cut, Ctrl+V paste, Delete → move to Recycle Bin, Shift+Delete → permanent
+  delete, Backspace → parent folder. In Details view only, ArrowLeft also goes to the parent folder
+  and ArrowRight opens a selected folder (no-op on a file); icon/list/tiles modes leave arrow keys
+  at their default grid-navigation behavior. Qt's standard `Cut` key sequence includes "Shift+Del"
+  as an alternate binding on Windows, which file managers repurpose for permanent delete instead —
+  `Qt::Key_Delete` is therefore checked before `QKeySequence::Cut` so Shift+Delete is never
+  misread as Cut.
+* **Letter-jump type-ahead** (typing `[a-z]` selects the next item starting with that letter,
+  cycling on repeated presses) needs no new code: it's `QAbstractItemView::keyboardSearch()`,
+  already built into both `QListView` and `QTreeView`, left unhandled by the event filter above.
+* **`FileOperationsController`** (new, `src/adapters/viewmodels/`): a single shared instance owned
+  by `WorkspaceController` (constructed alongside `TagListViewModel`; no per-tab retargeting needed
+  since the clipboard is OS-global, not pane-scoped). `copyToClipboard`/`cutToClipboard` write the
+  real Windows clipboard via `QMimeData::setUrls()` plus a `"Preferred DropEffect"` custom format
+  (little-endian `quint32`, `DROPEFFECT_COPY`/`DROPEFFECT_MOVE`) so cut/copy/paste interoperate
+  with File Explorer and other apps. `pasteInto(destinationDirectory)` reads the clipboard's file
+  URLs, copies or moves each via `FileNavigationUseCase` (auto-renaming on a name collision, since
+  `move`/`copy` both fail with `AlreadyExists` on one), and clears the clipboard after a successful
+  cut-paste (a copied clipboard can be pasted repeatedly). `moveToTrash`/`deletePermanently` thinly
+  wrap the matching `FileNavigationUseCase` calls; `WorkspacePaneWidget` shows a confirmation
+  dialog before invoking either.
+* **Cross-pane refresh**: `FileOperationsController` emits `directoryContentsMayHaveChanged(path)`
+  after any successful operation. `WorkspaceController` refreshes every live tab (any pane, visible
+  or hidden) whose `currentPath()` matches, via a new `TabViewModel::refresh()` slot that re-runs
+  the existing `loadAndApply` funnel (clearing stale selection and re-validating against disk).
+  This covers a cut/paste spanning two different panes.
+* **Selection stays single-item** for this increment (Ctrl+C/X/Delete act on
+  `TabViewModel::selectedEntry()`); multi-select is a natural but separate future increment.

@@ -7,6 +7,7 @@
 #include <QActionGroup>
 #include <QLineEdit>
 #include <QMenu>
+#include <QMessageBox>
 #include <QStyle>
 #include <QTabWidget>
 #include <QToolBar>
@@ -14,6 +15,7 @@
 #include <QVBoxLayout>
 
 #include "FileBrowserView.h"
+#include "FileOperationsController.h"
 #include "TabViewModel.h"
 #include "WorkspacePaneViewModel.h"
 
@@ -71,9 +73,11 @@ namespace
     }
 }
 
-WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, QWidget* parent)
+WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOperationsController* fileOperationsController,
+                                          QWidget* parent)
     : QWidget(parent)
     , m_pane(pane)
+    , m_fileOperationsController(fileOperationsController)
 {
     createViewModeActions();
     QToolBar* toolBar = createToolBar();
@@ -202,6 +206,26 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     // 1:1 per tab (unlike the toolbar rebinding below, which follows only the active tab) so a
     // background tab's selection doesn't leak into another tab's, and is preserved when revisited.
     connect(browserView, &FileBrowserView::selectionChanged, tab, &TabViewModel::setSelectedEntry);
+
+    connect(browserView, &FileBrowserView::copyRequested, tab, [this, tab]() {
+        if (tab->selectedEntry())
+        {
+            m_fileOperationsController->copyToClipboard(tab->selectedEntry()->path());
+        }
+    });
+    connect(browserView, &FileBrowserView::cutRequested, tab, [this, tab]() {
+        if (tab->selectedEntry())
+        {
+            m_fileOperationsController->cutToClipboard(tab->selectedEntry()->path());
+        }
+    });
+    connect(browserView, &FileBrowserView::pasteRequested, tab, [this, tab]() {
+        m_fileOperationsController->pasteInto(tab->currentPath());
+    });
+    connect(browserView, &FileBrowserView::deleteRequested, tab, [this, tab](bool permanent) {
+        onDeleteRequested(tab, permanent);
+    });
+    connect(browserView, &FileBrowserView::navigateUpRequested, tab, [tab]() { tab->goUp(); });
 }
 
 void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
@@ -314,6 +338,36 @@ void WorkspacePaneWidget::onNavigationFailed(const std::filesystem::path& path, 
     }
 
     emit navigationFailed(message);
+}
+
+void WorkspacePaneWidget::onDeleteRequested(TabViewModel* tab, bool permanent)
+{
+    if (!tab->selectedEntry())
+    {
+        return;
+    }
+
+    const FileNode entry = *tab->selectedEntry();
+    const QString name = toQString(entry.name());
+
+    const QMessageBox::StandardButton answer = permanent
+        ? QMessageBox::question(this, tr("Delete Permanently"),
+                                 tr("Permanently delete \"%1\"? This cannot be undone.").arg(name))
+        : QMessageBox::question(this, tr("Delete"), tr("Move \"%1\" to the Recycle Bin?").arg(name));
+
+    if (answer != QMessageBox::Yes)
+    {
+        return;
+    }
+
+    if (permanent)
+    {
+        m_fileOperationsController->deletePermanently(entry.path());
+    }
+    else
+    {
+        m_fileOperationsController->moveToTrash(entry.path());
+    }
 }
 
 void WorkspacePaneWidget::onViewModeChanged(ViewMode mode)
