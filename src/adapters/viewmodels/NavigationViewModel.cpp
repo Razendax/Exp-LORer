@@ -15,15 +15,7 @@ std::filesystem::path NavigationViewModel::currentPath() const
 
 void NavigationViewModel::navigateTo(const std::filesystem::path& path)
 {
-    auto result = m_fileNavigationUseCase.listDirectory(path);
-    if (result.hasError())
-    {
-        emit navigationFailed(path, QString::fromStdString(result.error().message));
-        return;
-    }
-
-    m_history.navigate(path);
-    setCurrentPath(path);
+    loadAndApply(path, true);
 }
 
 void NavigationViewModel::goUp()
@@ -51,7 +43,7 @@ void NavigationViewModel::goBack()
         return;
     }
 
-    setCurrentPath(*path);
+    loadAndApply(*path, false);
 }
 
 void NavigationViewModel::goForward()
@@ -62,12 +54,36 @@ void NavigationViewModel::goForward()
         return;
     }
 
-    setCurrentPath(*path);
+    loadAndApply(*path, false);
 }
 
-void NavigationViewModel::setCurrentPath(std::filesystem::path path)
+void NavigationViewModel::setViewMode(ViewMode mode)
 {
+    if (mode == m_viewMode)
+    {
+        return;
+    }
+
+    m_viewMode = mode;
+    emit viewModeChanged(mode);
+}
+
+void NavigationViewModel::loadAndApply(const std::filesystem::path& path, bool recordHistory)
+{
+    auto result = m_fileNavigationUseCase.listDirectory(path);
+    if (result.hasError())
+    {
+        emit navigationFailed(path, QString::fromStdString(result.error().message));
+        return;
+    }
+
+    if (recordHistory)
+    {
+        m_history.navigate(path);
+    }
+
     emit currentPathChanged(path);
+    emit directoryContentsChanged(path, result.value());
     emitAvailability();
 }
 

@@ -43,7 +43,8 @@ This layer orchestrates the flow of data to and from the entities. It defines th
 This layer converts data from the format most convenient for the use cases and entities to the format most convenient for the external frameworks (like Qt Views or SQLite).
 
 **Controllers / ViewModels (Qt Models):**
-* `FileTreeViewModel` / `FileGridViewModel`: Wraps the `FileNavigationUseCase` to expose data to Qt's View architecture (e.g., inheriting from `QAbstractListModel` or `QAbstractItemModel`), consumed by Qt Widgets views (`QTreeView`/`QListView`).
+* `FileListModel`: a single `QAbstractTableModel` (columns: Name, Size, Type, Date modified) wrapping directory-listing results (`FileNode` lists) supplied by `NavigationViewModel`. One model feeds both `QListView` (icon/list/tiles view modes, which only read column 0) and `QTreeView` (details view mode, all columns) — see §2.3.1. This supersedes an earlier sketch of two separate `FileTreeViewModel`/`FileGridViewModel` types: a single shared model matches how Explorer itself works and avoids duplicating file→row mapping logic.
+* `ViewMode` (`src/adapters/viewmodels/ViewMode.h`): plain enum — `ExtraLargeIcons`, `LargeIcons`, `MediumIcons`, `SmallIcons`, `List`, `Details`, `Tiles`. Presentation-only state, currently held on `NavigationViewModel` (see §2.3.1, §14.1).
 * `TagListViewModel`: Exposes tag data for the UI filter panel (Qt Widgets).
 * `MediaPreviewViewModel`: `QObject`-derived, `Q_PROPERTY`-exposed state for the image/video viewer, consumed by a QML scene embedded via `QQuickWidget` inside the main Widgets window.
 
@@ -53,6 +54,24 @@ This layer converts data from the format most convenient for the use cases and e
 * `StandardFileSystemRepository`: Implements `IFileSystemRepository` using C++17/20 `<filesystem>` (`std::filesystem`). On Windows, paths are handled as UTF-16 (`std::filesystem::path` natively) and long paths (>260 chars) are supported via the `\\?\` extended-length prefix; paths are converted to UTF-8 only at the SQLite/adapter boundary (see §6).
 * `QtMediaDecoder` / `FFmpegMediaDecoder`: Implements `IMediaDecoder` to generate thumbnails and provide playback streams.
 
+
+### 2.3.1 View Modes
+
+The directory view supports seven modes, matching a conventional Explorer-style file manager:
+Extra Large Icons, Large Icons, Medium Icons, Small Icons, List, Details, Tiles.
+
+* A `QStackedWidget` (`src/ui/widgets/FileBrowserView`) switches between a `QListView` (icon/list/
+  tiles modes) and a `QTreeView` (details mode), both bound to the same `FileListModel`.
+* Icon-mode sizing steps: Extra Large 256px, Large 96px, Medium 48px, Small 16px.
+* List mode is `QListView::ListMode` with wrapping (multi-column text list, no grid); Details mode
+  uses the `QTreeView`'s native column header (also wired to `FileNavigationUseCase::sortBy` on
+  header-click).
+* Tiles mode has no built-in Qt layout and uses a custom `QStyledItemDelegate`
+  (`FileTileDelegate`) painting an icon plus two lines of text (name, then type/size).
+* Icons come from `QFileIconProvider` (real OS shell icons), not bundled resources.
+* View mode is UI/presentation state, not a Domain/Application concern — no new entities or Ports.
+  It currently lives on `NavigationViewModel` as a stand-in (mirroring how that class already
+  stands in for the future `PaneViewModel`, see §14.1) until per-pane state exists for real.
 
 ### 2.4 Frameworks & Drivers Layer
 
@@ -72,12 +91,12 @@ To illustrate the Clean Architecture flow, here are two primary operation sequen
 ### Scenario A: User navigates to a directory and views files
 
 1. **UI (Qt):** User clicks a folder in the `QTreeView`.
-2. **Adapter (ViewModel):** UI invokes `loadDirectory(path)` on the `FileTreeViewModel`.
-3. **Application (Use Case):** ViewModel calls `execute(path)` on the `FileNavigationUseCase`.
+2. **Adapter (ViewModel):** UI invokes `navigateTo(path)` on the `NavigationViewModel`.
+3. **Application (Use Case):** ViewModel calls `listDirectory(path)` on the `FileNavigationUseCase`.
 4. **Application -> Adapter (Port/Repo):** The Use Case asks the `IFileSystemRepository` to fetch the files.
 5. **Adapter -> Framework (OS):** `StandardFileSystemRepository` uses `std::filesystem::directory_iterator` to read the disk and returns a list of `FileNode` entities.
-6. **Application -> Adapter:** The Use Case passes the `FileNode` list back to the `FileTreeViewModel`.
-7. **Adapter -> UI:** The ViewModel formats the entities into Qt roles (DisplayRole, DecorationRole) and emits `dataChanged` signals, updating the UI.
+6. **Application -> Adapter:** The Use Case passes the `FileNode` list back to the `NavigationViewModel`, which emits `directoryContentsChanged`.
+7. **Adapter -> UI:** `FileListModel` (fed by that signal) formats the entities into Qt roles (DisplayRole, DecorationRole) and emits `dataChanged` signals, updating whichever view (`QListView`/`QTreeView`) is currently shown.
 
 ### Scenario B: User tags a file
 
@@ -98,7 +117,7 @@ To illustrate the Clean Architecture flow, here are two primary operation sequen
 | **Use Cases** | `FileExplorer`, `TagManager` | Orchestrates file manipulation, tag searching, and data flow. |
 | **Data Repositories** | `SQLiteTagDB`, `OSFileSystem` | Adapters handling raw data reading/writing (SQL and disk I/O). |
 | **Media Adapters** | `ThumbnailGenerator`, `StreamProvider` | Bridges FFmpeg/QtMultimedia to abstract `IMediaDecoder` interface. |
-| **Presentation** | `MainView`, `TagFilterPanel`, `MediaPreviewPane` | Qt-based UI elements binding to ViewModels. |
+| **Presentation** | `MainView`, `FileBrowserView`, `FileTileDelegate`, `TagFilterPanel`, `MediaPreviewPane` | Qt-based UI elements binding to ViewModels. `FileBrowserView` switches between `QListView`/`QTreeView` per `ViewMode` (see §2.3.1). |
 | **Workspace/Session** | `WorkspaceController`, `TabViewModel`, `PaneViewModel`, `SplitPaneNode` | UI-session state for multi-tab/split-screen browsing (see §14); no business rules, no Domain/Application changes. |
 
 ---
@@ -192,15 +211,17 @@ Exp-LORer/
 │   ├── domain/                  # Entities: FileNode, Tag, MediaMetadata, FileTagAssociation (no Qt/SQLite deps)
 │   ├── application/              # Use cases + Port interfaces (IFileSystemRepository, ITagRepository, IMediaDecoder)
 │   ├── adapters/
-│   │   ├── viewmodels/           # FileTreeViewModel, TagListViewModel, MediaPreviewViewModel,
-│   │   │                         # NavigationHistory, SplitPaneNode, PaneViewModel, TabViewModel,
+│   │   ├── viewmodels/           # NavigationViewModel, NavigationHistory, FileListModel, ViewMode,
+│   │   │                         # TagListViewModel, MediaPreviewViewModel,
+│   │   │                         # SplitPaneNode, PaneViewModel, TabViewModel,
 │   │   │                         # WorkspaceController, WorkspaceLayoutSnapshot (see §14)
 │   │   ├── persistence/          # SQLiteTagRepository, migration scripts, WorkspaceSessionStore (see §14)
 │   │   ├── filesystem/           # StandardFileSystemRepository (std::filesystem + OS trash calls)
 │   │   └── media/                # QtMediaDecoder / FFmpegMediaDecoder, ThumbnailGenerator
 │   ├── ui/
-│   │   ├── widgets/               # MainWindow, TagFilterPanel, dialogs (Qt Widgets, .ui files),
-│   │   │                          # SplitPaneWidget, FileBrowserPaneWidget (see §14)
+│   │   ├── widgets/               # MainWindow, FileBrowserView, FileTileDelegate, TagFilterPanel,
+│   │   │                          # dialogs (Qt Widgets, .ui files), SplitPaneWidget,
+│   │   │                          # FileBrowserPaneWidget (see §14)
 │   │   └── qml/                   # MediaViewer.qml and supporting QML components
 │   └── app/
 │       ├── CompositionRoot.cpp/.h # wires concrete adapters into use cases
@@ -257,7 +278,11 @@ Tabs contain independent split-pane trees (not the reverse — split panes do no
 tag filter panel and the media preview are each a single shared instance, retargeted to whichever
 pane currently has focus, rather than duplicated per pane. The media viewer is a docked preview pane
 bound to the active pane's selection; full-window mode expands it over the whole `MainWindow` rather
-than opening a second window. View mode (tree/grid) is scoped per-pane.
+than opening a second window. View mode is scoped per-pane — see §2.3.1 for the concrete
+`ViewMode` enum (seven modes: icons ×4 sizes, list, details, tiles) and `FileListModel`. That
+state is introduced pre-tabs on `NavigationViewModel` as a stand-in and is expected to move onto
+`PaneViewModel` unchanged once this section is implemented, the same way navigation state itself
+is expected to move.
 
 ### 14.2 Key Architectural Decisions
 
@@ -286,9 +311,10 @@ panes.
 * `SplitPaneNode.h/.cpp` — Composite: abstract `SplitPaneNode`; leaf `PaneNode` (holds a `PaneId`);
   composite `SplitContainerNode` (orientation + ordered children + size ratios). Plain C++ tree, no
   `QWidget`/`QObject` — testable/serializable independent of the widget tree.
-* `PaneViewModel.h/.cpp` — `QObject`; owns one `FileTreeViewModel`/`FileGridViewModel` + one
-  `NavigationHistory` + a `PaneId` + its own view-mode state; exposes
-  `navigateTo/goBack/goForward/goUp`; emits `directoryChanged`, `activated`, `selectionChanged`.
+* `PaneViewModel.h/.cpp` — `QObject`; owns one `FileListModel` + one `NavigationHistory` + a
+  `PaneId` + its own `ViewMode` (moved here from `NavigationViewModel` verbatim, see §2.3.1);
+  exposes `navigateTo/goBack/goForward/goUp`; emits `directoryChanged`, `activated`,
+  `selectionChanged`.
 * `TabViewModel.h/.cpp` — `QObject`; owns the root `SplitPaneNode` for one tab, a title, and
   `activePaneId`; emits `titleChanged`, `layoutChanged`, `activePaneChanged`.
 * `WorkspaceController.h/.cpp` — the Mediator. Owns the ordered `TabViewModel` list + active-tab
