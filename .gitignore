@@ -2,6 +2,8 @@
 .vscode/
 build/
 
+.claude/active_work
+
 CMakeCache.txt
 
 *.log
