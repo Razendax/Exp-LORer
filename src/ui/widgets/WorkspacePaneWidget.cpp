@@ -1,0 +1,330 @@
+#include "WorkspacePaneWidget.h"
+
+#include <algorithm>
+#include <array>
+
+#include <QAction>
+#include <QActionGroup>
+#include <QLineEdit>
+#include <QMenu>
+#include <QStyle>
+#include <QTabWidget>
+#include <QToolBar>
+#include <QToolButton>
+#include <QVBoxLayout>
+
+#include "FileBrowserView.h"
+#include "TabViewModel.h"
+#include "WorkspacePaneViewModel.h"
+
+namespace
+{
+    QString toQString(const std::filesystem::path& path)
+    {
+        return QString::fromStdWString(path.wstring());
+    }
+
+    QString tabLabelFor(const std::filesystem::path& path)
+    {
+        if (path.empty())
+        {
+            return QObject::tr("New tab");
+        }
+
+        const QString name = toQString(path.filename());
+        return name.isEmpty() ? toQString(path) : name;
+    }
+
+    // Order shared with WorkspacePaneWidget::m_viewModeActions: element i of one is the action
+    // for element i of the other. Each pane owns its own QActionGroup/QAction instances, so this
+    // mirrors (rather than shares) MainWindow.cpp's former single toolbar array.
+    constexpr std::array<ViewMode, 7> kViewModes = {
+        ViewMode::ExtraLargeIcons,
+        ViewMode::LargeIcons,
+        ViewMode::MediumIcons,
+        ViewMode::SmallIcons,
+        ViewMode::List,
+        ViewMode::Details,
+        ViewMode::Tiles,
+    };
+
+    QString viewModeLabel(ViewMode mode)
+    {
+        switch (mode)
+        {
+            case ViewMode::ExtraLargeIcons:
+                return QObject::tr("Extra large icons");
+            case ViewMode::LargeIcons:
+                return QObject::tr("Large icons");
+            case ViewMode::MediumIcons:
+                return QObject::tr("Medium icons");
+            case ViewMode::SmallIcons:
+                return QObject::tr("Small icons");
+            case ViewMode::List:
+                return QObject::tr("List");
+            case ViewMode::Details:
+                return QObject::tr("Details");
+            case ViewMode::Tiles:
+                return QObject::tr("Tiles");
+        }
+        return QString();
+    }
+}
+
+WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, QWidget* parent)
+    : QWidget(parent)
+    , m_pane(pane)
+{
+    createViewModeActions();
+    QToolBar* toolBar = createToolBar();
+    createTabArea();
+
+    auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    layout->addWidget(toolBar);
+    layout->addWidget(m_tabWidget);
+
+    connect(m_pane, &WorkspacePaneViewModel::tabAdded, this, &WorkspacePaneWidget::onTabAdded);
+    connect(m_pane, &WorkspacePaneViewModel::tabClosed, this, &WorkspacePaneWidget::onTabClosed);
+    connect(m_pane, &WorkspacePaneViewModel::activeTabChanged, this, &WorkspacePaneWidget::onActiveTabChanged);
+
+    for (int i = 0; i < m_pane->tabCount(); ++i)
+    {
+        addPageForTab(m_pane->tabAt(i), i);
+    }
+
+    if (TabViewModel* active = m_pane->activeTab())
+    {
+        const int index = indexOfTab(active);
+        if (index >= 0)
+        {
+            m_tabWidget->setCurrentIndex(index);
+        }
+        bindToolBarToTab(active);
+    }
+}
+
+void WorkspacePaneWidget::createViewModeActions()
+{
+    m_viewModeActionGroup = new QActionGroup(this);
+    m_viewModeActionGroup->setExclusive(true);
+
+    for (ViewMode mode : kViewModes)
+    {
+        QAction* action = new QAction(viewModeLabel(mode), this);
+        action->setCheckable(true);
+        m_viewModeActionGroup->addAction(action);
+        connect(action, &QAction::triggered, this, [this, mode]() {
+            if (m_boundTab)
+            {
+                m_boundTab->setViewMode(mode);
+            }
+        });
+        m_viewModeActions.append(action);
+    }
+}
+
+QToolBar* WorkspacePaneWidget::createToolBar()
+{
+    auto* toolBar = new QToolBar(this);
+    toolBar->setMovable(false);
+    toolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
+
+    m_backAction = toolBar->addAction(style()->standardIcon(QStyle::SP_ArrowBack), tr("Back"));
+    m_forwardAction = toolBar->addAction(style()->standardIcon(QStyle::SP_ArrowForward), tr("Forward"));
+    m_upAction = toolBar->addAction(style()->standardIcon(QStyle::SP_FileDialogToParent), tr("Up"));
+
+    m_backAction->setEnabled(false);
+    m_forwardAction->setEnabled(false);
+    m_upAction->setEnabled(false);
+
+    auto* viewModeMenu = new QMenu(this);
+    viewModeMenu->addActions(m_viewModeActions);
+
+    auto* viewModeButton = new QToolButton(toolBar);
+    viewModeButton->setPopupMode(QToolButton::InstantPopup);
+    viewModeButton->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    viewModeButton->setToolTip(tr("View"));
+    viewModeButton->setMenu(viewModeMenu);
+    toolBar->addWidget(viewModeButton);
+
+    m_addressBar = new QLineEdit(toolBar);
+    m_addressBar->setClearButtonEnabled(true);
+    toolBar->addWidget(m_addressBar);
+
+    connect(m_backAction, &QAction::triggered, this, [this]() { if (m_boundTab) m_boundTab->goBack(); });
+    connect(m_forwardAction, &QAction::triggered, this, [this]() { if (m_boundTab) m_boundTab->goForward(); });
+    connect(m_upAction, &QAction::triggered, this, [this]() { if (m_boundTab) m_boundTab->goUp(); });
+    connect(m_addressBar, &QLineEdit::returnPressed, this, &WorkspacePaneWidget::onAddressBarEdited);
+
+    return toolBar;
+}
+
+void WorkspacePaneWidget::createTabArea()
+{
+    m_tabWidget = new QTabWidget(this);
+    m_tabWidget->setTabsClosable(true);
+    m_tabWidget->setMovable(false);
+
+    auto* newTabButton = new QToolButton(m_tabWidget);
+    newTabButton->setText(QStringLiteral("+"));
+    newTabButton->setToolTip(tr("New tab"));
+    connect(newTabButton, &QToolButton::clicked, this, &WorkspacePaneWidget::onNewTabRequested);
+    m_tabWidget->setCornerWidget(newTabButton, Qt::TopRightCorner);
+
+    connect(m_tabWidget, &QTabWidget::currentChanged, this, &WorkspacePaneWidget::onTabWidgetCurrentChanged);
+    connect(m_tabWidget, &QTabWidget::tabCloseRequested, m_pane, &WorkspacePaneViewModel::closeTab);
+}
+
+void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
+{
+    auto* browserView = new FileBrowserView(tab->fileListModel(), m_tabWidget);
+    browserView->setViewMode(tab->viewMode());
+
+    m_tabWidget->insertTab(index, browserView, tabLabelFor(tab->currentPath()));
+
+    connect(tab, &TabViewModel::currentPathChanged, this, [this, tab](const std::filesystem::path& path) {
+        const int idx = indexOfTab(tab);
+        if (idx >= 0)
+        {
+            m_tabWidget->setTabText(idx, tabLabelFor(path));
+        }
+    });
+
+    connect(browserView, &FileBrowserView::itemActivated, tab, [tab](const std::filesystem::path& path, bool isDirectory) {
+        if (isDirectory)
+        {
+            tab->navigateTo(path);
+        }
+    });
+}
+
+void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
+{
+    if (m_boundTab)
+    {
+        disconnect(m_boundTab, &TabViewModel::currentPathChanged, this, &WorkspacePaneWidget::onCurrentPathChanged);
+        disconnect(m_boundTab, &TabViewModel::backAvailableChanged, m_backAction, &QAction::setEnabled);
+        disconnect(m_boundTab, &TabViewModel::forwardAvailableChanged, m_forwardAction, &QAction::setEnabled);
+        disconnect(m_boundTab, &TabViewModel::upAvailableChanged, m_upAction, &QAction::setEnabled);
+        disconnect(m_boundTab, &TabViewModel::navigationFailed, this, &WorkspacePaneWidget::onNavigationFailed);
+        disconnect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged);
+    }
+
+    m_boundTab = tab;
+
+    if (!m_boundTab)
+    {
+        m_backAction->setEnabled(false);
+        m_forwardAction->setEnabled(false);
+        m_upAction->setEnabled(false);
+        m_addressBar->clear();
+        return;
+    }
+
+    connect(m_boundTab, &TabViewModel::currentPathChanged, this, &WorkspacePaneWidget::onCurrentPathChanged);
+    connect(m_boundTab, &TabViewModel::backAvailableChanged, m_backAction, &QAction::setEnabled);
+    connect(m_boundTab, &TabViewModel::forwardAvailableChanged, m_forwardAction, &QAction::setEnabled);
+    connect(m_boundTab, &TabViewModel::upAvailableChanged, m_upAction, &QAction::setEnabled);
+    connect(m_boundTab, &TabViewModel::navigationFailed, this, &WorkspacePaneWidget::onNavigationFailed);
+    connect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged);
+
+    m_addressBar->setText(toQString(m_boundTab->currentPath()));
+    onViewModeChanged(m_boundTab->viewMode());
+}
+
+int WorkspacePaneWidget::indexOfTab(TabViewModel* tab) const
+{
+    for (int i = 0; i < m_pane->tabCount(); ++i)
+    {
+        if (m_pane->tabAt(i) == tab)
+        {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void WorkspacePaneWidget::onTabAdded(int index)
+{
+    addPageForTab(m_pane->tabAt(index), index);
+}
+
+void WorkspacePaneWidget::onTabClosed(int index)
+{
+    QWidget* page = m_tabWidget->widget(index);
+    m_tabWidget->removeTab(index);
+    delete page;
+}
+
+void WorkspacePaneWidget::onActiveTabChanged(int index)
+{
+    if (m_tabWidget->currentIndex() != index)
+    {
+        m_tabWidget->setCurrentIndex(index);
+    }
+    bindToolBarToTab(m_pane->tabAt(index));
+}
+
+void WorkspacePaneWidget::onTabWidgetCurrentChanged(int index)
+{
+    if (index < 0)
+    {
+        return;
+    }
+    m_pane->setActiveTab(index);
+}
+
+void WorkspacePaneWidget::onNewTabRequested()
+{
+    const auto seedPath = m_pane->activeTab() ? m_pane->activeTab()->currentPath() : std::filesystem::path();
+
+    TabViewModel* tab = m_pane->addTab();
+    if (!seedPath.empty())
+    {
+        tab->navigateTo(seedPath);
+    }
+}
+
+void WorkspacePaneWidget::onCurrentPathChanged(const std::filesystem::path& path)
+{
+    m_addressBar->setText(toQString(path));
+}
+
+void WorkspacePaneWidget::onAddressBarEdited()
+{
+    if (m_boundTab)
+    {
+        m_boundTab->navigateTo(std::filesystem::path(m_addressBar->text().toStdWString()));
+    }
+}
+
+void WorkspacePaneWidget::onNavigationFailed(const std::filesystem::path& path, const QString& message)
+{
+    Q_UNUSED(path);
+
+    if (m_boundTab)
+    {
+        m_addressBar->setText(toQString(m_boundTab->currentPath()));
+    }
+
+    emit navigationFailed(message);
+}
+
+void WorkspacePaneWidget::onViewModeChanged(ViewMode mode)
+{
+    if (QWidget* page = m_tabWidget->currentWidget())
+    {
+        static_cast<FileBrowserView*>(page)->setViewMode(mode);
+    }
+
+    const auto it = std::find(kViewModes.begin(), kViewModes.end(), mode);
+    if (it == kViewModes.end())
+    {
+        return;
+    }
+
+    const auto index = std::distance(kViewModes.begin(), it);
+    m_viewModeActions[static_cast<int>(index)]->setChecked(true);
+}

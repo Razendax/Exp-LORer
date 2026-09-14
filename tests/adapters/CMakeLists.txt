@@ -1,6 +1,7 @@
 add_executable(explorer_adapters_tests
     NavigationHistoryTest.cpp
     StandardFileSystemRepositoryTest.cpp
+    WorkspaceLayoutTopologyTest.cpp
 )
 
 target_link_libraries(explorer_adapters_tests PRIVATE

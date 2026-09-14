@@ -9,9 +9,10 @@
 #include "FileNode.h"
 
 // Qt-facing model wrapping directory-listing results (FileNode lists) supplied by
-// NavigationViewModel. A single shared model feeds both QListView (icon/list/tiles view modes,
-// which only read column 0) and QTreeView (details view mode, all columns) — Architecture.md
-// §2.3.1. This supersedes the earlier two-ViewModel (FileTreeViewModel/FileGridViewModel) sketch.
+// TabViewModel, which owns one instance per tab. Feeds both QListView (icon/list/tiles view
+// modes, which only read column 0) and QTreeView (details view mode, all columns) —
+// Architecture.md §2.3.1. This supersedes the earlier two-ViewModel
+// (FileTreeViewModel/FileGridViewModel) sketch.
 class FileListModel : public QAbstractTableModel
 {
     Q_OBJECT

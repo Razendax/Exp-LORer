@@ -28,7 +28,7 @@ public:
 
 signals:
     // Emitted on double-click/Enter on a row; isDirectory decides whether MainWindow forwards
-    // this to NavigationViewModel::navigateTo (file activation is out of scope, no viewer yet).
+    // this to TabViewModel::navigateTo (file activation is out of scope, no viewer yet).
     void itemActivated(const std::filesystem::path& path, bool isDirectory);
 
 private:

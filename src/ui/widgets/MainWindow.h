@@ -1,55 +1,41 @@
 #pragma once
 
-#include <filesystem>
-
 #include <QList>
 #include <QMainWindow>
 
-#include "ViewMode.h"
+#include "SplitLayout.h"
 
-class QTabWidget;
-class QLineEdit;
 class QAction;
 class QActionGroup;
-class NavigationViewModel;
-class FileListModel;
-class FileBrowserView;
+class WorkspaceController;
+class WorkspaceLayoutWidget;
 
-// Application shell: menu bar, navigation toolbar (back/forward/up + view-mode dropdown +
-// address bar, bound to NavigationViewModel), and a tab area holding a FileBrowserView per tab
-// (currently a single implicit tab).
+// Application shell: menu bar (File/Edit/View/Favorites/Tools/Help), a small Layout toolbar, and
+// a WorkspaceLayoutWidget as central widget hosting up to 4 independent WorkspacePaneWidget
+// mini-browsers per the active SplitLayout (Architecture.md §14). Each pane owns its own
+// tabs/navigation toolbar/view mode — MainWindow itself no longer holds any of that state.
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
 
 public:
-    explicit MainWindow(NavigationViewModel* navigationViewModel, QWidget* parent = nullptr);
+    explicit MainWindow(WorkspaceController* workspaceController, QWidget* parent = nullptr);
 
 private:
-    void createViewModeActions();
+    void createLayoutActions();
     void createMenuBar();
-    void createNavigationToolBar();
-    void createTabArea();
+    void createLayoutToolBar();
+    void createWorkspace();
 
-    void onCurrentPathChanged(const std::filesystem::path& path);
-    void onAddressBarEdited();
-    void onNavigationFailed(const std::filesystem::path& path, const QString& message);
-    void onViewModeChanged(ViewMode mode);
-    void onItemActivated(const std::filesystem::path& path, bool isDirectory);
+    void onLayoutChanged(SplitLayout layout);
+    void onNavigationFailed(const QString& message);
 
-    NavigationViewModel* m_navigationViewModel = nullptr;
-    FileListModel* m_fileListModel = nullptr;
-    FileBrowserView* m_fileBrowserView = nullptr;
+    WorkspaceController* m_workspaceController = nullptr;
+    WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
 
-    QTabWidget* m_tabWidget = nullptr;
-    QLineEdit* m_addressBar = nullptr;
-    QAction* m_backAction = nullptr;
-    QAction* m_forwardAction = nullptr;
-    QAction* m_upAction = nullptr;
-
-    // One QAction per ViewMode (same order as the anonymous-namespace kViewModes array in the
-    // .cpp), shared verbatim between the toolbar dropdown and the &View menu so both stay in
-    // sync automatically.
-    QActionGroup* m_viewModeActionGroup = nullptr;
-    QList<QAction*> m_viewModeActions;
+    // One QAction per SplitLayout (same order as the anonymous-namespace kLayouts array in the
+    // .cpp), shared verbatim between the "Layout" toolbar and the View > Layout submenu so both
+    // stay in sync automatically.
+    QActionGroup* m_layoutActionGroup = nullptr;
+    QList<QAction*> m_layoutActions;
 };

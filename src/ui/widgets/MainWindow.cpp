@@ -5,98 +5,80 @@
 
 #include <QAction>
 #include <QActionGroup>
-#include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
 #include <QStatusBar>
-#include <QStyle>
-#include <QTabWidget>
 #include <QToolBar>
-#include <QToolButton>
-#include <QWidget>
 
-#include "FileBrowserView.h"
-#include "FileListModel.h"
-#include "NavigationViewModel.h"
+#include "WorkspaceController.h"
+#include "WorkspaceLayoutWidget.h"
+#include "WorkspacePaneId.h"
+#include "WorkspacePaneWidget.h"
 
 namespace
 {
-    QString toQString(const std::filesystem::path& path)
-    {
-        return QString::fromStdWString(path.wstring());
-    }
-
-    // Order shared with MainWindow::m_viewModeActions: element i of one is the action for
-    // element i of the other.
-    constexpr std::array<ViewMode, 7> kViewModes = {
-        ViewMode::ExtraLargeIcons,
-        ViewMode::LargeIcons,
-        ViewMode::MediumIcons,
-        ViewMode::SmallIcons,
-        ViewMode::List,
-        ViewMode::Details,
-        ViewMode::Tiles,
+    // Order shared with MainWindow::m_layoutActions: element i of one is the action for element
+    // i of the other.
+    constexpr std::array<SplitLayout, 4> kLayouts = {
+        SplitLayout::Single,
+        SplitLayout::TwoVertical,
+        SplitLayout::TwoHorizontal,
+        SplitLayout::FourGrid,
     };
 
-    QString viewModeLabel(ViewMode mode)
+    constexpr std::array<WorkspacePaneId, 4> kAllPanes = {
+        WorkspacePaneId::PaneA,
+        WorkspacePaneId::PaneB,
+        WorkspacePaneId::PaneC,
+        WorkspacePaneId::PaneD,
+    };
+
+    QString layoutLabel(SplitLayout layout)
     {
-        switch (mode)
+        switch (layout)
         {
-            case ViewMode::ExtraLargeIcons:
-                return QObject::tr("Extra large icons");
-            case ViewMode::LargeIcons:
-                return QObject::tr("Large icons");
-            case ViewMode::MediumIcons:
-                return QObject::tr("Medium icons");
-            case ViewMode::SmallIcons:
-                return QObject::tr("Small icons");
-            case ViewMode::List:
-                return QObject::tr("List");
-            case ViewMode::Details:
-                return QObject::tr("Details");
-            case ViewMode::Tiles:
-                return QObject::tr("Tiles");
+            case SplitLayout::Single:
+                return QObject::tr("Single");
+            case SplitLayout::TwoVertical:
+                return QObject::tr("Split vertically");
+            case SplitLayout::TwoHorizontal:
+                return QObject::tr("Split horizontally");
+            case SplitLayout::FourGrid:
+                return QObject::tr("4-pane grid");
         }
         return QString();
     }
 }
 
-MainWindow::MainWindow(NavigationViewModel* navigationViewModel, QWidget* parent)
+MainWindow::MainWindow(WorkspaceController* workspaceController, QWidget* parent)
     : QMainWindow(parent)
-    , m_navigationViewModel(navigationViewModel)
+    , m_workspaceController(workspaceController)
 {
     setWindowTitle(tr("Exp-LORer"));
     resize(1024, 768);
 
-    createViewModeActions();
+    createLayoutActions();
     createMenuBar();
-    createNavigationToolBar();
-    createTabArea();
+    createLayoutToolBar();
+    createWorkspace();
 
-    connect(m_navigationViewModel, &NavigationViewModel::currentPathChanged, this, &MainWindow::onCurrentPathChanged);
-    connect(m_navigationViewModel, &NavigationViewModel::directoryContentsChanged, m_fileListModel, &FileListModel::setEntries);
-    connect(m_navigationViewModel, &NavigationViewModel::backAvailableChanged, m_backAction, &QAction::setEnabled);
-    connect(m_navigationViewModel, &NavigationViewModel::forwardAvailableChanged, m_forwardAction, &QAction::setEnabled);
-    connect(m_navigationViewModel, &NavigationViewModel::upAvailableChanged, m_upAction, &QAction::setEnabled);
-    connect(m_navigationViewModel, &NavigationViewModel::navigationFailed, this, &MainWindow::onNavigationFailed);
-    connect(m_navigationViewModel, &NavigationViewModel::viewModeChanged, this, &MainWindow::onViewModeChanged);
-    connect(m_fileBrowserView, &FileBrowserView::itemActivated, this, &MainWindow::onItemActivated);
+    connect(m_workspaceController, &WorkspaceController::layoutChanged, this, &MainWindow::onLayoutChanged);
 
-    onViewModeChanged(m_navigationViewModel->viewMode());
+    onLayoutChanged(m_workspaceController->layout());
 }
 
-void MainWindow::createViewModeActions()
+void MainWindow::createLayoutActions()
 {
-    m_viewModeActionGroup = new QActionGroup(this);
-    m_viewModeActionGroup->setExclusive(true);
+    m_layoutActionGroup = new QActionGroup(this);
+    m_layoutActionGroup->setExclusive(true);
 
-    for (ViewMode mode : kViewModes)
+    for (SplitLayout layout : kLayouts)
     {
-        QAction* action = new QAction(viewModeLabel(mode), this);
+        QAction* action = new QAction(layoutLabel(layout), this);
         action->setCheckable(true);
-        m_viewModeActionGroup->addAction(action);
-        connect(action, &QAction::triggered, this, [this, mode]() { m_navigationViewModel->setViewMode(mode); });
-        m_viewModeActions.append(action);
+        m_layoutActionGroup->addAction(action);
+        connect(action, &QAction::triggered, this, [this, layout]() { m_workspaceController->setLayout(layout); });
+        m_layoutActions.append(action);
     }
 }
 
@@ -108,101 +90,46 @@ void MainWindow::createMenuBar()
     menuBar()->addMenu(tr("&Edit"));
 
     QMenu* viewMenu = menuBar()->addMenu(tr("&View"));
-    viewMenu->addActions(m_viewModeActions);
+    QMenu* layoutMenu = viewMenu->addMenu(tr("&Layout"));
+    layoutMenu->addActions(m_layoutActions);
 
     menuBar()->addMenu(tr("F&avorites"));
     menuBar()->addMenu(tr("&Tools"));
     menuBar()->addMenu(tr("&Help"));
 }
 
-void MainWindow::createNavigationToolBar()
+void MainWindow::createLayoutToolBar()
 {
-    QToolBar* toolBar = addToolBar(tr("Navigation"));
+    QToolBar* toolBar = addToolBar(tr("Layout"));
     toolBar->setMovable(false);
-    toolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
-
-    m_backAction = toolBar->addAction(style()->standardIcon(QStyle::SP_ArrowBack), tr("Back"));
-    m_forwardAction = toolBar->addAction(style()->standardIcon(QStyle::SP_ArrowForward), tr("Forward"));
-    m_upAction = toolBar->addAction(style()->standardIcon(QStyle::SP_FileDialogToParent), tr("Up"));
-
-    m_backAction->setEnabled(false);
-    m_forwardAction->setEnabled(false);
-    m_upAction->setEnabled(false);
-
-    auto* viewModeMenu = new QMenu(this);
-    viewModeMenu->addActions(m_viewModeActions);
-
-    auto* viewModeButton = new QToolButton(toolBar);
-    viewModeButton->setPopupMode(QToolButton::InstantPopup);
-    viewModeButton->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
-    viewModeButton->setToolTip(tr("View"));
-    viewModeButton->setMenu(viewModeMenu);
-    toolBar->addWidget(viewModeButton);
-
-    m_addressBar = new QLineEdit(toolBar);
-    m_addressBar->setClearButtonEnabled(true);
-    toolBar->addWidget(m_addressBar);
-
-    toolBar->addAction(style()->standardIcon(QStyle::SP_BrowserReload), tr("Refresh"));
-
-    connect(m_backAction, &QAction::triggered, m_navigationViewModel, &NavigationViewModel::goBack);
-    connect(m_forwardAction, &QAction::triggered, m_navigationViewModel, &NavigationViewModel::goForward);
-    connect(m_upAction, &QAction::triggered, m_navigationViewModel, &NavigationViewModel::goUp);
-    connect(m_addressBar, &QLineEdit::returnPressed, this, &MainWindow::onAddressBarEdited);
+    toolBar->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    toolBar->addActions(m_layoutActions);
 }
 
-void MainWindow::createTabArea()
+void MainWindow::createWorkspace()
 {
-    m_tabWidget = new QTabWidget(this);
-    m_tabWidget->setTabsClosable(false);
-    m_tabWidget->setMovable(false);
+    m_workspaceLayoutWidget = new WorkspaceLayoutWidget(m_workspaceController, this);
+    setCentralWidget(m_workspaceLayoutWidget);
 
-    m_fileListModel = new FileListModel(this);
-    m_fileBrowserView = new FileBrowserView(m_fileListModel, m_tabWidget);
-
-    m_tabWidget->addTab(m_fileBrowserView, tr("This PC"));
-
-    setCentralWidget(m_tabWidget);
+    for (WorkspacePaneId id : kAllPanes)
+    {
+        connect(m_workspaceLayoutWidget->paneWidget(id), &WorkspacePaneWidget::navigationFailed, this, &MainWindow::onNavigationFailed);
+    }
 }
 
-void MainWindow::onCurrentPathChanged(const std::filesystem::path& path)
+void MainWindow::onLayoutChanged(SplitLayout layout)
 {
-    m_addressBar->setText(toQString(path));
+    const auto it = std::find(kLayouts.begin(), kLayouts.end(), layout);
+    if (it == kLayouts.end())
+    {
+        return;
+    }
+
+    const auto index = std::distance(kLayouts.begin(), it);
+    m_layoutActions[static_cast<int>(index)]->setChecked(true);
 }
 
-void MainWindow::onAddressBarEdited()
+void MainWindow::onNavigationFailed(const QString& message)
 {
-    m_navigationViewModel->navigateTo(std::filesystem::path(m_addressBar->text().toStdWString()));
-}
-
-void MainWindow::onNavigationFailed(const std::filesystem::path& path, const QString& message)
-{
-    Q_UNUSED(path);
-
     statusBar()->showMessage(message, 5000);
-    m_addressBar->setText(toQString(m_navigationViewModel->currentPath()));
-}
-
-void MainWindow::onViewModeChanged(ViewMode mode)
-{
-    m_fileBrowserView->setViewMode(mode);
-
-    const auto it = std::find(kViewModes.begin(), kViewModes.end(), mode);
-    if (it == kViewModes.end())
-    {
-        return;
-    }
-
-    const auto index = std::distance(kViewModes.begin(), it);
-    m_viewModeActions[static_cast<int>(index)]->setChecked(true);
-}
-
-void MainWindow::onItemActivated(const std::filesystem::path& path, bool isDirectory)
-{
-    if (!isDirectory)
-    {
-        return;
-    }
-
-    m_navigationViewModel->navigateTo(path);
 }

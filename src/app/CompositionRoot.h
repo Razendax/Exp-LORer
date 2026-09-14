@@ -4,8 +4,11 @@
 
 #include "FileNavigationUseCase.h"
 #include "StandardFileSystemRepository.h"
+#include "WorkspacePaneId.h"
 
-class NavigationViewModel;
+class TabViewModel;
+class WorkspacePaneViewModel;
+class WorkspaceController;
 
 // Wires concrete adapters/repositories into use cases via constructor injection. Owns the shared
 // adapter/use-case instances; ViewModels are created only through its factory methods
@@ -16,7 +19,9 @@ public:
     CompositionRoot();
     ~CompositionRoot();
 
-    std::unique_ptr<NavigationViewModel> createNavigationViewModel();
+    std::unique_ptr<TabViewModel> createTabViewModel();
+    std::unique_ptr<WorkspacePaneViewModel> createWorkspacePaneViewModel(WorkspacePaneId id);
+    std::unique_ptr<WorkspaceController> createWorkspaceController();
 
 private:
     StandardFileSystemRepository m_fileSystemRepository;

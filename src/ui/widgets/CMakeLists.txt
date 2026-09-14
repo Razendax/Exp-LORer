@@ -5,6 +5,10 @@ add_library(explorer_ui_widgets STATIC
     FileBrowserView.cpp
     FileTileDelegate.h
     FileTileDelegate.cpp
+    WorkspacePaneWidget.h
+    WorkspacePaneWidget.cpp
+    WorkspaceLayoutWidget.h
+    WorkspaceLayoutWidget.cpp
 )
 
 target_include_directories(explorer_ui_widgets PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

@@ -19,8 +19,8 @@ private:
     std::filesystem::path m_path;
 };
 
-// Per-pane back/forward navigation stack. Bookkeeping only: it never touches disk, and does not
-// re-validate paths itself (Architecture.md §14.6) — callers (e.g. NavigationViewModel) are
+// Per-tab back/forward navigation stack. Bookkeeping only: it never touches disk, and does not
+// re-validate paths itself (Architecture.md §14.6) — callers (e.g. TabViewModel) are
 // expected to validate a path before recording it via navigate().
 class NavigationHistory
 {

@@ -11,20 +11,22 @@
 #include "ViewMode.h"
 
 class FileNavigationUseCase;
+class FileListModel;
 
-// Binds address-bar/navigation-toolbar UI to FileNavigationUseCase and NavigationHistory. A
-// precursor to the PaneViewModel described in Architecture.md §14.3 — once multi-tab/split-pane
-// support lands, this behavior is absorbed into PaneViewModel rather than kept standalone. View
-// mode (Architecture.md §2.3.1, §14.1) is held here for the same reason.
-class NavigationViewModel : public QObject
+// Binds address-bar/navigation-toolbar UI to FileNavigationUseCase and NavigationHistory for a
+// single tab. Owns the FileListModel that backs that tab's FileBrowserView, wiring
+// directoryContentsChanged -> FileListModel::setEntries internally so callers don't have to.
+// Per-tab content ViewModel owned by WorkspacePaneViewModel (Architecture.md §14).
+class TabViewModel : public QObject
 {
     Q_OBJECT
 
 public:
-    explicit NavigationViewModel(FileNavigationUseCase& fileNavigationUseCase, QObject* parent = nullptr);
+    explicit TabViewModel(FileNavigationUseCase& fileNavigationUseCase, QObject* parent = nullptr);
 
     std::filesystem::path currentPath() const;
     ViewMode viewMode() const noexcept { return m_viewMode; }
+    FileListModel* fileListModel() const noexcept { return m_fileListModel; }
 
 public slots:
     // Validates the path via FileNavigationUseCase before recording it in history ("safe
@@ -66,4 +68,5 @@ private:
     FileNavigationUseCase& m_fileNavigationUseCase;
     NavigationHistory m_history;
     ViewMode m_viewMode = ViewMode::Details;
+    FileListModel* m_fileListModel = nullptr;
 };

@@ -1,24 +1,27 @@
-#include "NavigationViewModel.h"
+#include "TabViewModel.h"
 
+#include "FileListModel.h"
 #include "FileNavigationUseCase.h"
 
-NavigationViewModel::NavigationViewModel(FileNavigationUseCase& fileNavigationUseCase, QObject* parent)
+TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
+    , m_fileListModel(new FileListModel(this))
 {
+    connect(this, &TabViewModel::directoryContentsChanged, m_fileListModel, &FileListModel::setEntries);
 }
 
-std::filesystem::path NavigationViewModel::currentPath() const
+std::filesystem::path TabViewModel::currentPath() const
 {
     return m_history.current().value_or(std::filesystem::path());
 }
 
-void NavigationViewModel::navigateTo(const std::filesystem::path& path)
+void TabViewModel::navigateTo(const std::filesystem::path& path)
 {
     loadAndApply(path, true);
 }
 
-void NavigationViewModel::goUp()
+void TabViewModel::goUp()
 {
     const auto current = m_history.current();
     if (!current)
@@ -35,7 +38,7 @@ void NavigationViewModel::goUp()
     navigateTo(parent);
 }
 
-void NavigationViewModel::goBack()
+void TabViewModel::goBack()
 {
     const auto path = m_history.goBack();
     if (!path)
@@ -46,7 +49,7 @@ void NavigationViewModel::goBack()
     loadAndApply(*path, false);
 }
 
-void NavigationViewModel::goForward()
+void TabViewModel::goForward()
 {
     const auto path = m_history.goForward();
     if (!path)
@@ -57,7 +60,7 @@ void NavigationViewModel::goForward()
     loadAndApply(*path, false);
 }
 
-void NavigationViewModel::setViewMode(ViewMode mode)
+void TabViewModel::setViewMode(ViewMode mode)
 {
     if (mode == m_viewMode)
     {
@@ -68,7 +71,7 @@ void NavigationViewModel::setViewMode(ViewMode mode)
     emit viewModeChanged(mode);
 }
 
-void NavigationViewModel::loadAndApply(const std::filesystem::path& path, bool recordHistory)
+void TabViewModel::loadAndApply(const std::filesystem::path& path, bool recordHistory)
 {
     auto result = m_fileNavigationUseCase.listDirectory(path);
     if (result.hasError())
@@ -87,7 +90,7 @@ void NavigationViewModel::loadAndApply(const std::filesystem::path& path, bool r
     emitAvailability();
 }
 
-void NavigationViewModel::emitAvailability()
+void TabViewModel::emitAvailability()
 {
     emit backAvailableChanged(m_history.canGoBack());
     emit forwardAvailableChanged(m_history.canGoForward());
