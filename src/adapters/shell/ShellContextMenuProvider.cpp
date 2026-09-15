@@ -15,27 +15,19 @@ namespace
     namespace fs = std::filesystem;
 
 #ifdef _WIN32
-    // Offset range existing for the duration of one popup. Used by QueryContextMenu/TrackPopupMenuEx
-    // Shell or other extensions insert their items into this range and return offsets within it.
-    // 0 is reserved by TrackPopupMenuEx to mean "menu was cancelled".
+    // Command id range for one popup; shell/extensions return offsets in this range from QueryContextMenu.
+    // 0 is reserved by TrackPopupMenuEx to mean "cancelled".
     constexpr UINT kCommandFirst = 1;
     constexpr UINT kCommandLast = 0x7FFF;
 
-    // IContextMenu - is interface QueryContextMenu/InvokeCommand live on and is all every shell context menu MUST to implement.
-    // IContextMenu2 - adds HandleMenuMsg (needed once a menu can contain owner-drawn items — icons, 
-    // separators, cascading submenus — because the WM_MEASUREITEM/WM_DRAWITEM/etc. messages Windows sends 
-    // for those must be routed back into the COM object that owns the menu). 
-    // IContextMenu3 - is the same idea with an extra out-parameter (HandleMenuMsg2) so the object can report a message result
-    // (needed for WM_MENUCHAR's mnemonic-key handling). 
-    // Not every shell extension implements the newer interfaces, so the best one available used, falling back to
-    // "handle nothing" if neither is present (menus without owner-drawn/extension items still work fine with no handler installed at all).
+    // IContextMenu2/3 add HandleMenuMsg(2), needed to route WM_MEASUREITEM/WM_DRAWITEM/WM_MENUCHAR
+    // for owner-drawn items back into the shell object. Not all extensions implement them, so we use
+    // the best one available and install no handler if neither is present.
     //
-    // This class exists because those HandleMenuMsg(2) calls have to happen for messages that
-    // arrive *while TrackPopupMenuEx is blocked pumping its own private message loop* — those messages never reach Qt's normal event loop,
-    // so regular QObject::event()/QWidget::nativeEvent() override would never see them.
-    // QAbstractNativeEventFilter is Qt's hook for intercepting *every* native (Win32) message
-    // before Qt's dispatcher touches it, including ones delivered inside a nested loop.
-    // It's installed only for the duration of one popup (see runContextMenu) and removed immediately after.
+    // TrackPopupMenuEx pumps its own private message loop while blocked, so those messages never
+    // reach Qt's normal event loop / nativeEvent(). QAbstractNativeEventFilter intercepts native
+    // messages before Qt's dispatcher does, including inside nested loops — installed for the
+    // duration of one popup only (see runContextMenu).
     class ContextMenuMessageFilter : public QAbstractNativeEventFilter
     {
     public:
@@ -45,10 +37,8 @@ namespace
         {
         }
 
-        // Called by Qt for every native message on every thread with an event dispatcher, before Qt itself processes it.
-        // eventType distinguishes which native message format this is
-        // ("windows_generic_MSG" on Windows, others on other platforms) — this file only runs on
-        // Windows, so message is always safe to treat as a Win32 MSG*.
+        // Called by Qt before it processes each native message. This file is Windows-only, so
+        // message is always a Win32 MSG*.
         bool nativeEventFilter(const QByteArray& eventType, void* message, qintptr* result) override
         {
             Q_UNUSED(eventType);
@@ -59,28 +49,24 @@ namespace
             }
 
             auto* msg = static_cast<MSG*>(message);
-            // The four messages Windows sends to the *owner* window for an owner-drawn popup menu:
-            // - WM_INITMENUPOPUP (a submenu is about to open — lets shell extensions lazily populate cascading submenus like "Send to"),
-            // - WM_MEASUREITEM/WM_DRAWITEM (owner-draw sizing/painting, e.g. for icons next to entries),
-            // - WM_MENUCHAR (an Alt+letter mnemonic was pressed that doesn't match any item, giving the menu owner a chance to resolve it).
-            // - Anything else is left for Qt to handle normally.
+            // Owner-drawn popup menu messages: WM_INITMENUPOPUP (submenu about to open, e.g. lazy
+            // "Send to" population), WM_MEASUREITEM/WM_DRAWITEM (icon sizing/painting), WM_MENUCHAR
+            // (unmatched Alt+letter mnemonic). Everything else goes to Qt as normal.
             if (msg->message != WM_INITMENUPOPUP && msg->message != WM_MEASUREITEM && msg->message != WM_DRAWITEM
                 && msg->message != WM_MENUCHAR)
             {
                 return false;
             }
 
-            // Prefer IContextMenu3::HandleMenuMsg2 (reports a result via the out-param, needed
-            // for WM_MENUCHAR to say which item it resolved to);
-            // Fall back to the older IContextMenu2::HandleMenuMsg, which handles the message but never reports a result.
+            // Prefer HandleMenuMsg2 (IContextMenu3): it reports a result, needed for WM_MENUCHAR.
+            // Falls back to HandleMenuMsg (IContextMenu2), which has no result out-param.
             LRESULT lresult = 0;
             const HRESULT hr = m_contextMenu3
                 ? m_contextMenu3->HandleMenuMsg2(msg->message, msg->wParam, msg->lParam, &lresult)
                 : m_contextMenu2->HandleMenuMsg(msg->message, msg->wParam, msg->lParam);
             if (FAILED(hr))
             {
-                // The shell/extension didn't want this particular message; returning false here
-                // lets Qt's own dispatcher process it instead of swallowing it silently.
+                // Not handled by the shell/extension — let Qt's dispatcher process it instead.
                 return false;
             }
 
@@ -96,21 +82,15 @@ namespace
         IContextMenu3* m_contextMenu3 = nullptr;
     };
 
-    // Shared by both entry points once an IContextMenu has been resolved (from GetUIObjectOf for
-    // a file/folder selection, or CreateViewObject for empty-space-in-a-folder.
-    // Builds the actual popup HMENU, shows it, and invokes whatever the user picked. 
-    // Cancelling the menu (TrackPopupMenuEx returns 0 with no command)
-    // Always takes ownership of (and releases) contextMenu, regardless of outcome.
+    // Shared by both entry points once an IContextMenu is resolved (GetUIObjectOf for a selection,
+    // CreateViewObject for empty folder space): builds the popup HMENU, shows it, invokes the chosen
+    // command. Always takes ownership of (and releases) contextMenu, regardless of outcome.
     Result<void> runContextMenu(IContextMenu* contextMenu, NativeScreenPoint screenPosition, NativeWindowHandle ownerWindow)
     {
         auto* ownerHwnd = static_cast<HWND>(ownerWindow);
 
-        // QueryInterface is COM's "ask this object if it also implements a different interface" call.
-        // Trying IContextMenu3 first and only falling back to IContextMenu2 mirrors the versioning note
-        // on ContextMenuMessageFilter above: 
-        //    newer/better interface if present, otherwise the older one,
-        //    otherwise no owner-draw message routing at all (leaves *ContextMenu2/3
-        //    nullptr, which ContextMenuMessageFilter treats as "nothing to forward to").
+        // Try IContextMenu3 first, fall back to IContextMenu2 (see ContextMenuMessageFilter above).
+        // Both left null if neither is supported — the filter treats that as "nothing to forward".
         IContextMenu2* contextMenu2 = nullptr;
         IContextMenu3* contextMenu3 = nullptr;
         contextMenu->QueryInterface(IID_IContextMenu3, reinterpret_cast<void**>(&contextMenu3));
@@ -119,7 +99,6 @@ namespace
             contextMenu->QueryInterface(IID_IContextMenu2, reinterpret_cast<void**>(&contextMenu2));
         }
 
-        // CreatePopupMenu makes an empty native Win32 menu handle (HMENU) — just a container at this point; 
         HMENU popupMenu = CreatePopupMenu();
         if (!popupMenu)
         {
@@ -129,11 +108,8 @@ namespace
             return Result<void>::failure(Error(ErrorCode::IoError, "Failed to create a popup menu"));
         }
 
-        // QueryContextMenu fills popupMenu in with the shell's items.
-        // Asks the shell (and any registered shell extensions for this item/folder ) to populate
-        // popupMenu with their entries, at menu position 0 (top), using command ids in
-        // [kCommandFirst, kCommandLast]. CMF_NORMAL is the same flag set Explorer itself uses for
-        // an ordinary right-click (as opposed to e.g. CMF_EXPLORE or a Shift-held "extended" menu variant)
+        // Asks the shell and its extensions to populate popupMenu with entries using ids in
+        // [kCommandFirst, kCommandLast]. CMF_NORMAL matches Explorer's ordinary right-click.
         HRESULT hr = contextMenu->QueryContextMenu(popupMenu, 0, kCommandFirst, kCommandLast, CMF_NORMAL);
         if (FAILED(hr))
         {
@@ -147,17 +123,22 @@ namespace
         // Installed only around the call that actually pumps messages (TrackPopupMenuEx below);
         // see the long comment on ContextMenuMessageFilter for why this is necessary at all.
         ContextMenuMessageFilter filter(contextMenu2, contextMenu3);
-        QAbstractEventDispatcher::instance()->installNativeEventFilter(&filter);
+        QAbstractEventDispatcher* dispatcher = QAbstractEventDispatcher::instance();
+        if (dispatcher)
+        {
+            dispatcher->installNativeEventFilter(&filter);
+        }
 
-        // TrackPopupMenuEx - show popup menu at a screen position.
-        // Blocks calling thread until menu closes, running internal message loop (reason why QAbstractNativeEventFilter is needed).
-        // TPM_RETURNCMD: returns the menu item identifier of the user's selection in the return value.
-        //                instead of posting a WM_COMMAND for the chosen item, 
-        // TPM_RIGHTBUTTON: The user can select menu items with both the left and right mouse buttons.
+        // Blocks until the menu closes, pumping its own message loop (why the filter above is needed).
+        // TPM_RETURNCMD returns the chosen item id directly instead of posting WM_COMMAND;
+        // TPM_RIGHTBUTTON allows selecting with either mouse button.
         const int command = TrackPopupMenuEx(popupMenu, TPM_RETURNCMD | TPM_RIGHTBUTTON, screenPosition.x,
                                               screenPosition.y, ownerHwnd, nullptr);
 
-        QAbstractEventDispatcher::instance()->removeNativeEventFilter(&filter);
+        if (dispatcher)
+        {
+            dispatcher->removeNativeEventFilter(&filter);
+        }
         DestroyMenu(popupMenu);
         if (contextMenu3) contextMenu3->Release();
         if (contextMenu2) contextMenu2->Release();
@@ -165,8 +146,7 @@ namespace
         Result<void> outcome = Result<void>::success();
         if (command != 0)
         {
-            // CMINVOKECOMMANDINFOEX ("EX" = extended) Contains extended information about a shortcut menu command
-            // CMIC_MASK_UNICODE - The shortcut menu handler should use lpVerbW, lpParametersW ... members instead of their ANSI equivalents
+            // CMIC_MASK_UNICODE tells the handler to use lpVerbW/lpParametersW over the ANSI fields.
             CMINVOKECOMMANDINFOEX info{};
             info.cbSize = sizeof(info);
             info.fMask = CMIC_MASK_UNICODE;
@@ -186,12 +166,11 @@ namespace
         return outcome;
     }
 
-    // A PIDL (pointer to an ITEMIDLIST) is the shell namespace's universal item identifier (can point into virtual namespace locations that have
-    // no filesystem path at all, like Control Panel or a zip file's contents, shell uses it instead of strings internally).
-    // PIDLIST_ABSOLUTE means "rooted at the Desktop, the namespace's root"
-    // PIDLIST_RELATIVE means "relative to some specific IShellFolder"
-    // SHParseDisplayName - parses normal path string into a PIDL
-    // PIDL returned by shell APIs is allocated with the shell's task allocator and must be freed with CoTaskMemFree.
+    // A PIDL identifies an item in the shell namespace (can point at virtual locations with no
+    // filesystem path, e.g. Control Panel). 
+    // PIDLIST_ABSOLUTE is rooted at the Desktop;
+    // PIDLIST_RELATIVE is relative to an IShellFolder. 
+    // Shell-allocated PIDLs must be freed with CoTaskMemFree.
     Result<PIDLIST_ABSOLUTE> parseAbsolutePidl(const fs::path& path)
     {
         PIDLIST_ABSOLUTE pidl = nullptr;
@@ -225,9 +204,8 @@ Result<void> ShellContextMenuProvider::showItemContextMenu(const std::vector<fs:
         }
     }
 
-    // SHGetDesktopFolder returns the IShellFolder for the Desktop, is mandatory starting point for resolving any absolute PIDL into a bound
-    // IShellFolder object (there's no "resolve this PIDL" free function; you always walk down
-    // from a folder you already have a live interface to)
+    // SHGetDesktopFolder is the mandatory starting point for binding an absolute PIDL to an
+    // IShellFolder — there's no free function to resolve a PIDL directly.
     IShellFolder* desktop = nullptr;
     if (FAILED(SHGetDesktopFolder(&desktop)) || !desktop)
     {
@@ -254,9 +232,8 @@ Result<void> ShellContextMenuProvider::showItemContextMenu(const std::vector<fs:
         return Result<void>::failure(Error(ErrorCode::IoError, "Failed to bind the parent shell folder"));
     }
 
-    // For each selected item, ask the parent folder to parse just its filename into a *relative* PIDL (PIDLIST_RELATIVE)
-    // PITEMID_CHILD is the same relative-PIDL concept further specialized to "exactly one path segment, no nested sub-
-    // path" — what GetUIObjectOf specifically requires for its item array
+    // Parse each filename (relative to parentFolder) into a PITEMID_CHILD — a single-segment PIDL,
+    // which is what GetUIObjectOf's item array requires.
     std::vector<PITEMID_CHILD> childPidls;
     childPidls.reserve(paths.size());
     for (const auto& path : paths)
@@ -277,17 +254,13 @@ Result<void> ShellContextMenuProvider::showItemContextMenu(const std::vector<fs:
         childPidls.push_back(reinterpret_cast<PITEMID_CHILD>(childPidl));
     }
 
-    // GetUIObjectOf wants the child array as LPCITEMIDLIST (const-pointer) elements; copy into a
-    // second vector of that type rather than reinterpret_cast'ing the whole array in place, since
-    // MSVC (rightly) won't implicitly add const through a pointer-to-pointer cast.
+    // GetUIObjectOf wants LPCITEMIDLIST elements; copy into a second vector since MSVC won't
+    // implicitly add const through a pointer-to-pointer cast.
     std::vector<LPCITEMIDLIST> constChildPidls(childPidls.begin(), childPidls.end());
 
-    // GetUIObjectOf is the actual "give me a COM object representing this selection" call — the
-    // shell-namespace equivalent of instantiating a right-click handler for one or more sibling
-    // items at once (hence it takes an array: a real multi-item Explorer selection also resolves
-    // to a single IContextMenu spanning all of them, not one per item). IID_IContextMenu picks
-    // which interface on that object is wanted; the same method is also how a caller would ask
-    // for e.g. IExtractIcon or IDataObject instead, for other purposes this codebase doesn't need.
+    // GetUIObjectOf returns a COM object for the selection as a whole (one IContextMenu spanning
+    // all items, matching how Explorer resolves a multi-item selection). IID_IContextMenu picks
+    // which interface to request; the same call could ask for IExtractIcon, IDataObject, etc.
     IContextMenu* contextMenu = nullptr;
     const HRESULT uiObjectResult = parentFolder->GetUIObjectOf(
         static_cast<HWND>(ownerWindow), static_cast<UINT>(constChildPidls.size()), constChildPidls.data(),
@@ -310,10 +283,8 @@ Result<void> ShellContextMenuProvider::showItemContextMenu(const std::vector<fs:
 Result<void> ShellContextMenuProvider::showBackgroundContextMenu(const fs::path& folder, NativeScreenPoint screenPosition,
                                                                    NativeWindowHandle ownerWindow)
 {
-    // Same desktop-root-then-bind pattern as showItemContextMenu above, except this time the
-    // PIDL/IShellFolder resolved is *the folder itself* (there's no separate "parent" here — an
-    // empty-space right-click is a property of the folder being viewed, not of anything inside
-    // it).
+    // Same desktop-root-then-bind pattern as showItemContextMenu, but resolves the folder itself
+    // (an empty-space right-click belongs to the folder, not to any item inside it).
     IShellFolder* desktop = nullptr;
     if (FAILED(SHGetDesktopFolder(&desktop)) || !desktop)
     {
@@ -337,13 +308,10 @@ Result<void> ShellContextMenuProvider::showBackgroundContextMenu(const fs::path&
         return Result<void>::failure(Error(ErrorCode::IoError, "Failed to bind the folder's shell folder"));
     }
 
-    // CreateViewObject is the folder-background counterpart to GetUIObjectOf above: instead of
-    // "give me a COM object for these child items", it's "give me a COM object for this folder's
-    // own view" — a different object model in the shell's design (a folder's Explorer window is
-    // itself represented by a view object, separate from any item inside it), which is why this
-    // is a different method entirely rather than GetUIObjectOf called with zero items. The
-    // IContextMenu obtained this way is what supplies New/Paste/Sort by/Refresh/Properties-of-
-    // this-folder — entries that belong to the folder as a whole, not to any selection within it.
+    // CreateViewObject is the background counterpart to GetUIObjectOf: it returns a COM object for
+    // the folder's own view rather than for child items (not GetUIObjectOf with zero items — a
+    // folder's view is a distinct object in the shell's model). This IContextMenu supplies
+    // New/Paste/Sort by/Refresh/Properties for the folder itself.
     IContextMenu* contextMenu = nullptr;
     const HRESULT viewObjectResult = shellFolder->CreateViewObject(static_cast<HWND>(ownerWindow), IID_IContextMenu,
                                                                      reinterpret_cast<void**>(&contextMenu));
