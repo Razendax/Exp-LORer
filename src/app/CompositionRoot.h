@@ -4,6 +4,7 @@
 
 #include "FileNavigationUseCase.h"
 #include "SQLiteTagRepository.h"
+#include "ShellContextMenuProvider.h"
 #include "StandardFileSystemRepository.h"
 #include "TagManagementUseCase.h"
 #include "WorkspacePaneId.h"
@@ -27,6 +28,7 @@ public:
 
 private:
     StandardFileSystemRepository m_fileSystemRepository;
+    ShellContextMenuProvider m_contextMenuProvider;
     FileNavigationUseCase m_fileNavigationUseCase;
     SQLiteTagRepository m_tagRepository;
     TagManagementUseCase m_tagManagementUseCase;

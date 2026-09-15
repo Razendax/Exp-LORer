@@ -2,13 +2,16 @@
 
 #include <filesystem>
 #include <optional>
+#include <vector>
 
+#include <QPoint>
 #include <QWidget>
 
 #include "FileNode.h"
 #include "ViewMode.h"
 
 class QModelIndex;
+class QAbstractItemView;
 class QItemSelection;
 class QItemSelectionModel;
 class QStackedWidget;
@@ -50,6 +53,11 @@ signals:
     void deleteRequested(bool permanent);   // true for Shift+Delete
     void navigateUpRequested();             // Backspace, and ArrowLeft in Details view
 
+    // Right-click on a row (resolved via indexAt; the row is selected first, matching Explorer's
+    // "right-click an unselected item selects it") vs. on empty space (Architecture.md §14.13).
+    void itemContextMenuRequested(const std::vector<std::filesystem::path>& paths, const QPoint& globalPos);
+    void folderContextMenuRequested(const QPoint& globalPos);
+
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
@@ -57,6 +65,7 @@ private:
     void emitActivated(const QModelIndex& index);
     void emitSelectionChanged(const QModelIndex& current);
     bool handleKeyPress(QKeyEvent* event);
+    void handleContextMenuRequested(QAbstractItemView* view, const QPoint& localPos);
 
     // Restores a current/selected row after arrow-key navigation in Details view, since
     // navigating clears the previous selection (TabViewModel::loadAndApply resets it) and would

@@ -1,5 +1,6 @@
 add_library(explorer_application STATIC
     IFileSystemRepository.h
+    IContextMenuProvider.h
     ITagRepository.h
     IMediaDecoder.h
     FileNavigationUseCase.h

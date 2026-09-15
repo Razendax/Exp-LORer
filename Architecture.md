@@ -37,6 +37,7 @@ This layer orchestrates the flow of data to and from the entities. It defines th
 * `IFileSystemRepository`: Interface for OS file operations (list, move, delete, copy, hash generation, single-path `stat` — resolving one path to a `FileNode` without listing its parent directory, used to treat a browsed folder itself as a taggable target — and `openWithDefaultApplication`, launching the OS-registered handler for a file, see §14.11).
 * `ITagRepository`: Interface for persisting tags and associations.
 * `IMediaDecoder`: Interface for decoding media streams and extracting thumbnails.
+* `IContextMenuProvider`: Interface for displaying and invoking the OS's own file/folder context menu (see §14.13). Two entry points — one for a file/folder selection, one for empty-space-in-a-folder ("background") — mirroring the two distinct Shell object models behind them.
 
 ### 2.3 Interface Adapters Layer
 
@@ -118,7 +119,8 @@ To illustrate the Clean Architecture flow, here are two primary operation sequen
 | **Data Repositories** | `SQLiteTagDB`, `OSFileSystem` | Adapters handling raw data reading/writing (SQL and disk I/O). |
 | **Media Adapters** | `ThumbnailGenerator`, `StreamProvider` | Bridges FFmpeg/QtMultimedia to abstract `IMediaDecoder` interface. |
 | **Presentation** | `MainView`, `FileBrowserView`, `FileTileDelegate`, `TagPanelWidget`, `TagChipWidget`, `MediaPreviewPane` | Qt-based UI elements binding to ViewModels. `FileBrowserView` switches between `QListView`/`QTreeView` per `ViewMode` (see §2.3.1). `TagPanelWidget` renders `TagListViewModel`'s three sections using `TagChipWidget` (read-only/addable/removable chip, see §14.9). |
-| **Workspace/Session** | `WorkspaceController`, `WorkspacePaneViewModel`, `TabViewModel`, `FileOperationsController` | UI-session state for the fixed 4-pane split-window layout (see §14); no business rules, no Domain/Application changes. `FileOperationsController` (see §14.10) drives Ctrl+C/X/V/Delete hotkeys via the real OS clipboard. |
+| **Workspace/Session** | `WorkspaceController`, `WorkspacePaneViewModel`, `TabViewModel`, `FileOperationsController` | UI-session state for the fixed 4-pane split-window layout (see §14); no business rules, no Domain/Application changes. `FileOperationsController` (see §14.10) drives Ctrl+C/X/V/Delete hotkeys via the real OS clipboard, and (see §14.13) shows/invokes the OS-native right-click context menu. |
+| **Shell Integration** | `ShellContextMenuProvider` | Implements `IContextMenuProvider` using the Windows Shell COM APIs (`IShellFolder`/`IContextMenu`); see §14.13. |
 
 ---
 
@@ -218,6 +220,7 @@ Exp-LORer/
 │   │   │                         # FileOperationsController (see §14, §14.9, §14.10)
 │   │   ├── persistence/          # SQLiteTagRepository, migration scripts
 │   │   ├── filesystem/           # StandardFileSystemRepository (std::filesystem + OS trash calls)
+│   │   ├── shell/                # ShellContextMenuProvider (OS-native context menu, see §14.13)
 │   │   └── media/                # QtMediaDecoder / FFmpegMediaDecoder, ThumbnailGenerator
 │   ├── ui/
 │   │   ├── widgets/               # MainWindow, FileBrowserView, FileTileDelegate, TagPanelWidget,
@@ -243,6 +246,11 @@ Exp-LORer/
 * **Application layer:** use cases tested against **mocked Ports** (`MockFileSystemRepository`, `MockTagRepository`, `MockMediaDecoder`) generated with GoogleMock — this is the primary regression-safety net and must not require Qt, SQLite, or disk access.
 * **Adapters layer:** `SQLiteTagRepository` tested against a real SQLite `:memory:` database (schema applied via the same migration scripts as production); `StandardFileSystemRepository` tested against `std::filesystem` temp directories, cleaned up per test.
 * **UI layer:** out of scope for automated unit tests in v1; smoke-tested manually. (Optional future work: Qt Test for ViewModel-to-widget bindings.)
+* **OS-shell side effects with no assertable return** (`ShellExecuteW` for opening a file, §14.11;
+  `ShellContextMenuProvider`'s native popup menu, §14.13): not covered by automated adapter tests —
+  both launch/display real OS UI with no meaningful return value to assert in an automated run, so
+  they're manually smoke-tested only. The `FileNavigationUseCase` passthrough in front of each is
+  still covered by an ordinary mock-based use-case test.
 * **Workspace/pane logic:** `WorkspaceLayoutTopology::visiblePanes()` (pure `SplitLayout`→pane-list
   mapping) is unit-tested under `tests/adapters/`, following the `NavigationHistoryTest.cpp` pattern.
   `WorkspaceController`/`WorkspaceLayoutWidget`/`WorkspacePaneWidget`'s `QSplitter`-building and
@@ -621,3 +629,79 @@ navigation within that tab. No Domain/Application change: `SortCriterion` and
   default.
 * **Not built here**: persisting the chosen sort across app restarts — folds into the existing
   §14.8 session-persistence deferral (layout/tabs/paths/view-modes), not a separate future item.
+
+### 14.13 OS-Native Context Menu (Files, Folders, and Folder Background)
+
+Right-click on a file/folder row, or on empty space within a directory view, shows the **real
+Windows shell context menu** for that target — not a hand-built `QMenu` with a fixed action list.
+This gives per-file-type entries, folder-vs-file differences, and any installed third-party shell
+extensions automatically, matching Explorer. Whatever the user picks is executed by the shell
+itself; the app then refreshes the affected directory since the shell may have changed the disk.
+
+* **New Port**: `IContextMenuProvider` (`src/application/IContextMenuProvider.h`), distinct from
+  `IFileSystemRepository` since this concern needs a screen position and a native owner window
+  handle, and blocks the calling thread in a nested native message loop while the menu is open —
+  none of which fit the file-CRUD shape of the other Port. Two entry points, mirroring two distinct
+  Shell object models:
+  * `showItemContextMenu(paths, screenPosition, ownerWindow)` — a file/folder selection.
+    `paths` must all share one parent directory (Explorer never right-clicks a cross-folder
+    selection). Maps to `IShellFolder::GetUIObjectOf(..., IID_IContextMenu, ...)` on the parent.
+  * `showBackgroundContextMenu(folder, screenPosition, ownerWindow)` — empty space in the view.
+    Maps to `IShellFolder::CreateViewObject(hwnd, IID_IContextMenu, ...)` on the folder itself
+    (gives New/Paste/Sort by/Refresh/folder-Properties — not interchangeable with the per-item
+    object above).
+  * Opaque native types only, so Application stays framework-agnostic: `NativeWindowHandle = void*`
+    and `struct NativeScreenPoint { int x; int y; }`, defined in the Port header itself — the same
+    boundary precedent as `std::filesystem::path` already crossing into Application.
+  * `paths` is a vector today even though only a single-item selection is ever passed (§14.10:
+    selection stays single-item for this increment) — extending to multi-select later is a
+    caller-side change only, not a Port change.
+* **`FileNavigationUseCase`** gains a second required constructor dependency,
+  `IContextMenuProvider&`, and two thin passthroughs (`showItemContextMenu`,
+  `showFolderBackgroundContextMenu`), the same shape as `openFile`'s passthrough to
+  `IFileSystemRepository::openWithDefaultApplication`.
+* **`ShellContextMenuProvider`** (new, `src/adapters/shell/`) implements the Port. Named after the
+  `StandardFileSystemRepository` pattern (platform-general name, `#ifdef _WIN32` internals) rather
+  than a Windows-specific class name, so `CompositionRoot` wiring doesn't need to change when a
+  Linux implementation eventually lands behind the same Port; the non-Windows branch returns a
+  `Result` failure ("Not supported on this platform"), matching
+  `openWithDefaultApplication`'s existing non-Windows branch.
+  * Windows implementation: resolve the parent `IShellFolder` (`SHParseDisplayName` +
+    `SHBindToParent`/`BindToObject`), get an `IContextMenu` via `GetUIObjectOf` (item case) or
+    `CreateViewObject` (background case), `QueryContextMenu` into a `CreatePopupMenu()` handle,
+    `TrackPopupMenuEx(TPM_RETURNCMD | TPM_RIGHTBUTTON, ...)` at the given screen position owned by
+    `ownerWindow`, then `InvokeCommand` (via `CMINVOKECOMMANDINFOEX`, for correct Unicode
+    path/verb handling) if the user picked something. Cancelling the menu is not an error.
+  * Owner-draw and cascading-submenu support (icons, "Send to", shell-extension submenus) requires
+    forwarding `WM_INITMENUPOPUP`/`WM_MEASUREITEM`/`WM_DRAWITEM`/`WM_MENUCHAR` to the resolved
+    `IContextMenu2`/`IContextMenu3`'s `HandleMenuMsg(2)` while the popup is open — via a
+    `QAbstractNativeEventFilter` installed for the duration of the call (preferred), or a
+    `SetWindowSubclass` on the owner `HWND` if the native-event-filter route doesn't observe
+    messages pumped by `TrackPopupMenuEx`'s own nested loop.
+  * No explicit `CoInitializeEx`: this assumes COM STA is already initialized on the calling
+    thread, which Qt's Windows platform plugin already guarantees for its own OLE drag-drop
+    support — the same assumption `ShellExecuteW`/`SHFileOperationW` calls elsewhere in the
+    codebase already make. Like those, this Port implementation must only ever be called from the
+    Qt UI thread.
+* **`FileOperationsController`** gains two slots, `showContextMenuForSelection`/
+  `showContextMenuForFolder`, reusing the existing single shared pane-agnostic instance rather than
+  a new controller type (same rationale §14.10 gives for folding clipboard ops in here). Both call
+  the matching `FileNavigationUseCase` passthrough; on success they emit the existing
+  `directoryContentsMayHaveChanged(directory)` signal unconditionally (the shell's chosen verb
+  isn't inspected, so refresh-on-any-success is the simple correct default, same posture as the
+  paste/delete slots already use); on error they emit `operationFailed`, same shape as every other
+  slot in this class.
+* **`FileBrowserView`** sets `Qt::CustomContextMenu` on both `m_listView`/`m_treeView` and adds two
+  new signals: `itemContextMenuRequested(paths, globalPos)` (right-click resolves to a valid row —
+  selecting that row first, matching Explorer's "right-click an unselected item selects it") and
+  `folderContextMenuRequested(globalPos)` (right-click on empty space). `WorkspacePaneWidget` wires
+  both to `FileOperationsController`, passing `window()->winId()` as the owner window handle (the
+  top-level `MainWindow`'s native handle — stable regardless of which pane/tab is involved).
+* **Threading**: synchronous on the UI thread, consistent with the existing precedent for
+  `ShellExecuteW`/`SHFileOperationW` (§14.11) and the "kept synchronous" note in §14.9 —
+  `TrackPopupMenuEx` already runs its own nested message loop, so this blocks the calling slot by
+  nature, the same as a `QMenu::exec()` would.
+* **Not built here**: a Linux implementation of `IContextMenuProvider` (stub failure for now, same
+  posture as trash/open-with-default-app); a multi-selection context menu (the Port already accepts
+  a vector, but `FileBrowserView` only ever selects one row today); a context menu triggered from
+  drag-and-drop (there's no drag-and-drop in the app yet at all).

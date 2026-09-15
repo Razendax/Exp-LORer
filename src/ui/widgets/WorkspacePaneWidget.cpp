@@ -230,6 +230,16 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
         onDeleteRequested(tab, permanent);
     });
     connect(browserView, &FileBrowserView::navigateUpRequested, tab, [tab]() { tab->goUp(); });
+
+    connect(browserView, &FileBrowserView::itemContextMenuRequested, tab,
+            [this](const std::vector<std::filesystem::path>& paths, const QPoint& globalPos) {
+                m_fileOperationsController->showContextMenuForSelection(
+                    paths, {globalPos.x(), globalPos.y()}, reinterpret_cast<NativeWindowHandle>(window()->winId()));
+            });
+    connect(browserView, &FileBrowserView::folderContextMenuRequested, tab, [this, tab](const QPoint& globalPos) {
+        m_fileOperationsController->showContextMenuForFolder(
+            tab->currentPath(), {globalPos.x(), globalPos.y()}, reinterpret_cast<NativeWindowHandle>(window()->winId()));
+    });
 }
 
 void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)

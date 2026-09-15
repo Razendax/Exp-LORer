@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "FileNavigationUseCase.h"
+#include "MockContextMenuProvider.h"
 #include "MockFileSystemRepository.h"
 
 using ::testing::Return;
@@ -18,11 +19,12 @@ namespace
 TEST(FileNavigationUseCase, ListDirectoryDelegatesToRepository)
 {
     MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
     std::vector<FileNode> files{ makeFile("C:/data/a.txt", 10) };
     EXPECT_CALL(repository, listDirectory(std::filesystem::path("C:/data")))
         .WillOnce(Return(Result<std::vector<FileNode>>::success(files)));
 
-    FileNavigationUseCase useCase(repository);
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
     auto result = useCase.listDirectory("C:/data");
 
     ASSERT_TRUE(result.hasValue());
@@ -32,10 +34,11 @@ TEST(FileNavigationUseCase, ListDirectoryDelegatesToRepository)
 TEST(FileNavigationUseCase, ListDirectoryPropagatesError)
 {
     MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
     EXPECT_CALL(repository, listDirectory(_))
         .WillOnce(Return(Result<std::vector<FileNode>>::failure(Error(ErrorCode::IoError, "denied"))));
 
-    FileNavigationUseCase useCase(repository);
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
     auto result = useCase.listDirectory("C:/locked");
 
     ASSERT_TRUE(result.hasError());
@@ -45,11 +48,12 @@ TEST(FileNavigationUseCase, ListDirectoryPropagatesError)
 TEST(FileNavigationUseCase, StatDelegatesToRepository)
 {
     MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
     FileNode file = makeFile("C:/data", 0, FileType::Directory);
     EXPECT_CALL(repository, stat(std::filesystem::path("C:/data")))
         .WillOnce(Return(Result<FileNode>::success(file)));
 
-    FileNavigationUseCase useCase(repository);
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
     auto result = useCase.stat("C:/data");
 
     ASSERT_TRUE(result.hasValue());
@@ -127,11 +131,12 @@ TEST(FileNavigationUseCase, FilterByExtensionIsCaseInsensitive)
 TEST(FileNavigationUseCase, MoveFileDelegatesToRepository)
 {
     MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
     FileNode moved = makeFile("C:/data/dest.txt", 5);
     EXPECT_CALL(repository, move(std::filesystem::path("C:/data/src.txt"), std::filesystem::path("C:/data/dest.txt")))
         .WillOnce(Return(Result<FileNode>::success(moved)));
 
-    FileNavigationUseCase useCase(repository);
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
     auto result = useCase.moveFile("C:/data/src.txt", "C:/data/dest.txt");
 
     ASSERT_TRUE(result.hasValue());
@@ -141,10 +146,11 @@ TEST(FileNavigationUseCase, MoveFileDelegatesToRepository)
 TEST(FileNavigationUseCase, MoveFileToTrashDelegatesToRepository)
 {
     MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
     EXPECT_CALL(repository, moveToTrash(std::filesystem::path("C:/data/a.txt")))
         .WillOnce(Return(Result<void>::success()));
 
-    FileNavigationUseCase useCase(repository);
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
     auto result = useCase.moveFileToTrash("C:/data/a.txt");
 
     EXPECT_TRUE(result.hasValue());
@@ -153,10 +159,11 @@ TEST(FileNavigationUseCase, MoveFileToTrashDelegatesToRepository)
 TEST(FileNavigationUseCase, DeleteFilePermanentlyDelegatesToRepository)
 {
     MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
     EXPECT_CALL(repository, deletePermanently(std::filesystem::path("C:/data/a.txt")))
         .WillOnce(Return(Result<void>::success()));
 
-    FileNavigationUseCase useCase(repository);
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
     auto result = useCase.deleteFilePermanently("C:/data/a.txt");
 
     EXPECT_TRUE(result.hasValue());
@@ -165,11 +172,46 @@ TEST(FileNavigationUseCase, DeleteFilePermanentlyDelegatesToRepository)
 TEST(FileNavigationUseCase, OpenFileDelegatesToRepository)
 {
     MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
     EXPECT_CALL(repository, openWithDefaultApplication(std::filesystem::path("C:/data/a.txt")))
         .WillOnce(Return(Result<void>::success()));
 
-    FileNavigationUseCase useCase(repository);
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
     auto result = useCase.openFile("C:/data/a.txt");
+
+    EXPECT_TRUE(result.hasValue());
+}
+
+TEST(FileNavigationUseCase, ShowItemContextMenuDelegatesToProvider)
+{
+    MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
+    const std::vector<std::filesystem::path> paths{ "C:/data/a.txt" };
+    const NativeScreenPoint screenPosition{ 10, 20 };
+    NativeWindowHandle ownerWindow = reinterpret_cast<NativeWindowHandle>(0x1234);
+
+    EXPECT_CALL(contextMenuProvider, showItemContextMenu(paths, testing::_, ownerWindow))
+        .WillOnce(Return(Result<void>::success()));
+
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
+    auto result = useCase.showItemContextMenu(paths, screenPosition, ownerWindow);
+
+    EXPECT_TRUE(result.hasValue());
+}
+
+TEST(FileNavigationUseCase, ShowFolderBackgroundContextMenuDelegatesToProvider)
+{
+    MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
+    const std::filesystem::path folder = "C:/data";
+    const NativeScreenPoint screenPosition{ 10, 20 };
+    NativeWindowHandle ownerWindow = reinterpret_cast<NativeWindowHandle>(0x1234);
+
+    EXPECT_CALL(contextMenuProvider, showBackgroundContextMenu(folder, testing::_, ownerWindow))
+        .WillOnce(Return(Result<void>::success()));
+
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
+    auto result = useCase.showFolderBackgroundContextMenu(folder, screenPosition, ownerWindow);
 
     EXPECT_TRUE(result.hasValue());
 }

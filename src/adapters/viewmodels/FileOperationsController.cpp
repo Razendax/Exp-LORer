@@ -163,6 +163,35 @@ void FileOperationsController::openFile(const std::filesystem::path& path)
     }
 }
 
+void FileOperationsController::showContextMenuForSelection(const std::vector<std::filesystem::path>& paths,
+                                                             NativeScreenPoint screenPosition, NativeWindowHandle ownerWindow)
+{
+    auto result = m_fileNavigationUseCase.showItemContextMenu(paths, screenPosition, ownerWindow);
+    if (result.hasError())
+    {
+        emit operationFailed(QString::fromStdString(result.error().message));
+        return;
+    }
+
+    if (!paths.empty())
+    {
+        emit directoryContentsMayHaveChanged(paths.front().parent_path());
+    }
+}
+
+void FileOperationsController::showContextMenuForFolder(const std::filesystem::path& folder, NativeScreenPoint screenPosition,
+                                                          NativeWindowHandle ownerWindow)
+{
+    auto result = m_fileNavigationUseCase.showFolderBackgroundContextMenu(folder, screenPosition, ownerWindow);
+    if (result.hasError())
+    {
+        emit operationFailed(QString::fromStdString(result.error().message));
+        return;
+    }
+
+    emit directoryContentsMayHaveChanged(folder);
+}
+
 std::filesystem::path FileOperationsController::uniqueDestinationName(const std::filesystem::path& destinationDirectory,
                                                                        const std::filesystem::path& desiredName) const
 {

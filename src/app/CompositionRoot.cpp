@@ -20,7 +20,7 @@ namespace
 }
 
 CompositionRoot::CompositionRoot()
-    : m_fileNavigationUseCase(m_fileSystemRepository)
+    : m_fileNavigationUseCase(m_fileSystemRepository, m_contextMenuProvider)
     , m_tagRepository(databasePath())
     , m_tagManagementUseCase(m_tagRepository, m_fileSystemRepository)
 {

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "FileNode.h"
+#include "IContextMenuProvider.h"
 #include "IFileSystemRepository.h"
 #include "Result.h"
 
@@ -22,7 +23,7 @@ enum class SortCriterion
 class FileNavigationUseCase
 {
 public:
-    explicit FileNavigationUseCase(IFileSystemRepository& fileSystemRepository);
+    FileNavigationUseCase(IFileSystemRepository& fileSystemRepository, IContextMenuProvider& contextMenuProvider);
 
     Result<std::vector<FileNode>> listDirectory(const std::filesystem::path& directory) const;
     Result<FileNode> stat(const std::filesystem::path& path) const;
@@ -36,6 +37,12 @@ public:
     Result<void> deleteFilePermanently(const std::filesystem::path& path);
     Result<void> openFile(const std::filesystem::path& path);
 
+    Result<void> showItemContextMenu(const std::vector<std::filesystem::path>& paths,
+                                      NativeScreenPoint screenPosition, NativeWindowHandle ownerWindow);
+    Result<void> showFolderBackgroundContextMenu(const std::filesystem::path& folder,
+                                                  NativeScreenPoint screenPosition, NativeWindowHandle ownerWindow);
+
 private:
     IFileSystemRepository& m_fileSystemRepository;
+    IContextMenuProvider& m_contextMenuProvider;
 };

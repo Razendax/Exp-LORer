@@ -1,5 +1,6 @@
 #include "FileBrowserView.h"
 
+#include <QAbstractItemView>
 #include <QEvent>
 #include <QHeaderView>
 #include <QItemSelectionModel>
@@ -79,6 +80,13 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent)
 
     m_listView->installEventFilter(this);
     m_treeView->installEventFilter(this);
+
+    m_listView->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_treeView->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_listView, &QWidget::customContextMenuRequested, this,
+            [this](const QPoint& localPos) { handleContextMenuRequested(m_listView, localPos); });
+    connect(m_treeView, &QWidget::customContextMenuRequested, this,
+            [this](const QPoint& localPos) { handleContextMenuRequested(m_treeView, localPos); });
 
     setViewMode(ViewMode::Details);
 }
@@ -228,4 +236,21 @@ void FileBrowserView::selectFirstEntry()
     const QModelIndex index = m_model->index(0, 0);
     m_selectionModel->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
     m_treeView->scrollTo(index);
+}
+
+void FileBrowserView::handleContextMenuRequested(QAbstractItemView* view, const QPoint& localPos)
+{
+    const QModelIndex index = view->indexAt(localPos);
+    const QPoint globalPos = view->viewport()->mapToGlobal(localPos);
+
+    if (!index.isValid())
+    {
+        emit folderContextMenuRequested(globalPos);
+        return;
+    }
+
+    m_selectionModel->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+
+    const auto path = std::filesystem::path(index.data(FileListModel::FilePathRole).toString().toStdWString());
+    emit itemContextMenuRequested({path}, globalPos);
 }

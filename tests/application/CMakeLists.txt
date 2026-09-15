@@ -1,6 +1,7 @@
 add_executable(explorer_application_tests
     TestMain.cpp
     MockFileSystemRepository.h
+    MockContextMenuProvider.h
     MockTagRepository.h
     MockMediaDecoder.h
     FileNavigationUseCaseTest.cpp

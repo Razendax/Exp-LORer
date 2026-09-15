@@ -14,8 +14,9 @@ namespace
     }
 }
 
-FileNavigationUseCase::FileNavigationUseCase(IFileSystemRepository& fileSystemRepository)
+FileNavigationUseCase::FileNavigationUseCase(IFileSystemRepository& fileSystemRepository, IContextMenuProvider& contextMenuProvider)
     : m_fileSystemRepository(fileSystemRepository)
+    , m_contextMenuProvider(contextMenuProvider)
 {
 }
 
@@ -103,4 +104,16 @@ Result<void> FileNavigationUseCase::deleteFilePermanently(const std::filesystem:
 Result<void> FileNavigationUseCase::openFile(const std::filesystem::path& path)
 {
     return m_fileSystemRepository.openWithDefaultApplication(path);
+}
+
+Result<void> FileNavigationUseCase::showItemContextMenu(const std::vector<std::filesystem::path>& paths,
+                                                          NativeScreenPoint screenPosition, NativeWindowHandle ownerWindow)
+{
+    return m_contextMenuProvider.showItemContextMenu(paths, screenPosition, ownerWindow);
+}
+
+Result<void> FileNavigationUseCase::showFolderBackgroundContextMenu(const std::filesystem::path& folder,
+                                                                     NativeScreenPoint screenPosition, NativeWindowHandle ownerWindow)
+{
+    return m_contextMenuProvider.showBackgroundContextMenu(folder, screenPosition, ownerWindow);
 }

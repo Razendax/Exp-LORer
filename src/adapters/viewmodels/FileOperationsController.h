@@ -1,9 +1,12 @@
 #pragma once
 
 #include <filesystem>
+#include <vector>
 
 #include <QObject>
 #include <QString>
+
+#include "IContextMenuProvider.h"
 
 class FileNavigationUseCase;
 
@@ -33,6 +36,15 @@ public slots:
     void moveToTrash(const std::filesystem::path& path);
     void deletePermanently(const std::filesystem::path& path);
     void openFile(const std::filesystem::path& path);
+
+    // Shows the real OS shell context menu (Architecture.md §14.13) and, on success, refreshes
+    // the affected directory unconditionally — the shell's chosen verb isn't inspected, so this
+    // is correct whether the user picked Rename/Delete/Paste/a shell-extension action, or
+    // cancelled (cancelling is also a "success" from the Port's point of view, just a no-op).
+    void showContextMenuForSelection(const std::vector<std::filesystem::path>& paths, NativeScreenPoint screenPosition,
+                                      NativeWindowHandle ownerWindow);
+    void showContextMenuForFolder(const std::filesystem::path& folder, NativeScreenPoint screenPosition,
+                                   NativeWindowHandle ownerWindow);
 
 signals:
     // Mirrors TabViewModel::navigationFailed's pattern for status-bar reporting.

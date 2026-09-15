@@ -39,6 +39,13 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   the parent folder and ArrowRight opens a selected folder (no effect on a selected file). Ctrl+C/
   X/V read and write the real OS clipboard, so cut/copy/paste interoperate with File Explorer and
   other applications, not just within Exp-LORer.
+* **Right-click context menu** on a file, a folder, or empty space within a directory view. Its
+  content is the OS's own registered shell context menu for that target (Architecture.md §14.13) —
+  not a fixed, app-defined action list — so it varies by file type, differs between a file, a
+  folder, and empty space (which shows folder-level actions like Paste/New/Refresh instead), and
+  automatically includes any third-party shell extensions the user has installed. Whichever action
+  the user picks is carried out by the OS shell itself. v1 supports only a single selected
+  file/folder at a time, matching the single-selection scope of the keyboard hotkeys above.
 
 **Search and Filter:**
 * Fast filename and extension search within the current directory and subdirectories.
