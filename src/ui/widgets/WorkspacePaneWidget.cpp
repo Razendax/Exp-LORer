@@ -340,7 +340,9 @@ void WorkspacePaneWidget::onAddressBarEdited()
 {
     if (m_boundTab)
     {
-        m_boundTab->navigateTo(std::filesystem::path(m_addressBar->text().toStdWString()));
+        std::filesystem::path newPath(m_addressBar->text().toStdWString());
+        newPath.make_preferred();
+        m_boundTab->navigateTo(newPath);
     }
 }
 
