@@ -52,7 +52,9 @@ the gaps for everything else and for cross-language review.
 
 - Default to no comment; self-documenting names and structure come first
 - Write a comment only for the *why*: a non-obvious constraint, a workaround for a specific bug, a subtlety that would surprise the next reader
+- Keep comments concise and to the point — one short line beats a paragraph; if it needs more than a sentence, the code likely needs a clearer name or a doc comment instead
 - Never write a comment that restates the code, references a ticket/PR, or narrates "removed X" — these rot as the code evolves
+- Exception to "no *what* comments": when a line calls into an OS/platform API or an unfamiliar third-party function/class whose behavior isn't obvious from its name (e.g. a Win32 call, an obscure stdlib function), add a very short comment naming what it does — this documents the API for a reader unfamiliar with it, not the surrounding logic
 - Public APIs get a short doc comment describing the contract (inputs, outputs, side effects, error conditions) — not an implementation narration
 
 ## Error Handling
@@ -81,5 +83,7 @@ the gaps for everything else and for cross-language review.
 - [ ] Copy-pasted block appearing 3+ times
 - [ ] Speculative parameter/flag with no current caller
 - [ ] Silent `catch`/ignored error return
-- [ ] Comment describing *what* instead of *why*
+- [ ] Comment describing *what* instead of *why* (unless it's the OS/unfamiliar-API exception above)
+- [ ] Verbose/multi-sentence comment where a short one would do
+- [ ] OS/platform or unfamiliar library call with no short note on what it does
 - [ ] Inconsistent naming convention within the same file/module
