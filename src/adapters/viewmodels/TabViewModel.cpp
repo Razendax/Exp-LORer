@@ -9,11 +9,22 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, QObject
     , m_fileListModel(new FileListModel(this))
 {
     connect(this, &TabViewModel::directoryContentsChanged, m_fileListModel, &FileListModel::setEntries);
+    connect(m_fileListModel, &FileListModel::sortOrderChanged, this, &TabViewModel::sortOrderChanged);
 }
 
 std::filesystem::path TabViewModel::currentPath() const
 {
     return m_history.current().value_or(std::filesystem::path());
+}
+
+SortCriterion TabViewModel::sortCriterion() const noexcept
+{
+    return m_fileListModel->sortCriterion();
+}
+
+bool TabViewModel::sortAscending() const noexcept
+{
+    return m_fileListModel->sortAscending();
 }
 
 void TabViewModel::navigateTo(const std::filesystem::path& path)
@@ -85,6 +96,11 @@ void TabViewModel::setViewMode(ViewMode mode)
 
     m_viewMode = mode;
     emit viewModeChanged(mode);
+}
+
+void TabViewModel::setSortCriterion(SortCriterion criterion, bool ascending)
+{
+    m_fileListModel->setSortCriterion(criterion, ascending);
 }
 
 void TabViewModel::loadAndApply(const std::filesystem::path& path, bool recordHistory)

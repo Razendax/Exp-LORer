@@ -3,8 +3,6 @@
 #include <QDateTime>
 #include <QFileInfo>
 
-#include "FileNavigationUseCase.h"
-
 namespace
 {
     QString toQString(const std::filesystem::path& path)
@@ -47,6 +45,22 @@ namespace
             case FileListModel::NameColumn:
             default:
                 return SortCriterion::Name;
+        }
+    }
+
+    int columnForCriterion(SortCriterion criterion)
+    {
+        switch (criterion)
+        {
+            case SortCriterion::Size:
+                return FileListModel::SizeColumn;
+            case SortCriterion::FileType:
+                return FileListModel::TypeColumn;
+            case SortCriterion::ModificationDate:
+                return FileListModel::DateModifiedColumn;
+            case SortCriterion::Name:
+            default:
+                return FileListModel::NameColumn;
         }
     }
 }
@@ -133,9 +147,12 @@ QVariant FileListModel::headerData(int section, Qt::Orientation orientation, int
 
 void FileListModel::sort(int column, Qt::SortOrder order)
 {
-    beginResetModel();
-    m_entries = FileNavigationUseCase::sortBy(std::move(m_entries), criterionForColumn(column), order == Qt::AscendingOrder);
-    endResetModel();
+    setSortCriterion(criterionForColumn(column), order == Qt::AscendingOrder);
+}
+
+int FileListModel::columnForCriterion(SortCriterion criterion)
+{
+    return ::columnForCriterion(criterion);
 }
 
 std::optional<FileNode> FileListModel::entryAt(int row) const
@@ -152,6 +169,22 @@ void FileListModel::setEntries(const std::filesystem::path& directory, const std
 {
     beginResetModel();
     m_directory = directory;
-    m_entries = entries;
+    m_entries = FileNavigationUseCase::sortBy(entries, m_sortCriterion, m_sortAscending);
     endResetModel();
+}
+
+void FileListModel::setSortCriterion(SortCriterion criterion, bool ascending)
+{
+    if (criterion == m_sortCriterion && ascending == m_sortAscending)
+    {
+        return;
+    }
+
+    beginResetModel();
+    m_sortCriterion = criterion;
+    m_sortAscending = ascending;
+    m_entries = FileNavigationUseCase::sortBy(std::move(m_entries), m_sortCriterion, m_sortAscending);
+    endResetModel();
+
+    emit sortOrderChanged(m_sortCriterion, m_sortAscending);
 }

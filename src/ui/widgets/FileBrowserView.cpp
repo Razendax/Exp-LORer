@@ -51,6 +51,8 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent)
     m_treeView->setRootIsDecorated(false);
     m_treeView->setSortingEnabled(true);
     m_treeView->header()->setSectionsClickable(true);
+    m_treeView->header()->setSortIndicator(FileListModel::columnForCriterion(m_model->sortCriterion()),
+                                            m_model->sortAscending() ? Qt::AscendingOrder : Qt::DescendingOrder);
 
     // Shared between both views (rather than each QAbstractItemView's own default selection
     // model) so switching ViewMode doesn't drop the current selection.
@@ -70,6 +72,10 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent)
     connect(m_treeView, &QAbstractItemView::activated, this, &FileBrowserView::emitActivated);
     connect(m_selectionModel, &QItemSelectionModel::currentChanged, this,
             [this](const QModelIndex& current, const QModelIndex&) { emitSelectionChanged(current); });
+    connect(m_model, &FileListModel::sortOrderChanged, this, [this](SortCriterion criterion, bool ascending) {
+        m_treeView->header()->setSortIndicator(FileListModel::columnForCriterion(criterion),
+                                                ascending ? Qt::AscendingOrder : Qt::DescendingOrder);
+    });
 
     m_listView->installEventFilter(this);
     m_treeView->installEventFilter(this);

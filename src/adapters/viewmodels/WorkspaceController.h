@@ -44,9 +44,10 @@ public slots:
 signals:
     void layoutChanged(SplitLayout layout);
     void focusedPaneChanged(WorkspacePaneId id);
+    void focusedTabChanged(TabViewModel* tab);
 
 private:
-    void retargetTagListViewModel();
+    void retargetFocusedTab();
 
     // Connected to m_fileOperationsController->directoryContentsMayHaveChanged. Refreshes every
     // live tab, in any pane (visible or hidden), whose currentPath() matches directory, so a

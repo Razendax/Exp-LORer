@@ -7,6 +7,7 @@
 #include <QObject>
 #include <QString>
 
+#include "FileNavigationUseCase.h"
 #include "FileNode.h"
 #include "NavigationHistory.h"
 #include "ViewMode.h"
@@ -29,6 +30,8 @@ public:
     ViewMode viewMode() const noexcept { return m_viewMode; }
     FileListModel* fileListModel() const noexcept { return m_fileListModel; }
     const std::optional<FileNode>& selectedEntry() const noexcept { return m_selectedEntry; }
+    SortCriterion sortCriterion() const noexcept;
+    bool sortAscending() const noexcept;
 
 public slots:
     // Per-tab selection state (Architecture.md §14.9), set by WorkspacePaneWidget from this tab's
@@ -55,6 +58,10 @@ public slots:
 
     void setViewMode(ViewMode mode);
 
+    // Forwards to the tab's FileListModel, which owns the actual sort state and re-sorts both its
+    // current entries and every future listing until changed again.
+    void setSortCriterion(SortCriterion criterion, bool ascending);
+
     // Re-fetches the current directory without touching navigation history. Used after a file
     // operation (copy/move/delete) may have changed a directory's contents out from under a tab
     // that has it open (Architecture.md §14.10).
@@ -69,6 +76,7 @@ signals:
     void navigationFailed(const std::filesystem::path& path, const QString& message);
     void viewModeChanged(ViewMode mode);
     void selectedEntryChanged(const std::optional<FileNode>& entry);
+    void sortOrderChanged(SortCriterion criterion, bool ascending);
 
 private:
     // Single funnel point for every navigation entry point: fetches directory contents exactly

@@ -12,6 +12,7 @@
 #include <QToolBar>
 
 #include "FileOperationsController.h"
+#include "TabViewModel.h"
 #include "TagPanelWidget.h"
 #include "WorkspaceController.h"
 #include "WorkspaceLayoutWidget.h"
@@ -36,6 +37,15 @@ namespace
         WorkspacePaneId::PaneD,
     };
 
+    // Order shared with MainWindow::m_sortCriterionActions: element i of one is the action for
+    // element i of the other.
+    constexpr std::array<SortCriterion, 4> kSortCriteria = {
+        SortCriterion::Name,
+        SortCriterion::Size,
+        SortCriterion::FileType,
+        SortCriterion::ModificationDate,
+    };
+
     QString layoutLabel(SplitLayout layout)
     {
         switch (layout)
@@ -51,6 +61,22 @@ namespace
         }
         return QString();
     }
+
+    QString sortCriterionLabel(SortCriterion criterion)
+    {
+        switch (criterion)
+        {
+            case SortCriterion::Name:
+                return QObject::tr("Name");
+            case SortCriterion::Size:
+                return QObject::tr("Size");
+            case SortCriterion::FileType:
+                return QObject::tr("Type");
+            case SortCriterion::ModificationDate:
+                return QObject::tr("Date modified");
+        }
+        return QString();
+    }
 }
 
 MainWindow::MainWindow(WorkspaceController* workspaceController, QWidget* parent)
@@ -61,13 +87,16 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, QWidget* parent
     resize(1024, 768);
 
     createLayoutActions();
+    createSortByActions();
     createMenuBar();
     createLayoutToolBar();
     createWorkspace();
 
     connect(m_workspaceController, &WorkspaceController::layoutChanged, this, &MainWindow::onLayoutChanged);
+    connect(m_workspaceController, &WorkspaceController::focusedTabChanged, this, &MainWindow::onFocusedTabChanged);
 
     onLayoutChanged(m_workspaceController->layout());
+    onFocusedTabChanged(m_workspaceController->focusedTab());
 }
 
 void MainWindow::createLayoutActions()
@@ -85,6 +114,55 @@ void MainWindow::createLayoutActions()
     }
 }
 
+void MainWindow::createSortByActions()
+{
+    m_sortCriterionActionGroup = new QActionGroup(this);
+    m_sortCriterionActionGroup->setExclusive(true);
+
+    for (SortCriterion criterion : kSortCriteria)
+    {
+        QAction* action = new QAction(sortCriterionLabel(criterion), this);
+        action->setCheckable(true);
+        m_sortCriterionActionGroup->addAction(action);
+        connect(action, &QAction::triggered, this, [this, criterion]() {
+            TabViewModel* tab = m_workspaceController->focusedTab();
+            if (!tab)
+            {
+                return;
+            }
+            tab->setSortCriterion(criterion, tab->sortAscending());
+        });
+        m_sortCriterionActions.append(action);
+    }
+
+    m_sortOrderActionGroup = new QActionGroup(this);
+    m_sortOrderActionGroup->setExclusive(true);
+
+    m_ascendingAction = new QAction(tr("Ascending"), this);
+    m_ascendingAction->setCheckable(true);
+    m_sortOrderActionGroup->addAction(m_ascendingAction);
+    connect(m_ascendingAction, &QAction::triggered, this, [this]() {
+        TabViewModel* tab = m_workspaceController->focusedTab();
+        if (!tab)
+        {
+            return;
+        }
+        tab->setSortCriterion(tab->sortCriterion(), true);
+    });
+
+    m_descendingAction = new QAction(tr("Descending"), this);
+    m_descendingAction->setCheckable(true);
+    m_sortOrderActionGroup->addAction(m_descendingAction);
+    connect(m_descendingAction, &QAction::triggered, this, [this]() {
+        TabViewModel* tab = m_workspaceController->focusedTab();
+        if (!tab)
+        {
+            return;
+        }
+        tab->setSortCriterion(tab->sortCriterion(), false);
+    });
+}
+
 void MainWindow::createMenuBar()
 {
     QMenu* fileMenu = menuBar()->addMenu(tr("&File"));
@@ -95,6 +173,12 @@ void MainWindow::createMenuBar()
     QMenu* viewMenu = menuBar()->addMenu(tr("&View"));
     QMenu* layoutMenu = viewMenu->addMenu(tr("&Layout"));
     layoutMenu->addActions(m_layoutActions);
+
+    m_sortByMenu = viewMenu->addMenu(tr("&Sort by"));
+    m_sortByMenu->addActions(m_sortCriterionActions);
+    m_sortByMenu->addSeparator();
+    m_sortByMenu->addAction(m_ascendingAction);
+    m_sortByMenu->addAction(m_descendingAction);
 
     menuBar()->addMenu(tr("F&avorites"));
     menuBar()->addMenu(tr("&Tools"));
@@ -145,4 +229,35 @@ void MainWindow::onLayoutChanged(SplitLayout layout)
 void MainWindow::onStatusMessage(const QString& message)
 {
     statusBar()->showMessage(message, 5000);
+}
+
+void MainWindow::onFocusedTabChanged(TabViewModel* tab)
+{
+    if (m_sortTrackedTab)
+    {
+        disconnect(m_sortTrackedTab, &TabViewModel::sortOrderChanged, this, &MainWindow::onSortOrderChanged);
+    }
+    m_sortTrackedTab = tab;
+
+    if (!tab)
+    {
+        m_sortByMenu->setEnabled(false);
+        return;
+    }
+
+    m_sortByMenu->setEnabled(true);
+    connect(tab, &TabViewModel::sortOrderChanged, this, &MainWindow::onSortOrderChanged);
+    onSortOrderChanged(tab->sortCriterion(), tab->sortAscending());
+}
+
+void MainWindow::onSortOrderChanged(SortCriterion criterion, bool ascending)
+{
+    const auto it = std::find(kSortCriteria.begin(), kSortCriteria.end(), criterion);
+    if (it != kSortCriteria.end())
+    {
+        const auto index = std::distance(kSortCriteria.begin(), it);
+        m_sortCriterionActions[static_cast<int>(index)]->setChecked(true);
+    }
+
+    (ascending ? m_ascendingAction : m_descendingAction)->setChecked(true);
 }

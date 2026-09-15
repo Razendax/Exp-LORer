@@ -582,3 +582,42 @@ branch (navigate the tab); it now also handles `isDirectory == false` by opening
   process with no meaningful assertable return in an automated run, so it's manually smoke-tested
   only (Architecture.md §11's existing carve-out pattern for OS-shell side effects).
   `FileNavigationUseCase::openFile`'s delegation is covered by a mock-based use-case test.
+
+### 14.12 Sort Order (Per-Tab, All View Modes)
+
+Lets the user choose how a tab's directory contents are ordered (Name/Size/Type/Date modified,
+ascending/descending), applied uniformly across all seven view modes and preserved across
+navigation within that tab. No Domain/Application change: `SortCriterion` and
+`FileNavigationUseCase::sortBy` (§2.2) already existed and are reused as-is.
+
+* **State lives on `FileListModel`**, not a new type: it is already owned 1:1 by `TabViewModel` and
+  alive for the tab's whole lifetime, and it is already the single model shared by every view mode
+  (§2.3.1), so sorting it once covers every view mode for free. `FileListModel::setEntries`
+  re-applies the model's current `SortCriterion`/ascending flag via `FileNavigationUseCase::sortBy`
+  to every freshly-listed directory, which is what makes a tab's sort choice survive navigation —
+  no separate save/restore step exists or is needed. `TabViewModel` exposes thin passthrough
+  accessors/mutators (`sortCriterion()`/`sortAscending()`/`setSortCriterion()`/
+  `sortOrderChanged`), the same shape as its existing `viewMode()`/`setViewMode()`, so UI code
+  never reaches into a pane's `FileListModel` directly.
+* **Two convergent entry points, one code path**: `QTreeView`'s native header-click sorting
+  (Details view, unchanged mechanism from §2.3.1) and the new View-menu "Sort by" submenu both
+  funnel into `FileListModel::setSortCriterion(criterion, ascending)`. `FileBrowserView` keeps the
+  `QTreeView` header's sort-indicator arrow in sync with menu-driven changes by connecting to
+  `FileListModel::sortOrderChanged`; a no-op guard in `setSortCriterion` for an unchanged
+  criterion/order prevents a feedback loop between the header's `sortIndicatorChanged` and this
+  connection.
+* **`WorkspaceController::focusedTabChanged(TabViewModel*)`** (new signal, emitted from the same
+  internal slot that already retargets `TagListViewModel` per §14.9) is the hook `MainWindow` uses
+  to retarget the View > Sort by submenu at the focused pane's active tab — connect/disconnect
+  `sortOrderChanged` per retarget, same pattern §14.9 already established for
+  `TagListViewModel::setActiveTab`. If the focused pane currently has 0 tabs (§14.8's empty-pane
+  case), the submenu is disabled.
+* **View menu, not a per-pane toolbar control**: unlike `ViewMode` (exposed only via each pane's
+  own toolbar dropdown), sorting is exposed as a single global "Sort by" submenu under View,
+  retargeted to whichever pane/tab has focus — matching the product ask that this be reachable from
+  the View menu rather than duplicated per pane.
+* **New tabs start at the default** (`Name`, ascending), not inherited from a sibling tab in the
+  same pane — the same precedent as `TabViewModel::m_viewMode`'s hardcoded `ViewMode::Details`
+  default.
+* **Not built here**: persisting the chosen sort across app restarts — folds into the existing
+  §14.8 session-persistence deferral (layout/tabs/paths/view-modes), not a separate future item.

@@ -26,16 +26,16 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
     m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, this);
     m_fileOperationsController = new FileOperationsController(m_fileNavigationUseCase, this);
 
-    connect(this, &WorkspaceController::focusedPaneChanged, this, &WorkspaceController::retargetTagListViewModel);
+    connect(this, &WorkspaceController::focusedPaneChanged, this, &WorkspaceController::retargetFocusedTab);
     for (WorkspacePaneViewModel* pane : m_panes)
     {
-        connect(pane, &WorkspacePaneViewModel::activeTabChanged, this, &WorkspaceController::retargetTagListViewModel);
+        connect(pane, &WorkspacePaneViewModel::activeTabChanged, this, &WorkspaceController::retargetFocusedTab);
     }
 
     connect(m_fileOperationsController, &FileOperationsController::directoryContentsMayHaveChanged, this,
             &WorkspaceController::refreshTabsShowing);
 
-    retargetTagListViewModel();
+    retargetFocusedTab();
 }
 
 WorkspacePaneViewModel* WorkspaceController::pane(WorkspacePaneId id) const
@@ -70,9 +70,10 @@ void WorkspaceController::setFocusedPane(WorkspacePaneId id)
     emit focusedPaneChanged(id);
 }
 
-void WorkspaceController::retargetTagListViewModel()
+void WorkspaceController::retargetFocusedTab()
 {
     m_tagListViewModel->setActiveTab(focusedTab());
+    emit focusedTabChanged(focusedTab());
 }
 
 void WorkspaceController::refreshTabsShowing(const std::filesystem::path& directory)
