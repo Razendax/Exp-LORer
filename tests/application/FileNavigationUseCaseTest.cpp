@@ -182,36 +182,105 @@ TEST(FileNavigationUseCase, OpenFileDelegatesToRepository)
     EXPECT_TRUE(result.hasValue());
 }
 
-TEST(FileNavigationUseCase, ShowItemContextMenuDelegatesToProvider)
+TEST(FileNavigationUseCase, BuildItemContextMenuDelegatesToProvider)
 {
     MockFileSystemRepository repository;
     MockContextMenuProvider contextMenuProvider;
     const std::vector<std::filesystem::path> paths{ "C:/data/a.txt" };
-    const NativeScreenPoint screenPosition{ 10, 20 };
-    NativeWindowHandle ownerWindow = reinterpret_cast<NativeWindowHandle>(0x1234);
 
-    EXPECT_CALL(contextMenuProvider, showItemContextMenu(paths, testing::_, ownerWindow))
-        .WillOnce(Return(Result<void>::success()));
+    std::vector<ContextMenuEntry> entries{ ContextMenuEntry{ 1, "Open", false, true, {}, {} } };
+    EXPECT_CALL(contextMenuProvider, buildItemMenu(paths, ContextMenuSourceMode::StaticVerbsOnly))
+        .WillOnce(Return(Result<std::vector<ContextMenuEntry>>::success(entries)));
 
     FileNavigationUseCase useCase(repository, contextMenuProvider);
-    auto result = useCase.showItemContextMenu(paths, screenPosition, ownerWindow);
+    auto result = useCase.buildItemContextMenu(paths, ContextMenuSourceMode::StaticVerbsOnly);
 
-    EXPECT_TRUE(result.hasValue());
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().size(), 1u);
 }
 
-TEST(FileNavigationUseCase, ShowFolderBackgroundContextMenuDelegatesToProvider)
+TEST(FileNavigationUseCase, BuildBackgroundContextMenuDelegatesToProvider)
 {
     MockFileSystemRepository repository;
     MockContextMenuProvider contextMenuProvider;
     const std::filesystem::path folder = "C:/data";
-    const NativeScreenPoint screenPosition{ 10, 20 };
+
+    EXPECT_CALL(contextMenuProvider, buildBackgroundMenu(folder, ContextMenuSourceMode::StaticAndShellExtensions))
+        .WillOnce(Return(Result<std::vector<ContextMenuEntry>>::success(std::vector<ContextMenuEntry>{})));
+
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
+    auto result = useCase.buildBackgroundContextMenu(folder, ContextMenuSourceMode::StaticAndShellExtensions);
+
+    EXPECT_TRUE(result.hasValue());
+}
+
+TEST(FileNavigationUseCase, InvokeContextMenuEntryDelegatesToProvider)
+{
+    MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
     NativeWindowHandle ownerWindow = reinterpret_cast<NativeWindowHandle>(0x1234);
 
-    EXPECT_CALL(contextMenuProvider, showBackgroundContextMenu(folder, testing::_, ownerWindow))
+    EXPECT_CALL(contextMenuProvider, invoke(42u, ownerWindow)).WillOnce(Return(Result<void>::success()));
+
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
+    auto result = useCase.invokeContextMenuEntry(42u, ownerWindow);
+
+    EXPECT_TRUE(result.hasValue());
+}
+
+TEST(FileNavigationUseCase, DiscardContextMenuDelegatesToProvider)
+{
+    MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
+
+    EXPECT_CALL(contextMenuProvider, discardMenu()).Times(1);
+
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
+    useCase.discardContextMenu();
+}
+
+TEST(FileNavigationUseCase, CreateFolderDelegatesToRepository)
+{
+    MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
+
+    EXPECT_CALL(repository, createDirectory(std::filesystem::path("C:/data/New folder")))
         .WillOnce(Return(Result<void>::success()));
 
     FileNavigationUseCase useCase(repository, contextMenuProvider);
-    auto result = useCase.showFolderBackgroundContextMenu(folder, screenPosition, ownerWindow);
+    auto result = useCase.createFolder("C:/data/New folder");
+
+    EXPECT_TRUE(result.hasValue());
+}
+
+TEST(FileNavigationUseCase, CreateFileFromTemplateDelegatesToRepository)
+{
+    MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
+    FileNode created = makeFile("C:/data/New file.txt", 0);
+
+    EXPECT_CALL(repository, createFileFromTemplate(std::filesystem::path("C:/data/New file.txt"),
+                                                     std::optional<std::filesystem::path>(std::nullopt)))
+        .WillOnce(Return(Result<FileNode>::success(created)));
+
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
+    auto result = useCase.createFileFromTemplate("C:/data/New file.txt", std::nullopt);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().name(), "New file.txt");
+}
+
+TEST(FileNavigationUseCase, ShowPropertiesDelegatesToRepository)
+{
+    MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
+    NativeWindowHandle ownerWindow = reinterpret_cast<NativeWindowHandle>(0x1234);
+
+    EXPECT_CALL(repository, showProperties(std::filesystem::path("C:/data/a.txt"), ownerWindow))
+        .WillOnce(Return(Result<void>::success()));
+
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
+    auto result = useCase.showProperties("C:/data/a.txt", ownerWindow);
 
     EXPECT_TRUE(result.hasValue());
 }

@@ -9,6 +9,7 @@
 #include <Windows.h>
 
 #include <Shellapi.h>
+#include <shlobj.h>
 #endif
 
 #include <xxhash.h>
@@ -244,4 +245,90 @@ Result<std::uint64_t> StandardFileSystemRepository::computeFileHash(const FileNo
     XXH64_freeState(state);
 
     return Result<std::uint64_t>::success(hash);
+}
+
+Result<void> StandardFileSystemRepository::createDirectory(const std::filesystem::path& directory)
+{
+    const fs::path target = withLongPathPrefix(directory);
+
+    std::error_code ec;
+    if (fs::exists(target, ec))
+    {
+        return Result<void>::failure(Error(ErrorCode::AlreadyExists, directory.string() + " already exists"));
+    }
+
+    ec.clear();
+    if (!fs::create_directory(target, ec) || ec)
+    {
+        return Result<void>::failure(Error(ErrorCode::IoError, ec.message()));
+    }
+
+    return Result<void>::success();
+}
+
+Result<FileNode> StandardFileSystemRepository::createFileFromTemplate(const std::filesystem::path& destinationFile,
+                                                                        const std::optional<std::filesystem::path>& templateFile)
+{
+    const fs::path target = withLongPathPrefix(destinationFile);
+
+    std::error_code ec;
+    if (fs::exists(target, ec))
+    {
+        return Result<FileNode>::failure(Error(ErrorCode::AlreadyExists, destinationFile.string() + " already exists"));
+    }
+
+    try
+    {
+        if (templateFile)
+        {
+            fs::copy_file(withLongPathPrefix(*templateFile), target);
+        }
+        else
+        {
+            std::ofstream stream(target, std::ios::binary);
+            if (!stream)
+            {
+                return Result<FileNode>::failure(Error(ErrorCode::IoError, "Failed to create " + destinationFile.string()));
+            }
+        }
+    }
+    catch (const fs::filesystem_error& e)
+    {
+        return Result<FileNode>::failure(toError(e));
+    }
+
+    return buildFileNode(destinationFile, fs::directory_entry(target));
+}
+
+Result<void> StandardFileSystemRepository::showProperties(const std::filesystem::path& path, NativeWindowHandle ownerWindow)
+{
+#ifdef _WIN32
+    const std::wstring nativePath = withLongPathPrefix(path).wstring();
+
+    // Unlike ShellExecuteW/SHFileOperationW elsewhere in this file, SHObjectProperties does not
+    // auto-initialize COM on the calling thread — it just returns FALSE if COM isn't already
+    // initialized there, which is why this call otherwise always fails.
+    const HRESULT comInit = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(comInit) && comInit != RPC_E_CHANGED_MODE)
+    {
+        return Result<void>::failure(Error(ErrorCode::IoError, "Failed to initialize COM for showProperties"));
+    }
+
+    const BOOL ok = SHObjectProperties(static_cast<HWND>(ownerWindow), SHOP_FILEPATH, nativePath.c_str(), nullptr);
+
+    if (SUCCEEDED(comInit))
+    {
+        CoUninitialize();
+    }
+
+    if (!ok)
+    {
+        return Result<void>::failure(Error(ErrorCode::IoError, "Failed to show properties for " + path.string()));
+    }
+    return Result<void>::success();
+#else
+    (void)path;
+    (void)ownerWindow;
+    return Result<void>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
+#endif
 }

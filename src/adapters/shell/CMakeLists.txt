@@ -7,5 +7,5 @@ target_include_directories(explorer_adapters_shell PUBLIC ${CMAKE_CURRENT_SOURCE
 target_link_libraries(explorer_adapters_shell PUBLIC explorer_application)
 
 if(WIN32)
-    target_link_libraries(explorer_adapters_shell PRIVATE Shell32 Ole32 Qt6::Core)
+    target_link_libraries(explorer_adapters_shell PRIVATE Shell32 Ole32 Gdi32 Shlwapi Advapi32)
 endif()

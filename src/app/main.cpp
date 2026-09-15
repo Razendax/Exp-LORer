@@ -5,12 +5,21 @@
 #include "WorkspacePaneViewModel.h"
 
 #include <QApplication>
+#include <QSettings>
 #include <QStandardPaths>
 
 #include <filesystem>
 
 int main(int argc, char* argv[])
 {
+    // QSettings uses INI format for cross-platform consistency rather than the Windows registry
+    // (Architecture.md §9); QCoreApplication's organization/application name give the default
+    // QSettings constructor somewhere to write (window geometry, bookmarks, the context-menu mode
+    // toggle, etc.).
+    QCoreApplication::setOrganizationName(QStringLiteral("Exp-LORer"));
+    QCoreApplication::setApplicationName(QStringLiteral("Exp-LORer"));
+    QSettings::setDefaultFormat(QSettings::IniFormat);
+
     QApplication app(argc, argv);
 
     CompositionRoot compositionRoot;

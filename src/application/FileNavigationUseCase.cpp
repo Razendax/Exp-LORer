@@ -106,14 +106,40 @@ Result<void> FileNavigationUseCase::openFile(const std::filesystem::path& path)
     return m_fileSystemRepository.openWithDefaultApplication(path);
 }
 
-Result<void> FileNavigationUseCase::showItemContextMenu(const std::vector<std::filesystem::path>& paths,
-                                                          NativeScreenPoint screenPosition, NativeWindowHandle ownerWindow)
+Result<std::vector<ContextMenuEntry>> FileNavigationUseCase::buildItemContextMenu(
+    const std::vector<std::filesystem::path>& paths, ContextMenuSourceMode mode)
 {
-    return m_contextMenuProvider.showItemContextMenu(paths, screenPosition, ownerWindow);
+    return m_contextMenuProvider.buildItemMenu(paths, mode);
 }
 
-Result<void> FileNavigationUseCase::showFolderBackgroundContextMenu(const std::filesystem::path& folder,
-                                                                     NativeScreenPoint screenPosition, NativeWindowHandle ownerWindow)
+Result<std::vector<ContextMenuEntry>> FileNavigationUseCase::buildBackgroundContextMenu(const std::filesystem::path& folder,
+                                                                                          ContextMenuSourceMode mode)
 {
-    return m_contextMenuProvider.showBackgroundContextMenu(folder, screenPosition, ownerWindow);
+    return m_contextMenuProvider.buildBackgroundMenu(folder, mode);
+}
+
+Result<void> FileNavigationUseCase::invokeContextMenuEntry(std::uint32_t entryId, NativeWindowHandle ownerWindow)
+{
+    return m_contextMenuProvider.invoke(entryId, ownerWindow);
+}
+
+void FileNavigationUseCase::discardContextMenu()
+{
+    m_contextMenuProvider.discardMenu();
+}
+
+Result<void> FileNavigationUseCase::createFolder(const std::filesystem::path& directory)
+{
+    return m_fileSystemRepository.createDirectory(directory);
+}
+
+Result<FileNode> FileNavigationUseCase::createFileFromTemplate(const std::filesystem::path& destinationFile,
+                                                                 const std::optional<std::filesystem::path>& templateFile)
+{
+    return m_fileSystemRepository.createFileFromTemplate(destinationFile, templateFile);
+}
+
+Result<void> FileNavigationUseCase::showProperties(const std::filesystem::path& path, NativeWindowHandle ownerWindow)
+{
+    return m_fileSystemRepository.showProperties(path, ownerWindow);
 }

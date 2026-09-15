@@ -1,8 +1,10 @@
 #pragma once
 
 #include <filesystem>
+#include <vector>
 
 #include <QList>
+#include <QPoint>
 #include <QString>
 #include <QWidget>
 
@@ -33,6 +35,12 @@ public:
 
     WorkspacePaneViewModel* pane() const noexcept { return m_pane; }
 
+    // Shared with MainWindow's View-menu "Show shell extensions in context menu" QSettings-backed
+    // toggle (Architecture.md §14.13) — read independently by each pane at build-menu time rather
+    // than wired directly to that QAction, so the Application layer stays agnostic of where the
+    // preference is stored.
+    static constexpr const char* kShowShellExtensionsSettingsKey = "ContextMenu/ShowShellExtensions";
+
 signals:
     // Bubbled up so MainWindow (the only widget with a shared status bar) can report it.
     void navigationFailed(const QString& message);
@@ -57,6 +65,11 @@ private:
     void onNavigationFailed(const std::filesystem::path& path, const QString& message);
     void onViewModeChanged(ViewMode mode);
     void onDeleteRequested(TabViewModel* tab, bool permanent);
+
+    void showItemContextMenu(TabViewModel* tab, const std::vector<std::filesystem::path>& paths, const QPoint& globalPos);
+    void showBackgroundContextMenu(TabViewModel* tab, const QPoint& globalPos);
+    void promptRename(const std::filesystem::path& path);
+    static bool extendedShellExtensionsEnabled();
 
     WorkspacePaneViewModel* m_pane = nullptr;
     FileOperationsController* m_fileOperationsController = nullptr;

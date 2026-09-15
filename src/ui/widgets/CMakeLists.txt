@@ -13,6 +13,8 @@ add_library(explorer_ui_widgets STATIC
     TagChipWidget.cpp
     TagPanelWidget.h
     TagPanelWidget.cpp
+    ContextMenuBuilder.h
+    ContextMenuBuilder.cpp
 )
 
 target_include_directories(explorer_ui_widgets PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

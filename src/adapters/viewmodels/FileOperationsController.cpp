@@ -163,33 +163,84 @@ void FileOperationsController::openFile(const std::filesystem::path& path)
     }
 }
 
-void FileOperationsController::showContextMenuForSelection(const std::vector<std::filesystem::path>& paths,
-                                                             NativeScreenPoint screenPosition, NativeWindowHandle ownerWindow)
+void FileOperationsController::renamePath(const std::filesystem::path& source, const std::filesystem::path& destination)
 {
-    auto result = m_fileNavigationUseCase.showItemContextMenu(paths, screenPosition, ownerWindow);
+    auto result = m_fileNavigationUseCase.moveFile(source, destination);
     if (result.hasError())
     {
         emit operationFailed(QString::fromStdString(result.error().message));
         return;
     }
 
-    if (!paths.empty())
-    {
-        emit directoryContentsMayHaveChanged(paths.front().parent_path());
-    }
+    emit directoryContentsMayHaveChanged(source.parent_path());
 }
 
-void FileOperationsController::showContextMenuForFolder(const std::filesystem::path& folder, NativeScreenPoint screenPosition,
-                                                          NativeWindowHandle ownerWindow)
+Result<std::vector<ContextMenuEntry>> FileOperationsController::buildContextMenuForSelection(
+    const std::vector<std::filesystem::path>& paths, ContextMenuSourceMode mode)
 {
-    auto result = m_fileNavigationUseCase.showFolderBackgroundContextMenu(folder, screenPosition, ownerWindow);
+    return m_fileNavigationUseCase.buildItemContextMenu(paths, mode);
+}
+
+Result<std::vector<ContextMenuEntry>> FileOperationsController::buildContextMenuForFolder(const std::filesystem::path& folder,
+                                                                                            ContextMenuSourceMode mode)
+{
+    return m_fileNavigationUseCase.buildBackgroundContextMenu(folder, mode);
+}
+
+void FileOperationsController::invokeContextMenuEntry(std::uint32_t entryId, const std::filesystem::path& directory,
+                                                        NativeWindowHandle ownerWindow)
+{
+    auto result = m_fileNavigationUseCase.invokeContextMenuEntry(entryId, ownerWindow);
     if (result.hasError())
     {
         emit operationFailed(QString::fromStdString(result.error().message));
         return;
     }
 
-    emit directoryContentsMayHaveChanged(folder);
+    // The invoked entry may be registry/COM-sourced, so we can't know what it did to disk —
+    // refresh-on-any-success is the simple correct default, same posture as paste/delete.
+    emit directoryContentsMayHaveChanged(directory);
+}
+
+void FileOperationsController::discardContextMenu()
+{
+    m_fileNavigationUseCase.discardContextMenu();
+}
+
+std::optional<std::filesystem::path> FileOperationsController::createFolder(const std::filesystem::path& parentDirectory)
+{
+    const std::filesystem::path candidate = uniqueDestinationName(parentDirectory, "New folder");
+    auto result = m_fileNavigationUseCase.createFolder(candidate);
+    if (result.hasError())
+    {
+        emit operationFailed(QString::fromStdString(result.error().message));
+        return std::nullopt;
+    }
+
+    emit directoryContentsMayHaveChanged(parentDirectory);
+    return candidate;
+}
+
+void FileOperationsController::createFileFromTemplate(const std::filesystem::path& destinationFile,
+                                                        const std::optional<std::filesystem::path>& templateFile)
+{
+    auto result = m_fileNavigationUseCase.createFileFromTemplate(destinationFile, templateFile);
+    if (result.hasError())
+    {
+        emit operationFailed(QString::fromStdString(result.error().message));
+        return;
+    }
+
+    emit directoryContentsMayHaveChanged(destinationFile.parent_path());
+}
+
+void FileOperationsController::showProperties(const std::filesystem::path& path, NativeWindowHandle ownerWindow)
+{
+    auto result = m_fileNavigationUseCase.showProperties(path, ownerWindow);
+    if (result.hasError())
+    {
+        emit operationFailed(QString::fromStdString(result.error().message));
+    }
 }
 
 std::filesystem::path FileOperationsController::uniqueDestinationName(const std::filesystem::path& destinationDirectory,

@@ -5,17 +5,21 @@
 
 #include <QAction>
 #include <QActionGroup>
+#include <QInputDialog>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
+#include <QSettings>
 #include <QStyle>
 #include <QTabWidget>
 #include <QToolBar>
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include "ContextMenuBuilder.h"
 #include "FileBrowserView.h"
 #include "FileOperationsController.h"
+#include "IContextMenuProvider.h"
 #include "TabViewModel.h"
 #include "WorkspacePaneViewModel.h"
 
@@ -232,13 +236,11 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     connect(browserView, &FileBrowserView::navigateUpRequested, tab, [tab]() { tab->goUp(); });
 
     connect(browserView, &FileBrowserView::itemContextMenuRequested, tab,
-            [this](const std::vector<std::filesystem::path>& paths, const QPoint& globalPos) {
-                m_fileOperationsController->showContextMenuForSelection(
-                    paths, {globalPos.x(), globalPos.y()}, reinterpret_cast<NativeWindowHandle>(window()->winId()));
+            [this, tab](const std::vector<std::filesystem::path>& paths, const QPoint& globalPos) {
+                showItemContextMenu(tab, paths, globalPos);
             });
     connect(browserView, &FileBrowserView::folderContextMenuRequested, tab, [this, tab](const QPoint& globalPos) {
-        m_fileOperationsController->showContextMenuForFolder(
-            tab->currentPath(), {globalPos.x(), globalPos.y()}, reinterpret_cast<NativeWindowHandle>(window()->winId()));
+        showBackgroundContextMenu(tab, globalPos);
     });
 }
 
@@ -399,4 +401,157 @@ void WorkspacePaneWidget::onViewModeChanged(ViewMode mode)
 
     const auto index = std::distance(kViewModes.begin(), it);
     m_viewModeActions[static_cast<int>(index)]->setChecked(true);
+}
+
+bool WorkspacePaneWidget::extendedShellExtensionsEnabled()
+{
+    QSettings settings;
+    return settings.value(QLatin1String(kShowShellExtensionsSettingsKey), false).toBool();
+}
+
+void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, const std::vector<std::filesystem::path>& paths,
+                                               const QPoint& globalPos)
+{
+    if (paths.empty())
+    {
+        return;
+    }
+
+    const auto ownerWindow = reinterpret_cast<NativeWindowHandle>(window()->winId());
+    const std::filesystem::path directory = paths.front().parent_path();
+    const std::filesystem::path targetPath = paths.front();
+
+    auto* openAction = new QAction(tr("Open"));
+    auto* cutAction = new QAction(tr("Cut"));
+    auto* copyAction = new QAction(tr("Copy"));
+    auto* pasteAction = new QAction(tr("Paste"));
+    auto* deleteAction = new QAction(tr("Delete"));
+    auto* renameAction = new QAction(tr("Rename"));
+    auto* propertiesAction = new QAction(tr("Properties"));
+
+    connect(openAction, &QAction::triggered, this, [this, targetPath]() { m_fileOperationsController->openFile(targetPath); });
+    connect(cutAction, &QAction::triggered, this, [this, targetPath]() { m_fileOperationsController->cutToClipboard(targetPath); });
+    connect(copyAction, &QAction::triggered, this, [this, targetPath]() { m_fileOperationsController->copyToClipboard(targetPath); });
+    connect(pasteAction, &QAction::triggered, this, [this, directory]() { m_fileOperationsController->pasteInto(directory); });
+    connect(deleteAction, &QAction::triggered, this, [this, tab]() { onDeleteRequested(tab, false); });
+    connect(renameAction, &QAction::triggered, this, [this, targetPath]() { promptRename(targetPath); });
+    connect(propertiesAction, &QAction::triggered, this, [this, targetPath, ownerWindow]() {
+        m_fileOperationsController->showProperties(targetPath, ownerWindow);
+    });
+
+    ContextMenuBuilder::NativeActions actions;
+    actions.open = openAction;
+    actions.cut = cutAction;
+    actions.copy = copyAction;
+    actions.paste = pasteAction;
+    actions.deleteAction = deleteAction;
+    actions.rename = renameAction;
+    actions.properties = propertiesAction;
+
+    const ContextMenuSourceMode mode =
+        extendedShellExtensionsEnabled() ? ContextMenuSourceMode::StaticAndShellExtensions : ContextMenuSourceMode::StaticVerbsOnly;
+    auto buildResult = m_fileOperationsController->buildContextMenuForSelection(paths, mode);
+
+    std::vector<ContextMenuEntry> entries;
+    if (buildResult.hasValue())
+    {
+        entries = std::move(buildResult).value();
+    }
+    else
+    {
+        emit navigationFailed(QString::fromStdString(buildResult.error().message));
+    }
+
+    QMenu* menu = ContextMenuBuilder::buildItemMenu(entries, actions, this);
+    QAction* chosen = menu->exec(globalPos);
+
+    const auto entryId = chosen ? ContextMenuBuilder::entryIdForAction(chosen) : std::nullopt;
+    if (entryId)
+    {
+        m_fileOperationsController->invokeContextMenuEntry(*entryId, directory, ownerWindow);
+    }
+    else
+    {
+        m_fileOperationsController->discardContextMenu();
+    }
+
+    menu->deleteLater();
+    for (QAction* action : { openAction, cutAction, copyAction, pasteAction, deleteAction, renameAction, propertiesAction })
+    {
+        action->deleteLater();
+    }
+}
+
+void WorkspacePaneWidget::showBackgroundContextMenu(TabViewModel* tab, const QPoint& globalPos)
+{
+    const std::filesystem::path directory = tab->currentPath();
+    const auto ownerWindow = reinterpret_cast<NativeWindowHandle>(window()->winId());
+
+    auto* pasteAction = new QAction(tr("Paste"));
+    auto* newFolderAction = new QAction(tr("New Folder"));
+    auto* propertiesAction = new QAction(tr("Properties"));
+
+    connect(pasteAction, &QAction::triggered, this, [this, directory]() { m_fileOperationsController->pasteInto(directory); });
+    connect(newFolderAction, &QAction::triggered, this, [this, directory]() {
+        if (auto createdPath = m_fileOperationsController->createFolder(directory))
+        {
+            promptRename(*createdPath);
+        }
+    });
+    connect(propertiesAction, &QAction::triggered, this, [this, directory, ownerWindow]() {
+        m_fileOperationsController->showProperties(directory, ownerWindow);
+    });
+
+    ContextMenuBuilder::NativeActions actions;
+    actions.paste = pasteAction;
+    actions.newFolder = newFolderAction;
+    actions.properties = propertiesAction;
+
+    const ContextMenuSourceMode mode =
+        extendedShellExtensionsEnabled() ? ContextMenuSourceMode::StaticAndShellExtensions : ContextMenuSourceMode::StaticVerbsOnly;
+    auto buildResult = m_fileOperationsController->buildContextMenuForFolder(directory, mode);
+
+    std::vector<ContextMenuEntry> entries;
+    if (buildResult.hasValue())
+    {
+        entries = std::move(buildResult).value();
+    }
+    else
+    {
+        emit navigationFailed(QString::fromStdString(buildResult.error().message));
+    }
+
+    QMenu* menu = ContextMenuBuilder::buildBackgroundMenu(entries, actions, this);
+    QAction* chosen = menu->exec(globalPos);
+
+    const auto entryId = chosen ? ContextMenuBuilder::entryIdForAction(chosen) : std::nullopt;
+    if (entryId)
+    {
+        m_fileOperationsController->invokeContextMenuEntry(*entryId, directory, ownerWindow);
+    }
+    else
+    {
+        m_fileOperationsController->discardContextMenu();
+    }
+
+    menu->deleteLater();
+    for (QAction* action : { pasteAction, newFolderAction, propertiesAction })
+    {
+        action->deleteLater();
+    }
+}
+
+void WorkspacePaneWidget::promptRename(const std::filesystem::path& path)
+{
+    const QString currentName = toQString(path.filename());
+
+    bool ok = false;
+    const QString newName = QInputDialog::getText(this, tr("Rename"), tr("New name:"), QLineEdit::Normal, currentName, &ok);
+    if (!ok || newName.isEmpty() || newName == currentName)
+    {
+        return;
+    }
+
+    const std::filesystem::path destination = path.parent_path() / std::filesystem::path(newName.toStdWString());
+    m_fileOperationsController->renamePath(path, destination);
 }

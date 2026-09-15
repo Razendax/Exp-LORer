@@ -7,6 +7,7 @@
 #include <QActionGroup>
 #include <QMenu>
 #include <QMenuBar>
+#include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QToolBar>
@@ -88,6 +89,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, QWidget* parent
 
     createLayoutActions();
     createSortByActions();
+    createContextMenuModeAction();
     createMenuBar();
     createLayoutToolBar();
     createWorkspace();
@@ -163,6 +165,21 @@ void MainWindow::createSortByActions()
     });
 }
 
+void MainWindow::createContextMenuModeAction()
+{
+    m_extendedContextMenuAction = new QAction(tr("Show shell extensions in context menu"), this);
+    m_extendedContextMenuAction->setCheckable(true);
+
+    QSettings settings;
+    m_extendedContextMenuAction->setChecked(
+        settings.value(QLatin1String(WorkspacePaneWidget::kShowShellExtensionsSettingsKey), false).toBool());
+
+    connect(m_extendedContextMenuAction, &QAction::toggled, this, [](bool checked) {
+        QSettings settings;
+        settings.setValue(QLatin1String(WorkspacePaneWidget::kShowShellExtensionsSettingsKey), checked);
+    });
+}
+
 void MainWindow::createMenuBar()
 {
     QMenu* fileMenu = menuBar()->addMenu(tr("&File"));
@@ -179,6 +196,9 @@ void MainWindow::createMenuBar()
     m_sortByMenu->addSeparator();
     m_sortByMenu->addAction(m_ascendingAction);
     m_sortByMenu->addAction(m_descendingAction);
+
+    viewMenu->addSeparator();
+    viewMenu->addAction(m_extendedContextMenuAction);
 
     menuBar()->addMenu(tr("F&avorites"));
     menuBar()->addMenu(tr("&Tools"));

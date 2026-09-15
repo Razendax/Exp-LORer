@@ -15,4 +15,9 @@ public:
     MOCK_METHOD(Result<void>, deletePermanently, (const std::filesystem::path& path), (override));
     MOCK_METHOD(Result<void>, openWithDefaultApplication, (const std::filesystem::path& path), (override));
     MOCK_METHOD(Result<std::uint64_t>, computeFileHash, (const FileNode& file), (const, override));
+    MOCK_METHOD(Result<void>, createDirectory, (const std::filesystem::path& directory), (override));
+    MOCK_METHOD(Result<FileNode>, createFileFromTemplate,
+                (const std::filesystem::path& destinationFile, const std::optional<std::filesystem::path>& templateFile),
+                (override));
+    MOCK_METHOD(Result<void>, showProperties, (const std::filesystem::path& path, NativeWindowHandle ownerWindow), (override));
 };

@@ -2,9 +2,11 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 #include "FileNode.h"
+#include "NativeTypes.h"
 #include "Result.h"
 
 // Port for OS file operations (Architecture.md §2.2). Implemented by
@@ -35,4 +37,15 @@ public:
     // Fast partial hash (size + first/last 64KB + mtime via xxHash64) per Architecture.md §8 — a
     // rename/move detection heuristic, not a cryptographic or uniqueness guarantee.
     virtual Result<std::uint64_t> computeFileHash(const FileNode& file) const = 0;
+
+    virtual Result<void> createDirectory(const std::filesystem::path& directory) = 0;
+
+    // Copies templateFile's bytes to destinationFile if templateFile is set; otherwise creates an
+    // empty file. Backs the registry ShellNew "New > <type>" submenu (NullFile/FileName cases only).
+    virtual Result<FileNode> createFileFromTemplate(const std::filesystem::path& destinationFile,
+                                                      const std::optional<std::filesystem::path>& templateFile) = 0;
+
+    // SHObjectProperties on Windows; "Not supported on this platform" elsewhere — same posture as
+    // openWithDefaultApplication.
+    virtual Result<void> showProperties(const std::filesystem::path& path, NativeWindowHandle ownerWindow) = 0;
 };

@@ -1,12 +1,15 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "FileNode.h"
 #include "IContextMenuProvider.h"
 #include "IFileSystemRepository.h"
+#include "NativeTypes.h"
 #include "Result.h"
 
 enum class SortCriterion
@@ -37,10 +40,17 @@ public:
     Result<void> deleteFilePermanently(const std::filesystem::path& path);
     Result<void> openFile(const std::filesystem::path& path);
 
-    Result<void> showItemContextMenu(const std::vector<std::filesystem::path>& paths,
-                                      NativeScreenPoint screenPosition, NativeWindowHandle ownerWindow);
-    Result<void> showFolderBackgroundContextMenu(const std::filesystem::path& folder,
-                                                  NativeScreenPoint screenPosition, NativeWindowHandle ownerWindow);
+    Result<std::vector<ContextMenuEntry>> buildItemContextMenu(const std::vector<std::filesystem::path>& paths,
+                                                                 ContextMenuSourceMode mode);
+    Result<std::vector<ContextMenuEntry>> buildBackgroundContextMenu(const std::filesystem::path& folder,
+                                                                       ContextMenuSourceMode mode);
+    Result<void> invokeContextMenuEntry(std::uint32_t entryId, NativeWindowHandle ownerWindow);
+    void discardContextMenu();
+
+    Result<void> createFolder(const std::filesystem::path& directory);
+    Result<FileNode> createFileFromTemplate(const std::filesystem::path& destinationFile,
+                                             const std::optional<std::filesystem::path>& templateFile);
+    Result<void> showProperties(const std::filesystem::path& path, NativeWindowHandle ownerWindow);
 
 private:
     IFileSystemRepository& m_fileSystemRepository;

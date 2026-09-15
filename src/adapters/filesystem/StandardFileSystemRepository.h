@@ -19,4 +19,9 @@ public:
     Result<void> openWithDefaultApplication(const std::filesystem::path& path) override;
 
     Result<std::uint64_t> computeFileHash(const FileNode& file) const override;
+
+    Result<void> createDirectory(const std::filesystem::path& directory) override;
+    Result<FileNode> createFileFromTemplate(const std::filesystem::path& destinationFile,
+                                             const std::optional<std::filesystem::path>& templateFile) override;
+    Result<void> showProperties(const std::filesystem::path& path, NativeWindowHandle ownerWindow) override;
 };

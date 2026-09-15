@@ -39,13 +39,16 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   the parent folder and ArrowRight opens a selected folder (no effect on a selected file). Ctrl+C/
   X/V read and write the real OS clipboard, so cut/copy/paste interoperate with File Explorer and
   other applications, not just within Exp-LORer.
-* **Right-click context menu** on a file, a folder, or empty space within a directory view. Its
-  content is the OS's own registered shell context menu for that target (Architecture.md §14.13) —
-  not a fixed, app-defined action list — so it varies by file type, differs between a file, a
-  folder, and empty space (which shows folder-level actions like Paste/New/Refresh instead), and
-  automatically includes any third-party shell extensions the user has installed. Whichever action
-  the user picks is carried out by the OS shell itself. v1 supports only a single selected
-  file/folder at a time, matching the single-selection scope of the keyboard hotkeys above.
+* **Right-click context menu** on a file, a folder, or empty space within a directory view, drawn
+  as the app's own custom menu rather than the OS's native popup (Architecture.md §14.13). Content
+  is still sourced from the Windows Registry, so it varies by file type and differs between a file,
+  a folder, and empty space (which shows folder-level actions like Paste/New/Refresh instead) the
+  same way Explorer's does; a user-toggleable "extended" mode additionally pulls in installed
+  third-party shell extensions (7-Zip, Git, etc.) via the same COM mechanism Explorer uses, at the
+  cost of extra latency per right-click — the default mode reads registry verbs only. Cut/Copy/
+  Paste/Delete/Rename/New Folder/Properties are always the app's own native actions, not
+  registry-sourced. v1 supports only a single selected file/folder at a time, matching the
+  single-selection scope of the keyboard hotkeys above.
 
 **Search and Filter:**
 * Fast filename and extension search within the current directory and subdirectories.

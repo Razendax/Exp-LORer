@@ -28,6 +28,7 @@ public:
 private:
     void createLayoutActions();
     void createSortByActions();
+    void createContextMenuModeAction();
     void createMenuBar();
     void createLayoutToolBar();
     void createWorkspace();
@@ -57,4 +58,10 @@ private:
     QActionGroup* m_sortOrderActionGroup = nullptr;
     QAction* m_ascendingAction = nullptr;
     QAction* m_descendingAction = nullptr;
+
+    // Context-menu resolution mode toggle (Architecture.md §14.13), persisted via QSettings under
+    // WorkspacePaneWidget::kShowShellExtensionsSettingsKey — WorkspacePaneWidget reads the same
+    // key independently at build-menu time, so no direct wiring exists between this action and
+    // any pane.
+    QAction* m_extendedContextMenuAction = nullptr;
 };

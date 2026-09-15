@@ -109,6 +109,54 @@ TEST_F(StandardFileSystemRepositoryTest, DeletePermanentlyRemovesFile)
     EXPECT_FALSE(fs::exists(m_tempDir / "gone.txt"));
 }
 
+TEST_F(StandardFileSystemRepositoryTest, CreateDirectoryCreatesNewFolder)
+{
+    auto result = m_repository.createDirectory(m_tempDir / "New folder");
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(fs::is_directory(m_tempDir / "New folder"));
+}
+
+TEST_F(StandardFileSystemRepositoryTest, CreateDirectoryFailsIfAlreadyExists)
+{
+    fs::create_directory(m_tempDir / "existing");
+
+    auto result = m_repository.createDirectory(m_tempDir / "existing");
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::AlreadyExists);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, CreateFileFromTemplateCreatesEmptyFileWhenNoTemplateGiven)
+{
+    auto result = m_repository.createFileFromTemplate(m_tempDir / "New Text Document.txt", std::nullopt);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(fs::exists(m_tempDir / "New Text Document.txt"));
+    EXPECT_EQ(fs::file_size(m_tempDir / "New Text Document.txt"), 0u);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, CreateFileFromTemplateCopiesTemplateBytes)
+{
+    writeFile(m_tempDir / "template.txt", "template content");
+
+    auto result = m_repository.createFileFromTemplate(m_tempDir / "New file.txt", m_tempDir / "template.txt");
+
+    ASSERT_TRUE(result.hasValue());
+    ASSERT_TRUE(fs::exists(m_tempDir / "New file.txt"));
+    EXPECT_EQ(fs::file_size(m_tempDir / "New file.txt"), fs::file_size(m_tempDir / "template.txt"));
+}
+
+TEST_F(StandardFileSystemRepositoryTest, CreateFileFromTemplateFailsIfDestinationAlreadyExists)
+{
+    writeFile(m_tempDir / "already-there.txt", "data");
+
+    auto result = m_repository.createFileFromTemplate(m_tempDir / "already-there.txt", std::nullopt);
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::AlreadyExists);
+}
+
 TEST_F(StandardFileSystemRepositoryTest, ComputeFileHashIsDeterministic)
 {
     writeFile(m_tempDir / "hash.txt", "some content for hashing");

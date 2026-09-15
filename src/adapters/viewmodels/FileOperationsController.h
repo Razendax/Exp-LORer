@@ -1,12 +1,15 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 #include <QObject>
 #include <QString>
 
 #include "IContextMenuProvider.h"
+#include "NativeTypes.h"
 
 class FileNavigationUseCase;
 
@@ -37,14 +40,29 @@ public slots:
     void deletePermanently(const std::filesystem::path& path);
     void openFile(const std::filesystem::path& path);
 
-    // Shows the real OS shell context menu (Architecture.md §14.13) and, on success, refreshes
-    // the affected directory unconditionally — the shell's chosen verb isn't inspected, so this
-    // is correct whether the user picked Rename/Delete/Paste/a shell-extension action, or
-    // cancelled (cancelling is also a "success" from the Port's point of view, just a no-op).
-    void showContextMenuForSelection(const std::vector<std::filesystem::path>& paths, NativeScreenPoint screenPosition,
-                                      NativeWindowHandle ownerWindow);
-    void showContextMenuForFolder(const std::filesystem::path& folder, NativeScreenPoint screenPosition,
-                                   NativeWindowHandle ownerWindow);
+    // Rename is just a same-directory move (Architecture.md §14.13) — no new Port method needed.
+    void renamePath(const std::filesystem::path& source, const std::filesystem::path& destination);
+
+    // Builds the registry-sourced entries for a custom QMenu (Architecture.md §14.13); does not
+    // touch QMenu/QAction itself — src/ui/widgets/ContextMenuBuilder does that.
+    Result<std::vector<ContextMenuEntry>> buildContextMenuForSelection(const std::vector<std::filesystem::path>& paths,
+                                                                        ContextMenuSourceMode mode);
+    Result<std::vector<ContextMenuEntry>> buildContextMenuForFolder(const std::filesystem::path& folder, ContextMenuSourceMode mode);
+
+    // Invokes the chosen registry-sourced entry and, on success, unconditionally refreshes
+    // directory — we can't know what a registry/COM-invoked entry did to disk, so refresh-on-any-
+    // success is the simple correct default, same posture the paste/delete slots already use.
+    void invokeContextMenuEntry(std::uint32_t entryId, const std::filesystem::path& directory, NativeWindowHandle ownerWindow);
+    void discardContextMenu();
+
+    // Returns the created folder's path (a de-duplicated "New folder", "New folder (2)", ...) on
+    // success so the caller can immediately follow up with the Rename dialog — the practical
+    // equivalent of Explorer's inline rename-on-create — or nullopt on failure (operationFailed is
+    // still emitted in that case).
+    std::optional<std::filesystem::path> createFolder(const std::filesystem::path& parentDirectory);
+    void createFileFromTemplate(const std::filesystem::path& destinationFile,
+                                 const std::optional<std::filesystem::path>& templateFile);
+    void showProperties(const std::filesystem::path& path, NativeWindowHandle ownerWindow);
 
 signals:
     // Mirrors TabViewModel::navigationFailed's pattern for status-bar reporting.
