@@ -13,6 +13,7 @@
 #include <QTreeView>
 #include <QVBoxLayout>
 
+#include "FileIconDelegate.h"
 #include "FileListModel.h"
 #include "FileTileDelegate.h"
 
@@ -48,6 +49,7 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent)
     m_listView->setModel(m_model);
     m_defaultDelegate = m_listView->itemDelegate();
     m_tileDelegate = new FileTileDelegate(this);
+    m_iconDelegate = new FileIconDelegate(this);
 
     m_treeView = new QTreeView(this);
     m_treeView->setModel(m_model);
@@ -226,11 +228,10 @@ void FileBrowserView::setViewMode(ViewMode mode)
         return;
     }
 
-    m_listView->setItemDelegate(m_defaultDelegate);
-    m_listView->setUniformItemSizes(true);
-
     if (mode == ViewMode::List)
     {
+        m_listView->setItemDelegate(m_defaultDelegate);
+        m_listView->setUniformItemSizes(true);
         m_listView->setViewMode(QListView::ListMode);
         m_listView->setFlow(QListView::TopToBottom);
         m_listView->setWrapping(true);
@@ -239,6 +240,8 @@ void FileBrowserView::setViewMode(ViewMode mode)
     }
 
     // ExtraLargeIcons / LargeIcons / MediumIcons / SmallIcons
+    m_listView->setItemDelegate(m_iconDelegate);
+    m_listView->setUniformItemSizes(true);
     m_listView->setViewMode(QListView::IconMode);
     m_listView->setFlow(QListView::LeftToRight);
     m_listView->setWrapping(true);

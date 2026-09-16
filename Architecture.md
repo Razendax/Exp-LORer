@@ -69,6 +69,12 @@ Extra Large Icons, Large Icons, Medium Icons, Small Icons, List, Details, Tiles.
   header-click).
 * Tiles mode has no built-in Qt layout and uses a custom `QStyledItemDelegate`
   (`FileTileDelegate`) painting an icon plus two lines of text (name, then type/size).
+* The four Icon-size modes (Extra Large/Large/Medium/Small) likewise use a custom
+  `QStyledItemDelegate` (`FileIconDelegate`) rather than Qt's stock one: icon on top (sized from
+  `QListView::iconSize()`, i.e. unchanged per the sizing steps above) with the item's name elided on
+  one line underneath, and selection drawn as a dashed rectangle outline around the whole item
+  instead of Qt's default filled highlight. List mode is the only `QListView`-hosted mode still using
+  Qt's stock delegate.
 * Icons come from `QFileIconProvider` (real OS shell icons), not bundled resources.
 * View mode is UI/presentation state, not a Domain/Application concern — no new entities or Ports.
   It lives on `TabViewModel` (§14), one instance per tab, so each tab's view mode is independent of

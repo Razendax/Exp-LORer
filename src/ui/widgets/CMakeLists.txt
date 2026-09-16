@@ -5,6 +5,8 @@ add_library(explorer_ui_widgets STATIC
     FileBrowserView.cpp
     FileTileDelegate.h
     FileTileDelegate.cpp
+    FileIconDelegate.h
+    FileIconDelegate.cpp
     WorkspacePaneWidget.h
     WorkspacePaneWidget.cpp
     WorkspaceLayoutWidget.h

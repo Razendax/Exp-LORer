@@ -21,6 +21,7 @@ class QAbstractItemDelegate;
 class QKeyEvent;
 class FileListModel;
 class FileTileDelegate;
+class FileIconDelegate;
 
 // The tab's content widget: a QStackedWidget switching between a QListView (icon/list/tiles view
 // modes) and a QTreeView (details view mode), both bound to the same FileListModel
@@ -86,5 +87,6 @@ private:
     QTreeView* m_treeView = nullptr;
     QAbstractItemDelegate* m_defaultDelegate = nullptr;
     FileTileDelegate* m_tileDelegate = nullptr;
+    FileIconDelegate* m_iconDelegate = nullptr;
     QItemSelectionModel* m_selectionModel = nullptr;
 };
