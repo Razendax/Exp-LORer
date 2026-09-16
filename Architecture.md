@@ -197,7 +197,13 @@ CREATE TABLE FileTags (
 ## 9. Application Data Locations & Configuration
 
 * **Windows:** Database + logs + thumbnail cache live under `%LOCALAPPDATA%/Exp-LORer/` (`explorer.db`, `logs/`, `thumbnails/`). Standard `QStandardPaths::AppDataLocation` / `QStandardPaths::CacheLocation` are used so this is portable to Linux (`~/.local/share/Exp-LORer`, `~/.cache/Exp-LORer`) without code changes.
-* **User settings** (window geometry, bookmarks/pinned folders, last directory, thumbnail cache size limit): stored via `QSettings` (INI format for cross-platform consistency rather than the Windows registry).
+* **User settings:** window geometry and the split-window session (layout, each pane's tabs —
+  path/view mode/sort order — and the focused pane) persist via a JSON config file (`config.json`,
+  same directory as `explorer.db`), written by `AppConfigStore` and restored at startup — see
+  §14.14. `QSettings` (INI format for cross-platform consistency rather than the Windows registry)
+  remains in use only for settings not yet migrated to `config.json`: the context-menu
+  shell-extensions toggle (§14.13.5) today; bookmarks/pinned folders and thumbnail cache size limit
+  are unimplemented in either mechanism as of this writing.
 * **Recycle Bin / Trash:** "Delete" maps to the native OS trash where available — `IFileOperation`/`SHFileOperation` with `FOF_ALLOWUNDO` on Windows; deferred to the freedesktop.org Trash spec (`libgio`/manual `.local/share/Trash`) when Linux support is implemented. A separate explicit "Delete Permanently" bypasses trash. Both go through `IFileSystemRepository` so the Application layer is unaware of the OS-specific mechanism.
 
 ---
@@ -221,6 +227,7 @@ Exp-LORer/
 │   │   ├── persistence/          # SQLiteTagRepository, migration scripts
 │   │   ├── filesystem/           # StandardFileSystemRepository (std::filesystem + OS trash calls)
 │   │   ├── shell/                # ShellContextMenuProvider (registry/COM-sourced context menu data, see §14.13)
+│   │   ├── config/                # AppConfig, AppConfigStore (JSON session/window-geometry persistence, see §14.14)
 │   │   └── media/                # QtMediaDecoder / FFmpegMediaDecoder, ThumbnailGenerator
 │   ├── ui/
 │   │   ├── widgets/               # MainWindow, FileBrowserView, FileTileDelegate, TagPanelWidget,
@@ -476,11 +483,9 @@ stacks, unchanged). Composite and Memento are dropped in this revision — there
 
 ### 14.8 Deferred / Future Work
 
-* **Session persistence** (restoring `SplitLayout` + each pane's tabs/paths/view modes across
-  restarts) is explicitly out of scope for this increment. A future `WorkspaceSessionStore`
-  (QSettings-backed, mirroring §9's window-geometry handling) is the natural place for it; it would
-  need a serializable snapshot type capturing `SplitLayout` + each `WorkspacePaneViewModel`'s tab
-  paths/view-modes + focused pane — not designed further here.
+* **Session persistence** (restoring `SplitLayout` + each pane's tabs/paths/view modes/sort orders
+  + window geometry across restarts) is now implemented — see §14.14. Live/continuous autosave
+  during a session (as opposed to save-on-close) remains future work.
 * **Tag filter panel / media preview retargeting**: hook point is
   `WorkspaceController::focusedPaneChanged` + `WorkspacePaneViewModel::activeTabChanged`; the
   ViewModels/widgets themselves remain `.gitkeep` placeholders.
@@ -806,3 +811,71 @@ already had Cut/Copy/Paste/Delete/Open, §14.10–§14.11):
   vector, but `FileBrowserView` only ever selects one row today); a context menu triggered from
   drag-and-drop (no drag-and-drop in the app yet); inline in-grid rename-on-create (v1 uses a modal
   dialog instead, §14.13.4); `ShellNew`'s `Command`/binary-`Data` mechanisms (§14.13.3).
+
+### 14.14 Session Persistence (Window Geometry, Layout, Tabs, View & Sort)
+
+Fulfills the §14.8 deferral: the split-window session — active `SplitLayout`, each pane's ordered
+tabs (path, `ViewMode`, sort criterion/direction), the focused pane, and the main window's geometry
+— now survives an app restart, backed by a JSON file rather than `QSettings` (§9). No Domain or
+Application layer change; this is UI-session state, same posture as the rest of §14.
+
+#### 14.14.1 New Components
+
+* **`WorkspaceConfig.h`** (`src/adapters/viewmodels/`, new) — plain C++ (no Qt), alongside
+  `SplitLayout.h`/`WorkspacePaneId.h`/`ViewMode.h`: `TabConfig` (path, `ViewMode`, `SortCriterion`,
+  ascending flag), `PaneConfig` (ordered `TabConfig` list + active-tab index), `WorkspaceConfig`
+  (`SplitLayout` + focused `WorkspacePaneId` + one `PaneConfig` per `WorkspacePaneId`).
+* **`WorkspaceController`** (§14.3) gains `captureConfig() const -> WorkspaceConfig`, reading every
+  pane's tabs via the existing `pane(id)/tabAt(i)` accessors, and `restoreFromConfig(const
+  WorkspaceConfig&) -> bool`, which rebuilds each pane's tabs via the existing
+  `WorkspacePaneViewModel::addTab()` + `TabViewModel::navigateTo/setViewMode/setSortCriterion`,
+  then applies the saved active tab, `SplitLayout`, and focused pane. Returns whether any tab was
+  restored, so `main.cpp` can fall back to the pre-existing "seed PaneA at the home directory"
+  behavior on a fresh install. A saved path that no longer resolves degrades the same way any other
+  navigation failure does today (`navigationFailed`, tab left on an empty listing) — no new error
+  handling.
+* **`WorkspacePaneViewModel`** gains a trivial `activeIndex() const` accessor for `captureConfig()`.
+* **`src/adapters/config/`** (new adapter module, sibling to `persistence`/`filesystem`/`shell`):
+  * `AppConfig.h` — `AppConfig { QByteArray windowGeometry; WorkspaceConfig workspace; }`. Unlike
+    `WorkspaceConfig`, this type is allowed to reference Qt (`QByteArray`) directly — the module
+    exists specifically as the Qt/JSON persistence boundary, the same posture `SQLiteTagRepository`
+    and `ContextMenuIcon` already have at their own boundaries.
+  * `AppConfigStore` — `load() -> AppConfig` / `save(const AppConfig&) -> bool`, backed by Qt's
+    built-in `QJsonDocument`/`QJsonObject`/`QJsonArray` (`Qt6::Core` — already linked everywhere,
+    no new `vcpkg.json` dependency). Reads/writes `%LOCALAPPDATA%/Exp-LORer/config.json` (Windows),
+    same directory as `explorer.db` (§9), via a `configFilePath()` helper mirroring
+    `CompositionRoot`'s existing `databasePath()`. Window geometry round-trips through
+    `QMainWindow::saveGeometry()`/`restoreGeometry()` (base64-encoded in the JSON) rather than a
+    hand-rolled x/y/width/height/maximized struct, since that already correctly handles maximized
+    state, multi-monitor placement, and DPI. `SplitLayout`/`WorkspacePaneId`/`ViewMode`/
+    `SortCriterion` values serialize as readable strings (e.g. `"TwoVertical"`), not raw ints, so
+    the file stays hand-editable/debuggable and isn't brittle to enum reordering. `load()` is
+    tolerant: a missing file, unparsable JSON, or any individual malformed/missing field all fall
+    back to that field's default rather than failing the whole load; `qWarning()` (plain
+    `Qt6::Core`, not a new dependency) surfaces problems without throwing. `save()` writes to
+    `config.json.tmp` then renames over `config.json`, so a crash mid-write can't corrupt the
+    previous good file. A top-level `"version"` field is reserved for future migrations; no
+    migration framework exists yet.
+* **`CompositionRoot`** owns the `AppConfigStore` (constructed with `configFilePath()`, same
+  pattern as its `SQLiteTagRepository` member) and exposes it via `appConfigStore()`.
+* **`MainWindow`** constructor takes an `AppConfigStore&` and the loaded `AppConfig`, applying
+  `restoreGeometry()` (or a default size on first run); a new `closeEvent()` override captures
+  `saveGeometry()` + `WorkspaceController::captureConfig()` into an `AppConfig` and calls
+  `AppConfigStore::save()` before chaining to the base implementation — this is the only place a
+  save happens (see §14.14.2).
+* **`main.cpp`**: loads the config and calls `WorkspaceController::restoreFromConfig()` *before*
+  constructing `MainWindow` (so `WorkspaceLayoutWidget`'s constructor-time `applyLayout()` already
+  sees the restored layout/tabs), running the pre-existing home-directory seed only when nothing
+  was restored.
+
+#### 14.14.2 Save/Load Policy and Not Built Here
+
+* **Save-on-close only**: the config is captured and written exactly once, from
+  `MainWindow::closeEvent()`. No periodic/live autosave during a running session in this increment.
+* **Not built here**: live/continuous autosave; migrating the existing `QSettings`-backed
+  "show shell extensions in context menu" toggle (§14.13.5) into `config.json` — it's read via a
+  static lookup at context-menu-build time today, and folding it into session state that only
+  saves on close would need a live in-memory reference threaded through `WorkspacePaneWidget`,
+  a separate change from this one; a config schema-migration framework beyond the reserved
+  `"version"` field; persisting bookmarks/pinned folders or the thumbnail cache size limit (neither
+  is implemented anywhere yet).

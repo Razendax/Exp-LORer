@@ -8,6 +8,7 @@ add_library(explorer_adapters_viewmodels STATIC
     FileListModel.cpp
     SplitLayout.h
     WorkspacePaneId.h
+    WorkspaceConfig.h
     WorkspaceLayoutTopology.h
     WorkspaceLayoutTopology.cpp
     WorkspacePaneViewModel.h

@@ -3,12 +3,15 @@
 #include <QList>
 #include <QMainWindow>
 
+#include "AppConfig.h"
 #include "FileNavigationUseCase.h"
 #include "SplitLayout.h"
 
 class QAction;
 class QActionGroup;
+class QCloseEvent;
 class QMenu;
+class AppConfigStore;
 class WorkspaceController;
 class WorkspaceLayoutWidget;
 class TagPanelWidget;
@@ -23,7 +26,14 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    explicit MainWindow(WorkspaceController* workspaceController, QWidget* parent = nullptr);
+    MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore, const AppConfig& initialConfig,
+               QWidget* parent = nullptr);
+
+protected:
+    // Captures window geometry + WorkspaceController::captureConfig() and saves it via
+    // m_configStore before chaining to QMainWindow::closeEvent (Architecture.md §14.14 — the only
+    // place a save happens; no periodic/live autosave).
+    void closeEvent(QCloseEvent* event) override;
 
 private:
     void createLayoutActions();
@@ -39,6 +49,7 @@ private:
     void onSortOrderChanged(SortCriterion criterion, bool ascending);
 
     WorkspaceController* m_workspaceController = nullptr;
+    AppConfigStore& m_configStore;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;
     TabViewModel* m_sortTrackedTab = nullptr;

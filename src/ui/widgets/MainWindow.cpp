@@ -5,6 +5,7 @@
 
 #include <QAction>
 #include <QActionGroup>
+#include <QCloseEvent>
 #include <QMenu>
 #include <QMenuBar>
 #include <QSettings>
@@ -12,6 +13,7 @@
 #include <QStatusBar>
 #include <QToolBar>
 
+#include "AppConfigStore.h"
 #include "FileOperationsController.h"
 #include "TabViewModel.h"
 #include "TagPanelWidget.h"
@@ -80,12 +82,22 @@ namespace
     }
 }
 
-MainWindow::MainWindow(WorkspaceController* workspaceController, QWidget* parent)
+MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore, const AppConfig& initialConfig,
+                         QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceController(workspaceController)
+    , m_configStore(configStore)
 {
     setWindowTitle(tr("Exp-LORer"));
-    resize(1024, 768);
+
+    if (!initialConfig.windowGeometry.isEmpty())
+    {
+        restoreGeometry(initialConfig.windowGeometry);
+    }
+    else
+    {
+        resize(1024, 768);
+    }
 
     createLayoutActions();
     createSortByActions();
@@ -280,4 +292,14 @@ void MainWindow::onSortOrderChanged(SortCriterion criterion, bool ascending)
     }
 
     (ascending ? m_ascendingAction : m_descendingAction)->setChecked(true);
+}
+
+void MainWindow::closeEvent(QCloseEvent* event)
+{
+    AppConfig config;
+    config.windowGeometry = saveGeometry();
+    config.workspace = m_workspaceController->captureConfig();
+    m_configStore.save(config);
+
+    QMainWindow::closeEvent(event);
 }

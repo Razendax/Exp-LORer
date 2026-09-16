@@ -23,19 +23,25 @@ int main(int argc, char* argv[])
     QApplication app(argc, argv);
 
     CompositionRoot compositionRoot;
-    auto workspaceController = compositionRoot.createWorkspaceController();
+    const AppConfig initialConfig = compositionRoot.appConfigStore().load();
 
-    MainWindow mainWindow(workspaceController.get());
+    auto workspaceController = compositionRoot.createWorkspaceController();
+    const bool restored = workspaceController->restoreFromConfig(initialConfig.workspace);
+
+    MainWindow mainWindow(workspaceController.get(), compositionRoot.appConfigStore(), initialConfig);
     mainWindow.show();
 
-    const auto homePath = std::filesystem::path(
-        QStandardPaths::writableLocation(QStandardPaths::HomeLocation).toStdWString());
+    if (!restored)
+    {
+        const auto homePath = std::filesystem::path(
+            QStandardPaths::writableLocation(QStandardPaths::HomeLocation).toStdWString());
 
-    // MainWindow's construction already built a WorkspaceLayoutWidget, whose applyLayout() has
-    // already auto-seeded an empty tab into PaneA (the sole visible pane at startup, under
-    // SplitLayout::Single) via its "newly-revealed empty pane" rule. Navigate that existing tab
-    // rather than adding a second one.
-    workspaceController->pane(WorkspacePaneId::PaneA)->activeTab()->navigateTo(homePath);
+        // MainWindow's construction already built a WorkspaceLayoutWidget, whose applyLayout() has
+        // already auto-seeded an empty tab into PaneA (the sole visible pane at startup, under
+        // SplitLayout::Single) via its "newly-revealed empty pane" rule. Navigate that existing tab
+        // rather than adding a second one.
+        workspaceController->pane(WorkspacePaneId::PaneA)->activeTab()->navigateTo(homePath);
+    }
 
     return app.exec();
 }

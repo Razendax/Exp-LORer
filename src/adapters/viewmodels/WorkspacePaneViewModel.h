@@ -23,6 +23,7 @@ public:
     int tabCount() const noexcept { return static_cast<int>(m_tabs.size()); }
     TabViewModel* tabAt(int index) const;
     TabViewModel* activeTab() const;
+    int activeIndex() const noexcept { return m_activeIndex; }
 
 public slots:
     // Creates a new TabViewModel, appends it, and makes it the active tab. Emits tabAdded(index)

@@ -6,6 +6,7 @@
 #include <QObject>
 
 #include "SplitLayout.h"
+#include "WorkspaceConfig.h"
 #include "WorkspacePaneId.h"
 
 class FileNavigationUseCase;
@@ -36,6 +37,16 @@ public:
     TabViewModel* focusedTab() const;
     TagListViewModel* tagListViewModel() const noexcept { return m_tagListViewModel; }
     FileOperationsController* fileOperationsController() const noexcept { return m_fileOperationsController; }
+
+    // Snapshots the current layout/focused pane and every pane's ordered tabs (path, ViewMode,
+    // sort criterion/direction, active tab index) for persistence (Architecture.md §14.14).
+    WorkspaceConfig captureConfig() const;
+
+    // Rebuilds every pane's tabs from a saved WorkspaceConfig via the existing addTab()/
+    // navigateTo()/setViewMode()/setSortCriterion() calls, then applies the saved active tab per
+    // pane, layout, and focused pane. Returns whether at least one tab was restored, so the caller
+    // can fall back to the fresh-install home-directory seed when nothing was.
+    bool restoreFromConfig(const WorkspaceConfig& config);
 
 public slots:
     void setLayout(SplitLayout layout);

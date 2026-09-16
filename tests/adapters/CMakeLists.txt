@@ -4,12 +4,16 @@ add_executable(explorer_adapters_tests
     StandardFileSystemRepositoryTest.cpp
     WorkspaceLayoutTopologyTest.cpp
     SQLiteTagRepositoryTest.cpp
+    AppConfigStoreTest.cpp
+    WorkspaceControllerTest.cpp
 )
 
 target_link_libraries(explorer_adapters_tests PRIVATE
     explorer_adapters_viewmodels
     explorer_adapters_filesystem
     explorer_adapters_persistence
+    explorer_adapters_shell
+    explorer_adapters_config
     Qt6::Core
     GTest::gtest
 )

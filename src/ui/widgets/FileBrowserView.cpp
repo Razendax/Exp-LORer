@@ -51,10 +51,17 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent)
     m_treeView = new QTreeView(this);
     m_treeView->setModel(m_model);
     m_treeView->setRootIsDecorated(false);
-    m_treeView->setSortingEnabled(true);
     m_treeView->header()->setSectionsClickable(true);
+
+    // QHeaderView defaults its sort indicator to (column 0, DescendingOrder); QTreeView's
+    // setSortingEnabled(true) immediately force-resorts using whatever the header's *current*
+    // indicator is before wiring up header-click-to-sort. So the indicator must be synced to the
+    // model's actual sort state (which may already be non-default, e.g. a restored session,
+    // Architecture.md §14.14) *before* enabling sorting -- otherwise that forced initial sort
+    // silently overwrites an already-correct model state with the header's stale default.
     m_treeView->header()->setSortIndicator(FileListModel::columnForCriterion(m_model->sortCriterion()),
                                             m_model->sortAscending() ? Qt::AscendingOrder : Qt::DescendingOrder);
+    m_treeView->setSortingEnabled(true);
 
     // Shared between both views (rather than each QAbstractItemView's own default selection
     // model) so switching ViewMode doesn't drop the current selection.

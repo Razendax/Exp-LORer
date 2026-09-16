@@ -17,12 +17,21 @@ namespace
         const auto appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
         return std::filesystem::path(appDataDir.toStdWString()) / "explorer.db";
     }
+
+    // Architecture.md §9/§14.14: session config lives alongside the tagging database, under the
+    // same app-data location.
+    std::filesystem::path configFilePath()
+    {
+        const auto appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        return std::filesystem::path(appDataDir.toStdWString()) / "config.json";
+    }
 }
 
 CompositionRoot::CompositionRoot()
     : m_fileNavigationUseCase(m_fileSystemRepository, m_contextMenuProvider)
     , m_tagRepository(databasePath())
     , m_tagManagementUseCase(m_tagRepository, m_fileSystemRepository)
+    , m_appConfigStore(configFilePath())
 {
 }
 

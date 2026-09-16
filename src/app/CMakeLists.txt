@@ -9,6 +9,7 @@ target_link_libraries(Exp-LORer PRIVATE
     explorer_adapters_filesystem
     explorer_adapters_persistence
     explorer_adapters_shell
+    explorer_adapters_config
     explorer_adapters_viewmodels
     explorer_application
     Qt6::Widgets

@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include "AppConfigStore.h"
 #include "FileNavigationUseCase.h"
 #include "SQLiteTagRepository.h"
 #include "ShellContextMenuProvider.h"
@@ -26,10 +27,13 @@ public:
     std::unique_ptr<WorkspacePaneViewModel> createWorkspacePaneViewModel(WorkspacePaneId id);
     std::unique_ptr<WorkspaceController> createWorkspaceController();
 
+    AppConfigStore& appConfigStore() noexcept { return m_appConfigStore; }
+
 private:
     StandardFileSystemRepository m_fileSystemRepository;
     ShellContextMenuProvider m_contextMenuProvider;
     FileNavigationUseCase m_fileNavigationUseCase;
     SQLiteTagRepository m_tagRepository;
     TagManagementUseCase m_tagManagementUseCase;
+    AppConfigStore m_appConfigStore;
 };

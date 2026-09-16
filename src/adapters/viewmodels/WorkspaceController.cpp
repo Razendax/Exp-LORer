@@ -48,6 +48,62 @@ TabViewModel* WorkspaceController::focusedTab() const
     return pane(m_focusedPane)->activeTab();
 }
 
+WorkspaceConfig WorkspaceController::captureConfig() const
+{
+    WorkspaceConfig config;
+    config.layout = m_layout;
+    config.focusedPane = m_focusedPane;
+
+    for (WorkspacePaneId id : { WorkspacePaneId::PaneA, WorkspacePaneId::PaneB, WorkspacePaneId::PaneC, WorkspacePaneId::PaneD })
+    {
+        WorkspacePaneViewModel* paneViewModel = pane(id);
+        PaneConfig& paneConfig = config.panes[static_cast<size_t>(indexOf(id))];
+        paneConfig.activeTabIndex = paneViewModel->activeIndex();
+
+        for (int i = 0; i < paneViewModel->tabCount(); ++i)
+        {
+            TabViewModel* tab = paneViewModel->tabAt(i);
+            paneConfig.tabs.push_back(TabConfig{ tab->currentPath(), tab->viewMode(), tab->sortCriterion(), tab->sortAscending() });
+        }
+    }
+
+    return config;
+}
+
+bool WorkspaceController::restoreFromConfig(const WorkspaceConfig& config)
+{
+    bool restoredAny = false;
+
+    for (WorkspacePaneId id : { WorkspacePaneId::PaneA, WorkspacePaneId::PaneB, WorkspacePaneId::PaneC, WorkspacePaneId::PaneD })
+    {
+        const PaneConfig& paneConfig = config.panes[static_cast<size_t>(indexOf(id))];
+        if (paneConfig.tabs.empty())
+        {
+            continue;
+        }
+
+        WorkspacePaneViewModel* paneViewModel = pane(id);
+        for (const TabConfig& tabConfig : paneConfig.tabs)
+        {
+            TabViewModel* tab = paneViewModel->addTab();
+            tab->navigateTo(tabConfig.path);
+            tab->setViewMode(tabConfig.viewMode);
+            tab->setSortCriterion(tabConfig.sortCriterion, tabConfig.sortAscending);
+            restoredAny = true;
+        }
+
+        paneViewModel->setActiveTab(paneConfig.activeTabIndex);
+    }
+
+    if (restoredAny)
+    {
+        setLayout(config.layout);
+        setFocusedPane(config.focusedPane);
+    }
+
+    return restoredAny;
+}
+
 void WorkspaceController::setLayout(SplitLayout layout)
 {
     if (layout == m_layout)
