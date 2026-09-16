@@ -6,6 +6,7 @@
 #include <QItemSelectionModel>
 #include <QKeyEvent>
 #include <QListView>
+#include <QMouseEvent>
 #include <QStackedWidget>
 #include <QStyledItemDelegate>
 #include <QTreeView>
@@ -80,6 +81,9 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent)
 
     m_listView->installEventFilter(this);
     m_treeView->installEventFilter(this);
+    // Mouse events for item views arrive on the viewport, not the view itself.
+    m_listView->viewport()->installEventFilter(this);
+    m_treeView->viewport()->installEventFilter(this);
 
     m_listView->setContextMenuPolicy(Qt::CustomContextMenu);
     m_treeView->setContextMenuPolicy(Qt::CustomContextMenu);
@@ -98,6 +102,21 @@ bool FileBrowserView::eventFilter(QObject* watched, QEvent* event)
         if (handleKeyPress(static_cast<QKeyEvent*>(event)))
         {
             return true;
+        }
+    }
+
+    // Clicking empty space in the view (no item under the cursor) deselects the current item,
+    // matching Explorer. Selection is only cleared, not consumed, so rubber-band selection from
+    // empty space still works normally.
+    if ((watched == m_listView->viewport() || watched == m_treeView->viewport())
+        && event->type() == QEvent::MouseButtonPress)
+    {
+        auto* view = (watched == m_listView->viewport()) ? static_cast<QAbstractItemView*>(m_listView)
+                                                           : static_cast<QAbstractItemView*>(m_treeView);
+        const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        if (!view->indexAt(mouseEvent->position().toPoint()).isValid())
+        {
+            m_selectionModel->clear();
         }
     }
 
