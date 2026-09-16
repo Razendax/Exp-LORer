@@ -10,13 +10,14 @@ layers under `src/` currently contain only `.gitkeep` placeholders and `tests/` 
 placeholder GTest files — `CompositionRoot`, `MainWindow`, and `main.cpp` are the only real code so far.
 
 Full requirements and design are in `Specification.md` and `Architecture.md` at the repo root — read
-these before implementing a new component; they define the layering, threading model, DB schema, file
-hashing strategy, and v1 scope exclusions in detail. Do not restate their content here — refer to them.
+these before implementing a new component or feature, refactoring the code or making significant changes;
+they define the layering, threading model, DB schema, file hashing strategy, and v1 scope exclusions in detail.
+Do not restate their content here — refer to them.
 
 ## Development Workflow
 
-This project is developed feature-by-feature via a plan/review/implement cycle. Follow it
-automatically, without being asked each time:
+This project is developed feature-by-feature via a plan/review/implement cycle (except bug fixes which can be done directly).
+Follow it automatically, without being asked each time:
 
 **Planning a feature** (when asked to plan a new feature, not yet to implement it):
 1. Produce the plan (use plan mode as normal).
