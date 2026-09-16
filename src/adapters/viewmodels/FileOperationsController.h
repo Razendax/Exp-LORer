@@ -26,8 +26,8 @@ public:
     explicit FileOperationsController(FileNavigationUseCase& fileNavigationUseCase, QObject* parent = nullptr);
 
 public slots:
-    void copyToClipboard(const std::filesystem::path& source);
-    void cutToClipboard(const std::filesystem::path& source);
+    void copyToClipboard(const std::vector<std::filesystem::path>& sources);
+    void cutToClipboard(const std::vector<std::filesystem::path>& sources);
 
     // Reads the OS clipboard's file URLs and Preferred-DropEffect flag; copies (plain clipboard)
     // or moves (cut clipboard) each into destinationDirectory, auto-renaming on collision. Clears

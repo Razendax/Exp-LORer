@@ -36,7 +36,7 @@ void TagListViewModel::setActiveTab(TabViewModel* tab)
     if (m_activeTab)
     {
         disconnect(m_activeTab, &TabViewModel::currentPathChanged, this, &TagListViewModel::onActiveTabStateChanged);
-        disconnect(m_activeTab, &TabViewModel::selectedEntryChanged, this, &TagListViewModel::onActiveTabStateChanged);
+        disconnect(m_activeTab, &TabViewModel::selectedEntriesChanged, this, &TagListViewModel::onActiveTabStateChanged);
     }
 
     m_activeTab = tab;
@@ -44,7 +44,7 @@ void TagListViewModel::setActiveTab(TabViewModel* tab)
     if (m_activeTab)
     {
         connect(m_activeTab, &TabViewModel::currentPathChanged, this, &TagListViewModel::onActiveTabStateChanged);
-        connect(m_activeTab, &TabViewModel::selectedEntryChanged, this, &TagListViewModel::onActiveTabStateChanged);
+        connect(m_activeTab, &TabViewModel::selectedEntriesChanged, this, &TagListViewModel::onActiveTabStateChanged);
     }
 
     refreshAll();
@@ -130,9 +130,14 @@ std::optional<FileNode> TagListViewModel::resolveTarget() const
         return std::nullopt;
     }
 
-    if (const auto& selected = m_activeTab->selectedEntry())
+    const std::vector<FileNode>& selected = m_activeTab->selectedEntries();
+    if (selected.size() == 1)
     {
-        return selected;
+        return selected.front();
+    }
+    if (selected.size() > 1)
+    {
+        return std::nullopt;
     }
 
     if (m_activeTab->currentPath() == VirtualPaths::ThisPC)

@@ -38,8 +38,11 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 * Double-clicking or pressing Enter/Return on a file opens it with the OS-registered default
   application; folders navigate into them the same way (Architecture.md §14.11).
 * File properties inspection (size, creation date, modification date, file type).
-* **Keyboard hotkeys** (single selected file/folder at a time in v1): Ctrl+C copy, Ctrl+X cut,
-  Ctrl+V paste, Delete moves to the Recycle Bin, Shift+Delete deletes permanently, Backspace goes
+* **Multi-selection**: rubber-band drag-select (click-drag from empty space), Ctrl+click to toggle
+  an individual item in/out of the selection, and Shift+click to add/remove a contiguous range from
+  the last-clicked anchor — the same conventions as File Explorer (Architecture.md §14.16).
+* **Keyboard hotkeys** (act on the whole current selection): Ctrl+C copy, Ctrl+X cut, Ctrl+V paste,
+  Delete moves the selection to the Recycle Bin, Shift+Delete deletes it permanently, Backspace goes
   to the parent folder. Typing a letter `[a-z]` selects the next item whose name starts with that
   letter, cycling through matches on repeated presses. In Details view only, ArrowLeft also goes to
   the parent folder and ArrowRight opens a selected folder (no effect on a selected file). Ctrl+C/
@@ -53,8 +56,9 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   third-party shell extensions (7-Zip, Git, etc.) via the same COM mechanism Explorer uses, at the
   cost of extra latency per right-click — the default mode reads registry verbs only. Cut/Copy/
   Paste/Delete/Rename/New Folder/Properties are always the app's own native actions, not
-  registry-sourced. v1 supports only a single selected file/folder at a time, matching the
-  single-selection scope of the keyboard hotkeys above.
+  registry-sourced. Cut/Copy/Delete act on the whole current multi-selection, matching the keyboard
+  hotkeys above; Rename, Properties, and Open remain single-item actions and are disabled whenever
+  more than one item is selected (Architecture.md §14.16).
 
 **Search and Filter:**
 * Fast filename and extension search within the current directory and subdirectories.

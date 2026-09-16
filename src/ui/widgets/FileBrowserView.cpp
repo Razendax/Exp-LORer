@@ -3,6 +3,7 @@
 #include <QAbstractItemView>
 #include <QEvent>
 #include <QHeaderView>
+#include <QItemSelection>
 #include <QItemSelectionModel>
 #include <QKeyEvent>
 #include <QListView>
@@ -69,6 +70,16 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent)
     m_listView->setSelectionModel(m_selectionModel);
     m_treeView->setSelectionModel(m_selectionModel);
 
+    // ExtendedSelection gives Ctrl+click toggle, Shift+click range-select, and rubber-band
+    // drag-select from empty space for free (Architecture.md §14.9). SelectRows ensures a
+    // click/drag anywhere in a QTreeView row (Details view has multiple columns) selects the
+    // whole row, and selectedRows() reliably enumerates the full selection regardless of column.
+    for (QAbstractItemView* view : {static_cast<QAbstractItemView*>(m_listView), static_cast<QAbstractItemView*>(m_treeView)})
+    {
+        view->setSelectionMode(QAbstractItemView::ExtendedSelection);
+        view->setSelectionBehavior(QAbstractItemView::SelectRows);
+    }
+
     m_stack = new QStackedWidget(this);
     m_stack->addWidget(m_listView);
     m_stack->addWidget(m_treeView);
@@ -79,8 +90,8 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent)
 
     connect(m_listView, &QAbstractItemView::activated, this, &FileBrowserView::emitActivated);
     connect(m_treeView, &QAbstractItemView::activated, this, &FileBrowserView::emitActivated);
-    connect(m_selectionModel, &QItemSelectionModel::currentChanged, this,
-            [this](const QModelIndex& current, const QModelIndex&) { emitSelectionChanged(current); });
+    connect(m_selectionModel, &QItemSelectionModel::selectionChanged, this,
+            [this](const QItemSelection&, const QItemSelection&) { emitSelectionChanged(); });
     connect(m_model, &FileListModel::sortOrderChanged, this, [this](SortCriterion criterion, bool ascending) {
         m_treeView->header()->setSortIndicator(FileListModel::columnForCriterion(criterion),
                                                 ascending ? Qt::AscendingOrder : Qt::DescendingOrder);
@@ -132,7 +143,12 @@ bool FileBrowserView::eventFilter(QObject* watched, QEvent* event)
 
         auto* view = (watched == m_listView->viewport()) ? static_cast<QAbstractItemView*>(m_listView)
                                                            : static_cast<QAbstractItemView*>(m_treeView);
-        if (!view->indexAt(mouseEvent->position().toPoint()).isValid())
+        // A Ctrl+drag/Shift+drag rubber-band from empty space is meant to *add* to the existing
+        // selection, so it must not be wiped here before Qt's own rubber-band handling runs. A
+        // plain (no-modifier) empty-space press still clears first to start a fresh selection.
+        if (!view->indexAt(mouseEvent->position().toPoint()).isValid()
+            && !mouseEvent->modifiers().testFlag(Qt::ControlModifier)
+            && !mouseEvent->modifiers().testFlag(Qt::ShiftModifier))
         {
             m_selectionModel->clear();
         }
@@ -241,9 +257,17 @@ void FileBrowserView::emitActivated(const QModelIndex& index)
     emit itemActivated(path, isDirectory);
 }
 
-void FileBrowserView::emitSelectionChanged(const QModelIndex& current)
+void FileBrowserView::emitSelectionChanged()
 {
-    emit selectionChanged(m_model->entryAt(current.row()));
+    std::vector<FileNode> entries;
+    for (const QModelIndex& index : m_selectionModel->selectedRows())
+    {
+        if (const auto entry = m_model->entryAt(index.row()))
+        {
+            entries.push_back(*entry);
+        }
+    }
+    emit selectionChanged(entries);
 }
 
 void FileBrowserView::selectEntryByPath(const std::filesystem::path& path)
@@ -286,8 +310,18 @@ void FileBrowserView::handleContextMenuRequested(QAbstractItemView* view, const 
         return;
     }
 
-    m_selectionModel->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    // Right-clicking an item already part of the current multi-selection leaves the selection
+    // intact and acts on all of it, matching Explorer; right-clicking an unselected item
+    // collapses the selection down to just that one, same as before.
+    if (!m_selectionModel->isSelected(index))
+    {
+        m_selectionModel->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+    }
 
-    const auto path = std::filesystem::path(index.data(FileListModel::FilePathRole).toString().toStdWString());
-    emit itemContextMenuRequested({path}, globalPos);
+    std::vector<std::filesystem::path> paths;
+    for (const QModelIndex& selectedIndex : m_selectionModel->selectedRows())
+    {
+        paths.push_back(std::filesystem::path(selectedIndex.data(FileListModel::FilePathRole).toString().toStdWString()));
+    }
+    emit itemContextMenuRequested(paths, globalPos);
 }

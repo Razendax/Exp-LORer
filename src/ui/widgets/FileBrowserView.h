@@ -39,10 +39,11 @@ signals:
     // this to TabViewModel::navigateTo (file activation is out of scope, no viewer yet).
     void itemActivated(const std::filesystem::path& path, bool isDirectory);
 
-    // Emitted whenever the current row changes (including becoming unselected), resolved via
-    // FileListModel::entryAt. Backs the tag panel's "selected item" target (Architecture.md
-    // §14.9); WorkspacePaneWidget connects this 1:1 to the owning tab's setSelectedEntry.
-    void selectionChanged(const std::optional<FileNode>& entry);
+    // Emitted whenever the full selection changes (including becoming empty), resolved via
+    // QItemSelectionModel::selectedRows() -> FileListModel::entryAt. Backs the tag panel's
+    // "selected item" target (Architecture.md §14.9); WorkspacePaneWidget connects this 1:1 to
+    // the owning tab's setSelectedEntries.
+    void selectionChanged(const std::vector<FileNode>& entries);
 
     // Keyboard hotkeys (Architecture.md §14.10), captured via an event filter on m_listView/
     // m_treeView rather than QShortcut/QAction so they're only active while the file list itself
@@ -69,7 +70,7 @@ protected:
 
 private:
     void emitActivated(const QModelIndex& index);
-    void emitSelectionChanged(const QModelIndex& current);
+    void emitSelectionChanged();
     bool handleKeyPress(QKeyEvent* event);
     void handleContextMenuRequested(QAbstractItemView* view, const QPoint& localPos);
 

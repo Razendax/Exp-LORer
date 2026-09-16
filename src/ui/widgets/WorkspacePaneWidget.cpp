@@ -229,19 +229,31 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
 
     // 1:1 per tab (unlike the toolbar rebinding below, which follows only the active tab) so a
     // background tab's selection doesn't leak into another tab's, and is preserved when revisited.
-    connect(browserView, &FileBrowserView::selectionChanged, tab, &TabViewModel::setSelectedEntry);
+    connect(browserView, &FileBrowserView::selectionChanged, tab, &TabViewModel::setSelectedEntries);
 
     connect(browserView, &FileBrowserView::copyRequested, tab, [this, tab]() {
-        if (tab->selectedEntry())
+        if (tab->selectedEntries().empty())
         {
-            m_fileOperationsController->copyToClipboard(tab->selectedEntry()->path());
+            return;
         }
+        std::vector<std::filesystem::path> paths;
+        for (const FileNode& entry : tab->selectedEntries())
+        {
+            paths.push_back(entry.path());
+        }
+        m_fileOperationsController->copyToClipboard(paths);
     });
     connect(browserView, &FileBrowserView::cutRequested, tab, [this, tab]() {
-        if (tab->selectedEntry())
+        if (tab->selectedEntries().empty())
         {
-            m_fileOperationsController->cutToClipboard(tab->selectedEntry()->path());
+            return;
         }
+        std::vector<std::filesystem::path> paths;
+        for (const FileNode& entry : tab->selectedEntries())
+        {
+            paths.push_back(entry.path());
+        }
+        m_fileOperationsController->cutToClipboard(paths);
     });
     connect(browserView, &FileBrowserView::pasteRequested, tab, [this, tab]() {
         m_fileOperationsController->pasteInto(tab->currentPath());
@@ -387,31 +399,41 @@ void WorkspacePaneWidget::onNavigationFailed(const std::filesystem::path& path, 
 
 void WorkspacePaneWidget::onDeleteRequested(TabViewModel* tab, bool permanent)
 {
-    if (!tab->selectedEntry())
+    const std::vector<FileNode>& entries = tab->selectedEntries();
+    if (entries.empty())
     {
         return;
     }
 
-    const FileNode entry = *tab->selectedEntry();
-    const QString name = toQString(entry.name());
+    const QString message = [&]() {
+        if (entries.size() == 1)
+        {
+            const QString name = toQString(entries.front().name());
+            return permanent ? tr("Permanently delete \"%1\"? This cannot be undone.").arg(name)
+                              : tr("Move \"%1\" to the Recycle Bin?").arg(name);
+        }
+        return permanent ? tr("Permanently delete %1 items? This cannot be undone.").arg(entries.size())
+                          : tr("Move %1 items to the Recycle Bin?").arg(entries.size());
+    }();
 
-    const QMessageBox::StandardButton answer = permanent
-        ? QMessageBox::question(this, tr("Delete Permanently"),
-                                 tr("Permanently delete \"%1\"? This cannot be undone.").arg(name))
-        : QMessageBox::question(this, tr("Delete"), tr("Move \"%1\" to the Recycle Bin?").arg(name));
+    const QMessageBox::StandardButton answer =
+        QMessageBox::question(this, permanent ? tr("Delete Permanently") : tr("Delete"), message);
 
     if (answer != QMessageBox::Yes)
     {
         return;
     }
 
-    if (permanent)
+    for (const FileNode& entry : entries)
     {
-        m_fileOperationsController->deletePermanently(entry.path());
-    }
-    else
-    {
-        m_fileOperationsController->moveToTrash(entry.path());
+        if (permanent)
+        {
+            m_fileOperationsController->deletePermanently(entry.path());
+        }
+        else
+        {
+            m_fileOperationsController->moveToTrash(entry.path());
+        }
     }
 }
 
@@ -459,14 +481,22 @@ void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, const std::vect
     auto* propertiesAction = new QAction(tr("Properties"));
 
     connect(openAction, &QAction::triggered, this, [this, targetPath]() { m_fileOperationsController->openFile(targetPath); });
-    connect(cutAction, &QAction::triggered, this, [this, targetPath]() { m_fileOperationsController->cutToClipboard(targetPath); });
-    connect(copyAction, &QAction::triggered, this, [this, targetPath]() { m_fileOperationsController->copyToClipboard(targetPath); });
+    connect(cutAction, &QAction::triggered, this, [this, paths]() { m_fileOperationsController->cutToClipboard(paths); });
+    connect(copyAction, &QAction::triggered, this, [this, paths]() { m_fileOperationsController->copyToClipboard(paths); });
     connect(pasteAction, &QAction::triggered, this, [this, directory]() { m_fileOperationsController->pasteInto(directory); });
     connect(deleteAction, &QAction::triggered, this, [this, tab]() { onDeleteRequested(tab, false); });
     connect(renameAction, &QAction::triggered, this, [this, targetPath]() { promptRename(targetPath); });
     connect(propertiesAction, &QAction::triggered, this, [this, targetPath, ownerWindow]() {
         m_fileOperationsController->showProperties(targetPath, ownerWindow);
     });
+
+    // Rename/Properties/Open are single-target-only (rename-as-move, showProperties, and
+    // openFile/itemActivated all take one path) — disable rather than guess a multi-item
+    // behavior when more than one item is selected (Architecture.md §14.13.2/§14.13.6).
+    const bool singleTarget = paths.size() == 1;
+    openAction->setEnabled(singleTarget);
+    renameAction->setEnabled(singleTarget);
+    propertiesAction->setEnabled(singleTarget);
 
     ContextMenuBuilder::NativeActions actions;
     actions.open = openAction;

@@ -29,7 +29,7 @@ public:
     std::filesystem::path currentPath() const;
     ViewMode viewMode() const noexcept { return m_viewMode; }
     FileListModel* fileListModel() const noexcept { return m_fileListModel; }
-    const std::optional<FileNode>& selectedEntry() const noexcept { return m_selectedEntry; }
+    const std::vector<FileNode>& selectedEntries() const noexcept { return m_selectedEntries; }
     SortCriterion sortCriterion() const noexcept;
     bool sortAscending() const noexcept;
 
@@ -37,7 +37,7 @@ public slots:
     // Per-tab selection state (Architecture.md §14.9), set by WorkspacePaneWidget from this tab's
     // FileBrowserView::selectionChanged. Cleared on every navigation (see loadAndApply) so a
     // stale selection from the previous folder never leaks into the new one.
-    void setSelectedEntry(const std::optional<FileNode>& entry);
+    void setSelectedEntries(const std::vector<FileNode>& entries);
 
     // Validates the path via FileNavigationUseCase before recording it in history ("safe
     // navigation"). On failure, history and the current path are left unchanged and
@@ -75,7 +75,7 @@ signals:
     void upAvailableChanged(bool available);
     void navigationFailed(const std::filesystem::path& path, const QString& message);
     void viewModeChanged(ViewMode mode);
-    void selectedEntryChanged(const std::optional<FileNode>& entry);
+    void selectedEntriesChanged(const std::vector<FileNode>& entries);
     void sortOrderChanged(SortCriterion criterion, bool ascending);
 
 private:
@@ -90,5 +90,5 @@ private:
     NavigationHistory m_history;
     ViewMode m_viewMode = ViewMode::Details;
     FileListModel* m_fileListModel = nullptr;
-    std::optional<FileNode> m_selectedEntry;
+    std::vector<FileNode> m_selectedEntries;
 };

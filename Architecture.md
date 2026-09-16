@@ -46,7 +46,7 @@ This layer converts data from the format most convenient for the use cases and e
 **Controllers / ViewModels (Qt Models):**
 * `FileListModel`: a single `QAbstractTableModel` (columns: Name, Size, Type, Date modified) wrapping directory-listing results (`FileNode` lists) supplied by `NavigationViewModel`. One model feeds both `QListView` (icon/list/tiles view modes, which only read column 0) and `QTreeView` (details view mode, all columns) — see §2.3.1. This supersedes an earlier sketch of two separate `FileTreeViewModel`/`FileGridViewModel` types: a single shared model matches how Explorer itself works and avoids duplicating file→row mapping logic.
 * `ViewMode` (`src/adapters/viewmodels/ViewMode.h`): plain enum — `ExtraLargeIcons`, `LargeIcons`, `MediumIcons`, `SmallIcons`, `List`, `Details`, `Tiles`. Presentation-only state, currently held on `NavigationViewModel` (see §2.3.1, §14.1).
-* `TagListViewModel`: `QObject`-derived, single shared instance owned/retargeted by `WorkspaceController` (see §14.9) to whichever pane/tab has focus. Exposes three sections for the tag panel: `folderTags()` (the focused tab's current folder plus every ancestor's tags, via `TagManagementUseCase::tagsForPathWithAncestors`), `searchResults()` (live-filtered via `TagManagementUseCase::searchTags` as the user types, excluding tags already on the current target), and `selectedItemTags()` (tags of the focused tab's `selectedEntry()`, or the current folder itself when nothing is selected). Slots `addTagToSelection`/`removeTagFromSelection`/`createAndAddTagFromQuery` drive `TagManagementUseCase`.
+* `TagListViewModel`: `QObject`-derived, single shared instance owned/retargeted by `WorkspaceController` (see §14.9) to whichever pane/tab has focus. Exposes three sections for the tag panel: `folderTags()` (the focused tab's current folder plus every ancestor's tags, via `TagManagementUseCase::tagsForPathWithAncestors`), `searchResults()` (live-filtered via `TagManagementUseCase::searchTags` as the user types, excluding tags already on the current target), and `selectedItemTags()` (tags of the focused tab's single selected entry, or the current folder itself when nothing is selected — no target, and no tags shown, when more than one item is selected; see §14.16). Slots `addTagToSelection`/`removeTagFromSelection`/`createAndAddTagFromQuery` drive `TagManagementUseCase`.
 * `MediaPreviewViewModel`: `QObject`-derived, `Q_PROPERTY`-exposed state for the image/video viewer, consumed by a QML scene embedded via `QQuickWidget` inside the main Widgets window.
 
 
@@ -502,23 +502,29 @@ Fulfills the §14.3/§14.8 retargeting hook: the shared `TagListViewModel` (§2.
 owned by `WorkspaceController`, and `TabViewModel` gains a second piece of per-tab UI-session
 state alongside navigation history — the currently selected row in that tab's `FileBrowserView`.
 
-* **Selection is per-tab state.** `TabViewModel::selectedEntry()`/`setSelectedEntry()`/
-  `selectedEntryChanged` mirror `currentPath`/`currentPathChanged`: owned by the tab, cleared on
-  every `navigateTo`/`goBack`/`goForward`/`goUp` so a stale selection from the previous folder
-  never leaks into the new one. `FileBrowserView` shares one `QItemSelectionModel` between its
-  `QListView` and `QTreeView` (so switching `ViewMode` doesn't drop the selection) and emits
-  `selectionChanged(std::optional<FileNode>)`, which `WorkspacePaneWidget` connects 1:1 to each
-  page's own `TabViewModel::setSelectedEntry` at tab-creation time (unlike the toolbar, which
-  rebinds to whichever tab is active, selection wiring doesn't need to rebind).
+* **Selection is per-tab state, and multi-item since §14.16.** `TabViewModel::selectedEntries()`/
+  `setSelectedEntries()`/`selectedEntriesChanged` (a `std::vector<FileNode>`, was a single
+  `std::optional<FileNode>` before §14.16) mirror `currentPath`/`currentPathChanged`: owned by the
+  tab, cleared on every `navigateTo`/`goBack`/`goForward`/`goUp` so a stale selection from the
+  previous folder never leaks into the new one. `FileBrowserView` shares one `QItemSelectionModel`
+  between its `QListView` and `QTreeView` (so switching `ViewMode` doesn't drop the selection), both
+  set to `QAbstractItemView::ExtendedSelection` + `SelectRows` (§14.16), and emits
+  `selectionChanged(std::vector<FileNode>)` built from `QItemSelectionModel::selectedRows()`, which
+  `WorkspacePaneWidget` connects 1:1 to each page's own `TabViewModel::setSelectedEntries` at
+  tab-creation time (unlike the toolbar, which rebinds to whichever tab is active, selection wiring
+  doesn't need to rebind).
 * **`TagListViewModel::setActiveTab(TabViewModel*)`** is `WorkspaceController`'s retargeting slot,
   invoked whenever `focusedPaneChanged` or any pane's `activeTabChanged` fires (and once at
-  construction): it disconnects the previous tab's `currentPathChanged`/`selectedEntryChanged`,
+  construction): it disconnects the previous tab's `currentPathChanged`/`selectedEntriesChanged`,
   connects the new one, and refreshes all three panel sections immediately.
 * **Resolving the tagging target** (used for the panel's "+"/"x" actions and the
-  selected-item-tags section): `selectedEntry()` if set, otherwise the current folder itself —
-  fetched via a new `IFileSystemRepository::stat`/`FileNavigationUseCase::stat` single-path
-  lookup (distinct from `listDirectory`, which enumerates children, not the directory itself).
-  This is what lets a user tag the folder they're browsing without selecting a child row first.
+  selected-item-tags section): the single entry in `selectedEntries()` if exactly one item is
+  selected; if zero are selected, the current folder itself — fetched via a new
+  `IFileSystemRepository::stat`/`FileNavigationUseCase::stat` single-path lookup (distinct from
+  `listDirectory`, which enumerates children, not the directory itself), letting a user tag the
+  folder they're browsing without selecting a child row first; if more than one item is selected,
+  there is no target — `addTagToSelection`/`removeTagFromSelection` report `operationFailed`
+  instead. Multi-item tagging is not built (§14.16).
 * **Persistence**: `SQLiteTagRepository` (§7, §10) is the first concrete `ITagRepository`
   implementation — the tag panel is the feature that required building it. `CompositionRoot` owns
   it plus a `TagManagementUseCase`, both threaded through `WorkspaceController`'s constructor.
@@ -568,8 +574,12 @@ already exposed every file operation this needs (`moveFile`/`copyFile`/`moveFile
   or hidden) whose `currentPath()` matches, via a new `TabViewModel::refresh()` slot that re-runs
   the existing `loadAndApply` funnel (clearing stale selection and re-validating against disk).
   This covers a cut/paste spanning two different panes.
-* **Selection stays single-item** for this increment (Ctrl+C/X/Delete act on
-  `TabViewModel::selectedEntry()`); multi-select is a natural but separate future increment.
+* **Selection is multi-item since §14.16**: Ctrl+C/X/Delete act on the full
+  `TabViewModel::selectedEntries()`, not a single item. `FileOperationsController::copyToClipboard`/
+  `cutToClipboard` take a `std::vector<std::filesystem::path>` and write every path to the clipboard
+  in one `QMimeData::setUrls()` call; `moveToTrash`/`deletePermanently` stay single-path, looped by
+  the caller over the selection (same posture `pasteInto` already uses internally for a multi-URL
+  paste).
 
 ### 14.11 Opening Files with the Default Application
 
@@ -676,8 +686,9 @@ overhead per handler). Both are described below; neither shows/uses `TrackPopupM
   not a blocking native call:
   * `buildItemMenu(paths, mode)` / `buildBackgroundMenu(folder, mode)` → `Result<vector<ContextMenuEntry>>`.
     `paths` must all share one parent directory (Explorer never right-clicks a cross-folder
-    selection); it stays a vector even though only a single-item selection is passed today
-    (§14.10) so multi-select is a caller-side change later, not a Port change.
+    selection — guaranteed here since `FileBrowserView` only ever lists one flat directory at a
+    time); a genuine multi-item selection is passed since §14.16 (originally the vector stayed a
+    vector even though only a single-item selection was passed, anticipating this).
   * `invoke(entryId, ownerWindow)` runs the entry returned by the most recent build call.
   * `discardMenu()` releases any COM handlers a build call kept alive, if the user closes the menu
     without picking a registry-sourced entry. Always safe to call.
@@ -807,10 +818,12 @@ already had Cut/Copy/Paste/Delete/Open, §14.10–§14.11):
   one are both quick, blocking calls; `QMenu::exec()` itself is what actually blocks while the
   popup is open, same as any other Qt modal popup.
 * **Not built here**: a Linux implementation of `IContextMenuProvider` (stub failure, same posture
-  as trash/open-with-default-app); a multi-selection context menu (the Port already accepts a
-  vector, but `FileBrowserView` only ever selects one row today); a context menu triggered from
-  drag-and-drop (no drag-and-drop in the app yet); inline in-grid rename-on-create (v1 uses a modal
-  dialog instead, §14.13.4); `ShellNew`'s `Command`/binary-`Data` mechanisms (§14.13.3).
+  as trash/open-with-default-app); a context menu triggered from drag-and-drop (no drag-and-drop in
+  the app yet); inline in-grid rename-on-create (v1 uses a modal dialog instead, §14.13.4);
+  `ShellNew`'s `Command`/binary-`Data` mechanisms (§14.13.3). A multi-selection context menu *is*
+  built (§14.16): the Cut/Copy/Delete-equivalent entries act on every selected path; Rename/
+  Properties/Open stay single-target and are disabled when more than one path is selected, since
+  their backing APIs (`showProperties`, rename-as-move, `openFile`) are single-path.
 
 ### 14.14 Session Persistence (Window Geometry, Layout, Tabs, View & Sort)
 
@@ -927,7 +940,7 @@ session persistence, tab titles, tag-panel ancestor walking) keeps working unmod
 * **Tag panel**: `TagListViewModel::resolveTarget()` returns no target (rather than tagging the
   bare virtual root) when nothing is selected and the active tab's path is `VirtualPaths::ThisPC`.
   Tagging a drive or quick-access folder that *is* selected inside the This PC listing still works
-  normally, since that resolves via `selectedEntry()`'s real path, not this fallback.
+  normally, since that resolves via `selectedEntries()`'s real path, not this fallback.
 * **Background context menu**: right-clicking empty space while browsing This PC shows no menu
   (`WorkspacePaneWidget::showBackgroundContextMenu` returns early for the sentinel) rather than a
   New Folder/Paste/Properties menu that would just fail against it. Item-level right-click on a
@@ -955,3 +968,50 @@ session persistence, tab titles, tag-panel ancestor walking) keeps working unmod
   dedicated `TabViewModelTest` (that class has no unit tests at all yet, a pre-existing gap, not
   introduced here — the new `goUp()` branching is verified by manual smoke test instead, per §11's
   UI-layer manual-testing convention).
+
+### 14.16 Multi-Selection
+
+Replaces the single-item selection §14.9/§14.10 explicitly deferred ("Selection stays single-item
+for this increment ... multi-select is a natural but separate future increment") with real
+Explorer-style multi-selection: rubber-band drag-select, Ctrl+click (toggle add/remove), Shift+click
+(range add/remove), plus Ctrl+C/X/Delete and the right-click context menu acting on the whole
+selection.
+
+* **Selection mechanics come from Qt, not custom mouse handling.** `FileBrowserView` sets both
+  `m_listView` and `m_treeView` to `QAbstractItemView::ExtendedSelection` (Ctrl/Shift-click
+  semantics, plus rubber-band rectangle selection from empty space, are built into
+  `QAbstractItemView` once the mode allows multi-select) and `QAbstractItemView::SelectRows` (so a
+  click/drag anywhere in a `QTreeView` row selects the whole row across all Details-view columns,
+  and `QItemSelectionModel::selectedRows()` reliably enumerates the full selection). The existing
+  viewport event filter's empty-space "clicking empty space deselects" handling (§14.9's original
+  commit) is extended to skip clearing when Ctrl or Shift is held, so a Ctrl+drag/Shift+drag
+  rubber-band from empty space adds to the existing selection instead of wiping it first.
+* **`TabViewModel::selectedEntries()`/`setSelectedEntries()`/`selectedEntriesChanged`**
+  (`std::vector<FileNode>`) replace the single-item `selectedEntry()`/`setSelectedEntry()`/
+  `selectedEntryChanged` from §14.9, same "owned by the tab, cleared on every navigation" posture.
+  `FileBrowserView::selectionChanged(std::vector<FileNode>)` is built from
+  `QItemSelectionModel::selectedRows()` (not `currentChanged`, which only reports the current row)
+  and connected 1:1 to `setSelectedEntries`, same wiring shape as before.
+* **Right-click on a row already part of the current selection** leaves the whole selection intact
+  and passes every selected path to `itemContextMenuRequested`; right-click on a row *not* in the
+  current selection still collapses to that one row first (§14.13's existing "right-click an
+  unselected item selects it", unchanged).
+* **Clipboard and delete act on the full selection**: `FileOperationsController::copyToClipboard`/
+  `cutToClipboard` take a `std::vector<std::filesystem::path>` (§14.10); `WorkspacePaneWidget`'s
+  delete handler and the context menu's Cut/Copy/Delete actions loop/pass the whole
+  `selectedEntries()`/`paths` set instead of one item.
+* **Single-target actions stay single-target.** Rename, Properties, and double-click/Enter Open are
+  unaffected by this feature: their backing APIs (`FileNavigationUseCase::moveFile`,
+  `IFileSystemRepository::showProperties`, `openWithDefaultApplication`) are single-path, so
+  `WorkspacePaneWidget` disables Rename/Properties in the context menu's native action set whenever
+  more than one path is selected, rather than guessing a batch behavior.
+* **Tag panel requires exactly one selected item.** `TagListViewModel::resolveTarget()`: one
+  selected → that entry (unchanged); zero selected → the browsed folder itself via `stat()`
+  (unchanged, §14.9); more than one selected → no target, `addTagToSelection`/
+  `removeTagFromSelection` report `operationFailed` instead. Multi-item tagging is not built.
+* **Testing**: no automated coverage, same UI-layer manual-testing convention as §14.9/§14.15 — the
+  selection view itself, `TabViewModel`, and `WorkspacePaneWidget` had no prior test files to extend
+  either.
+* **Not built here**: Ctrl+A select-all; a "N items selected" status-bar indicator; batch
+  Rename/Properties for a multi-item selection; drag-to-move of a multi-selection (no drag-and-drop
+  in the app yet, §14.13.6).

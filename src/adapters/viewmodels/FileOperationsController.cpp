@@ -56,18 +56,32 @@ FileOperationsController::FileOperationsController(FileNavigationUseCase& fileNa
 {
 }
 
-void FileOperationsController::copyToClipboard(const std::filesystem::path& source)
+namespace
+{
+    QList<QUrl> toUrls(const std::vector<std::filesystem::path>& sources)
+    {
+        QList<QUrl> urls;
+        urls.reserve(static_cast<qsizetype>(sources.size()));
+        for (const auto& source : sources)
+        {
+            urls.append(QUrl::fromLocalFile(QString::fromStdWString(source.wstring())));
+        }
+        return urls;
+    }
+}
+
+void FileOperationsController::copyToClipboard(const std::vector<std::filesystem::path>& sources)
 {
     auto* mimeData = new QMimeData();
-    mimeData->setUrls({QUrl::fromLocalFile(toQString(source))});
+    mimeData->setUrls(toUrls(sources));
     mimeData->setData(QString::fromLatin1(kPreferredDropEffectFormat), dropEffectBytes(kDropEffectCopy));
     QApplication::clipboard()->setMimeData(mimeData);
 }
 
-void FileOperationsController::cutToClipboard(const std::filesystem::path& source)
+void FileOperationsController::cutToClipboard(const std::vector<std::filesystem::path>& sources)
 {
     auto* mimeData = new QMimeData();
-    mimeData->setUrls({QUrl::fromLocalFile(toQString(source))});
+    mimeData->setUrls(toUrls(sources));
     mimeData->setData(QString::fromLatin1(kPreferredDropEffectFormat), dropEffectBytes(kDropEffectMove));
     QApplication::clipboard()->setMimeData(mimeData);
 }
