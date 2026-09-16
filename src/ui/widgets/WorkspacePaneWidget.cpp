@@ -234,6 +234,8 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
         onDeleteRequested(tab, permanent);
     });
     connect(browserView, &FileBrowserView::navigateUpRequested, tab, [tab]() { tab->goUp(); });
+    connect(browserView, &FileBrowserView::navigateBackRequested, tab, [tab]() { tab->goBack(); });
+    connect(browserView, &FileBrowserView::navigateForwardRequested, tab, [tab]() { tab->goForward(); });
 
     connect(browserView, &FileBrowserView::itemContextMenuRequested, tab,
             [this, tab](const std::vector<std::filesystem::path>& paths, const QPoint& globalPos) {

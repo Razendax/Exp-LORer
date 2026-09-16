@@ -53,6 +53,12 @@ signals:
     void deleteRequested(bool permanent);   // true for Shift+Delete
     void navigateUpRequested();             // Backspace, and ArrowLeft in Details view
 
+    // Mouse side buttons, captured via the same viewport event filter as the empty-space
+    // deselect handling below, rather than QAction shortcuts, so they only apply while the mouse
+    // is over the file list (mirrors the keyboard hotkeys' focus scoping above).
+    void navigateBackRequested();           // Mouse XButton1 (Qt::BackButton)
+    void navigateForwardRequested();        // Mouse XButton2 (Qt::ForwardButton)
+
     // Right-click on a row (resolved via indexAt; the row is selected first, matching Explorer's
     // "right-click an unselected item selects it") vs. on empty space (Architecture.md §14.13).
     void itemContextMenuRequested(const std::vector<std::filesystem::path>& paths, const QPoint& globalPos);

@@ -118,9 +118,20 @@ bool FileBrowserView::eventFilter(QObject* watched, QEvent* event)
     if ((watched == m_listView->viewport() || watched == m_treeView->viewport())
         && event->type() == QEvent::MouseButtonPress)
     {
+        const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() == Qt::BackButton)
+        {
+            emit navigateBackRequested();
+            return true;
+        }
+        if (mouseEvent->button() == Qt::ForwardButton)
+        {
+            emit navigateForwardRequested();
+            return true;
+        }
+
         auto* view = (watched == m_listView->viewport()) ? static_cast<QAbstractItemView*>(m_listView)
                                                            : static_cast<QAbstractItemView*>(m_treeView);
-        const auto* mouseEvent = static_cast<QMouseEvent*>(event);
         if (!view->indexAt(mouseEvent->position().toPoint()).isValid())
         {
             m_selectionModel->clear();
