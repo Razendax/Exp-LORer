@@ -111,7 +111,7 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
     switch (index.column())
     {
         case NameColumn:
-            return toQString(entry.name());
+            return entry.displayName() ? QString::fromStdString(*entry.displayName()) : toQString(entry.name());
         case SizeColumn:
             return entry.isDirectory() ? QVariant() : QVariant(static_cast<qulonglong>(entry.size()));
         case TypeColumn:

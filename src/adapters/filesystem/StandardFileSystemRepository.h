@@ -24,4 +24,10 @@ public:
     Result<FileNode> createFileFromTemplate(const std::filesystem::path& destinationFile,
                                              const std::optional<std::filesystem::path>& templateFile) override;
     Result<void> showProperties(const std::filesystem::path& path, NativeWindowHandle ownerWindow) override;
+
+private:
+    // Synthesizes the "This PC" listing (quick-access folders + drives) instead of touching disk.
+    // Windows-only; see Architecture.md §14.15. Non-Windows returns an IoError "Not supported on
+    // this platform" failure, matching openWithDefaultApplication's existing posture.
+    Result<std::vector<FileNode>> listThisPc() const;
 };

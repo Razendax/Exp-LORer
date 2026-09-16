@@ -14,9 +14,29 @@
 
 #include <xxhash.h>
 
+#include "DriveLabel.h"
+#include "VirtualPaths.h"
+
 namespace
 {
     namespace fs = std::filesystem;
+
+#ifdef _WIN32
+    std::string utf8FromWide(const std::wstring& wide)
+    {
+        if (wide.empty())
+        {
+            return {};
+        }
+
+        const int size = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), static_cast<int>(wide.size()), nullptr, 0,
+                                              nullptr, nullptr);
+        std::string result(static_cast<std::size_t>(size), '\0');
+        WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), static_cast<int>(wide.size()), result.data(), size, nullptr,
+                             nullptr);
+        return result;
+    }
+#endif
 
     fs::path withLongPathPrefix(const fs::path& path)
     {
@@ -70,6 +90,55 @@ namespace
         return FileNode::create(outwardPath, size, modificationTime, modificationTime, toFileType(entry));
     }
 
+#ifdef _WIN32
+    // Resolves one "This PC" quick-access folder via SHGetKnownFolderPath. No displayName
+    // override — the real folder name ("Downloads", "Documents", ...) is already correct.
+    Result<FileNode> buildKnownFolderNode(REFKNOWNFOLDERID folderId)
+    {
+        PWSTR rawPath = nullptr;
+        const HRESULT hr = SHGetKnownFolderPath(folderId, 0, nullptr, &rawPath);
+        if (FAILED(hr) || rawPath == nullptr)
+        {
+            return Result<FileNode>::failure(Error(ErrorCode::NotFound, "Known folder is not available"));
+        }
+
+        const fs::path folderPath(rawPath);
+        CoTaskMemFree(rawPath);
+
+        return buildFileNode(folderPath, fs::directory_entry(folderPath));
+    }
+
+    // Resolves one drive letter to a synthetic FileNode, or nullopt if the letter has no present
+    // drive (DRIVE_NO_ROOT_DIR/DRIVE_UNKNOWN). GetVolumeInformationW failing (e.g. an empty
+    // optical drive) is tolerated and falls back to a type-based label rather than skipping the
+    // drive.
+    std::optional<FileNode> buildDriveNode(wchar_t letter)
+    {
+        const std::wstring rootPath = std::wstring(1, letter) + L":\\";
+        const UINT driveType = GetDriveTypeW(rootPath.c_str());
+        if (driveType == DRIVE_NO_ROOT_DIR || driveType == DRIVE_UNKNOWN)
+        {
+            return std::nullopt;
+        }
+
+        wchar_t volumeName[MAX_PATH + 1] = {};
+        const BOOL gotVolumeInfo = GetVolumeInformationW(rootPath.c_str(), volumeName,
+                                                           static_cast<DWORD>(sizeof(volumeName) / sizeof(wchar_t)),
+                                                           nullptr, nullptr, nullptr, nullptr, 0);
+        const std::wstring volumeLabel = gotVolumeInfo ? std::wstring(volumeName) : std::wstring();
+        const std::wstring label = DriveLabel::driveDisplayLabel(letter, driveType, volumeLabel);
+
+        auto node = FileNode::create(fs::path(rootPath), 0, std::chrono::system_clock::now(),
+                                      std::chrono::system_clock::now(), FileType::Directory);
+        if (!node)
+        {
+            return std::nullopt;
+        }
+
+        return node.value().withDisplayName(utf8FromWide(label));
+    }
+#endif
+
     Error toError(const fs::filesystem_error& e)
     {
         const auto code = e.code();
@@ -88,6 +157,11 @@ namespace
 
 Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectory(const std::filesystem::path& directory) const
 {
+    if (directory == VirtualPaths::ThisPC)
+    {
+        return listThisPc();
+    }
+
     const fs::path target = withLongPathPrefix(directory);
 
     std::error_code ec;
@@ -119,6 +193,17 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectory(const 
 
 Result<FileNode> StandardFileSystemRepository::stat(const std::filesystem::path& path) const
 {
+    if (path == VirtualPaths::ThisPC)
+    {
+        auto node = FileNode::create(path, 0, std::chrono::system_clock::now(), std::chrono::system_clock::now(),
+                                      FileType::Directory);
+        if (!node)
+        {
+            return node;
+        }
+        return Result<FileNode>::success(node.value().withDisplayName("This PC"));
+    }
+
     const fs::path target = withLongPathPrefix(path);
 
     std::error_code ec;
@@ -330,5 +415,44 @@ Result<void> StandardFileSystemRepository::showProperties(const std::filesystem:
     (void)path;
     (void)ownerWindow;
     return Result<void>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
+#endif
+}
+
+Result<std::vector<FileNode>> StandardFileSystemRepository::listThisPc() const
+{
+#ifdef _WIN32
+    std::vector<FileNode> entries;
+
+    const auto addKnownFolder = [&entries](REFKNOWNFOLDERID id) {
+        auto node = buildKnownFolderNode(id);
+        if (node.hasValue())
+        {
+            entries.push_back(std::move(node).value());
+        }
+    };
+    addKnownFolder(FOLDERID_Downloads);
+    addKnownFolder(FOLDERID_Documents);
+    addKnownFolder(FOLDERID_Pictures);
+    addKnownFolder(FOLDERID_Videos);
+    addKnownFolder(FOLDERID_Music);
+    addKnownFolder(FOLDERID_Desktop);
+
+    const DWORD presentDrives = GetLogicalDrives();
+    for (int i = 0; i < 26; ++i)
+    {
+        if ((presentDrives & (1u << i)) == 0)
+        {
+            continue;
+        }
+
+        if (auto node = buildDriveNode(static_cast<wchar_t>(L'A' + i)))
+        {
+            entries.push_back(std::move(*node));
+        }
+    }
+
+    return Result<std::vector<FileNode>>::success(std::move(entries));
+#else
+    return Result<std::vector<FileNode>>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
 #endif
 }

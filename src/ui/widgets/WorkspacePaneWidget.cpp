@@ -21,6 +21,7 @@
 #include "FileOperationsController.h"
 #include "IContextMenuProvider.h"
 #include "TabViewModel.h"
+#include "VirtualPaths.h"
 #include "WorkspacePaneViewModel.h"
 
 namespace
@@ -30,11 +31,26 @@ namespace
         return QString::fromStdWString(path.wstring());
     }
 
+    // "This PC" rather than its raw sentinel path string, everywhere a path is shown to the user.
+    QString displayPathText(const std::filesystem::path& path)
+    {
+        if (path == VirtualPaths::ThisPC)
+        {
+            return QObject::tr("This PC");
+        }
+        return toQString(path);
+    }
+
     QString tabLabelFor(const std::filesystem::path& path)
     {
         if (path.empty())
         {
             return QObject::tr("New tab");
+        }
+
+        if (path == VirtualPaths::ThisPC)
+        {
+            return QObject::tr("This PC");
         }
 
         const QString name = toQString(path.filename());
@@ -276,7 +292,7 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
     connect(m_boundTab, &TabViewModel::navigationFailed, this, &WorkspacePaneWidget::onNavigationFailed);
     connect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged);
 
-    m_addressBar->setText(toQString(m_boundTab->currentPath()));
+    m_addressBar->setText(displayPathText(m_boundTab->currentPath()));
     onViewModeChanged(m_boundTab->viewMode());
 }
 
@@ -335,17 +351,26 @@ void WorkspacePaneWidget::onNewTabRequested()
 
 void WorkspacePaneWidget::onCurrentPathChanged(const std::filesystem::path& path)
 {
-    m_addressBar->setText(toQString(path));
+    m_addressBar->setText(displayPathText(path));
 }
 
 void WorkspacePaneWidget::onAddressBarEdited()
 {
-    if (m_boundTab)
+    if (!m_boundTab)
     {
-        std::filesystem::path newPath(m_addressBar->text().toStdWString());
-        newPath.make_preferred();
-        m_boundTab->navigateTo(newPath);
+        return;
     }
+
+    const QString trimmed = m_addressBar->text().trimmed();
+    if (trimmed.compare(QStringLiteral("this pc"), Qt::CaseInsensitive) == 0)
+    {
+        m_boundTab->navigateTo(VirtualPaths::ThisPC);
+        return;
+    }
+
+    std::filesystem::path newPath(trimmed.toStdWString());
+    newPath.make_preferred();
+    m_boundTab->navigateTo(newPath);
 }
 
 void WorkspacePaneWidget::onNavigationFailed(const std::filesystem::path& path, const QString& message)
@@ -354,7 +379,7 @@ void WorkspacePaneWidget::onNavigationFailed(const std::filesystem::path& path, 
 
     if (m_boundTab)
     {
-        m_addressBar->setText(toQString(m_boundTab->currentPath()));
+        m_addressBar->setText(displayPathText(m_boundTab->currentPath()));
     }
 
     emit navigationFailed(message);
@@ -489,6 +514,11 @@ void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, const std::vect
 void WorkspacePaneWidget::showBackgroundContextMenu(TabViewModel* tab, const QPoint& globalPos)
 {
     const std::filesystem::path directory = tab->currentPath();
+    if (directory == VirtualPaths::ThisPC)
+    {
+        return;
+    }
+
     const auto ownerWindow = reinterpret_cast<NativeWindowHandle>(window()->winId());
 
     auto* pasteAction = new QAction(tr("Paste"));

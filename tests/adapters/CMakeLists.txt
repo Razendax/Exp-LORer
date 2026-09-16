@@ -2,6 +2,7 @@ add_executable(explorer_adapters_tests
     TestMain.cpp
     NavigationHistoryTest.cpp
     StandardFileSystemRepositoryTest.cpp
+    DriveLabelTest.cpp
     WorkspaceLayoutTopologyTest.cpp
     SQLiteTagRepositoryTest.cpp
     AppConfigStoreTest.cpp

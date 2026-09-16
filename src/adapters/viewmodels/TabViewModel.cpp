@@ -2,6 +2,7 @@
 
 #include "FileListModel.h"
 #include "FileNavigationUseCase.h"
+#include "VirtualPaths.h"
 
 TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, QObject* parent)
     : QObject(parent)
@@ -40,9 +41,16 @@ void TabViewModel::goUp()
         return;
     }
 
+    if (*current == VirtualPaths::ThisPC)
+    {
+        return;
+    }
+
     const auto parent = current->parent_path();
     if (parent == *current)
     {
+        // A filesystem root (local drive root or UNC share root) — This PC is its "exit" point.
+        navigateTo(VirtualPaths::ThisPC);
         return;
     }
 
@@ -130,6 +138,6 @@ void TabViewModel::emitAvailability()
     emit forwardAvailableChanged(m_history.canGoForward());
 
     const auto current = m_history.current();
-    const bool upAvailable = current.has_value() && current->parent_path() != *current;
+    const bool upAvailable = current.has_value() && *current != VirtualPaths::ThisPC;
     emit upAvailableChanged(upAvailable);
 }

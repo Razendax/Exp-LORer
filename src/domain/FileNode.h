@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <string>
 
 #include "Result.h"
 
@@ -35,10 +36,16 @@ public:
     std::chrono::system_clock::time_point modificationDate() const noexcept { return m_modificationDate; }
     FileType fileType() const noexcept { return m_fileType; }
     const std::optional<std::uint64_t>& hash() const noexcept { return m_hash; }
+    const std::optional<std::string>& displayName() const noexcept { return m_displayName; }
 
     bool isDirectory() const noexcept { return m_fileType == FileType::Directory; }
 
     FileNode withHash(std::uint64_t hash) const;
+
+    // Overrides name() for synthetic entries whose path() has no filename component (e.g. drive
+    // roots like "C:\", whose filename() is empty per std::filesystem) — used by the "This PC"
+    // virtual location (Architecture.md §14.15).
+    FileNode withDisplayName(std::string displayName) const;
 
     friend bool operator==(const FileNode& lhs, const FileNode& rhs) noexcept;
 
@@ -48,7 +55,8 @@ private:
               std::chrono::system_clock::time_point creationDate,
               std::chrono::system_clock::time_point modificationDate,
               FileType fileType,
-              std::optional<std::uint64_t> hash);
+              std::optional<std::uint64_t> hash,
+              std::optional<std::string> displayName = std::nullopt);
 
     std::filesystem::path m_path;
     std::uintmax_t m_size;
@@ -56,6 +64,7 @@ private:
     std::chrono::system_clock::time_point m_modificationDate;
     FileType m_fileType;
     std::optional<std::uint64_t> m_hash;
+    std::optional<std::string> m_displayName;
 };
 
 inline bool operator!=(const FileNode& lhs, const FileNode& rhs) noexcept

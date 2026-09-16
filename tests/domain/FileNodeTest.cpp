@@ -60,3 +60,22 @@ TEST(FileNode, EqualityComparesAllFields)
     EXPECT_EQ(a, b);
     EXPECT_NE(a, c);
 }
+
+TEST(FileNode, DisplayNameDefaultsToNullopt)
+{
+    auto result = FileNode::create("C:/", 0, someTime(), someTime(), FileType::Directory).value();
+
+    EXPECT_FALSE(result.displayName().has_value());
+}
+
+TEST(FileNode, WithDisplayNameReturnsCopyCarryingDisplayName)
+{
+    auto original = FileNode::create("C:/", 0, someTime(), someTime(), FileType::Directory).value();
+
+    FileNode withName = original.withDisplayName("Local Disk (C:)");
+
+    EXPECT_FALSE(original.displayName().has_value());
+    ASSERT_TRUE(withName.displayName().has_value());
+    EXPECT_EQ(withName.displayName().value(), "Local Disk (C:)");
+    EXPECT_NE(original, withName);
+}

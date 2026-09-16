@@ -3,6 +3,7 @@ add_library(explorer_application STATIC
     IContextMenuProvider.h
     ITagRepository.h
     IMediaDecoder.h
+    VirtualPaths.h
     FileNavigationUseCase.h
     FileNavigationUseCase.cpp
     TagManagementUseCase.h

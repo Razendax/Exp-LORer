@@ -17,7 +17,7 @@ The system is divided into four concentric layers, from the innermost core to th
 
 This layer contains the pure C++ plain data structures and core business logic. It has **no dependencies** on Qt, SQLite, or OS-specific APIs.
 
-* `FileNode`: Entity representing a file or directory. Contains properties like `path`, `size`, `creationDate`, `modificationDate`, `fileType`, and `hash` (for tracking moves/renames).
+* `FileNode`: Entity representing a file or directory. Contains properties like `path`, `size`, `creationDate`, `modificationDate`, `fileType`, `hash` (for tracking moves/renames), and an optional `displayName` override (used only by synthetic entries such as drives under the "This PC" virtual location, see §14.15 — `std::nullopt` for every ordinary file/folder, which keeps `name()`/`path().filename()` authoritative everywhere else).
 * `Tag`: Entity representing a user-defined tag. Contains `id`, `name`, and `hexColor`.
 * `MediaMetadata`: Entity representing media properties (e.g., `resolution`, `duration`, `codec`).
 * `FileTagAssociation`: Entity mapping a `FileNode`'s hash/path to a `Tag`'s ID.
@@ -879,3 +879,79 @@ Application layer change; this is UI-session state, same posture as the rest of 
   a separate change from this one; a config schema-migration framework beyond the reserved
   `"version"` field; persisting bookmarks/pinned folders or the thumbnail cache size limit (neither
   is implemented anywhere yet).
+
+### 14.15 "This PC" Virtual Navigation Location
+
+Adds a synthetic top-level navigation location — all local/remote drives, plus quick access to
+Downloads/Documents/Pictures/Videos/Music/Desktop — reached from any drive's root directory via Up
+(Specification.md §2.1). Modeled as a **sentinel path**, not a new location/tab type, so every
+existing path-based mechanism (`TabViewModel::navigateTo`, `NavigationHistory`, `WorkspaceConfig`
+session persistence, tab titles, tag-panel ancestor walking) keeps working unmodified.
+
+* **Sentinel**: `VirtualPaths::ThisPC` (`src/application/VirtualPaths.h`, new — plain
+  `std::filesystem::path`, no Qt/OS dependency, same posture as `NativeTypes.h`), literal value
+  `L"this-pc:"`. A trailing `:` is not a legal Windows path-component character, so no real
+  file/folder can ever collide with it.
+* **No Port/interface change.** `IFileSystemRepository`/`FileNavigationUseCase` are untouched —
+  both already pass `std::filesystem::path` through generically. Only the concrete
+  `StandardFileSystemRepository` special-cases the sentinel in `listDirectory()`/`stat()`,
+  preserving "all OS-specific code goes through `IFileSystemRepository`" (§6): a future Linux
+  backend implements its own equivalent (mounts + XDG user dirs) behind the same sentinel, entirely
+  inside its own adapter. Non-Windows returns an `IoError` "Not supported on this platform" failure
+  for both entry points today, matching `openWithDefaultApplication`'s existing posture.
+* **Drives** are synthesized as `FileNode`s whose `path()` is the real drive root (e.g. `C:\`), so
+  double-click navigation, tagging, etc. work unmodified. Enumerated via `GetLogicalDrives()` +
+  `GetDriveTypeW` (skipping `DRIVE_NO_ROOT_DIR`/`DRIVE_UNKNOWN`); the volume label comes from
+  `GetVolumeInformationW` (tolerated failure — e.g. an empty optical drive — falls back to a
+  type-based label rather than failing the whole listing). Since a root path's `.filename()` is
+  empty (a `std::filesystem` quirk), the display label ("Local Disk (C:)", "Removable Disk (E:)",
+  "DVD Drive (D:)", a volume label, ...) is carried via `FileNode::displayName()` instead — computed
+  by the pure, hardware-free `DriveLabel::driveDisplayLabel(letter, driveType, volumeLabel)`
+  (`src/adapters/filesystem/DriveLabel.h/.cpp`, new), split out specifically so it's unit-testable
+  without touching real drives, the same rationale as `WorkspaceLayoutTopology::visiblePanes()`.
+* **Quick access folders** are synthesized via `SHGetKnownFolderPath` (`FOLDERID_Downloads`,
+  `FOLDERID_Documents`, `FOLDERID_Pictures`, `FOLDERID_Videos`, `FOLDERID_Music`,
+  `FOLDERID_Desktop`; `CoTaskMemFree`d after use — `src/adapters/filesystem/CMakeLists.txt` gains
+  `Ole32` for this, alongside the existing Windows-only `Shell32`). No `displayName` override
+  needed — the real folder name ("Downloads", "Documents", ...) is already correct. A folder that
+  fails to resolve is skipped rather than failing the whole listing.
+* **`TabViewModel::goUp()`**: at `VirtualPaths::ThisPC`, no-op (top of the hierarchy). At a
+  filesystem root (`parent_path() == currentPath()` — a local drive root or a UNC share root),
+  navigates to `VirtualPaths::ThisPC` instead of the previous no-op — this is the "exits from any
+  drive" trigger, and covers Backspace/Details-view ArrowLeft/the Up toolbar button for free since
+  all of them funnel through `goUp()` already. `emitAvailability()`'s `upAvailable` simplifies to
+  "has a current path and it isn't `VirtualPaths::ThisPC`".
+* **Display text**: the address bar and tab title show "This PC" rather than the raw sentinel
+  string (a small `displayPathText()` helper in `WorkspacePaneWidget`); typing "This PC"
+  (case-insensitive) into the address bar navigates to the sentinel directly.
+* **Tag panel**: `TagListViewModel::resolveTarget()` returns no target (rather than tagging the
+  bare virtual root) when nothing is selected and the active tab's path is `VirtualPaths::ThisPC`.
+  Tagging a drive or quick-access folder that *is* selected inside the This PC listing still works
+  normally, since that resolves via `selectedEntry()`'s real path, not this fallback.
+* **Background context menu**: right-clicking empty space while browsing This PC shows no menu
+  (`WorkspacePaneWidget::showBackgroundContextMenu` returns early for the sentinel) rather than a
+  New Folder/Paste/Properties menu that would just fail against it. Item-level right-click on a
+  drive/quick-access row is unaffected.
+* **Default landing location**: a fresh install (no saved `config.json`) and any newly-revealed
+  empty pane now land on `VirtualPaths::ThisPC` instead of the user's home directory (`main.cpp`).
+  `WorkspaceLayoutWidget`'s "newly-revealed empty pane" auto-seed and
+  `WorkspacePaneWidget::onNewTabRequested` both already inherit the focused/active tab's *current*
+  path, so this needed no change in either place — only `main.cpp`'s fallback changed.
+* **Threading**: kept synchronous on the UI thread, consistent with every other
+  `IFileSystemRepository` call today (§14.9's "kept synchronous" precedent; §5's background-dispatch
+  model isn't implemented anywhere yet). `GetVolumeInformationW` on a removable/optical drive with
+  no media inserted can add a brief delay before erroring — tolerated, not worked around.
+* **Testing**: `DriveLabel::driveDisplayLabel()` and `FileNode::displayName()`/`withDisplayName()`
+  are unit-tested (pure logic). `stat(VirtualPaths::ThisPC)` returning a synthetic `Directory` node
+  is unit-tested. The live drive/known-folder enumeration itself is **not** covered by an automated
+  test — the same carve-out §11 already documents for other live, per-machine OS-shell state
+  (registry verbs, `ShellExecuteW`).
+* **Not built here**: a Linux backend for the sentinel; drive free/total capacity display (a real
+  Explorer parity pass needs `GetDiskFreeSpaceExW` plus a size-column rendering change);
+  section/grouping headers ("Folders" vs. "Devices and drives" — This PC returns one flat,
+  normally-sortable list); protecting quick-access folders from rename/delete beyond what the OS
+  itself already refuses (deleting a real folder you can select is existing app behavior
+  everywhere, not unique to this feature); async/background-thread dispatch for the enumeration; a
+  dedicated `TabViewModelTest` (that class has no unit tests at all yet, a pre-existing gap, not
+  introduced here — the new `goUp()` branching is verified by manual smoke test instead, per §11's
+  UI-layer manual-testing convention).

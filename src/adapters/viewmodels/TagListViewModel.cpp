@@ -7,6 +7,7 @@
 #include "TabViewModel.h"
 #include "TagColorPalette.h"
 #include "TagManagementUseCase.h"
+#include "VirtualPaths.h"
 
 namespace
 {
@@ -132,6 +133,11 @@ std::optional<FileNode> TagListViewModel::resolveTarget() const
     if (const auto& selected = m_activeTab->selectedEntry())
     {
         return selected;
+    }
+
+    if (m_activeTab->currentPath() == VirtualPaths::ThisPC)
+    {
+        return std::nullopt;
     }
 
     auto stat = m_fileNavigationUseCase.stat(m_activeTab->currentPath());

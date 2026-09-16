@@ -3,6 +3,7 @@
 #include <fstream>
 
 #include "StandardFileSystemRepository.h"
+#include "VirtualPaths.h"
 
 namespace
 {
@@ -75,6 +76,16 @@ TEST_F(StandardFileSystemRepositoryTest, StatFailsForMissingPath)
 
     ASSERT_TRUE(result.hasError());
     EXPECT_EQ(result.error().code, ErrorCode::NotFound);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, StatResolvesThisPcAsSyntheticDirectory)
+{
+    auto result = m_repository.stat(VirtualPaths::ThisPC);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(result.value().isDirectory());
+    ASSERT_TRUE(result.value().displayName().has_value());
+    EXPECT_EQ(result.value().displayName().value(), "This PC");
 }
 
 TEST_F(StandardFileSystemRepositoryTest, MoveRenamesFile)
