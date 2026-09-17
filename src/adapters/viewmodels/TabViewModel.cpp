@@ -8,6 +8,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, QObject
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_fileListModel(new FileListModel(this))
+    , m_searchResultsModel(new FileListModel(this))
 {
     connect(this, &TabViewModel::directoryContentsChanged, m_fileListModel, &FileListModel::setEntries);
     connect(m_fileListModel, &FileListModel::sortOrderChanged, this, &TabViewModel::sortOrderChanged);
@@ -30,6 +31,7 @@ bool TabViewModel::sortAscending() const noexcept
 
 void TabViewModel::navigateTo(const std::filesystem::path& path)
 {
+    exitSearch();
     loadAndApply(path, true);
 }
 
@@ -59,6 +61,8 @@ void TabViewModel::goUp()
 
 void TabViewModel::goBack()
 {
+    exitSearch();
+
     const auto path = m_history.goBack();
     if (!path)
     {
@@ -70,6 +74,8 @@ void TabViewModel::goBack()
 
 void TabViewModel::goForward()
 {
+    exitSearch();
+
     const auto path = m_history.goForward();
     if (!path)
     {
@@ -130,6 +136,64 @@ void TabViewModel::loadAndApply(const std::filesystem::path& path, bool recordHi
     emit currentPathChanged(path);
     emit directoryContentsChanged(path, result.value());
     emitAvailability();
+}
+
+void TabViewModel::startSearch(const QString& query)
+{
+    if (query.trimmed().isEmpty())
+    {
+        return;
+    }
+
+    m_searchRoot = currentPath();
+    auto result = m_fileNavigationUseCase.listDirectoryRecursive(m_searchRoot);
+    if (result.hasError())
+    {
+        emit searchFailed(QString::fromStdString(result.error().message));
+        return;
+    }
+
+    m_searchSnapshot = std::move(result).value();
+    m_searchActive = true;
+    m_searchQuery = query;
+
+    auto filtered = FileNavigationUseCase::filterByName(m_searchSnapshot, query.toStdString());
+    filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
+    m_searchResultsModel->setEntries(m_searchRoot, filtered);
+
+    emit searchModeChanged(true);
+    emit searchResultsChanged(filtered);
+}
+
+void TabViewModel::updateSearchQuery(const QString& query)
+{
+    if (!m_searchActive)
+    {
+        return;
+    }
+
+    m_searchQuery = query;
+
+    auto filtered = FileNavigationUseCase::filterByName(m_searchSnapshot, query.toStdString());
+    filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
+    m_searchResultsModel->setEntries(m_searchRoot, filtered);
+
+    emit searchResultsChanged(filtered);
+}
+
+void TabViewModel::exitSearch()
+{
+    if (!m_searchActive)
+    {
+        return;
+    }
+
+    m_searchActive = false;
+    m_searchSnapshot.clear();
+    m_searchQuery.clear();
+    m_searchRoot.clear();
+
+    emit searchModeChanged(false);
 }
 
 void TabViewModel::emitAvailability()

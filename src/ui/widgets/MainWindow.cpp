@@ -6,6 +6,8 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QCloseEvent>
+#include <QKeyEvent>
+#include <QLineEdit>
 #include <QMenu>
 #include <QMenuBar>
 #include <QSettings>
@@ -227,6 +229,20 @@ void MainWindow::createLayoutToolBar()
     toolBar->setMovable(false);
     toolBar->setToolButtonStyle(Qt::ToolButtonTextOnly);
     toolBar->addActions(m_layoutActions);
+
+    createSearchBar(toolBar);
+}
+
+void MainWindow::createSearchBar(QToolBar* toolBar)
+{
+    m_searchBar = new QLineEdit(toolBar);
+    m_searchBar->setClearButtonEnabled(true);
+    m_searchBar->setPlaceholderText(tr("Search this folder..."));
+    m_searchBar->installEventFilter(this);
+    toolBar->addWidget(m_searchBar);
+
+    connect(m_searchBar, &QLineEdit::returnPressed, this, &MainWindow::onSearchBarReturnPressed);
+    connect(m_searchBar, &QLineEdit::textEdited, this, &MainWindow::onSearchBarTextEdited);
 }
 
 void MainWindow::createWorkspace()
@@ -282,15 +298,73 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     }
     m_sortTrackedTab = tab;
 
+    if (m_searchTrackedTab)
+    {
+        disconnect(m_searchTrackedTab, &TabViewModel::searchFailed, this, &MainWindow::onStatusMessage);
+    }
+    m_searchTrackedTab = tab;
+
     if (!tab)
     {
         m_sortByMenu->setEnabled(false);
+        m_searchBar->clear();
         return;
     }
 
     m_sortByMenu->setEnabled(true);
     connect(tab, &TabViewModel::sortOrderChanged, this, &MainWindow::onSortOrderChanged);
     onSortOrderChanged(tab->sortCriterion(), tab->sortAscending());
+
+    connect(tab, &TabViewModel::searchFailed, this, &MainWindow::onStatusMessage);
+    m_searchBar->setText(tab->searchActive() ? tab->searchQuery() : QString());
+}
+
+void MainWindow::onSearchBarReturnPressed()
+{
+    TabViewModel* tab = m_workspaceController->focusedTab();
+    if (!tab)
+    {
+        return;
+    }
+    tab->startSearch(m_searchBar->text());
+}
+
+void MainWindow::onSearchBarTextEdited(const QString& text)
+{
+    TabViewModel* tab = m_workspaceController->focusedTab();
+    if (!tab)
+    {
+        return;
+    }
+
+    if (text.trimmed().isEmpty())
+    {
+        tab->exitSearch();
+        return;
+    }
+
+    if (tab->searchActive())
+    {
+        tab->updateSearchQuery(text);
+    }
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == m_searchBar && event->type() == QEvent::KeyPress)
+    {
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        if (keyEvent->key() == Qt::Key_Escape)
+        {
+            m_searchBar->clear();
+            if (TabViewModel* tab = m_workspaceController->focusedTab())
+            {
+                tab->exitSearch();
+            }
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::onSortOrderChanged(SortCriterion criterion, bool ascending)

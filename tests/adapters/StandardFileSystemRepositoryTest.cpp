@@ -51,6 +51,37 @@ TEST_F(StandardFileSystemRepositoryTest, ListDirectoryFailsForMissingPath)
     EXPECT_EQ(result.error().code, ErrorCode::NotFound);
 }
 
+TEST_F(StandardFileSystemRepositoryTest, ListDirectoryRecursiveReturnsAllDescendants)
+{
+    writeFile(m_tempDir / "a.txt", "hello");
+    fs::create_directory(m_tempDir / "sub");
+    writeFile(m_tempDir / "sub" / "b.txt", "world");
+    fs::create_directory(m_tempDir / "sub" / "nested");
+    writeFile(m_tempDir / "sub" / "nested" / "c.txt", "!");
+
+    auto result = m_repository.listDirectoryRecursive(m_tempDir);
+
+    ASSERT_TRUE(result.hasValue());
+    // a.txt, sub, sub/b.txt, sub/nested, sub/nested/c.txt
+    EXPECT_EQ(result.value().size(), 5u);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, ListDirectoryRecursiveRejectsThisPc)
+{
+    auto result = m_repository.listDirectoryRecursive(VirtualPaths::ThisPC);
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::InvalidArgument);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, ListDirectoryRecursiveFailsForMissingPath)
+{
+    auto result = m_repository.listDirectoryRecursive(m_tempDir / "does-not-exist");
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::NotFound);
+}
+
 TEST_F(StandardFileSystemRepositoryTest, StatResolvesDirectory)
 {
     auto result = m_repository.stat(m_tempDir);

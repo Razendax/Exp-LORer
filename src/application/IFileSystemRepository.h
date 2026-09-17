@@ -19,6 +19,10 @@ public:
 
     virtual Result<std::vector<FileNode>> listDirectory(const std::filesystem::path& directory) const = 0;
 
+    // Recursively lists every descendant file/folder under root (Architecture.md §14.18). Individual
+    // unreadable subtrees are skipped rather than failing the whole call, same posture as listDirectory.
+    virtual Result<std::vector<FileNode>> listDirectoryRecursive(const std::filesystem::path& root) const = 0;
+
     // Resolves a single path into a FileNode (e.g. to treat a browsed directory itself as a
     // taggable target when no child row is selected). Unlike listDirectory(), this stats the
     // path itself rather than enumerating its children.

@@ -45,6 +45,21 @@ TEST(FileNavigationUseCase, ListDirectoryPropagatesError)
     EXPECT_EQ(result.error().code, ErrorCode::IoError);
 }
 
+TEST(FileNavigationUseCase, ListDirectoryRecursiveDelegatesToRepository)
+{
+    MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
+    std::vector<FileNode> files{ makeFile("C:/data/sub/a.txt", 10) };
+    EXPECT_CALL(repository, listDirectoryRecursive(std::filesystem::path("C:/data")))
+        .WillOnce(Return(Result<std::vector<FileNode>>::success(files)));
+
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
+    auto result = useCase.listDirectoryRecursive("C:/data");
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().size(), 1u);
+}
+
 TEST(FileNavigationUseCase, StatDelegatesToRepository)
 {
     MockFileSystemRepository repository;
@@ -126,6 +141,44 @@ TEST(FileNavigationUseCase, FilterByExtensionIsCaseInsensitive)
 
     ASSERT_EQ(filtered.size(), 1u);
     EXPECT_EQ(filtered[0].name(), "a.TXT");
+}
+
+TEST(FileNavigationUseCase, FilterByNameEmptyQueryMatchesEverything)
+{
+    std::vector<FileNode> files{ makeFile("C:/data/a.txt", 1), makeFile("C:/data/b.jpg", 2) };
+
+    auto filtered = FileNavigationUseCase::filterByName(files, "");
+
+    EXPECT_EQ(filtered.size(), 2u);
+}
+
+TEST(FileNavigationUseCase, FilterByNameIsCaseInsensitive)
+{
+    std::vector<FileNode> files{ makeFile("C:/data/Report.txt", 1), makeFile("C:/data/b.jpg", 2) };
+
+    auto filtered = FileNavigationUseCase::filterByName(files, "REPORT");
+
+    ASSERT_EQ(filtered.size(), 1u);
+    EXPECT_EQ(filtered[0].name(), "Report.txt");
+}
+
+TEST(FileNavigationUseCase, FilterByNameMatchesSubstringMidName)
+{
+    std::vector<FileNode> files{ makeFile("C:/data/quarterly_report_final.txt", 1), makeFile("C:/data/b.jpg", 2) };
+
+    auto filtered = FileNavigationUseCase::filterByName(files, "report");
+
+    ASSERT_EQ(filtered.size(), 1u);
+    EXPECT_EQ(filtered[0].name(), "quarterly_report_final.txt");
+}
+
+TEST(FileNavigationUseCase, FilterByNameReturnsEmptyWhenNoMatches)
+{
+    std::vector<FileNode> files{ makeFile("C:/data/a.txt", 1), makeFile("C:/data/b.jpg", 2) };
+
+    auto filtered = FileNavigationUseCase::filterByName(files, "nomatch");
+
+    EXPECT_TRUE(filtered.empty());
 }
 
 TEST(FileNavigationUseCase, MoveFileDelegatesToRepository)

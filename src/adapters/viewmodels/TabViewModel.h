@@ -29,6 +29,9 @@ public:
     std::filesystem::path currentPath() const;
     ViewMode viewMode() const noexcept { return m_viewMode; }
     FileListModel* fileListModel() const noexcept { return m_fileListModel; }
+    FileListModel* searchResultsModel() const noexcept { return m_searchResultsModel; }
+    bool searchActive() const noexcept { return m_searchActive; }
+    QString searchQuery() const noexcept { return m_searchQuery; }
     const std::vector<FileNode>& selectedEntries() const noexcept { return m_selectedEntries; }
     SortCriterion sortCriterion() const noexcept;
     bool sortAscending() const noexcept;
@@ -67,6 +70,19 @@ public slots:
     // that has it open (Architecture.md §14.10).
     void refresh();
 
+    // Recursive filename search scoped to currentPath() (Architecture.md §14.18). No-op if query
+    // is empty/whitespace-only. Performs one recursive Port call, caches the snapshot, filters +
+    // sorts it into searchResultsModel(), and flips searchActive on. On failure, emits
+    // searchFailed and leaves any prior search state untouched.
+    void startSearch(const QString& query);
+
+    // Re-filters the cached snapshot from the last startSearch() call — no disk I/O. No-op if
+    // searchActive() is false.
+    void updateSearchQuery(const QString& query);
+
+    // Clears search state and flips searchActive off. No-op if already inactive.
+    void exitSearch();
+
 signals:
     void currentPathChanged(const std::filesystem::path& path);
     void directoryContentsChanged(const std::filesystem::path& path, const std::vector<FileNode>& entries);
@@ -77,6 +93,10 @@ signals:
     void viewModeChanged(ViewMode mode);
     void selectedEntriesChanged(const std::vector<FileNode>& entries);
     void sortOrderChanged(SortCriterion criterion, bool ascending);
+
+    void searchModeChanged(bool active);
+    void searchResultsChanged(const std::vector<FileNode>& entries);
+    void searchFailed(const QString& message);
 
 private:
     // Single funnel point for every navigation entry point: fetches directory contents exactly
@@ -91,4 +111,10 @@ private:
     ViewMode m_viewMode = ViewMode::Details;
     FileListModel* m_fileListModel = nullptr;
     std::vector<FileNode> m_selectedEntries;
+
+    FileListModel* m_searchResultsModel = nullptr;
+    bool m_searchActive = false;
+    std::filesystem::path m_searchRoot;
+    std::vector<FileNode> m_searchSnapshot;
+    QString m_searchQuery;
 };

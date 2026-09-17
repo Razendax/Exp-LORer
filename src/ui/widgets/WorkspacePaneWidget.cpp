@@ -10,6 +10,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QSettings>
+#include <QStackedWidget>
 #include <QStyle>
 #include <QTabWidget>
 #include <QToolBar>
@@ -203,10 +204,19 @@ void WorkspacePaneWidget::createTabArea()
 
 void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
 {
-    auto* browserView = new FileBrowserView(tab->fileListModel(), m_tabWidget);
-    browserView->setViewMode(tab->viewMode());
+    auto* stack = new QStackedWidget(m_tabWidget);
 
-    m_tabWidget->insertTab(index, browserView, tabLabelFor(tab->currentPath()));
+    auto* browserView = new FileBrowserView(tab->fileListModel(), stack);
+    browserView->setViewMode(tab->viewMode());
+    wireBrowserView(browserView, tab);
+    stack->addWidget(browserView); // page 0: normal browsing
+
+    auto* searchResultsView = new FileBrowserView(tab->searchResultsModel(), stack);
+    searchResultsView->setViewMode(tab->viewMode());
+    wireBrowserView(searchResultsView, tab);
+    stack->addWidget(searchResultsView); // page 1: search results
+
+    m_tabWidget->insertTab(index, stack, tabLabelFor(tab->currentPath()));
 
     connect(tab, &TabViewModel::currentPathChanged, this, [this, tab](const std::filesystem::path& path) {
         const int idx = indexOfTab(tab);
@@ -216,6 +226,11 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
         }
     });
 
+    connect(tab, &TabViewModel::searchModeChanged, stack, [stack](bool active) { stack->setCurrentIndex(active ? 1 : 0); });
+}
+
+void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewModel* tab)
+{
     connect(browserView, &FileBrowserView::itemActivated, tab, [this, tab](const std::filesystem::path& path, bool isDirectory) {
         if (isDirectory)
         {
@@ -439,9 +454,12 @@ void WorkspacePaneWidget::onDeleteRequested(TabViewModel* tab, bool permanent)
 
 void WorkspacePaneWidget::onViewModeChanged(ViewMode mode)
 {
-    if (QWidget* page = m_tabWidget->currentWidget())
+    if (auto* stack = qobject_cast<QStackedWidget*>(m_tabWidget->currentWidget()))
     {
-        static_cast<FileBrowserView*>(page)->setViewMode(mode);
+        for (int i = 0; i < stack->count(); ++i)
+        {
+            static_cast<FileBrowserView*>(stack->widget(i))->setViewMode(mode);
+        }
     }
 
     const auto it = std::find(kViewModes.begin(), kViewModes.end(), mode);

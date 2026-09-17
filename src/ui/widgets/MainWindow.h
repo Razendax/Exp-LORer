@@ -11,6 +11,8 @@ class QAction;
 class QActionGroup;
 class QCloseEvent;
 class QMenu;
+class QLineEdit;
+class QToolBar;
 class AppConfigStore;
 class TagManagementUseCase;
 class WorkspaceController;
@@ -36,12 +38,16 @@ protected:
     // place a save happens; no periodic/live autosave).
     void closeEvent(QCloseEvent* event) override;
 
+    // Watches m_searchBar for Escape (clears the box and exits search on the focused tab).
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private:
     void createLayoutActions();
     void createSortByActions();
     void createContextMenuModeAction();
     void createMenuBar();
     void createLayoutToolBar();
+    void createSearchBar(QToolBar* toolBar);
     void createWorkspace();
     void showTagManagerDialog();
 
@@ -49,6 +55,8 @@ private:
     void onStatusMessage(const QString& message);
     void onFocusedTabChanged(TabViewModel* tab);
     void onSortOrderChanged(SortCriterion criterion, bool ascending);
+    void onSearchBarReturnPressed();
+    void onSearchBarTextEdited(const QString& text);
 
     WorkspaceController* m_workspaceController = nullptr;
     AppConfigStore& m_configStore;
@@ -56,6 +64,8 @@ private:
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;
     TabViewModel* m_sortTrackedTab = nullptr;
+    TabViewModel* m_searchTrackedTab = nullptr;
+    QLineEdit* m_searchBar = nullptr;
 
     // One QAction per SplitLayout (same order as the anonymous-namespace kLayouts array in the
     // .cpp), shared verbatim between the "Layout" toolbar and the View > Layout submenu so both

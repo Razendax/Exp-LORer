@@ -1064,3 +1064,56 @@ tags to a specific selection. Opened via a new "Tag Edit..." action on the previ
   by existing tests.
 * **Not built here**: color editing (color stays auto-picked on Add, untouched on Rename — same
   posture as the tag panel); multi-select rename/delete; tag-usage counts in the list.
+
+### 14.18 Filename Search (Per-Tab, Recursive)
+
+Adds recursive filename/extension search scoped to a single tab's current folder
+(Specification.md §2.1), triggered from a search box in the Layout toolbar and rendered *inside* the
+tab it was run against, rather than as a separate panel or a new `SplitLayout`/`WorkspacePaneId`
+value. Search state belongs to the `TabViewModel` it ran against, so it survives tab/pane switches
+untouched and is never triggered implicitly for a different tab.
+
+* **Port**: `IFileSystemRepository::listDirectoryRecursive(root)` (new, symmetric to the existing
+  `listDirectory`) — `StandardFileSystemRepository` walks via `fs::recursive_directory_iterator` with
+  `fs::directory_options::skip_permission_denied` (an unreadable subtree is skipped, not a whole-call
+  failure, same posture as §14.15's tolerant enumeration). Rejects `VirtualPaths::ThisPC` outright
+  (an error, not a listing) — recursing from the synthetic root would mean walking every local drive.
+* **`FileNavigationUseCase`** gains `listDirectoryRecursive` (delegates to the Port) and a pure/static
+  `filterByName(files, query)` — case-insensitive substring match against `FileNode::name()`, same
+  shape and same local `toLower` helper as the existing `filterByExtension`.
+* **`TabViewModel`** owns a *second* `FileListModel` (`searchResultsModel()`) alongside its normal
+  one, plus `searchActive()`, the query text, and a cached full-recursive snapshot from the last scan.
+  `startSearch(query)` (no-op on an empty/whitespace query) performs the one recursive Port call,
+  filters + sorts (`SortCriterion::Name`, ascending) into `searchResultsModel()`, and flips
+  `searchActive` on. `updateSearchQuery(query)` re-filters the cached snapshot only — no further disk
+  I/O — which is what makes live-as-you-type filtering cheap. `exitSearch()` clears the state.
+  `navigateTo()`/`goBack()`/`goForward()` (not `refresh()`) call `exitSearch()` unconditionally first,
+  since resuming real navigation is incompatible with a stale search snapshot.
+* **`WorkspacePaneWidget`** wraps each tab's page in a `QStackedWidget` of two `FileBrowserView`s —
+  one bound to the tab's normal `fileListModel()`, one to its `searchResultsModel()` — reusing
+  `FileBrowserView`/`FileListModel` as-is (icons, view modes, sorting, multi-selection, keyboard
+  hotkeys, context menu all come for free) rather than introducing new view/model classes. The page
+  connected to each `FileBrowserView` instance is wired identically (a shared private helper), so
+  copy/cut/paste/delete/context-menu/navigation-hotkey behavior is unchanged whether the visible page
+  is browsing results or search results. `TabViewModel::searchModeChanged` flips the stack's current
+  page.
+* **`MainWindow`** owns the one global search `QLineEdit`, placed in the existing Layout toolbar next
+  to the layout `QAction`s. It always targets `WorkspaceController::focusedTab()` — the same hook
+  already used to retarget the "Sort by" menu. `returnPressed` calls `startSearch`; `textEdited` calls
+  `updateSearchQuery` while the focused tab is already in search mode (or `exitSearch` once the box is
+  cleared); `onFocusedTabChanged` resyncs the box's text to whatever the newly-focused tab's search
+  state is, so switching tabs never fires a search but does restore what the box should show.
+* **Threading**: kept synchronous on the UI thread, same precedent as §14.15/§14.16/§14.17 (§5's
+  background-dispatch model isn't implemented anywhere yet). A very large recursive folder will
+  briefly freeze the UI during the initial Enter-triggered scan — accepted, not worked around.
+* **Testing**: `FileNavigationUseCase::filterByName` (pure) and
+  `StandardFileSystemRepository::listDirectoryRecursive` (real temp-directory tree, plus the
+  `VirtualPaths::ThisPC` rejection) get GTest coverage, following the existing `filterByExtension`/
+  `listDirectory` test style. `TabViewModel`'s new search state has no automated test, the same
+  pre-existing gap §14.15/§14.16 already note ("`TabViewModel` ... has no unit tests at all yet"). UI
+  layer: manual smoke test only, per §11's established convention.
+* **Not built here**: a "Location" column to disambiguate same-named results from different
+  subfolders (the Name column alone is ambiguous in that case); cancellation/background dispatch of
+  the recursive scan; re-scanning disk as the query changes (the cached-snapshot filter can go stale
+  relative to concurrent disk changes until the next Enter); extension-only query syntax (a plain
+  substring match on the filename already covers it, e.g. typing `.txt`).

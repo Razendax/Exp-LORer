@@ -15,6 +15,8 @@ class QLineEdit;
 class QAction;
 class QActionGroup;
 class QToolBar;
+class QStackedWidget;
+class FileBrowserView;
 class WorkspacePaneViewModel;
 class TabViewModel;
 class FileOperationsController;
@@ -51,6 +53,7 @@ private:
     void createTabArea();
 
     void addPageForTab(TabViewModel* tab, int index);
+    void wireBrowserView(FileBrowserView* browserView, TabViewModel* tab);
     void bindToolBarToTab(TabViewModel* tab);
     int indexOfTab(TabViewModel* tab) const;
 

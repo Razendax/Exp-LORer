@@ -29,10 +29,12 @@ public:
     FileNavigationUseCase(IFileSystemRepository& fileSystemRepository, IContextMenuProvider& contextMenuProvider);
 
     Result<std::vector<FileNode>> listDirectory(const std::filesystem::path& directory) const;
+    Result<std::vector<FileNode>> listDirectoryRecursive(const std::filesystem::path& root) const;
     Result<FileNode> stat(const std::filesystem::path& path) const;
 
     static std::vector<FileNode> sortBy(std::vector<FileNode> files, SortCriterion criterion, bool ascending = true);
     static std::vector<FileNode> filterByExtension(std::vector<FileNode> files, const std::string& extension);
+    static std::vector<FileNode> filterByName(std::vector<FileNode> files, const std::string& query);
 
     Result<FileNode> moveFile(const std::filesystem::path& source, const std::filesystem::path& destination);
     Result<FileNode> copyFile(const std::filesystem::path& source, const std::filesystem::path& destination);

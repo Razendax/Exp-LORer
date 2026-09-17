@@ -61,7 +61,13 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   more than one item is selected (Architecture.md §14.16).
 
 **Search and Filter:**
-* Fast filename and extension search within the current directory and subdirectories.
+* Fast filename and extension search within the current directory and subdirectories
+  (Architecture.md §14.18). A search box in the toolbar, next to the split-layout controls, searches
+  recursively under whichever pane/tab currently has focus once Enter is pressed; results replace
+  that tab's folder view in place (other tabs/panes are unaffected). While that tab is showing
+  results, further typing in the same box live-filters them without needing Enter again. Switching to
+  a different tab never triggers a search for it — a tab's search results and query persist,
+  independent of which tab or pane currently has focus.
 
 ### 2.2 Database-Backed File Tagging System
 

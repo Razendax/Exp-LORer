@@ -191,6 +191,44 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectory(const 
     return Result<std::vector<FileNode>>::success(std::move(files));
 }
 
+Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursive(const std::filesystem::path& root) const
+{
+    if (root == VirtualPaths::ThisPC)
+    {
+        return Result<std::vector<FileNode>>::failure(
+            Error(ErrorCode::InvalidArgument, "Cannot recursively search This PC"));
+    }
+
+    const fs::path target = withLongPathPrefix(root);
+
+    std::error_code ec;
+    if (!fs::is_directory(target, ec))
+    {
+        return Result<std::vector<FileNode>>::failure(Error(ErrorCode::NotFound, root.string() + " is not a directory"));
+    }
+
+    std::vector<FileNode> files;
+    try
+    {
+        for (const auto& entry :
+             fs::recursive_directory_iterator(target, fs::directory_options::skip_permission_denied))
+        {
+            const fs::path relative = fs::relative(entry.path(), target);
+            auto node = buildFileNode(root / relative, entry);
+            if (node.hasValue())
+            {
+                files.push_back(std::move(node).value());
+            }
+        }
+    }
+    catch (const fs::filesystem_error& e)
+    {
+        return Result<std::vector<FileNode>>::failure(toError(e));
+    }
+
+    return Result<std::vector<FileNode>>::success(std::move(files));
+}
+
 Result<FileNode> StandardFileSystemRepository::stat(const std::filesystem::path& path) const
 {
     if (path == VirtualPaths::ThisPC)

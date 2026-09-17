@@ -25,6 +25,11 @@ Result<std::vector<FileNode>> FileNavigationUseCase::listDirectory(const std::fi
     return m_fileSystemRepository.listDirectory(directory);
 }
 
+Result<std::vector<FileNode>> FileNavigationUseCase::listDirectoryRecursive(const std::filesystem::path& root) const
+{
+    return m_fileSystemRepository.listDirectoryRecursive(root);
+}
+
 Result<FileNode> FileNavigationUseCase::stat(const std::filesystem::path& path) const
 {
     return m_fileSystemRepository.stat(path);
@@ -76,6 +81,23 @@ std::vector<FileNode> FileNavigationUseCase::filterByExtension(std::vector<FileN
     std::vector<FileNode> result;
     std::copy_if(files.begin(), files.end(), std::back_inserter(result), [&wanted](const FileNode& file) {
         return toLower(file.path().extension().string()) == wanted;
+    });
+
+    return result;
+}
+
+std::vector<FileNode> FileNavigationUseCase::filterByName(std::vector<FileNode> files, const std::string& query)
+{
+    if (query.empty())
+    {
+        return files;
+    }
+
+    const std::string wanted = toLower(query);
+
+    std::vector<FileNode> result;
+    std::copy_if(files.begin(), files.end(), std::back_inserter(result), [&wanted](const FileNode& file) {
+        return toLower(file.name().string()).find(wanted) != std::string::npos;
     });
 
     return result;
