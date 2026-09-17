@@ -18,6 +18,8 @@ add_library(explorer_adapters_viewmodels STATIC
     TagColorPalette.h
     TagListViewModel.h
     TagListViewModel.cpp
+    TagManagerViewModel.h
+    TagManagerViewModel.cpp
     FileOperationsController.h
     FileOperationsController.cpp
 )

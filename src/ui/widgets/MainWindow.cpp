@@ -16,6 +16,8 @@
 #include "AppConfigStore.h"
 #include "FileOperationsController.h"
 #include "TabViewModel.h"
+#include "TagManagerDialog.h"
+#include "TagManagerViewModel.h"
 #include "TagPanelWidget.h"
 #include "WorkspaceController.h"
 #include "WorkspaceLayoutWidget.h"
@@ -82,11 +84,12 @@ namespace
     }
 }
 
-MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore, const AppConfig& initialConfig,
-                         QWidget* parent)
+MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore,
+                         TagManagementUseCase& tagManagementUseCase, const AppConfig& initialConfig, QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceController(workspaceController)
     , m_configStore(configStore)
+    , m_tagManagementUseCase(tagManagementUseCase)
 {
     setWindowTitle(tr("Exp-LORer"));
 
@@ -197,7 +200,8 @@ void MainWindow::createMenuBar()
     QMenu* fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->addAction(tr("E&xit"), this, &QWidget::close);
 
-    menuBar()->addMenu(tr("&Edit"));
+    QMenu* editMenu = menuBar()->addMenu(tr("&Edit"));
+    editMenu->addAction(tr("&Tag Edit..."), this, &MainWindow::showTagManagerDialog);
 
     QMenu* viewMenu = menuBar()->addMenu(tr("&View"));
     QMenu* layoutMenu = viewMenu->addMenu(tr("&Layout"));
@@ -244,6 +248,13 @@ void MainWindow::createWorkspace()
 
     connect(m_workspaceController->fileOperationsController(), &FileOperationsController::operationFailed, this,
             &MainWindow::onStatusMessage);
+}
+
+void MainWindow::showTagManagerDialog()
+{
+    TagManagerViewModel viewModel(m_tagManagementUseCase);
+    TagManagerDialog dialog(&viewModel, this);
+    dialog.exec();
 }
 
 void MainWindow::onLayoutChanged(SplitLayout layout)

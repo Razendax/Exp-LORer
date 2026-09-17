@@ -1021,3 +1021,46 @@ selection.
 * **Not built here**: Ctrl+A select-all; a "N items selected" status-bar indicator; batch
   Rename/Properties for a multi-item selection; drag-to-move of a multi-selection (no drag-and-drop
   in the app yet, §14.13.6).
+
+### 14.17 Tag Manager Dialog
+
+Adds a standalone dialog for managing the **global** tag list — renaming a tag, deleting one outright
+(cascading to every `FileTags` row via the schema's `ON DELETE CASCADE`, §7), or adding one without
+also tagging a file/folder — as distinct from the tag panel (§14.9), which only attaches/detaches
+tags to a specific selection. Opened via a new "Tag Edit..." action on the previously-empty Edit menu
+(`MainWindow::createMenuBar()`). No Domain/Application/schema change: it is built entirely on
+`TagManagementUseCase`'s pre-existing `createTag`/`updateTag`/`deleteTag`/`searchTags` methods (§2.2).
+
+* **`TagManagerViewModel`** (`src/adapters/viewmodels/`, new) — `QObject`, same shape as
+  `TagListViewModel`/`FileOperationsController` (owns a `TagManagementUseCase&`, no Qt/SQLite below
+  it): `matchingTags()`/`setSearchQuery(QString)` (re-runs `TagManagementUseCase::searchTags`),
+  `renameTag(Tag::Id, QString)` (rebuilds the `Tag` via `Tag::create(id, newName,
+  existingTag.hexColor())` — name changes only, color untouched — then `updateTag`), `addTag(QString)`
+  (color via the existing `TagColorPalette::pickColorFor`, same auto-pick
+  `TagListViewModel::createAndAddTagFromQuery` already uses, then `createTag`), `deleteTag(Tag::Id)`.
+  Each mutating slot re-runs the current search afterward. `operationFailed(QString)` signal on any
+  `Result` failure, same pattern as every other ViewModel.
+* **`TagManagerDialog`** (`src/ui/widgets/`, new) — `QDialog`: a `QLineEdit` search box wired to
+  `setSearchQuery` on every keystroke, no debounce (same synchronous, no-debounce precedent as
+  `TagListViewModel::setSearchQuery`); a `QListWidget` rebuilt wholesale on `matchingTagsChanged`
+  (one row per tag: a solid-color square `QPixmap` from `tag.hexColor()` as icon, name as text,
+  `Tag::Id` in `Qt::UserRole` — plain `QListWidgetItem`s rather than `TagChipWidget`, which is
+  purpose-built for the panel's add/remove-button chip UX, not a selectable row list); Rename/Add/
+  Delete/Close buttons, with Rename/Delete enabled only when exactly one row is selected. Add and
+  Rename both prompt via a modal `QInputDialog::getText` (Add pre-filled with the trimmed search
+  text if any; Rename pre-filled with the selected tag's current name) — reusing the exact
+  rename-prompt convention §14.13.4 established for file rename. Delete prompts a `QMessageBox::
+  question` confirmation (naming the tag and warning that its file associations are removed too)
+  before calling `deleteTag`, mirroring §14.10's confirm-before-destructive-delete precedent.
+  `operationFailed` surfaces via `QMessageBox::warning`.
+* **Wiring**: `CompositionRoot` gains a trivial `tagManagementUseCase()` accessor (same shape as its
+  existing `appConfigStore()` accessor) so `MainWindow` can reach the use case without widening
+  `WorkspaceController`'s constructor. `MainWindow`'s constructor gains a `TagManagementUseCase&`
+  parameter (passed from `main.cpp` alongside the existing `AppConfigStore&` argument); its Edit-menu
+  action constructs a fresh `TagManagerViewModel` + `TagManagerDialog` per invocation and `exec()`s
+  it — a one-shot modal, unlike the always-alive shared `TagListViewModel`.
+* **Testing**: no automated coverage, same UI-layer manual-testing convention as §14.9/§14.15/§14.16
+  — `TagManagementUseCase` itself (the only Application-layer code involved) is already fully covered
+  by existing tests.
+* **Not built here**: color editing (color stays auto-picked on Add, untouched on Rename — same
+  posture as the tag panel); multi-select rename/delete; tag-usage counts in the list.

@@ -28,6 +28,7 @@ public:
     std::unique_ptr<WorkspaceController> createWorkspaceController();
 
     AppConfigStore& appConfigStore() noexcept { return m_appConfigStore; }
+    TagManagementUseCase& tagManagementUseCase() noexcept { return m_tagManagementUseCase; }
 
 private:
     StandardFileSystemRepository m_fileSystemRepository;

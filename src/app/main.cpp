@@ -26,7 +26,8 @@ int main(int argc, char* argv[])
     auto workspaceController = compositionRoot.createWorkspaceController();
     const bool restored = workspaceController->restoreFromConfig(initialConfig.workspace);
 
-    MainWindow mainWindow(workspaceController.get(), compositionRoot.appConfigStore(), initialConfig);
+    MainWindow mainWindow(workspaceController.get(), compositionRoot.appConfigStore(), compositionRoot.tagManagementUseCase(),
+                          initialConfig);
     mainWindow.show();
 
     if (!restored)

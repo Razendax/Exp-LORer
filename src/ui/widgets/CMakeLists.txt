@@ -15,6 +15,8 @@ add_library(explorer_ui_widgets STATIC
     TagChipWidget.cpp
     TagPanelWidget.h
     TagPanelWidget.cpp
+    TagManagerDialog.h
+    TagManagerDialog.cpp
     ContextMenuBuilder.h
     ContextMenuBuilder.cpp
 )

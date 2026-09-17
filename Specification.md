@@ -67,6 +67,11 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 
 **Tag Management:**
 * Users can create, edit, delete, and color-code custom tags (e.g., "Work", "Urgent", "ProjectA", "Favorite").
+* A **Tag Manager dialog** (Edit menu → "Tag Edit...", Architecture.md §14.17), separate from the tag
+  panel below, manages the global tag list independent of any specific file/folder selection: a
+  search bar filters the full tag list live as the user types, and Rename/Add/Delete buttons act on
+  the selected tag (Add creates a new tag by name; Delete removes a tag and all of its file/folder
+  associations, after confirmation).
 
 **Tag Assignment:**
 * Ability to attach multiple tags to any file or folder.

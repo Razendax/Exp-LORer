@@ -12,6 +12,7 @@ class QActionGroup;
 class QCloseEvent;
 class QMenu;
 class AppConfigStore;
+class TagManagementUseCase;
 class WorkspaceController;
 class WorkspaceLayoutWidget;
 class TagPanelWidget;
@@ -26,8 +27,8 @@ class MainWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore, const AppConfig& initialConfig,
-               QWidget* parent = nullptr);
+    MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore, TagManagementUseCase& tagManagementUseCase,
+               const AppConfig& initialConfig, QWidget* parent = nullptr);
 
 protected:
     // Captures window geometry + WorkspaceController::captureConfig() and saves it via
@@ -42,6 +43,7 @@ private:
     void createMenuBar();
     void createLayoutToolBar();
     void createWorkspace();
+    void showTagManagerDialog();
 
     void onLayoutChanged(SplitLayout layout);
     void onStatusMessage(const QString& message);
@@ -50,6 +52,7 @@ private:
 
     WorkspaceController* m_workspaceController = nullptr;
     AppConfigStore& m_configStore;
+    TagManagementUseCase& m_tagManagementUseCase;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;
     TabViewModel* m_sortTrackedTab = nullptr;
