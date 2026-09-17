@@ -4,11 +4,20 @@
 #include "FileNavigationUseCase.h"
 #include "VirtualPaths.h"
 
+namespace
+{
+    bool isCriteriaEmpty(const SearchCriteria& criteria)
+    {
+        return criteria.nameQuery.empty() && !criteria.minSizeBytes && !criteria.maxSizeBytes && criteria.extensionList.empty();
+    }
+}
+
 TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_fileListModel(new FileListModel(this))
     , m_searchResultsModel(new FileListModel(this))
+    , m_advancedSearchResultsModel(new FileListModel(this))
 {
     connect(this, &TabViewModel::directoryContentsChanged, m_fileListModel, &FileListModel::setEntries);
     connect(m_fileListModel, &FileListModel::sortOrderChanged, this, &TabViewModel::sortOrderChanged);
@@ -32,6 +41,7 @@ bool TabViewModel::sortAscending() const noexcept
 void TabViewModel::navigateTo(const std::filesystem::path& path)
 {
     exitSearch();
+    exitAdvancedSearch();
     loadAndApply(path, true);
 }
 
@@ -62,6 +72,7 @@ void TabViewModel::goUp()
 void TabViewModel::goBack()
 {
     exitSearch();
+    exitAdvancedSearch();
 
     const auto path = m_history.goBack();
     if (!path)
@@ -75,6 +86,7 @@ void TabViewModel::goBack()
 void TabViewModel::goForward()
 {
     exitSearch();
+    exitAdvancedSearch();
 
     const auto path = m_history.goForward();
     if (!path)
@@ -145,6 +157,8 @@ void TabViewModel::startSearch(const QString& query)
         return;
     }
 
+    exitAdvancedSearch();
+
     m_searchRoot = currentPath();
     auto result = m_fileNavigationUseCase.listDirectoryRecursive(m_searchRoot);
     if (result.hasError())
@@ -194,6 +208,79 @@ void TabViewModel::exitSearch()
     m_searchRoot.clear();
 
     emit searchModeChanged(false);
+}
+
+void TabViewModel::showAdvancedSearchPanel()
+{
+    if (m_advancedSearchActive)
+    {
+        return;
+    }
+
+    exitSearch();
+
+    m_advancedSearchActive = true;
+    emit advancedSearchModeChanged(true);
+}
+
+void TabViewModel::startAdvancedSearch(const SearchCriteria& criteria)
+{
+    if (isCriteriaEmpty(criteria))
+    {
+        return;
+    }
+
+    exitSearch();
+
+    m_advancedSearchRoot = currentPath();
+    auto result = m_fileNavigationUseCase.listDirectoryRecursive(m_advancedSearchRoot);
+    if (result.hasError())
+    {
+        emit advancedSearchFailed(QString::fromStdString(result.error().message));
+        return;
+    }
+
+    m_advancedSearchSnapshot = std::move(result).value();
+    m_advancedSearchActive = true;
+    m_advancedSearchCriteria = criteria;
+
+    auto filtered = FileNavigationUseCase::filterByCriteria(m_advancedSearchSnapshot, criteria);
+    filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
+    m_advancedSearchResultsModel->setEntries(m_advancedSearchRoot, filtered);
+
+    emit advancedSearchModeChanged(true);
+    emit advancedSearchResultsChanged(filtered);
+}
+
+void TabViewModel::updateAdvancedSearchCriteria(const SearchCriteria& criteria)
+{
+    if (!m_advancedSearchActive)
+    {
+        return;
+    }
+
+    m_advancedSearchCriteria = criteria;
+
+    auto filtered = FileNavigationUseCase::filterByCriteria(m_advancedSearchSnapshot, criteria);
+    filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
+    m_advancedSearchResultsModel->setEntries(m_advancedSearchRoot, filtered);
+
+    emit advancedSearchResultsChanged(filtered);
+}
+
+void TabViewModel::exitAdvancedSearch()
+{
+    if (!m_advancedSearchActive)
+    {
+        return;
+    }
+
+    m_advancedSearchActive = false;
+    m_advancedSearchSnapshot.clear();
+    m_advancedSearchCriteria = SearchCriteria();
+    m_advancedSearchRoot.clear();
+
+    emit advancedSearchModeChanged(false);
 }
 
 void TabViewModel::emitAvailability()

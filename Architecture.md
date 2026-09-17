@@ -855,10 +855,16 @@ Application layer change; this is UI-session state, same posture as the rest of 
   handling.
 * **`WorkspacePaneViewModel`** gains a trivial `activeIndex() const` accessor for `captureConfig()`.
 * **`src/adapters/config/`** (new adapter module, sibling to `persistence`/`filesystem`/`shell`):
-  * `AppConfig.h` — `AppConfig { QByteArray windowGeometry; WorkspaceConfig workspace; }`. Unlike
-    `WorkspaceConfig`, this type is allowed to reference Qt (`QByteArray`) directly — the module
-    exists specifically as the Qt/JSON persistence boundary, the same posture `SQLiteTagRepository`
-    and `ContextMenuIcon` already have at their own boundaries.
+  * `AppConfig.h` — `AppConfig { QByteArray windowGeometry; WorkspaceConfig workspace;
+    std::array<int, FileListModel::ColumnCount> detailsColumnWidths; }`. Unlike `WorkspaceConfig`,
+    this type is allowed to reference Qt (`QByteArray`) directly — the module exists specifically as
+    the Qt/JSON persistence boundary, the same posture `SQLiteTagRepository` and `ContextMenuIcon`
+    already have at their own boundaries. `detailsColumnWidths` is one shared set of Details-view
+    (Name/Size/Type/Date modified) column widths for the whole app, not per-tab like `TabConfig`'s
+    `ViewMode`/`SortCriterion` — a column layout is a property of those four columns themselves, not
+    of any one folder. `0` in a slot means "unset": `FileBrowserView::setColumnWidths()` leaves that
+    column at `QHeaderView`'s own default width rather than forcing it, so a fresh install still
+    gets Qt's normal initial sizing.
   * `AppConfigStore` — `load() -> AppConfig` / `save(const AppConfig&) -> bool`, backed by Qt's
     built-in `QJsonDocument`/`QJsonObject`/`QJsonArray` (`Qt6::Core` — already linked everywhere,
     no new `vcpkg.json` dependency). Reads/writes `%LOCALAPPDATA%/Exp-LORer/config.json` (Windows),
@@ -886,12 +892,31 @@ Application layer change; this is UI-session state, same posture as the rest of 
   constructing `MainWindow` (so `WorkspaceLayoutWidget`'s constructor-time `applyLayout()` already
   sees the restored layout/tabs), running the pre-existing home-directory seed only when nothing
   was restored.
+* **Details-view column widths** are pure UI/header state with no Application-layer meaning, so
+  they bypass `WorkspaceConfig`/`TabConfig`/`WorkspaceController`/`TabViewModel` entirely and are
+  threaded only through the UI-widget constructor chain: `MainWindow` holds
+  `m_columnWidths` (seeded from `AppConfig::detailsColumnWidths`) and passes it into
+  `WorkspaceLayoutWidget`'s constructor, which forwards it to each of the 4
+  `WorkspacePaneWidget`s it builds up front; `WorkspacePaneWidget::addPageForTab()` applies it via
+  `FileBrowserView::setColumnWidths()` to every `FileBrowserView` it creates (both the normal and
+  search-results pages, and the advanced-search `SearchResultsPane`'s inner `FileBrowserView`) —
+  including ones created later by `WorkspacePaneWidget::onNewTabRequested()`, since the same stored
+  widths are reused for the pane's whole lifetime, not just at startup. There is no live sync
+  between tabs/panes while the app is running (matches the save-on-close-only posture below): widths
+  are only read back, via `FileBrowserView::columnWidths()` and
+  `WorkspacePaneWidget::currentColumnWidths()`, from the *focused* pane's *current* tab/page in
+  `MainWindow::closeEvent()`, right before that value is written into `AppConfig` and saved.
 
 #### 14.14.2 Save/Load Policy and Not Built Here
 
 * **Save-on-close only**: the config is captured and written exactly once, from
-  `MainWindow::closeEvent()`. No periodic/live autosave during a running session in this increment.
-* **Not built here**: live/continuous autosave; migrating the existing `QSettings`-backed
+  `MainWindow::closeEvent()`. No periodic/live autosave during a running session in this increment
+  — this includes Details-view column widths, which likewise are captured only at close, from
+  whichever tab/pane is focused at that moment (see above), not synced live across tabs/panes while
+  resizing.
+* **Not built here**: live/continuous autosave; per-tab or per-folder column widths (Explorer
+  remembers these per-folder; this app keeps one shared set app-wide, see above); migrating the
+  existing `QSettings`-backed
   "show shell extensions in context menu" toggle (§14.13.5) into `config.json` — it's read via a
   static lookup at context-menu-build time today, and folding it into session state that only
   saves on close would need a live in-memory reference threaded through `WorkspacePaneWidget`,
@@ -1117,3 +1142,92 @@ untouched and is never triggered implicitly for a different tab.
   the recursive scan; re-scanning disk as the query changes (the cached-snapshot filter can go stale
   relative to concurrent disk changes until the next Enter); extension-only query syntax (a plain
   substring match on the filename already covers it, e.g. typing `.txt`).
+* **Coexists with §14.19**: this quick toolbar box is left unmodified by the advanced search pane
+  below — two independent, mutually-exclusive-at-a-time search entry points on the same tab.
+
+### 14.19 Advanced (Criteria) Search Pane
+
+Adds a second, richer search entry point alongside §14.18's quick toolbar box (kept as-is,
+unmodified): a per-tab pane with Name / Min size / Max size / Extension fields and a **Search**
+button, whose results always render in a new, taller, match-highlighting Details-like view
+regardless of the tab's own `ViewMode`. Reachable via a new "Advanced Search..." toolbar action.
+Search state again lives on `TabViewModel`, parallel to (and mutually exclusive with) §14.18's
+quick-search state and normal browsing — entering one search mode exits the other, but each
+mode's criteria/cached snapshot persists while hidden, the same way tab state survives a
+tab-switch.
+
+* **`SearchCriteria`** (`src/application/SearchCriteria.h`, new — plain C++, no Qt, same posture
+  as `VirtualPaths.h`/`NativeTypes.h`): `nameQuery` (substring, case-insensitive, empty = no
+  filter), `minSizeBytes`/`maxSizeBytes` (`std::optional<std::uintmax_t>`, either bound omittable),
+  `extensionList` (comma/space-separated, e.g. `"jpg, png"`, empty = no filter).
+* **`FileNavigationUseCase`** gains three pure static filters, same shape/testing posture as the
+  existing `filterByExtension`/`filterByName`: `filterBySizeRange(files, min, max)` (excludes
+  directories whenever either bound is set — a directory has no meaningful size in this app's
+  model, matching `FileListModel`'s existing blank-size-for-directories rendering); `filterByExtensions(files,
+  extensions)` (an already-split token list, OR'd together case-insensitively, excludes directories
+  when non-empty); `filterByCriteria(files, criteria)` composing `filterByName` →
+  `filterBySizeRange` → `filterByExtensions`, each a no-op when its part of `criteria` is unset —
+  the one entry point `TabViewModel` calls. No Port/interface change; reuses the existing
+  `listDirectoryRecursive`.
+* **`TabViewModel`** gains a second, parallel search-state block alongside §14.18's untouched
+  one: a third `FileListModel` (`advancedSearchResultsModel()`), `advancedSearchActive()`,
+  `advancedSearchCriteria()`, a cached recursive snapshot, and a search root. New slots:
+  `showAdvancedSearchPanel()` (reveals the pane without scanning — used by the toolbar trigger;
+  calls `exitSearch()` first if quick search was active), `startAdvancedSearch(criteria)`
+  (no-op on an all-empty criteria; otherwise one `listDirectoryRecursive` call, cached, filtered via
+  `filterByCriteria`, sorted by Name ascending, into `advancedSearchResultsModel()`; on failure
+  emits `advancedSearchFailed` and leaves prior state untouched — same posture as `startSearch`),
+  `updateAdvancedSearchCriteria(criteria)` (re-filters the cached snapshot only, no disk I/O;
+  no-op if inactive), `exitAdvancedSearch()` (clears state, hides the pane). New signals:
+  `advancedSearchModeChanged(bool)`, `advancedSearchResultsChanged(const std::vector<FileNode>&)`,
+  `advancedSearchFailed(const QString&)`. `navigateTo()`/`goBack()`/`goForward()` now call
+  `exitAdvancedSearch()` unconditionally too (alongside the existing `exitSearch()` call), and each
+  search mode's entry points call the other mode's exit first, enforcing "at most one search mode
+  active" from both directions.
+* **`SearchResultDelegate`** (`src/ui/widgets/`, new, `QStyledItemDelegate` — same family as
+  `FileTileDelegate`/`FileIconDelegate`): `setHighlightQuery(text)`; `paint()` draws every column
+  normally except Name, where a case-insensitive substring match (if any) is drawn as three text
+  runs (before/match/after), the matched run bolded with a subtle highlight background — manual
+  multi-`drawText` painting, the same technique `FileTileDelegate` already uses for its two-line
+  layout; `sizeHint()` is taller than the Details view's default row ("a bit larger").
+* **`FileBrowserView`** gains an opt-in `DisplayMode { Normal, AdvancedSearchResults }`
+  constructor parameter rather than a whole new widget class, so all existing
+  selection/multi-select/keyboard-hotkey/context-menu/double-click-open wiring is reused as-is
+  (the same reuse rationale §14.18 already established for its own search-results page). In
+  `AdvancedSearchResults` mode the `QTreeView` page is always shown (`setViewMode()` calls are
+  ignored — results ignore the tab's own `ViewMode` entirely) with `SearchResultDelegate`
+  installed in place of the stock delegate; a new `setNameHighlightQuery(text)` method forwards to
+  the delegate.
+* **`SearchCriteriaPanel`** (`src/ui/widgets/`, new `QWidget`): Name `QLineEdit`, Min/Max size
+  `QSpinBox` pair (KB, `0` = unbounded via `setSpecialValueText`), Extension `QLineEdit`, **Search**
+  `QPushButton`, and a close/"×" button. Signals: `searchRequested(SearchCriteria)` (Search button
+  or the Name field's `returnPressed` — same Enter-triggers-scan convention as the address bar and
+  §14.18's box), `criteriaEdited(SearchCriteria)` (any field's live edit — the consumer no-ops this
+  when no search is active yet), `closeRequested()`. `setCriteria(...)` repopulates the fields when
+  a tab regains focus.
+* **`SearchResultsPane`** (`src/ui/widgets/`, new `QWidget`): `QVBoxLayout` of
+  `SearchCriteriaPanel` (top) + a `FileBrowserView` in `AdvancedSearchResults` mode bound to
+  `advancedSearchResultsModel()` (bottom); exposes `browserView()` so `WorkspacePaneWidget` can
+  reuse its existing `wireBrowserView(...)` helper unchanged.
+* **`WorkspacePaneWidget::addPageForTab`**: the per-tab `QStackedWidget` grows a third page (index
+  2) holding a `SearchResultsPane`, wired the same way as the existing search-results page (page
+  1): `wireBrowserView(pane->browserView(), tab)`, plus `searchRequested` →
+  `startAdvancedSearch`, `criteriaEdited` → `updateAdvancedSearchCriteria`, `closeRequested` →
+  `exitAdvancedSearch`, and results/criteria changes drive `pane->setHighlightQuery(...)`. A
+  combined slot on both `searchModeChanged` and `advancedSearchModeChanged` now picks the stack
+  page (advanced → 2, quick → 1, else → 0), replacing the single-signal lambda §14.18 originally
+  used.
+* **`MainWindow`**: §14.18's `m_searchBar` toolbar box is untouched. One new toolbar `QAction`
+  ("Advanced Search...") calls `focusedTab()->showAdvancedSearchPanel()`. No new field-syncing
+  logic in `MainWindow` itself — `SearchCriteriaPanel` lives per-tab inside
+  `WorkspacePaneWidget`/`SearchResultsPane`, not globally, so there's nothing for `MainWindow` to
+  resync beyond what the pane's own `setCriteria()` already does at focus time.
+* **Threading**: kept synchronous on the UI thread, same precedent as §14.18 and the rest of §14.
+* **Testing**: `filterBySizeRange`/`filterByExtensions`/`filterByCriteria` are pure and
+  GTest-covered in `tests/application/FileNavigationUseCaseTest.cpp` alongside the existing
+  `filterByExtension`/`filterByName` tests. `TabViewModel`'s new state and the new UI widgets get
+  no automated coverage, the same pre-existing gap/convention §14.15–§14.18 already document.
+* **Not built here**: a "Location" column (same exclusion as §14.18); cancellation/background
+  dispatch of the recursive scan; saving/restoring advanced-search criteria or active state across
+  session persistence (§14.14) — it resets on app restart, same as §14.18's quick search today; a
+  size-unit switcher (MB/GB) beyond KB spin boxes.

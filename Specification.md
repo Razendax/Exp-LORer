@@ -68,6 +68,15 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   results, further typing in the same box live-filters them without needing Enter again. Switching to
   a different tab never triggers a search for it — a tab's search results and query persist,
   independent of which tab or pane currently has focus.
+* **Advanced search pane** (Architecture.md §14.19), a second and separate entry point from the
+  quick search box above, opened via an "Advanced Search..." toolbar action: a dedicated per-tab
+  pane with Name, Min size, Max size, and Extension fields plus a Search button, searching
+  recursively under the focused tab once Search is pressed (or Enter in the Name field). Editing
+  any field afterward live-refines the already-fetched results without re-scanning disk. Results
+  render in a dedicated view — always styled like Details view but with taller rows and the
+  matching part of each Name highlighted — regardless of the tab's own chosen view mode. Only one
+  of normal browsing, quick search, or advanced search is shown at a time per tab; opening either
+  search mode closes the other, and each remembers its own fields/results while hidden.
 
 ### 2.2 Database-Backed File Tagging System
 

@@ -1,12 +1,15 @@
 #pragma once
 
+#include <array>
 #include <filesystem>
 #include <optional>
 #include <vector>
 
 #include <QPoint>
+#include <QString>
 #include <QWidget>
 
+#include "FileListModel.h"
 #include "FileNode.h"
 #include "ViewMode.h"
 
@@ -22,6 +25,7 @@ class QKeyEvent;
 class FileListModel;
 class FileTileDelegate;
 class FileIconDelegate;
+class SearchResultDelegate;
 
 // The tab's content widget: a QStackedWidget switching between a QListView (icon/list/tiles view
 // modes) and a QTreeView (details view mode), both bound to the same FileListModel
@@ -31,9 +35,29 @@ class FileBrowserView : public QWidget
     Q_OBJECT
 
 public:
-    explicit FileBrowserView(FileListModel* model, QWidget* parent = nullptr);
+    // Normal: the usual Icons/List/Tiles/Details switching driven by setViewMode(). Advanced
+    // search results (Architecture.md §14.19) always render as the QTreeView page regardless of
+    // ViewMode, with SearchResultDelegate instead of the stock delegate — setViewMode() calls are
+    // ignored in this mode.
+    enum class DisplayMode
+    {
+        Normal,
+        AdvancedSearchResults,
+    };
+
+    explicit FileBrowserView(FileListModel* model, QWidget* parent = nullptr, DisplayMode displayMode = DisplayMode::Normal);
 
     void setViewMode(ViewMode mode);
+
+    // AdvancedSearchResults mode only: forwarded to the SearchResultDelegate. No-op in Normal mode.
+    void setNameHighlightQuery(const QString& query);
+
+    // Details-view (QTreeView) column widths, indexed by FileListModel::Column (Architecture.md
+    // §14.14). setColumnWidths() ignores any entry <= 0 (the "unset, use QHeaderView's own
+    // default" sentinel used by a fresh AppConfig), so it's safe to call unconditionally right
+    // after construction.
+    std::array<int, FileListModel::ColumnCount> columnWidths() const;
+    void setColumnWidths(const std::array<int, FileListModel::ColumnCount>& widths);
 
 signals:
     // Emitted on double-click/Enter on a row; isDirectory decides whether MainWindow forwards
@@ -82,11 +106,13 @@ private:
     void selectFirstEntry();
 
     FileListModel* m_model = nullptr;
+    DisplayMode m_displayMode = DisplayMode::Normal;
     QStackedWidget* m_stack = nullptr;
     QListView* m_listView = nullptr;
     QTreeView* m_treeView = nullptr;
     QAbstractItemDelegate* m_defaultDelegate = nullptr;
     FileTileDelegate* m_tileDelegate = nullptr;
+    SearchResultDelegate* m_searchResultDelegate = nullptr;
     FileIconDelegate* m_iconDelegate = nullptr;
     QItemSelectionModel* m_selectionModel = nullptr;
 };

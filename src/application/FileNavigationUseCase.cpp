@@ -12,6 +12,47 @@ namespace
         });
         return text;
     }
+
+    // Splits a comma/space-separated extension list (e.g. "jpg, png") into trimmed tokens, each
+    // normalized to include a leading '.' so it compares directly against
+    // std::filesystem::path::extension(). Empty tokens are dropped.
+    std::vector<std::string> splitExtensionList(const std::string& extensionList)
+    {
+        std::vector<std::string> tokens;
+        std::string current;
+
+        auto flush = [&]() {
+            const std::size_t begin = current.find_first_not_of(" \t");
+            const std::size_t end = current.find_last_not_of(" \t");
+            if (begin == std::string::npos)
+            {
+                current.clear();
+                return;
+            }
+            std::string trimmed = current.substr(begin, end - begin + 1);
+            if (!trimmed.empty() && trimmed.front() != '.')
+            {
+                trimmed.insert(trimmed.begin(), '.');
+            }
+            tokens.push_back(std::move(trimmed));
+            current.clear();
+        };
+
+        for (char c : extensionList)
+        {
+            if (c == ',' || c == ' ' || c == '\t')
+            {
+                flush();
+            }
+            else
+            {
+                current.push_back(c);
+            }
+        }
+        flush();
+
+        return tokens;
+    }
 }
 
 FileNavigationUseCase::FileNavigationUseCase(IFileSystemRepository& fileSystemRepository, IContextMenuProvider& contextMenuProvider)
@@ -101,6 +142,71 @@ std::vector<FileNode> FileNavigationUseCase::filterByName(std::vector<FileNode> 
     });
 
     return result;
+}
+
+std::vector<FileNode> FileNavigationUseCase::filterBySizeRange(std::vector<FileNode> files,
+                                                                 std::optional<std::uintmax_t> minBytes,
+                                                                 std::optional<std::uintmax_t> maxBytes)
+{
+    if (!minBytes && !maxBytes)
+    {
+        return files;
+    }
+
+    std::vector<FileNode> result;
+    std::copy_if(files.begin(), files.end(), std::back_inserter(result), [&](const FileNode& file) {
+        if (file.isDirectory())
+        {
+            return false;
+        }
+        if (minBytes && file.size() < *minBytes)
+        {
+            return false;
+        }
+        if (maxBytes && file.size() > *maxBytes)
+        {
+            return false;
+        }
+        return true;
+    });
+
+    return result;
+}
+
+std::vector<FileNode> FileNavigationUseCase::filterByExtensions(std::vector<FileNode> files,
+                                                                   const std::vector<std::string>& extensions)
+{
+    if (extensions.empty())
+    {
+        return files;
+    }
+
+    std::vector<std::string> wanted;
+    wanted.reserve(extensions.size());
+    for (const std::string& extension : extensions)
+    {
+        wanted.push_back(toLower(extension));
+    }
+
+    std::vector<FileNode> result;
+    std::copy_if(files.begin(), files.end(), std::back_inserter(result), [&](const FileNode& file) {
+        if (file.isDirectory())
+        {
+            return false;
+        }
+        const std::string extension = toLower(file.path().extension().string());
+        return std::find(wanted.begin(), wanted.end(), extension) != wanted.end();
+    });
+
+    return result;
+}
+
+std::vector<FileNode> FileNavigationUseCase::filterByCriteria(std::vector<FileNode> files, const SearchCriteria& criteria)
+{
+    files = filterByName(std::move(files), criteria.nameQuery);
+    files = filterBySizeRange(std::move(files), criteria.minSizeBytes, criteria.maxSizeBytes);
+    files = filterByExtensions(std::move(files), splitExtensionList(criteria.extensionList));
+    return files;
 }
 
 Result<FileNode> FileNavigationUseCase::moveFile(const std::filesystem::path& source, const std::filesystem::path& destination)

@@ -4,6 +4,7 @@ add_library(explorer_application STATIC
     ITagRepository.h
     IMediaDecoder.h
     VirtualPaths.h
+    SearchCriteria.h
     FileNavigationUseCase.h
     FileNavigationUseCase.cpp
     TagManagementUseCase.h

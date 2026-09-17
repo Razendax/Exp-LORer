@@ -58,6 +58,10 @@ TEST_F(AppConfigStoreTest, LoadOnMissingFileReturnsDefaults)
     {
         EXPECT_TRUE(pane.tabs.empty());
     }
+    for (int width : config.detailsColumnWidths)
+    {
+        EXPECT_EQ(width, 0);
+    }
 }
 
 TEST_F(AppConfigStoreTest, SaveThenLoadRoundTripsWindowGeometryAndWorkspace)
@@ -67,6 +71,7 @@ TEST_F(AppConfigStoreTest, SaveThenLoadRoundTripsWindowGeometryAndWorkspace)
     AppConfig original;
     original.windowGeometry = QByteArray("not-real-geometry-bytes");
     original.workspace = sampleWorkspaceConfig();
+    original.detailsColumnWidths = { 220, 90, 130, 160 };
 
     ASSERT_TRUE(store.save(original));
     ASSERT_TRUE(fs::exists(m_configPath));
@@ -76,6 +81,7 @@ TEST_F(AppConfigStoreTest, SaveThenLoadRoundTripsWindowGeometryAndWorkspace)
     EXPECT_EQ(loaded.windowGeometry, original.windowGeometry);
     EXPECT_EQ(loaded.workspace.layout, original.workspace.layout);
     EXPECT_EQ(loaded.workspace.focusedPane, original.workspace.focusedPane);
+    EXPECT_EQ(loaded.detailsColumnWidths, original.detailsColumnWidths);
 
     for (size_t i = 0; i < loaded.workspace.panes.size(); ++i)
     {
@@ -159,6 +165,27 @@ TEST_F(AppConfigStoreTest, LoadOnPartialOrMalformedFieldsFallsBackPerField)
     EXPECT_EQ(paneA.tabs[0].sortCriterion, SortCriterion::Name);
     // Missing sortAscending falls back to TabConfig's default (true).
     EXPECT_TRUE(paneA.tabs[0].sortAscending);
+    // Missing detailsColumnWidths falls back to all-zero ("unset").
+    for (int width : config.detailsColumnWidths)
+    {
+        EXPECT_EQ(width, 0);
+    }
+}
+
+TEST_F(AppConfigStoreTest, LoadOnShortDetailsColumnWidthsArrayFillsRemainingColumnsWithZero)
+{
+    {
+        std::ofstream stream(m_configPath, std::ios::binary);
+        stream << R"({ "version": 1, "detailsColumnWidths": [240, 100] })";
+    }
+
+    AppConfigStore store{ m_configPath };
+    const AppConfig config = store.load();
+
+    EXPECT_EQ(config.detailsColumnWidths[0], 240);
+    EXPECT_EQ(config.detailsColumnWidths[1], 100);
+    EXPECT_EQ(config.detailsColumnWidths[2], 0);
+    EXPECT_EQ(config.detailsColumnWidths[3], 0);
 }
 
 class AppConfigStoreSplitLayoutRoundTripTest : public AppConfigStoreTest, public ::testing::WithParamInterface<SplitLayout>

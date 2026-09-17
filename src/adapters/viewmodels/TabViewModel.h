@@ -10,6 +10,7 @@
 #include "FileNavigationUseCase.h"
 #include "FileNode.h"
 #include "NavigationHistory.h"
+#include "SearchCriteria.h"
 #include "ViewMode.h"
 
 class FileNavigationUseCase;
@@ -32,6 +33,11 @@ public:
     FileListModel* searchResultsModel() const noexcept { return m_searchResultsModel; }
     bool searchActive() const noexcept { return m_searchActive; }
     QString searchQuery() const noexcept { return m_searchQuery; }
+
+    FileListModel* advancedSearchResultsModel() const noexcept { return m_advancedSearchResultsModel; }
+    bool advancedSearchActive() const noexcept { return m_advancedSearchActive; }
+    const SearchCriteria& advancedSearchCriteria() const noexcept { return m_advancedSearchCriteria; }
+
     const std::vector<FileNode>& selectedEntries() const noexcept { return m_selectedEntries; }
     SortCriterion sortCriterion() const noexcept;
     bool sortAscending() const noexcept;
@@ -83,6 +89,24 @@ public slots:
     // Clears search state and flips searchActive off. No-op if already inactive.
     void exitSearch();
 
+    // Advanced (criteria) search pane (Architecture.md §14.19), parallel to the quick-search block
+    // above. Reveals the pane without scanning yet; exits quick search first (single-active-mode
+    // invariant).
+    void showAdvancedSearchPanel();
+
+    // No-op if criteria is entirely empty (nameQuery/size bounds/extensions all unset). Otherwise
+    // runs one recursive Port call, caches the snapshot, filters + sorts it into
+    // advancedSearchResultsModel(), and flips advancedSearchActive on. Exits quick search first. On
+    // failure, emits advancedSearchFailed and leaves prior state untouched.
+    void startAdvancedSearch(const SearchCriteria& criteria);
+
+    // Re-filters the cached snapshot from the last startAdvancedSearch() call — no disk I/O. No-op
+    // if advancedSearchActive() is false.
+    void updateAdvancedSearchCriteria(const SearchCriteria& criteria);
+
+    // Clears advanced-search state and flips advancedSearchActive off. No-op if already inactive.
+    void exitAdvancedSearch();
+
 signals:
     void currentPathChanged(const std::filesystem::path& path);
     void directoryContentsChanged(const std::filesystem::path& path, const std::vector<FileNode>& entries);
@@ -97,6 +121,10 @@ signals:
     void searchModeChanged(bool active);
     void searchResultsChanged(const std::vector<FileNode>& entries);
     void searchFailed(const QString& message);
+
+    void advancedSearchModeChanged(bool active);
+    void advancedSearchResultsChanged(const std::vector<FileNode>& entries);
+    void advancedSearchFailed(const QString& message);
 
 private:
     // Single funnel point for every navigation entry point: fetches directory contents exactly
@@ -117,4 +145,10 @@ private:
     std::filesystem::path m_searchRoot;
     std::vector<FileNode> m_searchSnapshot;
     QString m_searchQuery;
+
+    FileListModel* m_advancedSearchResultsModel = nullptr;
+    bool m_advancedSearchActive = false;
+    SearchCriteria m_advancedSearchCriteria;
+    std::filesystem::path m_advancedSearchRoot;
+    std::vector<FileNode> m_advancedSearchSnapshot;
 };

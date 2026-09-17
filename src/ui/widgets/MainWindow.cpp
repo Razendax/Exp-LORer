@@ -92,6 +92,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_workspaceController(workspaceController)
     , m_configStore(configStore)
     , m_tagManagementUseCase(tagManagementUseCase)
+    , m_columnWidths(initialConfig.detailsColumnWidths)
 {
     setWindowTitle(tr("Exp-LORer"));
 
@@ -243,11 +244,19 @@ void MainWindow::createSearchBar(QToolBar* toolBar)
 
     connect(m_searchBar, &QLineEdit::returnPressed, this, &MainWindow::onSearchBarReturnPressed);
     connect(m_searchBar, &QLineEdit::textEdited, this, &MainWindow::onSearchBarTextEdited);
+
+    m_advancedSearchAction = toolBar->addAction(tr("Advanced Search..."));
+    connect(m_advancedSearchAction, &QAction::triggered, this, [this]() {
+        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        {
+            tab->showAdvancedSearchPanel();
+        }
+    });
 }
 
 void MainWindow::createWorkspace()
 {
-    m_workspaceLayoutWidget = new WorkspaceLayoutWidget(m_workspaceController, this);
+    m_workspaceLayoutWidget = new WorkspaceLayoutWidget(m_workspaceController, m_columnWidths, this);
     m_tagPanelWidget = new TagPanelWidget(m_workspaceController->tagListViewModel(), this);
 
     auto* splitter = new QSplitter(Qt::Horizontal, this);
@@ -384,6 +393,13 @@ void MainWindow::closeEvent(QCloseEvent* event)
     AppConfig config;
     config.windowGeometry = saveGeometry();
     config.workspace = m_workspaceController->captureConfig();
+
+    if (WorkspacePaneWidget* focusedPaneWidget = m_workspaceLayoutWidget->paneWidget(m_workspaceController->focusedPane()))
+    {
+        m_columnWidths = focusedPaneWidget->currentColumnWidths();
+    }
+    config.detailsColumnWidths = m_columnWidths;
+
     m_configStore.save(config);
 
     QMainWindow::closeEvent(event);

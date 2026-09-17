@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <filesystem>
 #include <vector>
 
@@ -8,6 +9,7 @@
 #include <QString>
 #include <QWidget>
 
+#include "FileListModel.h"
 #include "ViewMode.h"
 
 class QTabWidget;
@@ -33,9 +35,15 @@ class WorkspacePaneWidget : public QWidget
 
 public:
     explicit WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOperationsController* fileOperationsController,
+                                  const std::array<int, FileListModel::ColumnCount>& initialColumnWidths = {},
                                   QWidget* parent = nullptr);
 
     WorkspacePaneViewModel* pane() const noexcept { return m_pane; }
+
+    // Details-view column widths of whichever FileBrowserView the pane's current tab is currently
+    // showing (Architecture.md §14.14), falling back to initialColumnWidths if the current tab's
+    // stack page can't be resolved to a FileBrowserView (e.g. the pane has no tabs at all).
+    std::array<int, FileListModel::ColumnCount> currentColumnWidths() const;
 
     // Shared with MainWindow's View-menu "Show shell extensions in context menu" QSettings-backed
     // toggle (Architecture.md §14.13) — read independently by each pane at build-menu time rather
@@ -88,4 +96,8 @@ private:
     // .cpp), shared between this pane's toolbar dropdown and (eventually) its own view menu.
     QActionGroup* m_viewModeActionGroup = nullptr;
     QList<QAction*> m_viewModeActions;
+
+    // Applied to every FileBrowserView this pane creates (addPageForTab), and the fallback for
+    // currentColumnWidths() when there's no current tab to read live widths from.
+    std::array<int, FileListModel::ColumnCount> m_initialColumnWidths{};
 };

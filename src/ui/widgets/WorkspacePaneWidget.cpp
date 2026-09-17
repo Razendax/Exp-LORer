@@ -21,6 +21,8 @@
 #include "FileBrowserView.h"
 #include "FileOperationsController.h"
 #include "IContextMenuProvider.h"
+#include "SearchCriteriaPanel.h"
+#include "SearchResultsPane.h"
 #include "TabViewModel.h"
 #include "VirtualPaths.h"
 #include "WorkspacePaneViewModel.h"
@@ -95,10 +97,12 @@ namespace
 }
 
 WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOperationsController* fileOperationsController,
+                                          const std::array<int, FileListModel::ColumnCount>& initialColumnWidths,
                                           QWidget* parent)
     : QWidget(parent)
     , m_pane(pane)
     , m_fileOperationsController(fileOperationsController)
+    , m_initialColumnWidths(initialColumnWidths)
 {
     createViewModeActions();
     QToolBar* toolBar = createToolBar();
@@ -208,13 +212,21 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
 
     auto* browserView = new FileBrowserView(tab->fileListModel(), stack);
     browserView->setViewMode(tab->viewMode());
+    browserView->setColumnWidths(m_initialColumnWidths);
     wireBrowserView(browserView, tab);
     stack->addWidget(browserView); // page 0: normal browsing
 
     auto* searchResultsView = new FileBrowserView(tab->searchResultsModel(), stack);
     searchResultsView->setViewMode(tab->viewMode());
+    searchResultsView->setColumnWidths(m_initialColumnWidths);
     wireBrowserView(searchResultsView, tab);
     stack->addWidget(searchResultsView); // page 1: search results
+
+    auto* advancedSearchPane = new SearchResultsPane(tab->advancedSearchResultsModel(), stack);
+    advancedSearchPane->setCriteria(tab->advancedSearchCriteria());
+    advancedSearchPane->browserView()->setColumnWidths(m_initialColumnWidths);
+    wireBrowserView(advancedSearchPane->browserView(), tab);
+    stack->addWidget(advancedSearchPane); // page 2: advanced search results
 
     m_tabWidget->insertTab(index, stack, tabLabelFor(tab->currentPath()));
 
@@ -226,7 +238,34 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
         }
     });
 
-    connect(tab, &TabViewModel::searchModeChanged, stack, [stack](bool active) { stack->setCurrentIndex(active ? 1 : 0); });
+    auto pickStackPage = [stack, tab]() {
+        if (tab->advancedSearchActive())
+        {
+            stack->setCurrentIndex(2);
+        }
+        else if (tab->searchActive())
+        {
+            stack->setCurrentIndex(1);
+        }
+        else
+        {
+            stack->setCurrentIndex(0);
+        }
+    };
+    connect(tab, &TabViewModel::searchModeChanged, stack, [pickStackPage](bool) { pickStackPage(); });
+    connect(tab, &TabViewModel::advancedSearchModeChanged, stack, [pickStackPage](bool) { pickStackPage(); });
+
+    connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::searchRequested, tab,
+            [tab](const SearchCriteria& criteria) { tab->startAdvancedSearch(criteria); });
+    connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::criteriaEdited, tab,
+            [tab](const SearchCriteria& criteria) { tab->updateAdvancedSearchCriteria(criteria); });
+    connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::closeRequested, tab,
+            [tab]() { tab->exitAdvancedSearch(); });
+
+    connect(tab, &TabViewModel::advancedSearchResultsChanged, advancedSearchPane,
+            [advancedSearchPane, tab](const std::vector<FileNode>&) {
+                advancedSearchPane->setHighlightQuery(QString::fromStdString(tab->advancedSearchCriteria().nameQuery));
+            });
 }
 
 void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewModel* tab)
@@ -458,7 +497,17 @@ void WorkspacePaneWidget::onViewModeChanged(ViewMode mode)
     {
         for (int i = 0; i < stack->count(); ++i)
         {
-            static_cast<FileBrowserView*>(stack->widget(i))->setViewMode(mode);
+            // The per-tab stack is heterogeneous: pages 0/1 are plain FileBrowserView, page 2 is a
+            // SearchResultsPane wrapping one. A blind static_cast<FileBrowserView*> on page 2 would
+            // reinterpret a SearchResultsPane's memory as a FileBrowserView, corrupting/crashing.
+            if (auto* browserView = qobject_cast<FileBrowserView*>(stack->widget(i)))
+            {
+                browserView->setViewMode(mode);
+            }
+            else if (auto* searchPane = qobject_cast<SearchResultsPane*>(stack->widget(i)))
+            {
+                searchPane->browserView()->setViewMode(mode);
+            }
         }
     }
 
@@ -470,6 +519,25 @@ void WorkspacePaneWidget::onViewModeChanged(ViewMode mode)
 
     const auto index = std::distance(kViewModes.begin(), it);
     m_viewModeActions[static_cast<int>(index)]->setChecked(true);
+}
+
+std::array<int, FileListModel::ColumnCount> WorkspacePaneWidget::currentColumnWidths() const
+{
+    // Same heterogeneous-stack shape as onViewModeChanged: page 2 is a SearchResultsPane wrapping
+    // a FileBrowserView, pages 0/1 are plain FileBrowserView.
+    if (auto* stack = qobject_cast<QStackedWidget*>(m_tabWidget->currentWidget()))
+    {
+        if (auto* browserView = qobject_cast<FileBrowserView*>(stack->currentWidget()))
+        {
+            return browserView->columnWidths();
+        }
+        if (auto* searchPane = qobject_cast<SearchResultsPane*>(stack->currentWidget()))
+        {
+            return searchPane->browserView()->columnWidths();
+        }
+    }
+
+    return m_initialColumnWidths;
 }
 
 bool WorkspacePaneWidget::extendedShellExtensionsEnabled()

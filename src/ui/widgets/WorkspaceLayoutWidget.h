@@ -4,6 +4,7 @@
 
 #include <QWidget>
 
+#include "FileListModel.h"
 #include "SplitLayout.h"
 #include "WorkspacePaneId.h"
 
@@ -23,7 +24,9 @@ class WorkspaceLayoutWidget : public QWidget
     Q_OBJECT
 
 public:
-    explicit WorkspaceLayoutWidget(WorkspaceController* controller, QWidget* parent = nullptr);
+    explicit WorkspaceLayoutWidget(WorkspaceController* controller,
+                                    const std::array<int, FileListModel::ColumnCount>& initialColumnWidths = {},
+                                    QWidget* parent = nullptr);
 
     WorkspacePaneWidget* paneWidget(WorkspacePaneId id) const;
 

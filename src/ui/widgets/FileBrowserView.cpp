@@ -16,6 +16,7 @@
 #include "FileIconDelegate.h"
 #include "FileListModel.h"
 #include "FileTileDelegate.h"
+#include "SearchResultDelegate.h"
 
 namespace
 {
@@ -41,9 +42,10 @@ namespace
     }
 }
 
-FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent)
+FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayMode displayMode)
     : QWidget(parent)
     , m_model(model)
+    , m_displayMode(displayMode)
 {
     m_listView = new QListView(this);
     m_listView->setModel(m_model);
@@ -55,6 +57,12 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent)
     m_treeView->setModel(m_model);
     m_treeView->setRootIsDecorated(false);
     m_treeView->header()->setSectionsClickable(true);
+
+    if (m_displayMode == DisplayMode::AdvancedSearchResults)
+    {
+        m_searchResultDelegate = new SearchResultDelegate(this);
+        m_treeView->setItemDelegate(m_searchResultDelegate);
+    }
 
     // QHeaderView defaults its sort indicator to (column 0, DescendingOrder); QTreeView's
     // setSortingEnabled(true) immediately force-resorts using whatever the header's *current*
@@ -207,6 +215,12 @@ bool FileBrowserView::handleKeyPress(QKeyEvent* event)
 
 void FileBrowserView::setViewMode(ViewMode mode)
 {
+    if (m_displayMode == DisplayMode::AdvancedSearchResults)
+    {
+        m_stack->setCurrentWidget(m_treeView);
+        return;
+    }
+
     if (mode == ViewMode::Details)
     {
         m_stack->setCurrentWidget(m_treeView);
@@ -246,6 +260,37 @@ void FileBrowserView::setViewMode(ViewMode mode)
     m_listView->setFlow(QListView::LeftToRight);
     m_listView->setWrapping(true);
     m_listView->setGridSize(QSize());
+}
+
+std::array<int, FileListModel::ColumnCount> FileBrowserView::columnWidths() const
+{
+    std::array<int, FileListModel::ColumnCount> widths{};
+    for (int column = 0; column < FileListModel::ColumnCount; ++column)
+    {
+        widths[static_cast<size_t>(column)] = m_treeView->header()->sectionSize(column);
+    }
+    return widths;
+}
+
+void FileBrowserView::setColumnWidths(const std::array<int, FileListModel::ColumnCount>& widths)
+{
+    for (int column = 0; column < FileListModel::ColumnCount; ++column)
+    {
+        const int width = widths[static_cast<size_t>(column)];
+        if (width > 0)
+        {
+            m_treeView->header()->resizeSection(column, width);
+        }
+    }
+}
+
+void FileBrowserView::setNameHighlightQuery(const QString& query)
+{
+    if (m_searchResultDelegate)
+    {
+        m_searchResultDelegate->setHighlightQuery(query);
+        m_treeView->viewport()->update();
+    }
 }
 
 void FileBrowserView::emitActivated(const QModelIndex& index)

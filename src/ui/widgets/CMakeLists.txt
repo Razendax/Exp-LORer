@@ -7,6 +7,12 @@ add_library(explorer_ui_widgets STATIC
     FileTileDelegate.cpp
     FileIconDelegate.h
     FileIconDelegate.cpp
+    SearchResultDelegate.h
+    SearchResultDelegate.cpp
+    SearchCriteriaPanel.h
+    SearchCriteriaPanel.cpp
+    SearchResultsPane.h
+    SearchResultsPane.cpp
     WorkspacePaneWidget.h
     WorkspacePaneWidget.cpp
     WorkspaceLayoutWidget.h

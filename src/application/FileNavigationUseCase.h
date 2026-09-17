@@ -11,6 +11,7 @@
 #include "IFileSystemRepository.h"
 #include "NativeTypes.h"
 #include "Result.h"
+#include "SearchCriteria.h"
 
 enum class SortCriterion
 {
@@ -35,6 +36,23 @@ public:
     static std::vector<FileNode> sortBy(std::vector<FileNode> files, SortCriterion criterion, bool ascending = true);
     static std::vector<FileNode> filterByExtension(std::vector<FileNode> files, const std::string& extension);
     static std::vector<FileNode> filterByName(std::vector<FileNode> files, const std::string& query);
+
+    // Excludes directories whenever either bound is set (a directory has no "size" in this app's
+    // model); no-op passthrough when both bounds are nullopt.
+    static std::vector<FileNode> filterBySizeRange(std::vector<FileNode> files,
+                                                    std::optional<std::uintmax_t> minBytes,
+                                                    std::optional<std::uintmax_t> maxBytes);
+
+    // extensions are already-split/trimmed tokens (splitting is a UI/adapter concern, not this
+    // layer's), OR'd together case-insensitively via the same toLower comparison as
+    // filterByExtension. Excludes directories when the list is non-empty; no-op passthrough on an
+    // empty vector.
+    static std::vector<FileNode> filterByExtensions(std::vector<FileNode> files, const std::vector<std::string>& extensions);
+
+    // Composes filterByName -> filterBySizeRange -> filterByExtensions, each a no-op when its part
+    // of criteria is unset. The single entry point TabViewModel calls for advanced search
+    // (Architecture.md §14.19).
+    static std::vector<FileNode> filterByCriteria(std::vector<FileNode> files, const SearchCriteria& criteria);
 
     Result<FileNode> moveFile(const std::filesystem::path& source, const std::filesystem::path& destination);
     Result<FileNode> copyFile(const std::filesystem::path& source, const std::filesystem::path& destination);

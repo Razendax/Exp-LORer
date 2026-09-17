@@ -288,15 +288,31 @@ AppConfig AppConfigStore::load() const
     config.windowGeometry = QByteArray::fromBase64(root.value(QStringLiteral("windowGeometry")).toString().toLatin1());
     config.workspace = workspaceConfigFromJson(root.value(QStringLiteral("workspace")));
 
+    // Tolerant of a missing/malformed/wrong-length array (e.g. an older config.json predating this
+    // field, or ColumnCount changing in a future version): any column left unread keeps its
+    // default-constructed 0 ("unset").
+    const QJsonArray columnWidths = root.value(QStringLiteral("detailsColumnWidths")).toArray();
+    for (int i = 0; i < columnWidths.size() && i < static_cast<int>(config.detailsColumnWidths.size()); ++i)
+    {
+        config.detailsColumnWidths[static_cast<size_t>(i)] = columnWidths.at(i).toInt();
+    }
+
     return config;
 }
 
 bool AppConfigStore::save(const AppConfig& config) const
 {
+    QJsonArray columnWidths;
+    for (int width : config.detailsColumnWidths)
+    {
+        columnWidths.append(width);
+    }
+
     QJsonObject root;
     root[QStringLiteral("version")] = kCurrentVersion;
     root[QStringLiteral("windowGeometry")] = QString::fromLatin1(config.windowGeometry.toBase64());
     root[QStringLiteral("workspace")] = workspaceConfigToJson(config.workspace);
+    root[QStringLiteral("detailsColumnWidths")] = columnWidths;
 
     std::error_code errorCode;
     std::filesystem::create_directories(m_configFilePath.parent_path(), errorCode);

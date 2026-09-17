@@ -1,9 +1,12 @@
 #pragma once
 
+#include <array>
+
 #include <QList>
 #include <QMainWindow>
 
 #include "AppConfig.h"
+#include "FileListModel.h"
 #include "FileNavigationUseCase.h"
 #include "SplitLayout.h"
 
@@ -66,6 +69,7 @@ private:
     TabViewModel* m_sortTrackedTab = nullptr;
     TabViewModel* m_searchTrackedTab = nullptr;
     QLineEdit* m_searchBar = nullptr;
+    QAction* m_advancedSearchAction = nullptr;
 
     // One QAction per SplitLayout (same order as the anonymous-namespace kLayouts array in the
     // .cpp), shared verbatim between the "Layout" toolbar and the View > Layout submenu so both
@@ -88,4 +92,9 @@ private:
     // key independently at build-menu time, so no direct wiring exists between this action and
     // any pane.
     QAction* m_extendedContextMenuAction = nullptr;
+
+    // Details-view column widths (Architecture.md §14.14): loaded from AppConfig, handed to
+    // WorkspaceLayoutWidget so every pane's FileBrowserView starts out sized this way, then
+    // refreshed from the focused pane's live widths in closeEvent() right before saving.
+    std::array<int, FileListModel::ColumnCount> m_columnWidths{};
 };
