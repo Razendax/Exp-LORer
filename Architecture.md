@@ -537,6 +537,15 @@ state alongside navigation history — the currently selected row in that tab's 
 * **Threading**: kept synchronous, consistent with `TabViewModel`'s existing (pre-existing, not
   introduced here) synchronous calls into `FileNavigationUseCase` — §5's background-dispatch
   model isn't implemented anywhere yet, and this feature doesn't newly diverge from that.
+* **Chip layout and styling**: each section's chip list sits in a `FlowLayout` (new,
+  `src/ui/widgets/FlowLayout.h/.cpp` — a `QLayout` subclass implementing the standard Qt flow-layout
+  pattern) inside the section's `QScrollArea`, rather than a `QVBoxLayout`: chips lay out
+  left-to-right at their own content width and wrap to a new row when a row runs out of horizontal
+  space, instead of stacking one per line. `TagChipWidget` renders as a rounded, button-styled pill
+  sized to its own content (no `Expanding` size policy) in all three `Kind`s. `TagChipWidget::Kind`
+  also has a fourth value, `Selectable` — a plain rounded button with no `+`/`x`, the whole chip
+  clickable (emits `clicked(Tag::Id)`, supports `setSelected(bool)` for a highlighted-border visual
+  state) — used by `TagManagerDialog` (§14.17), not by this panel.
 
 ### 14.10 Keyboard Hotkeys and Clipboard File Operations
 
@@ -1067,17 +1076,20 @@ tags to a specific selection. Opened via a new "Tag Edit..." action on the previ
   `Result` failure, same pattern as every other ViewModel.
 * **`TagManagerDialog`** (`src/ui/widgets/`, new) — `QDialog`: a `QLineEdit` search box wired to
   `setSearchQuery` on every keystroke, no debounce (same synchronous, no-debounce precedent as
-  `TagListViewModel::setSearchQuery`); a `QListWidget` rebuilt wholesale on `matchingTagsChanged`
-  (one row per tag: a solid-color square `QPixmap` from `tag.hexColor()` as icon, name as text,
-  `Tag::Id` in `Qt::UserRole` — plain `QListWidgetItem`s rather than `TagChipWidget`, which is
-  purpose-built for the panel's add/remove-button chip UX, not a selectable row list); Rename/Add/
-  Delete/Close buttons, with Rename/Delete enabled only when exactly one row is selected. Add and
-  Rename both prompt via a modal `QInputDialog::getText` (Add pre-filled with the trimmed search
-  text if any; Rename pre-filled with the selected tag's current name) — reusing the exact
-  rename-prompt convention §14.13.4 established for file rename. Delete prompts a `QMessageBox::
-  question` confirmation (naming the tag and warning that its file associations are removed too)
-  before calling `deleteTag`, mirroring §14.10's confirm-before-destructive-delete precedent.
-  `operationFailed` surfaces via `QMessageBox::warning`.
+  `TagListViewModel::setSearchQuery`); a `QScrollArea`/`FlowLayout` chip area (§14.9's `FlowLayout`,
+  reused here) rebuilt wholesale on `matchingTagsChanged` — one `TagChipWidget(tag,
+  Kind::Selectable)` per tag (the tag's own color as the chip background, no separate swatch icon
+  needed), clicking a chip toggles its `setSelected(true)`/highlighted-border state and clears any
+  previously-selected chip; selection is tracked as `std::optional<Tag::Id> m_selectedTagId` on the
+  dialog rather than via a selection model, and is always dropped back to `nullopt` on the next
+  wholesale rebuild (matching this dialog's original `QListWidget`-based behavior, where a rebuild
+  already cleared selection every time). Rename/Add/Delete/Close buttons, with Rename/Delete enabled
+  only while a chip is selected. Add and Rename both prompt via a modal `QInputDialog::getText` (Add
+  pre-filled with the trimmed search text if any; Rename pre-filled with the selected tag's current
+  name) — reusing the exact rename-prompt convention §14.13.4 established for file rename. Delete
+  prompts a `QMessageBox::question` confirmation (naming the tag and warning that its file
+  associations are removed too) before calling `deleteTag`, mirroring §14.10's
+  confirm-before-destructive-delete precedent. `operationFailed` surfaces via `QMessageBox::warning`.
 * **Wiring**: `CompositionRoot` gains a trivial `tagManagementUseCase()` accessor (same shape as its
   existing `appConfigStore()` accessor) so `MainWindow` can reach the use case without widening
   `WorkspaceController`'s constructor. `MainWindow`'s constructor gains a `TagManagementUseCase&`

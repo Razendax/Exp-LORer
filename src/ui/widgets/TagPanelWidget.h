@@ -6,6 +6,7 @@
 
 #include "Tag.h"
 
+class FlowLayout;
 class QLineEdit;
 class QPushButton;
 class QVBoxLayout;
@@ -24,21 +25,21 @@ public:
     explicit TagPanelWidget(TagListViewModel* viewModel, QWidget* parent = nullptr);
 
 private:
-    // Appends a titled, scrollable chip-list section to `mainLayout` and returns the (empty)
+    // Appends a titled, scrollable chip-flow section to `mainLayout` and returns the (empty)
     // layout chips get added to.
-    QVBoxLayout* addChipSection(QVBoxLayout* mainLayout, const QString& title);
+    FlowLayout* addChipSection(QVBoxLayout* mainLayout, const QString& title);
 
     void rebuildFolderTags(const std::vector<Tag>& tags);
     void rebuildSearchResults(const std::vector<Tag>& tags);
     void rebuildSelectedItemTags(const std::vector<Tag>& tags);
     void updateCreateTagAffordance(bool canCreate);
-    static void clearLayout(QVBoxLayout* layout);
+    static void clearLayout(FlowLayout* layout);
 
     TagListViewModel* m_viewModel = nullptr;
 
-    QVBoxLayout* m_folderTagsLayout = nullptr;
+    FlowLayout* m_folderTagsLayout = nullptr;
     QLineEdit* m_searchEdit = nullptr;
-    QVBoxLayout* m_searchResultsLayout = nullptr;
+    FlowLayout* m_searchResultsLayout = nullptr;
     QPushButton* m_createTagButton = nullptr;
-    QVBoxLayout* m_selectedItemTagsLayout = nullptr;
+    FlowLayout* m_selectedItemTagsLayout = nullptr;
 };

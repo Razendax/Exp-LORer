@@ -1,29 +1,18 @@
 #include "TagManagerDialog.h"
 
-#include <QColor>
+#include <algorithm>
+
 #include <QHBoxLayout>
-#include <QIcon>
 #include <QInputDialog>
 #include <QLineEdit>
-#include <QListWidget>
 #include <QMessageBox>
-#include <QPixmap>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QVBoxLayout>
 
+#include "FlowLayout.h"
+#include "TagChipWidget.h"
 #include "TagManagerViewModel.h"
-
-namespace
-{
-    constexpr int kTagIdRole = Qt::UserRole;
-
-    QIcon colorSwatch(const std::string& hexColor)
-    {
-        QPixmap pixmap(16, 16);
-        pixmap.fill(QColor(QString::fromStdString(hexColor)));
-        return QIcon(pixmap);
-    }
-}
 
 TagManagerDialog::TagManagerDialog(TagManagerViewModel* viewModel, QWidget* parent)
     : QDialog(parent)
@@ -37,9 +26,14 @@ TagManagerDialog::TagManagerDialog(TagManagerViewModel* viewModel, QWidget* pare
     m_searchEdit->setPlaceholderText(tr("Search tags..."));
     mainLayout->addWidget(m_searchEdit);
 
-    m_tagList = new QListWidget(this);
-    m_tagList->setSelectionMode(QAbstractItemView::SingleSelection);
-    mainLayout->addWidget(m_tagList);
+    auto* chipContent = new QWidget;
+    m_chipLayout = new FlowLayout(chipContent);
+
+    auto* scrollArea = new QScrollArea(this);
+    scrollArea->setWidget(chipContent);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    mainLayout->addWidget(scrollArea);
 
     auto* buttonLayout = new QHBoxLayout();
     m_renameButton = new QPushButton(tr("Rename"), this);
@@ -56,34 +50,54 @@ TagManagerDialog::TagManagerDialog(TagManagerViewModel* viewModel, QWidget* pare
     mainLayout->addLayout(buttonLayout);
 
     connect(m_searchEdit, &QLineEdit::textChanged, m_viewModel, &TagManagerViewModel::setSearchQuery);
-    connect(m_tagList, &QListWidget::itemSelectionChanged, this, &TagManagerDialog::onSelectionChanged);
     connect(m_addButton, &QPushButton::clicked, this, &TagManagerDialog::onAddClicked);
     connect(m_renameButton, &QPushButton::clicked, this, &TagManagerDialog::onRenameClicked);
     connect(m_deleteButton, &QPushButton::clicked, this, &TagManagerDialog::onDeleteClicked);
     connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
 
-    connect(m_viewModel, &TagManagerViewModel::matchingTagsChanged, this, &TagManagerDialog::rebuildTagList);
+    connect(m_viewModel, &TagManagerViewModel::matchingTagsChanged, this, &TagManagerDialog::rebuildTagChips);
     connect(m_viewModel, &TagManagerViewModel::operationFailed, this, &TagManagerDialog::onOperationFailed);
 
-    rebuildTagList(m_viewModel->matchingTags());
+    rebuildTagChips(m_viewModel->matchingTags());
 }
 
-void TagManagerDialog::rebuildTagList(const std::vector<Tag>& tags)
+void TagManagerDialog::rebuildTagChips(const std::vector<Tag>& tags)
 {
-    m_tagList->clear();
+    while (m_chipLayout->count() > 0)
+    {
+        QLayoutItem* item = m_chipLayout->takeAt(0);
+        if (QWidget* widget = item->widget())
+        {
+            delete widget;
+        }
+        delete item;
+    }
+
     for (const Tag& tag : tags)
     {
-        auto* item = new QListWidgetItem(colorSwatch(tag.hexColor()), QString::fromStdString(tag.name()));
-        item->setData(kTagIdRole, QVariant::fromValue<qlonglong>(tag.id()));
-        m_tagList->addItem(item);
+        auto* chip = new TagChipWidget(tag, TagChipWidget::Kind::Selectable);
+        connect(chip, &TagChipWidget::clicked, this, &TagManagerDialog::onChipClicked);
+        m_chipLayout->addWidget(chip);
     }
+
+    m_selectedTagId.reset();
+    m_renameButton->setEnabled(false);
+    m_deleteButton->setEnabled(false);
 }
 
-void TagManagerDialog::onSelectionChanged()
+void TagManagerDialog::onChipClicked(Tag::Id id)
 {
-    const bool hasSingleSelection = m_tagList->selectedItems().size() == 1;
-    m_renameButton->setEnabled(hasSingleSelection);
-    m_deleteButton->setEnabled(hasSingleSelection);
+    for (int i = 0; i < m_chipLayout->count(); ++i)
+    {
+        if (auto* chip = qobject_cast<TagChipWidget*>(m_chipLayout->itemAt(i)->widget()))
+        {
+            chip->setSelected(chip->tag().id() == id);
+        }
+    }
+
+    m_selectedTagId = id;
+    m_renameButton->setEnabled(true);
+    m_deleteButton->setEnabled(true);
 }
 
 void TagManagerDialog::onAddClicked()
@@ -101,14 +115,20 @@ void TagManagerDialog::onAddClicked()
 
 void TagManagerDialog::onRenameClicked()
 {
-    const QList<QListWidgetItem*> selected = m_tagList->selectedItems();
-    if (selected.size() != 1)
+    if (!m_selectedTagId.has_value())
     {
         return;
     }
 
-    const Tag::Id id = static_cast<Tag::Id>(selected.first()->data(kTagIdRole).toLongLong());
-    const QString currentName = selected.first()->text();
+    const std::vector<Tag>& tags = m_viewModel->matchingTags();
+    const auto it = std::find_if(tags.begin(), tags.end(),
+                                  [id = *m_selectedTagId](const Tag& tag) { return tag.id() == id; });
+    if (it == tags.end())
+    {
+        return;
+    }
+
+    const QString currentName = QString::fromStdString(it->name());
 
     bool ok = false;
     const QString newName = QInputDialog::getText(this, tr("Rename Tag"), tr("New name:"), QLineEdit::Normal,
@@ -118,19 +138,25 @@ void TagManagerDialog::onRenameClicked()
         return;
     }
 
-    m_viewModel->renameTag(id, newName.trimmed());
+    m_viewModel->renameTag(*m_selectedTagId, newName.trimmed());
 }
 
 void TagManagerDialog::onDeleteClicked()
 {
-    const QList<QListWidgetItem*> selected = m_tagList->selectedItems();
-    if (selected.size() != 1)
+    if (!m_selectedTagId.has_value())
     {
         return;
     }
 
-    const Tag::Id id = static_cast<Tag::Id>(selected.first()->data(kTagIdRole).toLongLong());
-    const QString name = selected.first()->text();
+    const std::vector<Tag>& tags = m_viewModel->matchingTags();
+    const auto it = std::find_if(tags.begin(), tags.end(),
+                                  [id = *m_selectedTagId](const Tag& tag) { return tag.id() == id; });
+    if (it == tags.end())
+    {
+        return;
+    }
+
+    const QString name = QString::fromStdString(it->name());
 
     const QMessageBox::StandardButton answer =
         QMessageBox::question(this, tr("Delete Tag"),
@@ -141,7 +167,7 @@ void TagManagerDialog::onDeleteClicked()
         return;
     }
 
-    m_viewModel->deleteTag(id);
+    m_viewModel->deleteTag(*m_selectedTagId);
 }
 
 void TagManagerDialog::onOperationFailed(const QString& message)

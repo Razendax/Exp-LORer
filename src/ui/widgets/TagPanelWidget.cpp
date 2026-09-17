@@ -6,6 +6,7 @@
 #include <QScrollArea>
 #include <QVBoxLayout>
 
+#include "FlowLayout.h"
 #include "TagChipWidget.h"
 #include "TagListViewModel.h"
 
@@ -43,13 +44,12 @@ TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, QWidget* parent)
     updateCreateTagAffordance(m_viewModel->canCreateTagFromQuery());
 }
 
-QVBoxLayout* TagPanelWidget::addChipSection(QVBoxLayout* mainLayout, const QString& title)
+FlowLayout* TagPanelWidget::addChipSection(QVBoxLayout* mainLayout, const QString& title)
 {
     mainLayout->addWidget(new QLabel(title, this));
 
     auto* content = new QWidget;
-    auto* contentLayout = new QVBoxLayout(content);
-    contentLayout->addStretch();
+    auto* contentLayout = new FlowLayout(content);
 
     auto* scrollArea = new QScrollArea(this);
     scrollArea->setWidget(content);
@@ -60,7 +60,7 @@ QVBoxLayout* TagPanelWidget::addChipSection(QVBoxLayout* mainLayout, const QStri
     return contentLayout;
 }
 
-void TagPanelWidget::clearLayout(QVBoxLayout* layout)
+void TagPanelWidget::clearLayout(FlowLayout* layout)
 {
     while (layout->count() > 0)
     {
@@ -80,7 +80,6 @@ void TagPanelWidget::rebuildFolderTags(const std::vector<Tag>& tags)
     {
         m_folderTagsLayout->addWidget(new TagChipWidget(tag, TagChipWidget::Kind::ReadOnly));
     }
-    m_folderTagsLayout->addStretch();
 }
 
 void TagPanelWidget::rebuildSearchResults(const std::vector<Tag>& tags)
@@ -92,7 +91,6 @@ void TagPanelWidget::rebuildSearchResults(const std::vector<Tag>& tags)
         connect(chip, &TagChipWidget::addClicked, m_viewModel, &TagListViewModel::addTagToSelection);
         m_searchResultsLayout->addWidget(chip);
     }
-    m_searchResultsLayout->addStretch();
 }
 
 void TagPanelWidget::rebuildSelectedItemTags(const std::vector<Tag>& tags)
@@ -104,7 +102,6 @@ void TagPanelWidget::rebuildSelectedItemTags(const std::vector<Tag>& tags)
         connect(chip, &TagChipWidget::removeClicked, m_viewModel, &TagListViewModel::removeTagFromSelection);
         m_selectedItemTagsLayout->addWidget(chip);
     }
-    m_selectedItemTagsLayout->addStretch();
 }
 
 void TagPanelWidget::updateCreateTagAffordance(bool canCreate)
