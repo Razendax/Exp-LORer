@@ -85,6 +85,11 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   matching part of each Name highlighted — regardless of the tab's own chosen view mode. Only one
   of normal browsing, quick search, or advanced search is shown at a time per tab; opening either
   search mode closes the other, and each remembers its own fields/results while hidden.
+  **Tag criteria** (Architecture.md §14.22) act as a fifth, ANDed criterion alongside Name/Min
+  size/Max size/Extension: a "search tags" box lists matching tags (same lookup as the Tag
+  Panel's search, but clicking a tag adds it straight to the criteria instead of showing a "+"),
+  and a separate, removable chip list shows the tags currently applied to the search. A result
+  must satisfy both the file-property criteria and every applied tag to appear.
 
 ### 2.2 Database-Backed File Tagging System
 
@@ -118,6 +123,10 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   nested inside them — they only ever apply to the folder they were assigned to.
 * When no item is selected in the active pane, the panel's add/remove sections (3 and 4) target
   the currently browsed folder itself, so a folder can be tagged without first navigating into it.
+* **Tags are clickable** everywhere they appear in this panel (folder tags, matching tags, tags
+  on selection, Architecture.md §14.22): clicking one opens the Advanced Search pane
+  (Specification.md §2.1) on the currently active tab with that tag added as a search criterion,
+  giving a one-click path from "see a tag" to "find everything else with that tag."
 
 ### 2.3 Built-in Image Viewer
 

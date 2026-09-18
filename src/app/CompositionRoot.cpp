@@ -39,12 +39,12 @@ CompositionRoot::~CompositionRoot() = default;
 
 std::unique_ptr<TabViewModel> CompositionRoot::createTabViewModel()
 {
-    return std::make_unique<TabViewModel>(m_fileNavigationUseCase);
+    return std::make_unique<TabViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase);
 }
 
 std::unique_ptr<WorkspacePaneViewModel> CompositionRoot::createWorkspacePaneViewModel(WorkspacePaneId id)
 {
-    return std::make_unique<WorkspacePaneViewModel>(m_fileNavigationUseCase, id);
+    return std::make_unique<WorkspacePaneViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase, id);
 }
 
 std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController()

@@ -2,9 +2,11 @@
 
 #include "TabViewModel.h"
 
-WorkspacePaneViewModel::WorkspacePaneViewModel(FileNavigationUseCase& fileNavigationUseCase, WorkspacePaneId id, QObject* parent)
+WorkspacePaneViewModel::WorkspacePaneViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
+                                                WorkspacePaneId id, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
+    , m_tagManagementUseCase(tagManagementUseCase)
     , m_id(id)
 {
 }
@@ -26,7 +28,7 @@ TabViewModel* WorkspacePaneViewModel::activeTab() const
 
 TabViewModel* WorkspacePaneViewModel::addTab()
 {
-    auto* tab = new TabViewModel(m_fileNavigationUseCase, this);
+    auto* tab = new TabViewModel(m_fileNavigationUseCase, m_tagManagementUseCase, this);
     m_tabs.push_back(tab);
 
     const int index = static_cast<int>(m_tabs.size()) - 1;

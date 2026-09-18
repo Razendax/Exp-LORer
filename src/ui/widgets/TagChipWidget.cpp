@@ -57,10 +57,7 @@ TagChipWidget::TagChipWidget(Tag tag, Kind kind, QWidget* parent)
     }
 
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
-    if (kind == Kind::Selectable)
-    {
-        setCursor(Qt::PointingHandCursor);
-    }
+    setCursor(Qt::PointingHandCursor);
 
     updateChipStyle();
 }
@@ -77,7 +74,7 @@ void TagChipWidget::setSelected(bool selected)
 
 void TagChipWidget::mousePressEvent(QMouseEvent* event)
 {
-    if (m_kind == Kind::Selectable && event->button() == Qt::LeftButton)
+    if (event->button() == Qt::LeftButton)
     {
         emit clicked(m_tag.id());
         return;

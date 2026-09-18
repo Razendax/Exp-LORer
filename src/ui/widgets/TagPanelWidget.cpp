@@ -78,7 +78,9 @@ void TagPanelWidget::rebuildFolderTags(const std::vector<Tag>& tags)
     clearLayout(m_folderTagsLayout);
     for (const Tag& tag : tags)
     {
-        m_folderTagsLayout->addWidget(new TagChipWidget(tag, TagChipWidget::Kind::ReadOnly));
+        auto* chip = new TagChipWidget(tag, TagChipWidget::Kind::ReadOnly);
+        connect(chip, &TagChipWidget::clicked, this, &TagPanelWidget::onTagChipClicked);
+        m_folderTagsLayout->addWidget(chip);
     }
 }
 
@@ -89,6 +91,7 @@ void TagPanelWidget::rebuildSearchResults(const std::vector<Tag>& tags)
     {
         auto* chip = new TagChipWidget(tag, TagChipWidget::Kind::Addable);
         connect(chip, &TagChipWidget::addClicked, m_viewModel, &TagListViewModel::addTagToSelection);
+        connect(chip, &TagChipWidget::clicked, this, &TagPanelWidget::onTagChipClicked);
         m_searchResultsLayout->addWidget(chip);
     }
 }
@@ -100,8 +103,14 @@ void TagPanelWidget::rebuildSelectedItemTags(const std::vector<Tag>& tags)
     {
         auto* chip = new TagChipWidget(tag, TagChipWidget::Kind::Removable);
         connect(chip, &TagChipWidget::removeClicked, m_viewModel, &TagListViewModel::removeTagFromSelection);
+        connect(chip, &TagChipWidget::clicked, this, &TagPanelWidget::onTagChipClicked);
         m_selectedItemTagsLayout->addWidget(chip);
     }
+}
+
+void TagPanelWidget::onTagChipClicked(Tag::Id tagId)
+{
+    m_viewModel->requestTagSearch(tagId);
 }
 
 void TagPanelWidget::updateCreateTagAffordance(bool canCreate)

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <set>
 
 namespace
 {
@@ -207,6 +208,18 @@ std::vector<FileNode> FileNavigationUseCase::filterByCriteria(std::vector<FileNo
     files = filterBySizeRange(std::move(files), criteria.minSizeBytes, criteria.maxSizeBytes);
     files = filterByExtensions(std::move(files), splitExtensionList(criteria.extensionList));
     return files;
+}
+
+std::vector<FileNode> FileNavigationUseCase::filterByPaths(std::vector<FileNode> files,
+                                                             const std::vector<std::filesystem::path>& allowedPaths)
+{
+    const std::set<std::filesystem::path> allowed(allowedPaths.begin(), allowedPaths.end());
+
+    std::vector<FileNode> result;
+    std::copy_if(files.begin(), files.end(), std::back_inserter(result),
+                 [&allowed](const FileNode& file) { return allowed.contains(file.path()); });
+
+    return result;
 }
 
 Result<FileNode> FileNavigationUseCase::moveFile(const std::filesystem::path& source, const std::filesystem::path& destination)

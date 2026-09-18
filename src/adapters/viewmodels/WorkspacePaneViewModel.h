@@ -7,6 +7,7 @@
 #include "WorkspacePaneId.h"
 
 class FileNavigationUseCase;
+class TagManagementUseCase;
 class TabViewModel;
 
 // Per-pane tab bookkeeping: owns an ordered list of TabViewModel children and tracks which one is
@@ -17,7 +18,8 @@ class WorkspacePaneViewModel : public QObject
     Q_OBJECT
 
 public:
-    WorkspacePaneViewModel(FileNavigationUseCase& fileNavigationUseCase, WorkspacePaneId id, QObject* parent = nullptr);
+    WorkspacePaneViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
+                            WorkspacePaneId id, QObject* parent = nullptr);
 
     WorkspacePaneId id() const noexcept { return m_id; }
     int tabCount() const noexcept { return static_cast<int>(m_tabs.size()); }
@@ -44,6 +46,7 @@ signals:
 
 private:
     FileNavigationUseCase& m_fileNavigationUseCase;
+    TagManagementUseCase& m_tagManagementUseCase;
     WorkspacePaneId m_id;
     std::vector<TabViewModel*> m_tabs;
     int m_activeIndex = -1;

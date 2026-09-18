@@ -12,9 +12,12 @@
 #include "FileNode.h"
 #include "NavigationHistory.h"
 #include "SearchCriteria.h"
+#include "Tag.h"
+#include "TagManagementUseCase.h"
 #include "ViewMode.h"
 
 class FileNavigationUseCase;
+class TagManagementUseCase;
 class FileListModel;
 
 // Binds address-bar/navigation-toolbar UI to FileNavigationUseCase and NavigationHistory for a
@@ -26,7 +29,7 @@ class TabViewModel : public QObject
     Q_OBJECT
 
 public:
-    explicit TabViewModel(FileNavigationUseCase& fileNavigationUseCase, QObject* parent = nullptr);
+    TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase, QObject* parent = nullptr);
 
     std::filesystem::path currentPath() const;
     ViewMode viewMode() const noexcept { return m_viewMode; }
@@ -48,6 +51,13 @@ public:
     // Empty on any listDirectory error (missing/unreadable directory) -- callers treat that as
     // "no suggestions" rather than a navigation failure.
     QStringList suggestFolders(const std::filesystem::path& directory) const;
+
+    // Delegates to TagManagementUseCase::searchTags; empty vector on repository failure.
+    std::vector<Tag> searchTagsForCriteria(const QString& query) const;
+
+    // Resolves advancedSearchCriteria().tagIds into full Tag objects (for chip display); filters
+    // TagManagementUseCase::allTags(), empty vector on repository failure.
+    std::vector<Tag> resolveTagCriteria() const;
 
 public slots:
     // Per-tab selection state (Architecture.md §14.9), set by WorkspacePaneWidget from this tab's
@@ -114,6 +124,16 @@ public slots:
     // Clears advanced-search state and flips advancedSearchActive off. No-op if already inactive.
     void exitAdvancedSearch();
 
+    // Adds tagId to the advanced-search criteria (no-op if already present), opens the panel if
+    // it isn't already (single-active-mode invariant, same as showAdvancedSearchPanel), and
+    // (re)runs the search. Used by both the tag panel's chip-click path (requirement 1/2) and
+    // Advanced Search's own tag-search box (requirement 3).
+    void addTagSearchCriterion(Tag::Id tagId);
+
+    // Removes tagId from the criteria and re-runs the search if the panel is active; no-op
+    // otherwise or if tagId isn't present.
+    void removeTagSearchCriterion(Tag::Id tagId);
+
 signals:
     void currentPathChanged(const std::filesystem::path& path);
     void directoryContentsChanged(const std::filesystem::path& path, const std::vector<FileNode>& entries);
@@ -133,6 +153,12 @@ signals:
     void advancedSearchResultsChanged(const std::vector<FileNode>& entries);
     void advancedSearchFailed(const QString& message);
 
+    // Lets the UI re-sync its tag-criteria chip row (and, harmlessly, its Name/size/extension
+    // fields, already idempotent via QSignalBlocker in SearchCriteriaPanel::setCriteria)
+    // regardless of *which* entry point changed the criteria (its own fields, its own tag-search
+    // box, or a right-panel tag click on a completely different widget).
+    void advancedSearchCriteriaChanged(const SearchCriteria& criteria);
+
 private:
     // Single funnel point for every navigation entry point: fetches directory contents exactly
     // once, and on success emits currentPathChanged + directoryContentsChanged, recording history
@@ -141,7 +167,14 @@ private:
     void loadAndApply(const std::filesystem::path& path, bool recordHistory);
     void emitAvailability();
 
+    // Shared implementation of startAdvancedSearch/updateAdvancedSearchCriteria/
+    // addTagSearchCriterion/removeTagSearchCriterion: re-scans only when forceRescan or this is
+    // the first-ever scan, applies filterByCriteria then (if tagIds non-empty) the tag-path
+    // intersection, and emits the result + criteria-changed signals.
+    void runAdvancedSearch(bool forceRescan);
+
     FileNavigationUseCase& m_fileNavigationUseCase;
+    TagManagementUseCase& m_tagManagementUseCase;
     NavigationHistory m_history;
     ViewMode m_viewMode = ViewMode::Details;
     FileListModel* m_fileListModel = nullptr;

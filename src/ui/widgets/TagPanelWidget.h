@@ -33,6 +33,7 @@ private:
     void rebuildSearchResults(const std::vector<Tag>& tags);
     void rebuildSelectedItemTags(const std::vector<Tag>& tags);
     void updateCreateTagAffordance(bool canCreate);
+    void onTagChipClicked(Tag::Id tagId);
     static void clearLayout(FlowLayout* layout);
 
     TagListViewModel* m_viewModel = nullptr;

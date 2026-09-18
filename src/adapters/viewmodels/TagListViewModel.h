@@ -59,6 +59,10 @@ public slots:
     // TagColorPalette) and immediately assigns it to the resolved target.
     void createAndAddTagFromQuery();
 
+    // Requirement 1/2: opens Advanced Search on the focused tab with tagId as a criterion. No-op
+    // if there is no active/focused tab.
+    void requestTagSearch(Tag::Id tagId);
+
 signals:
     void folderTagsChanged(const std::vector<Tag>& tags);
     void searchResultsChanged(const std::vector<Tag>& tags);

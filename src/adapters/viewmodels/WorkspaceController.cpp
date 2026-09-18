@@ -18,10 +18,14 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
 {
-    m_panes[indexOf(WorkspacePaneId::PaneA)] = new WorkspacePaneViewModel(fileNavigationUseCase, WorkspacePaneId::PaneA, this);
-    m_panes[indexOf(WorkspacePaneId::PaneB)] = new WorkspacePaneViewModel(fileNavigationUseCase, WorkspacePaneId::PaneB, this);
-    m_panes[indexOf(WorkspacePaneId::PaneC)] = new WorkspacePaneViewModel(fileNavigationUseCase, WorkspacePaneId::PaneC, this);
-    m_panes[indexOf(WorkspacePaneId::PaneD)] = new WorkspacePaneViewModel(fileNavigationUseCase, WorkspacePaneId::PaneD, this);
+    m_panes[indexOf(WorkspacePaneId::PaneA)] =
+        new WorkspacePaneViewModel(fileNavigationUseCase, tagManagementUseCase, WorkspacePaneId::PaneA, this);
+    m_panes[indexOf(WorkspacePaneId::PaneB)] =
+        new WorkspacePaneViewModel(fileNavigationUseCase, tagManagementUseCase, WorkspacePaneId::PaneB, this);
+    m_panes[indexOf(WorkspacePaneId::PaneC)] =
+        new WorkspacePaneViewModel(fileNavigationUseCase, tagManagementUseCase, WorkspacePaneId::PaneC, this);
+    m_panes[indexOf(WorkspacePaneId::PaneD)] =
+        new WorkspacePaneViewModel(fileNavigationUseCase, tagManagementUseCase, WorkspacePaneId::PaneD, this);
 
     m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, this);
     m_fileOperationsController = new FileOperationsController(m_fileNavigationUseCase, this);

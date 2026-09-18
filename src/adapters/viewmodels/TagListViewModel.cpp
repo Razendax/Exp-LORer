@@ -118,6 +118,14 @@ void TagListViewModel::createAndAddTagFromQuery()
     addTagToSelection(created.value().id());
 }
 
+void TagListViewModel::requestTagSearch(Tag::Id tagId)
+{
+    if (m_activeTab)
+    {
+        m_activeTab->addTagSearchCriterion(tagId);
+    }
+}
+
 void TagListViewModel::onActiveTabStateChanged()
 {
     refreshAll();

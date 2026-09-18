@@ -23,8 +23,8 @@ void SearchResultsPane::setHighlightQuery(const QString& query)
     m_browserView->setNameHighlightQuery(query);
 }
 
-void SearchResultsPane::setCriteria(const SearchCriteria& criteria)
+void SearchResultsPane::setCriteria(const SearchCriteria& criteria, const std::vector<Tag>& criteriaTags)
 {
-    m_criteriaPanel->setCriteria(criteria);
+    m_criteriaPanel->setCriteria(criteria, criteriaTags);
     setHighlightQuery(QString::fromStdString(criteria.nameQuery));
 }

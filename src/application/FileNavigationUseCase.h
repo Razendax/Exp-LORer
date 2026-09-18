@@ -54,6 +54,13 @@ public:
     // (Architecture.md §14.19).
     static std::vector<FileNode> filterByCriteria(std::vector<FileNode> files, const SearchCriteria& criteria);
 
+    // Keeps only entries whose path() is present in allowedPaths (exact match — same path-keyed
+    // posture as ITagRepository). Used to intersect a name/size/extension-filtered listing with
+    // tag-search matches (Architecture.md §14.22). No-op passthrough is NOT implied by an empty
+    // allowedPaths — callers only invoke this when tagIds is non-empty.
+    static std::vector<FileNode> filterByPaths(std::vector<FileNode> files,
+                                                const std::vector<std::filesystem::path>& allowedPaths);
+
     Result<FileNode> moveFile(const std::filesystem::path& source, const std::filesystem::path& destination);
     Result<FileNode> copyFile(const std::filesystem::path& source, const std::filesystem::path& destination);
     Result<void> moveFileToTrash(const std::filesystem::path& path);

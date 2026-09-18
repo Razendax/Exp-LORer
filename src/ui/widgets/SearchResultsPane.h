@@ -1,9 +1,12 @@
 #pragma once
 
+#include <vector>
+
 #include <QString>
 #include <QWidget>
 
 #include "SearchCriteria.h"
+#include "Tag.h"
 
 class FileListModel;
 class FileBrowserView;
@@ -23,7 +26,7 @@ public:
     SearchCriteriaPanel* criteriaPanel() const noexcept { return m_criteriaPanel; }
 
     void setHighlightQuery(const QString& query);
-    void setCriteria(const SearchCriteria& criteria);
+    void setCriteria(const SearchCriteria& criteria, const std::vector<Tag>& criteriaTags);
 
 private:
     SearchCriteriaPanel* m_criteriaPanel = nullptr;

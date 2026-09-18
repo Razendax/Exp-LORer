@@ -1,20 +1,25 @@
 #include "TabViewModel.h"
 
+#include <algorithm>
+
 #include "FileListModel.h"
 #include "FileNavigationUseCase.h"
+#include "TagManagementUseCase.h"
 #include "VirtualPaths.h"
 
 namespace
 {
     bool isCriteriaEmpty(const SearchCriteria& criteria)
     {
-        return criteria.nameQuery.empty() && !criteria.minSizeBytes && !criteria.maxSizeBytes && criteria.extensionList.empty();
+        return criteria.nameQuery.empty() && !criteria.minSizeBytes && !criteria.maxSizeBytes && criteria.extensionList.empty() &&
+               criteria.tagIds.empty();
     }
 }
 
-TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, QObject* parent)
+TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
+    , m_tagManagementUseCase(tagManagementUseCase)
     , m_fileListModel(new FileListModel(this))
     , m_searchResultsModel(new FileListModel(this))
     , m_advancedSearchResultsModel(new FileListModel(this))
@@ -255,24 +260,8 @@ void TabViewModel::startAdvancedSearch(const SearchCriteria& criteria)
 
     exitSearch();
 
-    m_advancedSearchRoot = currentPath();
-    auto result = m_fileNavigationUseCase.listDirectoryRecursive(m_advancedSearchRoot);
-    if (result.hasError())
-    {
-        emit advancedSearchFailed(QString::fromStdString(result.error().message));
-        return;
-    }
-
-    m_advancedSearchSnapshot = std::move(result).value();
-    m_advancedSearchActive = true;
     m_advancedSearchCriteria = criteria;
-
-    auto filtered = FileNavigationUseCase::filterByCriteria(m_advancedSearchSnapshot, criteria);
-    filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
-    m_advancedSearchResultsModel->setEntries(m_advancedSearchRoot, filtered);
-
-    emit advancedSearchModeChanged(true);
-    emit advancedSearchResultsChanged(filtered);
+    runAdvancedSearch(/*forceRescan=*/true);
 }
 
 void TabViewModel::updateAdvancedSearchCriteria(const SearchCriteria& criteria)
@@ -283,12 +272,7 @@ void TabViewModel::updateAdvancedSearchCriteria(const SearchCriteria& criteria)
     }
 
     m_advancedSearchCriteria = criteria;
-
-    auto filtered = FileNavigationUseCase::filterByCriteria(m_advancedSearchSnapshot, criteria);
-    filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
-    m_advancedSearchResultsModel->setEntries(m_advancedSearchRoot, filtered);
-
-    emit advancedSearchResultsChanged(filtered);
+    runAdvancedSearch(/*forceRescan=*/false);
 }
 
 void TabViewModel::exitAdvancedSearch()
@@ -304,6 +288,121 @@ void TabViewModel::exitAdvancedSearch()
     m_advancedSearchRoot.clear();
 
     emit advancedSearchModeChanged(false);
+}
+
+void TabViewModel::addTagSearchCriterion(Tag::Id tagId)
+{
+    if (std::find(m_advancedSearchCriteria.tagIds.begin(), m_advancedSearchCriteria.tagIds.end(), tagId) !=
+        m_advancedSearchCriteria.tagIds.end())
+    {
+        return;
+    }
+
+    const bool wasActive = m_advancedSearchActive;
+    if (!wasActive)
+    {
+        exitSearch();
+        m_advancedSearchActive = true;
+        emit advancedSearchModeChanged(true);
+    }
+
+    m_advancedSearchCriteria.tagIds.push_back(tagId);
+    runAdvancedSearch(/*forceRescan=*/!wasActive);
+}
+
+void TabViewModel::removeTagSearchCriterion(Tag::Id tagId)
+{
+    auto& tagIds = m_advancedSearchCriteria.tagIds;
+    const auto it = std::find(tagIds.begin(), tagIds.end(), tagId);
+    if (it == tagIds.end())
+    {
+        return;
+    }
+
+    tagIds.erase(it);
+
+    if (m_advancedSearchActive)
+    {
+        runAdvancedSearch(/*forceRescan=*/false);
+    }
+}
+
+std::vector<Tag> TabViewModel::searchTagsForCriteria(const QString& query) const
+{
+    auto result = m_tagManagementUseCase.searchTags(query.toStdString());
+    if (result.hasError())
+    {
+        return {};
+    }
+    return result.value();
+}
+
+std::vector<Tag> TabViewModel::resolveTagCriteria() const
+{
+    auto result = m_tagManagementUseCase.allTags();
+    if (result.hasError())
+    {
+        return {};
+    }
+
+    std::vector<Tag> resolved;
+    for (const Tag& tag : result.value())
+    {
+        if (std::find(m_advancedSearchCriteria.tagIds.begin(), m_advancedSearchCriteria.tagIds.end(), tag.id()) !=
+            m_advancedSearchCriteria.tagIds.end())
+        {
+            resolved.push_back(tag);
+        }
+    }
+    return resolved;
+}
+
+void TabViewModel::runAdvancedSearch(bool forceRescan)
+{
+    if (forceRescan || m_advancedSearchRoot.empty())
+    {
+        m_advancedSearchRoot = currentPath();
+        auto result = m_fileNavigationUseCase.listDirectoryRecursive(m_advancedSearchRoot);
+        if (result.hasError())
+        {
+            emit advancedSearchFailed(QString::fromStdString(result.error().message));
+            return;
+        }
+        m_advancedSearchSnapshot = std::move(result).value();
+    }
+
+    auto filtered = FileNavigationUseCase::filterByCriteria(m_advancedSearchSnapshot, m_advancedSearchCriteria);
+
+    if (!m_advancedSearchCriteria.tagIds.empty())
+    {
+        auto tagResult = m_tagManagementUseCase.findFilesWithAllTags(m_advancedSearchCriteria.tagIds);
+        if (tagResult.hasError())
+        {
+            emit advancedSearchFailed(QString::fromStdString(tagResult.error().message));
+            return;
+        }
+
+        std::vector<std::filesystem::path> allowedPaths;
+        allowedPaths.reserve(tagResult.value().size());
+        for (const FileTagAssociation& association : tagResult.value())
+        {
+            allowedPaths.push_back(association.filePath());
+        }
+
+        filtered = FileNavigationUseCase::filterByPaths(std::move(filtered), allowedPaths);
+    }
+
+    filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
+    m_advancedSearchResultsModel->setEntries(m_advancedSearchRoot, filtered);
+
+    if (!m_advancedSearchActive)
+    {
+        m_advancedSearchActive = true;
+        emit advancedSearchModeChanged(true);
+    }
+
+    emit advancedSearchResultsChanged(filtered);
+    emit advancedSearchCriteriaChanged(m_advancedSearchCriteria);
 }
 
 void TabViewModel::emitAvailability()

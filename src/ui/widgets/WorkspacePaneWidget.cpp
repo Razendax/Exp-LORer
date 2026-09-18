@@ -225,7 +225,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     stack->addWidget(searchResultsView); // page 1: search results
 
     auto* advancedSearchPane = new SearchResultsPane(tab->advancedSearchResultsModel(), stack);
-    advancedSearchPane->setCriteria(tab->advancedSearchCriteria());
+    advancedSearchPane->setCriteria(tab->advancedSearchCriteria(), tab->resolveTagCriteria());
     advancedSearchPane->browserView()->setColumnWidths(m_initialColumnWidths);
     wireBrowserView(advancedSearchPane->browserView(), tab);
     stack->addWidget(advancedSearchPane); // page 2: advanced search results
@@ -264,9 +264,23 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::closeRequested, tab,
             [tab]() { tab->exitAdvancedSearch(); });
 
+    connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::tagSearchQueryRequested, tab,
+            [advancedSearchPane = advancedSearchPane, tab](const QString& query) {
+                advancedSearchPane->criteriaPanel()->setTagSearchResults(tab->searchTagsForCriteria(query));
+            });
+    connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::tagCriterionAdded, tab,
+            [tab](Tag::Id id) { tab->addTagSearchCriterion(id); });
+    connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::tagCriterionRemoved, tab,
+            [tab](Tag::Id id) { tab->removeTagSearchCriterion(id); });
+
     connect(tab, &TabViewModel::advancedSearchResultsChanged, advancedSearchPane,
             [advancedSearchPane, tab](const std::vector<FileNode>&) {
                 advancedSearchPane->setHighlightQuery(QString::fromStdString(tab->advancedSearchCriteria().nameQuery));
+            });
+
+    connect(tab, &TabViewModel::advancedSearchCriteriaChanged, advancedSearchPane,
+            [advancedSearchPane, tab](const SearchCriteria& criteria) {
+                advancedSearchPane->setCriteria(criteria, tab->resolveTagCriteria());
             });
 }
 

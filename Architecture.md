@@ -545,7 +545,66 @@ same manual multi-`drawText` technique `FileTileDelegate` uses. `FileBrowserView
 selection/hotkey/context-menu wiring is reused as-is. Synchronous on the UI thread (§5). The pure
 filters are GTest-covered; the ViewModel/UI state is not (§11). Not built: a "Location"
 disambiguation column; cancellation of the recursive scan; persisting criteria across restarts
-(resets like §14.18's quick search).
+(resets like §14.18's quick search). Tag criteria (a fifth, ANDed criterion) are covered
+separately by §14.22, layered on top of this section rather than modifying it.
+
+### 14.22 Tag-Integrated Advanced Search
+
+Extends §14.9 (tag panel) and §14.19 (advanced search) so the two features interoperate: every
+tag chip anywhere in `TagPanelWidget` is clickable, and clicking one opens Advanced Search on the
+*focused* tab with that tag applied as a criterion; Advanced Search itself gains its own tag
+search box so criteria can be built without visiting the tag panel at all. Search results must
+then satisfy file-property criteria (name/size/extension, §14.19) **and** tag criteria together.
+
+* **`SearchCriteria` gains `std::vector<Tag::Id> tagIds`** (AND semantics, mirroring
+  `ITagRepository::findFilesWithAllTags`; empty = no tag filter).
+* **`FileNavigationUseCase::filterByPaths(files, allowedPaths)`** — a new pure, static filter
+  (no Port dependency added to `FileNavigationUseCase`) that keeps only entries whose `path()`
+  exactly matches one of `allowedPaths`. `TabViewModel` is the composition point: it calls
+  `TagManagementUseCase::findFilesWithAllTags(tagIds)`, turns the returned
+  `FileTagAssociation`s into a path list, and applies this filter *after* `filterByCriteria` —
+  the two stages compose as an AND, same as the SQL-level AND `findFilesWithAllTags` already
+  does across tags themselves. Matching is path-exact (case-sensitive), not hash-based: scanned
+  `FileNode`s from `listDirectoryRecursive` never carry a populated hash (hashing is on-demand,
+  only at tag-assignment time), so joining tag associations against a live recursive scan can
+  only go through the path both sides share — the same path-first posture `ITagRepository`
+  already uses elsewhere, just without the hash fallback (unavailable here without an expensive
+  per-file recompute across the whole scan).
+* **`TabViewModel` gains a `TagManagementUseCase&` dependency** (threaded through
+  `WorkspacePaneViewModel`'s and `WorkspaceController`'s constructors, which already receives one
+  for the shared `TagListViewModel`), plus:
+  * `addTagSearchCriterion(Tag::Id)` / `removeTagSearchCriterion(Tag::Id)` — mutate
+    `SearchCriteria.tagIds` and (re)run the search; opens the panel first if it wasn't already
+    active (same single-active-mode invariant as `showAdvancedSearchPanel`).
+  * `searchTagsForCriteria(query) const` / `resolveTagCriteria() const` — pure queries (no state
+    mutation), the same posture as §14.20's `suggestFolders`: the widget layer calls them
+    on-demand and pushes the result back into itself, rather than a ViewModel class mediating.
+  * A shared private `runAdvancedSearch(forceRescan)` now backs `startAdvancedSearch`/
+    `updateAdvancedSearchCriteria` *and* the two methods above, re-scanning only when forced or
+    never yet scanned (`m_advancedSearchRoot.empty()`) — preserving §14.19's "editing before the
+    first Search does not scan" contract while letting the new tag-click entry points (which have
+    no Search-button press to hang a scan off of) trigger that first scan themselves.
+  * A new `advancedSearchCriteriaChanged(const SearchCriteria&)` signal, since criteria can now
+    change from three independent places (the existing Name/size/extension fields, Advanced
+    Search's own new tag search box, and a `TagPanelWidget` click on a different widget entirely)
+    that all need the tag-criteria chip row to stay in sync.
+* **`TagChipWidget` becomes clickable for every `Kind`**, not just `Selectable` — `ReadOnly`/
+  `Addable`/`Removable` now also emit `clicked(Tag::Id)` on a body click (unaffected: clicks on
+  the separate `+`/`x` child `QToolButton`s). This one change powers both the right panel
+  (requirement) and Advanced Search's new "matching tags" row, which reuses `Kind::ReadOnly`
+  verbatim ("same as the right panel but without a + button").
+* **`TagListViewModel::requestTagSearch(Tag::Id)`** — new slot, forwards to
+  `m_activeTab->addTagSearchCriterion(tagId)`. Since `WorkspaceController::retargetFocusedTab()`
+  already keeps `TagListViewModel::m_activeTab` pointed at the focused pane's active tab (§14.9),
+  this automatically targets "the currently active tab" with no new retargeting logic.
+* **`SearchCriteriaPanel`/`SearchResultsPane`** gain a tag search box (results shown as
+  `Kind::ReadOnly` chips, click-to-add) and a tag-criteria chip row (`Kind::Removable`,
+  click-x-to-remove), wired in `WorkspacePaneWidget::addPageForTab` the same way the existing
+  Name/size/extension fields are.
+* **Not built:** persisting tag criteria across restarts (matches §14.19's existing exclusion for
+  its other fields); surfacing which specific tag caused a given result to match. No new
+  automated coverage beyond the pure `filterByPaths` filter — `TabViewModel`/widget changes stay
+  under §11/§14.19's existing "ViewModel/UI is not CTest-covered" posture.
 
 ### 14.20 Address Bar Folder Autocomplete
 
