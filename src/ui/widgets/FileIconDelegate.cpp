@@ -6,6 +6,7 @@
 #include <QFontMetrics>
 #include <QPainter>
 #include <QPen>
+#include <QWidget>
 
 namespace
 {
@@ -14,8 +15,23 @@ namespace
 }
 
 FileIconDelegate::FileIconDelegate(QObject* parent)
-    : QStyledItemDelegate(parent)
+    : FileNameEditDelegate(parent)
 {
+}
+
+QRect FileIconDelegate::nameRectFor(const QStyleOptionViewItem& option)
+{
+    const QSize iconSize = option.decorationSize;
+    const QRect iconRect(option.rect.left() + (option.rect.width() - iconSize.width()) / 2,
+                          option.rect.top() + kPadding,
+                          iconSize.width(),
+                          iconSize.height());
+
+    const QFontMetrics fontMetrics(option.font);
+    return QRect(option.rect.left() + kPadding,
+                 iconRect.bottom() + kPadding,
+                 option.rect.width() - 2 * kPadding,
+                 fontMetrics.height());
 }
 
 void FileIconDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
@@ -31,10 +47,7 @@ void FileIconDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
     icon.paint(painter, iconRect);
 
     const QFontMetrics fontMetrics(option.font);
-    const QRect textRect(option.rect.left() + kPadding,
-                          iconRect.bottom() + kPadding,
-                          option.rect.width() - 2 * kPadding,
-                          fontMetrics.height());
+    const QRect textRect = nameRectFor(option);
 
     painter->setFont(option.font);
     const QVariant foreground = index.data(Qt::ForegroundRole);
@@ -72,4 +85,10 @@ QSize FileIconDelegate::sizeHint(const QStyleOptionViewItem& option, const QMode
     const int height = iconSize.height() + kPadding + fontMetrics.height() + kPadding;
 
     return QSize(width, height);
+}
+
+void FileIconDelegate::updateEditorGeometry(QWidget* editor, const QStyleOptionViewItem& option, const QModelIndex& index) const
+{
+    Q_UNUSED(index);
+    editor->setGeometry(nameRectFor(option));
 }

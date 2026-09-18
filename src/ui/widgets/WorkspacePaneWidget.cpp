@@ -5,7 +5,6 @@
 
 #include <QAction>
 #include <QActionGroup>
-#include <QInputDialog>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
@@ -322,12 +321,17 @@ void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewM
     connect(browserView, &FileBrowserView::navigateBackRequested, tab, [tab]() { tab->goBack(); });
     connect(browserView, &FileBrowserView::navigateForwardRequested, tab, [tab]() { tab->goForward(); });
 
-    connect(browserView, &FileBrowserView::itemContextMenuRequested, tab,
-            [this, tab](const std::vector<std::filesystem::path>& paths, const QPoint& globalPos) {
-                showItemContextMenu(tab, paths, globalPos);
+    connect(browserView, &FileBrowserView::renameRequested, tab,
+            [this](const std::filesystem::path& source, const std::filesystem::path& destination) {
+                m_fileOperationsController->renamePath(source, destination);
             });
-    connect(browserView, &FileBrowserView::folderContextMenuRequested, tab, [this, tab](const QPoint& globalPos) {
-        showBackgroundContextMenu(tab, globalPos);
+
+    connect(browserView, &FileBrowserView::itemContextMenuRequested, tab,
+            [this, tab, browserView](const std::vector<std::filesystem::path>& paths, const QPoint& globalPos) {
+                showItemContextMenu(tab, browserView, paths, globalPos);
+            });
+    connect(browserView, &FileBrowserView::folderContextMenuRequested, tab, [this, tab, browserView](const QPoint& globalPos) {
+        showBackgroundContextMenu(tab, browserView, globalPos);
     });
 }
 
@@ -559,8 +563,8 @@ bool WorkspacePaneWidget::extendedShellExtensionsEnabled()
     return settings.value(QLatin1String(kShowShellExtensionsSettingsKey), false).toBool();
 }
 
-void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, const std::vector<std::filesystem::path>& paths,
-                                               const QPoint& globalPos)
+void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, FileBrowserView* browserView,
+                                               const std::vector<std::filesystem::path>& paths, const QPoint& globalPos)
 {
     if (paths.empty())
     {
@@ -584,7 +588,7 @@ void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, const std::vect
     connect(copyAction, &QAction::triggered, this, [this, paths]() { m_fileOperationsController->copyToClipboard(paths); });
     connect(pasteAction, &QAction::triggered, this, [this, directory]() { m_fileOperationsController->pasteInto(directory); });
     connect(deleteAction, &QAction::triggered, this, [this, tab]() { onDeleteRequested(tab, false); });
-    connect(renameAction, &QAction::triggered, this, [this, targetPath]() { promptRename(targetPath); });
+    connect(renameAction, &QAction::triggered, this, [browserView, targetPath]() { browserView->beginRename(targetPath); });
     connect(propertiesAction, &QAction::triggered, this, [this, targetPath, ownerWindow]() {
         m_fileOperationsController->showProperties(targetPath, ownerWindow);
     });
@@ -640,7 +644,7 @@ void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, const std::vect
     }
 }
 
-void WorkspacePaneWidget::showBackgroundContextMenu(TabViewModel* tab, const QPoint& globalPos)
+void WorkspacePaneWidget::showBackgroundContextMenu(TabViewModel* tab, FileBrowserView* browserView, const QPoint& globalPos)
 {
     const std::filesystem::path directory = tab->currentPath();
     if (directory == VirtualPaths::ThisPC)
@@ -655,10 +659,10 @@ void WorkspacePaneWidget::showBackgroundContextMenu(TabViewModel* tab, const QPo
     auto* propertiesAction = new QAction(tr("Properties"));
 
     connect(pasteAction, &QAction::triggered, this, [this, directory]() { m_fileOperationsController->pasteInto(directory); });
-    connect(newFolderAction, &QAction::triggered, this, [this, directory]() {
+    connect(newFolderAction, &QAction::triggered, this, [this, directory, browserView]() {
         if (auto createdPath = m_fileOperationsController->createFolder(directory))
         {
-            promptRename(*createdPath);
+            browserView->beginRename(*createdPath);
         }
     });
     connect(propertiesAction, &QAction::triggered, this, [this, directory, ownerWindow]() {
@@ -702,19 +706,4 @@ void WorkspacePaneWidget::showBackgroundContextMenu(TabViewModel* tab, const QPo
     {
         action->deleteLater();
     }
-}
-
-void WorkspacePaneWidget::promptRename(const std::filesystem::path& path)
-{
-    const QString currentName = toQString(path.filename());
-
-    bool ok = false;
-    const QString newName = QInputDialog::getText(this, tr("Rename"), tr("New name:"), QLineEdit::Normal, currentName, &ok);
-    if (!ok || newName.isEmpty() || newName == currentName)
-    {
-        return;
-    }
-
-    const std::filesystem::path destination = path.parent_path() / std::filesystem::path(newName.toStdWString());
-    m_fileOperationsController->renamePath(path, destination);
 }

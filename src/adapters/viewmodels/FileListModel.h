@@ -42,6 +42,14 @@ public:
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;
     QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const override;
 
+    // Marks the Name column editable for real filesystem entries (excludes synthetic rows like
+    // "This PC"'s drives, which have a displayName() and no renameable path) so views can open an
+    // in-place editor via QAbstractItemView::edit(). Deliberately no setData() override: committing
+    // a rename has to go through FileOperationsController::renamePath and react to failure, which a
+    // model's setData() has no clean way to do — FileNameEditDelegate intercepts the commit instead
+    // and never calls setData().
+    Qt::ItemFlags flags(const QModelIndex& index) const override;
+
     // Header-click sorting hook, invoked automatically by QTreeView when sorting is enabled.
     // Maps the clicked column to a SortCriterion and delegates to setSortCriterion.
     void sort(int column, Qt::SortOrder order = Qt::AscendingOrder) override;

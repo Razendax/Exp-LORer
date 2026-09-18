@@ -15,6 +15,7 @@
 
 #include "FileIconDelegate.h"
 #include "FileListModel.h"
+#include "FileNameEditDelegate.h"
 #include "FileTileDelegate.h"
 #include "SearchResultDelegate.h"
 
@@ -49,7 +50,7 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
 {
     m_listView = new QListView(this);
     m_listView->setModel(m_model);
-    m_defaultDelegate = m_listView->itemDelegate();
+    m_nameEditDelegate = new FileNameEditDelegate(this);
     m_tileDelegate = new FileTileDelegate(this);
     m_iconDelegate = new FileIconDelegate(this);
 
@@ -62,6 +63,12 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     {
         m_searchResultDelegate = new SearchResultDelegate(this);
         m_treeView->setItemDelegate(m_searchResultDelegate);
+    }
+    else
+    {
+        // Installed once here (rather than per setViewMode() call, like the QListView delegates
+        // below) since Details view is the QTreeView's only mode and never swaps delegates.
+        m_treeView->setItemDelegate(m_nameEditDelegate);
     }
 
     // QHeaderView defaults its sort indicator to (column 0, DescendingOrder); QTreeView's
@@ -88,6 +95,13 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     {
         view->setSelectionMode(QAbstractItemView::ExtendedSelection);
         view->setSelectionBehavior(QAbstractItemView::SelectRows);
+
+        // Qt's default EditTriggers include DoubleClicked, which would race the activated signal
+        // (connected below to open/navigate into the item) and pop up the rename editor on every
+        // double-click. Explorer only starts a rename via F2, the context menu, or a click on an
+        // already-selected item's name -- never a double-click -- so drop DoubleClicked here and
+        // rely on beginRename() (F2/context menu/new folder) plus SelectedClicked for that instead.
+        view->setEditTriggers(QAbstractItemView::EditKeyPressed | QAbstractItemView::SelectedClicked);
     }
 
     m_stack = new QStackedWidget(this);
@@ -119,6 +133,13 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
             [this](const QPoint& localPos) { handleContextMenuRequested(m_listView, localPos); });
     connect(m_treeView, &QWidget::customContextMenuRequested, this,
             [this](const QPoint& localPos) { handleContextMenuRequested(m_treeView, localPos); });
+
+    for (FileNameEditDelegate* delegate : {static_cast<FileNameEditDelegate*>(m_nameEditDelegate),
+                                            static_cast<FileNameEditDelegate*>(m_iconDelegate),
+                                            static_cast<FileNameEditDelegate*>(m_tileDelegate)})
+    {
+        connect(delegate, &FileNameEditDelegate::renameCommitted, this, &FileBrowserView::onRenameCommitted);
+    }
 
     setViewMode(ViewMode::Details);
 }
@@ -180,6 +201,18 @@ bool FileBrowserView::handleKeyPress(QKeyEvent* event)
     if (event->matches(QKeySequence::Cut))   { emit cutRequested();   return true; }
     if (event->matches(QKeySequence::Paste)) { emit pasteRequested(); return true; }
     if (event->key() == Qt::Key_Backspace)   { emit navigateUpRequested(); return true; }
+
+    if (event->key() == Qt::Key_F2 && m_displayMode != DisplayMode::AdvancedSearchResults)
+    {
+        const QModelIndexList selectedRows = m_selectionModel->selectedRows();
+        if (selectedRows.size() == 1 && (selectedRows.front().flags() & Qt::ItemIsEditable))
+        {
+            auto* view = (m_stack->currentWidget() == m_treeView) ? static_cast<QAbstractItemView*>(m_treeView)
+                                                                    : static_cast<QAbstractItemView*>(m_listView);
+            view->edit(selectedRows.front());
+            return true;
+        }
+    }
 
     const bool isDetailsView = (m_stack->currentWidget() == m_treeView);
     if (isDetailsView && event->key() == Qt::Key_Left)
@@ -244,7 +277,7 @@ void FileBrowserView::setViewMode(ViewMode mode)
 
     if (mode == ViewMode::List)
     {
-        m_listView->setItemDelegate(m_defaultDelegate);
+        m_listView->setItemDelegate(m_nameEditDelegate);
         m_listView->setUniformItemSizes(true);
         m_listView->setViewMode(QListView::ListMode);
         m_listView->setFlow(QListView::TopToBottom);
@@ -318,21 +351,57 @@ void FileBrowserView::emitSelectionChanged()
     emit selectionChanged(entries);
 }
 
-void FileBrowserView::selectEntryByPath(const std::filesystem::path& path)
+std::optional<QModelIndex> FileBrowserView::indexForPath(const std::filesystem::path& path) const
 {
     for (int row = 0; row < m_model->rowCount(); ++row)
     {
         const auto entry = m_model->entryAt(row);
         if (entry && entry->path() == path)
         {
-            const QModelIndex index = m_model->index(row, 0);
-            m_selectionModel->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-            m_treeView->scrollTo(index);
-            return;
+            return m_model->index(row, 0);
         }
+    }
+    return std::nullopt;
+}
+
+void FileBrowserView::selectEntryByPath(const std::filesystem::path& path)
+{
+    if (const auto index = indexForPath(path))
+    {
+        m_selectionModel->setCurrentIndex(*index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        m_treeView->scrollTo(*index);
+        return;
     }
 
     selectFirstEntry();
+}
+
+void FileBrowserView::beginRename(const std::filesystem::path& path)
+{
+    if (m_displayMode == DisplayMode::AdvancedSearchResults)
+    {
+        return;
+    }
+
+    const auto index = indexForPath(path);
+    if (!index)
+    {
+        return;
+    }
+
+    m_selectionModel->setCurrentIndex(*index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+
+    auto* view = (m_stack->currentWidget() == m_treeView) ? static_cast<QAbstractItemView*>(m_treeView)
+                                                            : static_cast<QAbstractItemView*>(m_listView);
+    view->scrollTo(*index);
+    view->edit(*index);
+}
+
+void FileBrowserView::onRenameCommitted(const QModelIndex& index, const QString& newName)
+{
+    const auto oldPath = std::filesystem::path(index.data(FileListModel::FilePathRole).toString().toStdWString());
+    const std::filesystem::path destination = oldPath.parent_path() / std::filesystem::path(newName.toStdWString());
+    emit renameRequested(oldPath, destination);
 }
 
 void FileBrowserView::selectFirstEntry()

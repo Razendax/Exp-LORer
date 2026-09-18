@@ -25,6 +25,7 @@ class QKeyEvent;
 class FileListModel;
 class FileTileDelegate;
 class FileIconDelegate;
+class FileNameEditDelegate;
 class SearchResultDelegate;
 
 // The tab's content widget: a QStackedWidget switching between a QListView (icon/list/tiles view
@@ -59,6 +60,10 @@ public:
     std::array<int, FileListModel::ColumnCount> columnWidths() const;
     void setColumnWidths(const std::array<int, FileListModel::ColumnCount>& widths);
 
+    // Starts inline in-place rename editing on the row for `path` (Architecture.md §14.13.4/
+    // §14.13.6). No-op in AdvancedSearchResults mode, or if `path` isn't currently listed.
+    void beginRename(const std::filesystem::path& path);
+
 signals:
     // Emitted on double-click/Enter on a row; isDirectory decides whether MainWindow forwards
     // this to TabViewModel::navigateTo (file activation is out of scope, no viewer yet).
@@ -90,6 +95,11 @@ signals:
     void itemContextMenuRequested(const std::vector<std::filesystem::path>& paths, const QPoint& globalPos);
     void folderContextMenuRequested(const QPoint& globalPos);
 
+    // Emitted once an in-place rename edit (F2, context-menu Rename, or New Folder's follow-up
+    // rename) is committed (Enter/focus-loss with a non-empty, changed name). WorkspacePaneWidget
+    // forwards this to FileOperationsController::renamePath.
+    void renameRequested(const std::filesystem::path& source, const std::filesystem::path& destination);
+
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
@@ -105,12 +115,17 @@ private:
     void selectEntryByPath(const std::filesystem::path& path);
     void selectFirstEntry();
 
+    // Linear scan for the row listing `path`, shared by selectEntryByPath and beginRename.
+    std::optional<QModelIndex> indexForPath(const std::filesystem::path& path) const;
+
+    void onRenameCommitted(const QModelIndex& index, const QString& newName);
+
     FileListModel* m_model = nullptr;
     DisplayMode m_displayMode = DisplayMode::Normal;
     QStackedWidget* m_stack = nullptr;
     QListView* m_listView = nullptr;
     QTreeView* m_treeView = nullptr;
-    QAbstractItemDelegate* m_defaultDelegate = nullptr;
+    FileNameEditDelegate* m_nameEditDelegate = nullptr;
     FileTileDelegate* m_tileDelegate = nullptr;
     SearchResultDelegate* m_searchResultDelegate = nullptr;
     FileIconDelegate* m_iconDelegate = nullptr;

@@ -79,9 +79,9 @@ private:
     void onViewModeChanged(ViewMode mode);
     void onDeleteRequested(TabViewModel* tab, bool permanent);
 
-    void showItemContextMenu(TabViewModel* tab, const std::vector<std::filesystem::path>& paths, const QPoint& globalPos);
-    void showBackgroundContextMenu(TabViewModel* tab, const QPoint& globalPos);
-    void promptRename(const std::filesystem::path& path);
+    void showItemContextMenu(TabViewModel* tab, FileBrowserView* browserView, const std::vector<std::filesystem::path>& paths,
+                              const QPoint& globalPos);
+    void showBackgroundContextMenu(TabViewModel* tab, FileBrowserView* browserView, const QPoint& globalPos);
     static bool extendedShellExtensionsEnabled();
 
     WorkspacePaneViewModel* m_pane = nullptr;

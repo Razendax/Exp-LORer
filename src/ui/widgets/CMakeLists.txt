@@ -3,6 +3,8 @@ add_library(explorer_ui_widgets STATIC
     MainWindow.cpp
     FileBrowserView.h
     FileBrowserView.cpp
+    FileNameEditDelegate.h
+    FileNameEditDelegate.cpp
     FileTileDelegate.h
     FileTileDelegate.cpp
     FileIconDelegate.h

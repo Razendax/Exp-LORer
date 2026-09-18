@@ -430,9 +430,10 @@ static + shell extensions (closer Explorer parity, COM activation cost).
   or `discardMenu()` since `invoke()` must call back into the specific handler that produced a given
   id.
 * **14.13.4 New native actions** — the app now implements Rename (a same-directory `moveFile`
-  behind a modal prompt), New Folder/New-from-template, and Properties
-  (`IFileSystemRepository::showProperties`, `SHObjectProperties` on Windows) itself, rather than
-  relying on the old native popup for them.
+  behind an inline, in-place edit box drawn over the item itself — F2, the context menu's
+  "Rename", or right after New Folder all route through it; no modal dialog), New
+  Folder/New-from-template, and Properties (`IFileSystemRepository::showProperties`,
+  `SHObjectProperties` on Windows) itself, rather than relying on the old native popup for them.
 * **14.13.5 UI wiring** — `FileOperationsController` builds the entry list (no `QMenu`/`QAction`
   construction itself); `ContextMenuBuilder` (`src/ui/widgets`) turns that data plus the fixed
   native actions into an actual `QMenu`, interleaved at Explorer-conventional positions. A View-menu
@@ -440,7 +441,8 @@ static + shell extensions (closer Explorer parity, COM activation cost).
   always triggers a directory refresh afterward, since the app can't know what it changed on disk.
 * **14.13.6 Threading and not built here** — synchronous on the UI thread (§5, same as
   `ShellExecuteW`). Not built: a Linux `IContextMenuProvider`; a drag-and-drop-triggered menu;
-  inline in-grid rename-on-create; `ShellNew`'s binary-`Data` mechanism. Rename/Properties/Open stay
+  `ShellNew`'s binary-`Data` mechanism; inline rename in the advanced-search-results view (its rows
+  use `SearchResultDelegate` and can span multiple directories). Rename/Properties/Open stay
   single-target and are disabled for a multi-selection, since their backing APIs are single-path;
   Cut/Copy/Delete-equivalent entries do act on the whole selection.
 

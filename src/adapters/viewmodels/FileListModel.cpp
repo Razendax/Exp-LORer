@@ -142,6 +142,26 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
     }
 }
 
+Qt::ItemFlags FileListModel::flags(const QModelIndex& index) const
+{
+    Qt::ItemFlags result = QAbstractTableModel::flags(index);
+    if (!index.isValid())
+    {
+        return result;
+    }
+
+    if (index.column() == NameColumn)
+    {
+        const auto entry = entryAt(index.row());
+        if (entry && !entry->displayName())
+        {
+            result |= Qt::ItemIsEditable;
+        }
+    }
+
+    return result;
+}
+
 QVariant FileListModel::headerData(int section, Qt::Orientation orientation, int role) const
 {
     if (orientation != Qt::Horizontal || role != Qt::DisplayRole)

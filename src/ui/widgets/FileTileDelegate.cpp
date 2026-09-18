@@ -4,6 +4,7 @@
 #include <QFontMetrics>
 #include <QLocale>
 #include <QPainter>
+#include <QWidget>
 
 #include "FileListModel.h"
 
@@ -32,8 +33,24 @@ namespace
 }
 
 FileTileDelegate::FileTileDelegate(QObject* parent)
-    : QStyledItemDelegate(parent)
+    : FileNameEditDelegate(parent)
 {
+}
+
+QRect FileTileDelegate::nameRectFor(const QStyleOptionViewItem& option)
+{
+    const QRect iconRect(option.rect.left() + kPadding,
+                          option.rect.top() + (option.rect.height() - kIconSize) / 2,
+                          kIconSize,
+                          kIconSize);
+
+    const QRect textRect(iconRect.right() + kPadding,
+                          option.rect.top() + kPadding,
+                          option.rect.right() - iconRect.right() - 2 * kPadding,
+                          option.rect.height() - 2 * kPadding);
+
+    const QFontMetrics nameMetrics(option.font);
+    return QRect(textRect.left(), textRect.top(), textRect.width(), nameMetrics.height());
 }
 
 void FileTileDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
@@ -64,7 +81,7 @@ void FileTileDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
                           option.rect.height() - 2 * kPadding);
 
     const QFontMetrics nameMetrics(option.font);
-    const QRect nameRect(textRect.left(), textRect.top(), textRect.width(), nameMetrics.height());
+    const QRect nameRect = nameRectFor(option);
     const QRect secondaryRect(textRect.left(), nameRect.bottom(), textRect.width(), nameMetrics.height());
 
     const QString name = index.data(Qt::DisplayRole).toString();
@@ -87,4 +104,10 @@ QSize FileTileDelegate::sizeHint(const QStyleOptionViewItem& option, const QMode
     Q_UNUSED(index);
 
     return QSize(kTileWidth, kTileHeight);
+}
+
+void FileTileDelegate::updateEditorGeometry(QWidget* editor, const QStyleOptionViewItem& option, const QModelIndex& index) const
+{
+    Q_UNUSED(index);
+    editor->setGeometry(nameRectFor(option));
 }
