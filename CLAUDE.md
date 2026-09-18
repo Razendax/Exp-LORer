@@ -83,7 +83,18 @@ ctest --test-dir build/Release -R explorer_domain_tests   # run one suite
 Per `Architecture.md` §11: domain tests are plain unit tests with no fixtures; application-layer use
 cases are tested against mocked Ports (GoogleMock) and must not touch Qt, SQLite, or disk; adapter
 tests use a real in-memory (`:memory:`) SQLite DB and `std::filesystem` temp directories. UI is not
-covered by automated tests in v1.
+covered by CTest in v1.
+
+### UI blackbox tests (opt-in, not part of the build)
+
+A separate Python/pywinauto suite under `ui_tests/` drives the compiled `.exe` through Windows UI
+Automation. It is entirely outside the CMake/CTest graph and never runs as part of `build.ps1` — a
+developer runs it by hand. Requires Python 3 on PATH and the app already built (`.\build.ps1`).
+
+```powershell
+.\ui_tests\setup_env.ps1      # one-time: creates ui_tests\.venv, installs requirements.txt
+.\ui_tests\run_ui_tests.ps1   # runs the suite (creates the venv first if missing)
+```
 
 ## Architecture
 

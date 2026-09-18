@@ -181,6 +181,8 @@ The following are explicitly out of scope for the initial release (v1), pending 
 
 * Undo/redo for file operations (delete/move/rename) and tag assignment.
 * Linux-specific trash integration — Windows trash ships first; Linux falls back to permanent delete until implemented.
-* Automated UI testing — manual smoke testing only for v1.
+* Automated UI testing — manual smoke testing only for v1 (a minimal opt-in blackbox smoke check
+  exists outside the v1 CTest suite, Architecture.md §11; comprehensive automated UI coverage
+  remains excluded).
 * Internationalization/localization — UI strings are English-only for v1.
 

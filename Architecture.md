@@ -247,7 +247,11 @@ Exp-LORer/
 * **Adapters:** `SQLiteTagRepository` against a real in-memory (`:memory:`) SQLite DB (same
   migrations as production); `StandardFileSystemRepository` against `std::filesystem` temp
   directories.
-* **UI:** out of scope for automated tests in v1; smoke-tested manually.
+* **UI:** out of scope for automated CTest coverage in v1; smoke-tested manually. A separate,
+  opt-in blackbox smoke suite lives under top-level `ui_tests/` (Python + pywinauto, driving the
+  compiled `.exe` through Windows UI Automation) — deliberately outside the CTest graph, with no
+  CMake target and no involvement in `build.ps1`. It only proves the app launches and its main
+  window appears; it is not a substitute for the CTest-based coverage above.
 * **Carve-out — OS-shell side effects with no assertable return** (`ShellExecuteW`, the registry/COM
   context-menu building and invocation, live drive/known-folder enumeration): not covered by
   automated adapter tests, since registry contents and installed shell extensions are live,
@@ -275,7 +279,8 @@ Exp-LORer/
 
 * Undo/redo for file operations and tag assignment.
 * Linux-specific trash integration (falls back to permanent delete until implemented).
-* Automated UI testing.
+* Automated UI testing (a minimal opt-in blackbox smoke check exists under `ui_tests/`, §11 — not
+  part of the v1 CTest suite; comprehensive automated UI coverage remains excluded).
 * Internationalization (English-only; `tr()` wrapping still used so it isn't precluded later).
 
 ## 14. Split-Window Extension (Fixed Layouts, Per-Pane Tabs) and Later Features
