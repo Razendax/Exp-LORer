@@ -6,6 +6,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 #include "FileNavigationUseCase.h"
 #include "FileNode.h"
@@ -41,6 +42,12 @@ public:
     const std::vector<FileNode>& selectedEntries() const noexcept { return m_selectedEntries; }
     SortCriterion sortCriterion() const noexcept;
     bool sortAscending() const noexcept;
+
+    // Pure query, no history/state side effects (unlike navigateTo). Returns the names (not full
+    // paths) of every child of `directory` that is itself a directory, sorted case-insensitively.
+    // Empty on any listDirectory error (missing/unreadable directory) -- callers treat that as
+    // "no suggestions" rather than a navigation failure.
+    QStringList suggestFolders(const std::filesystem::path& directory) const;
 
 public slots:
     // Per-tab selection state (Architecture.md §14.9), set by WorkspacePaneWidget from this tab's

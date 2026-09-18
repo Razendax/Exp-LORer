@@ -38,6 +38,27 @@ bool TabViewModel::sortAscending() const noexcept
     return m_fileListModel->sortAscending();
 }
 
+QStringList TabViewModel::suggestFolders(const std::filesystem::path& directory) const
+{
+    auto result = m_fileNavigationUseCase.listDirectory(directory);
+    if (result.hasError())
+    {
+        return {};
+    }
+
+    QStringList names;
+    for (const FileNode& entry : result.value())
+    {
+        if (entry.isDirectory())
+        {
+            names.append(QString::fromStdWString(entry.name().wstring()));
+        }
+    }
+
+    names.sort(Qt::CaseInsensitive);
+    return names;
+}
+
 void TabViewModel::navigateTo(const std::filesystem::path& path)
 {
     exitSearch();

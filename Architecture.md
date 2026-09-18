@@ -539,3 +539,24 @@ selection/hotkey/context-menu wiring is reused as-is. Synchronous on the UI thre
 filters are GTest-covered; the ViewModel/UI state is not (§11). Not built: a "Location"
 disambiguation column; cancellation of the recursive scan; persisting criteria across restarts
 (resets like §14.18's quick search).
+
+### 14.20 Address Bar Folder Autocomplete
+
+Each pane's address bar (`AddressBarWidget`, a `QLineEdit` subclass replacing the previous bare
+`QLineEdit`) shows a popup of matching child folders as the user types, filtered to directories only
+via `FileNode::isDirectory()`, plus inline autocompletion of an unambiguous common prefix. Suggestion
+data flows the same route as navigation: `AddressBarWidget` never calls `FileNavigationUseCase`
+directly, it emits `folderSuggestionsRequested(directory)` (debounced ~120ms, only on a directory-
+portion change, not every keystroke) which `WorkspacePaneWidget` answers via a new
+`TabViewModel::suggestFolders(directory)` (a pure, side-effect-free query alongside `navigateTo`,
+using the same synchronous `FileNavigationUseCase::listDirectory` call already used by every
+navigation path). Prefix filtering against what's typed happens client-side in `AddressBarWidget`
+against a per-directory cache, so extending/shrinking the typed name within the same directory needs
+no further disk I/O. The popup is a non-activating, frameless `QListWidget` positioned under the
+address bar; `AddressBarWidget` keeps keyboard focus itself and intercepts Up/Down (move the popup's
+highlighted row), Enter (commits a highlighted row and navigates, same as typing a full path and
+pressing Enter), Tab (completes the text without navigating), and Escape (dismisses the popup).
+Synchronous on the UI thread (§5), same accepted posture as §14.18/§14.19. Not built: suggestions
+for a bare drive letter before its trailing separator; async/background listing (only relevant for
+very large directories, same tradeoff already accepted for recursive search). Untested per §11 (pure
+UI/ViewModel glue, same as the rest of `TabViewModel`/`WorkspacePaneWidget`).

@@ -21,6 +21,9 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 **Directory Navigation:**
 * Tree view and list/grid view of the local file system.
 * Standard navigation controls (Back, Forward, Up, Path Bar).
+* **Path bar folder autocomplete** (Architecture.md §14.20): as the user types, a popup lists only
+  the matching folders (never files) under the implied parent directory, navigable with the
+  keyboard or mouse, with inline autocompletion of an unambiguous match.
 * **"This PC" virtual location** (Architecture.md §14.15): lists all local and remote drives, plus
   quick access to the Downloads, Documents, Pictures, Videos, Music, and Desktop folders. Reached
   by pressing Up (or Backspace) from any drive's root directory — the point where a regular folder

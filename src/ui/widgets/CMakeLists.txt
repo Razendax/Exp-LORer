@@ -15,6 +15,8 @@ add_library(explorer_ui_widgets STATIC
     SearchResultsPane.cpp
     WorkspacePaneWidget.h
     WorkspacePaneWidget.cpp
+    AddressBarWidget.h
+    AddressBarWidget.cpp
     WorkspaceLayoutWidget.h
     WorkspaceLayoutWidget.cpp
     FlowLayout.h

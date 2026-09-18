@@ -22,6 +22,7 @@ class FileBrowserView;
 class WorkspacePaneViewModel;
 class TabViewModel;
 class FileOperationsController;
+class AddressBarWidget;
 
 // One pane's full self-contained UI: its own toolbar (back/forward/up QActions, address
 // QLineEdit, view-mode QToolButton+menu — the per-pane counterpart of MainWindow's former
@@ -73,6 +74,7 @@ private:
 
     void onCurrentPathChanged(const std::filesystem::path& path);
     void onAddressBarEdited();
+    void onAddressBarFolderSuggestionsRequested(const std::filesystem::path& directory);
     void onNavigationFailed(const std::filesystem::path& path, const QString& message);
     void onViewModeChanged(ViewMode mode);
     void onDeleteRequested(TabViewModel* tab, bool permanent);
@@ -87,7 +89,7 @@ private:
     TabViewModel* m_boundTab = nullptr;
 
     QTabWidget* m_tabWidget = nullptr;
-    QLineEdit* m_addressBar = nullptr;
+    AddressBarWidget* m_addressBar = nullptr;
     QAction* m_backAction = nullptr;
     QAction* m_forwardAction = nullptr;
     QAction* m_upAction = nullptr;

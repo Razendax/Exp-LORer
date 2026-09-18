@@ -17,6 +17,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include "AddressBarWidget.h"
 #include "ContextMenuBuilder.h"
 #include "FileBrowserView.h"
 #include "FileOperationsController.h"
@@ -178,7 +179,7 @@ QToolBar* WorkspacePaneWidget::createToolBar()
     viewModeButton->setMenu(viewModeMenu);
     toolBar->addWidget(viewModeButton);
 
-    m_addressBar = new QLineEdit(toolBar);
+    m_addressBar = new AddressBarWidget(toolBar);
     m_addressBar->setClearButtonEnabled(true);
     toolBar->addWidget(m_addressBar);
 
@@ -186,6 +187,8 @@ QToolBar* WorkspacePaneWidget::createToolBar()
     connect(m_forwardAction, &QAction::triggered, this, [this]() { if (m_boundTab) m_boundTab->goForward(); });
     connect(m_upAction, &QAction::triggered, this, [this]() { if (m_boundTab) m_boundTab->goUp(); });
     connect(m_addressBar, &QLineEdit::returnPressed, this, &WorkspacePaneWidget::onAddressBarEdited);
+    connect(m_addressBar, &AddressBarWidget::folderSuggestionsRequested, this,
+            &WorkspacePaneWidget::onAddressBarFolderSuggestionsRequested);
 
     return toolBar;
 }
@@ -437,6 +440,16 @@ void WorkspacePaneWidget::onAddressBarEdited()
     std::filesystem::path newPath(trimmed.toStdWString());
     newPath.make_preferred();
     m_boundTab->navigateTo(newPath);
+}
+
+void WorkspacePaneWidget::onAddressBarFolderSuggestionsRequested(const std::filesystem::path& directory)
+{
+    if (!m_boundTab)
+    {
+        return;
+    }
+
+    m_addressBar->setSuggestions(directory, m_boundTab->suggestFolders(directory));
 }
 
 void WorkspacePaneWidget::onNavigationFailed(const std::filesystem::path& path, const QString& message)
