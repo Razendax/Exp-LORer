@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include <QColor>
 #include <QFontMetrics>
 #include <QPainter>
 #include <QPen>
@@ -36,7 +37,15 @@ void FileIconDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
                           fontMetrics.height());
 
     painter->setFont(option.font);
-    painter->setPen(option.palette.text().color());
+    const QVariant foreground = index.data(Qt::ForegroundRole);
+    if (!(option.state & QStyle::State_Selected) && foreground.canConvert<QColor>())
+    {
+        painter->setPen(foreground.value<QColor>());
+    }
+    else
+    {
+        painter->setPen(option.palette.text().color());
+    }
     const QString name = index.data(Qt::DisplayRole).toString();
     painter->drawText(textRect, Qt::AlignHCenter | Qt::AlignVCenter,
                        fontMetrics.elidedText(name, Qt::ElideRight, textRect.width()));

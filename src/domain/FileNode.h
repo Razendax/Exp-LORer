@@ -27,6 +27,7 @@ public:
                                     std::chrono::system_clock::time_point creationDate,
                                     std::chrono::system_clock::time_point modificationDate,
                                     FileType fileType,
+                                    bool isHidden = false,
                                     std::optional<std::uint64_t> hash = std::nullopt);
 
     const std::filesystem::path& path() const noexcept { return m_path; }
@@ -35,6 +36,7 @@ public:
     std::chrono::system_clock::time_point creationDate() const noexcept { return m_creationDate; }
     std::chrono::system_clock::time_point modificationDate() const noexcept { return m_modificationDate; }
     FileType fileType() const noexcept { return m_fileType; }
+    bool isHidden() const noexcept { return m_isHidden; }
     const std::optional<std::uint64_t>& hash() const noexcept { return m_hash; }
     const std::optional<std::string>& displayName() const noexcept { return m_displayName; }
 
@@ -55,6 +57,7 @@ private:
               std::chrono::system_clock::time_point creationDate,
               std::chrono::system_clock::time_point modificationDate,
               FileType fileType,
+              bool isHidden,
               std::optional<std::uint64_t> hash,
               std::optional<std::string> displayName = std::nullopt);
 
@@ -63,6 +66,7 @@ private:
     std::chrono::system_clock::time_point m_creationDate;
     std::chrono::system_clock::time_point m_modificationDate;
     FileType m_fileType;
+    bool m_isHidden;
     std::optional<std::uint64_t> m_hash;
     std::optional<std::string> m_displayName;
 };

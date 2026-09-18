@@ -560,3 +560,39 @@ Synchronous on the UI thread (§5), same accepted posture as §14.18/§14.19. No
 for a bare drive letter before its trailing separator; async/background listing (only relevant for
 very large directories, same tradeoff already accepted for recursive search). Untested per §11 (pure
 UI/ViewModel glue, same as the rest of `TabViewModel`/`WorkspacePaneWidget`).
+
+### 14.21 Hidden Files/Folders Visibility
+
+A global "Show hidden files" toggle in the View menu controls whether OS-hidden entries appear at
+all, and if so, whether they're visually distinguished. `FileNode` gains `isHidden()`, populated by
+`StandardFileSystemRepository::buildFileNode()` via `GetFileAttributesW`/`FILE_ATTRIBUTE_HIDDEN` on
+Windows (a leading-`.` filename convention on a future Linux backend); every existing
+`FileNode`-producing repository call funnels through that one function, so no other adapter code
+changes. Synthetic nodes ("This PC", drives, known folders) are never marked hidden.
+
+`FileListModel` is the single filter/gray point rather than the Application layer or
+`TabViewModel`: it already backs normal browsing, §14.18 quick search, and §14.19 advanced search
+alike (one instance each, all fed via `setEntries()`), so implementing it once there covers all
+three. It keeps a `m_visibleRows` index over its full `m_entries`, rebuilt whenever entries/sort/the
+toggle change; with the toggle on, every row stays visible and `data()` returns a dimmed
+`Qt::ForegroundRole` brush for hidden rows (`QGuiApplication::palette()`'s `Disabled`/`Text` color,
+so it already tracks the light/dark palette); with it off, hidden rows are dropped from the index
+entirely. Qt's stock `QStyledItemDelegate` (List/Details views) honors `Qt::ForegroundRole`
+automatically; the three custom delegates that hand-paint text (`FileIconDelegate`,
+`FileTileDelegate`, `SearchResultDelegate`) each read the same role for their non-selected pen color
+instead of the hardcoded `option.palette.text()` they used before, so all seven view modes plus the
+advanced-search results view render consistently.
+
+The toggle itself is a `QSettings`-backed app-wide preference (`MainWindow`, modeled on
+`createContextMenuModeAction()`) rather than `config.json`/`WorkspaceConfig` state — same posture as
+§14.13's shell-extensions toggle, since it's one app-wide display preference, not per-tab/session
+state. Toggling it persists the value and live-broadcasts to every open tab's three `FileListModel`s
+(main/quick-search/advanced-search) across all four panes via `WorkspaceController::pane(id)`/
+`tabAt(i)`, so already-open folders and result sets update immediately with no re-navigation or
+rescan; a `FileListModel` constructed afterward (a new tab) picks up the persisted value itself.
+§14.20's `TabViewModel::suggestFolders` also excludes hidden folders from autocomplete when the
+toggle is off, reading the same setting on demand (autocomplete is already re-queried per keystroke,
+so no live-broadcast plumbing is needed there). Not built: a per-item way to toggle a file's own OS
+hidden attribute (Properties-dialog territory); any Linux-specific hidden-file semantics beyond the
+one-line dotfile fallback above. Untested per §11 beyond the `FileNode`/`StandardFileSystemRepository`
+attribute-detection cases (the rest is UI/ViewModel glue, same posture as §14.18/§14.19/§14.20).

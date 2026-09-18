@@ -1,5 +1,6 @@
 #include "FileTileDelegate.h"
 
+#include <QColor>
 #include <QFontMetrics>
 #include <QLocale>
 #include <QPainter>
@@ -46,7 +47,8 @@ void FileTileDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
     }
     else
     {
-        painter->setPen(option.palette.text().color());
+        const QVariant foreground = index.data(Qt::ForegroundRole);
+        painter->setPen(foreground.canConvert<QColor>() ? foreground.value<QColor>() : option.palette.text().color());
     }
 
     const QIcon icon = index.data(Qt::DecorationRole).value<QIcon>();

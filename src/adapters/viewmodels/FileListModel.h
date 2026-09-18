@@ -62,6 +62,12 @@ public:
     // FileBrowserView can drive the QTreeView header's sort indicator from a SortCriterion.
     static int columnForCriterion(SortCriterion criterion);
 
+    // Settings key backing the global "show hidden files/folders" preference, mirroring
+    // WorkspacePaneWidget::kShowShellExtensionsSettingsKey's QSettings-based-toggle pattern
+    // (Architecture.md §14.14).
+    static constexpr const char* kShowHiddenFilesSettingsKey = "View/ShowHiddenFiles";
+    static bool showHiddenFilesEnabled();
+
 public slots:
     void setEntries(const std::filesystem::path& directory, const std::vector<FileNode>& entries);
 
@@ -69,13 +75,22 @@ public slots:
     // No-op if criterion/ascending are unchanged.
     void setSortCriterion(SortCriterion criterion, bool ascending);
 
+    // Live-toggles hidden-entry filtering without re-navigating/rescanning. No-op if unchanged.
+    void setShowHiddenFiles(bool show);
+
 signals:
     void sortOrderChanged(SortCriterion criterion, bool ascending);
 
 private:
+    // Rebuilds m_visibleRows from m_entries/m_showHiddenFiles. Caller is responsible for the
+    // surrounding beginResetModel()/endResetModel() pair.
+    void rebuildVisibleRows();
+
     std::filesystem::path m_directory;
     std::vector<FileNode> m_entries;
+    std::vector<int> m_visibleRows;
     QFileIconProvider m_iconProvider;
     SortCriterion m_sortCriterion = SortCriterion::Name;
     bool m_sortAscending = true;
+    bool m_showHiddenFiles = false;
 };

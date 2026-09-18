@@ -23,6 +23,54 @@ TEST(FileNode, CreateSucceedsWithValidPath)
     EXPECT_FALSE(result.value().isDirectory());
 }
 
+TEST(FileNode, IsHiddenDefaultsToFalse)
+{
+    auto result = FileNode::create("C:/data/report.pdf", 1024, someTime(), someTime(), FileType::Regular);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_FALSE(result.value().isHidden());
+}
+
+TEST(FileNode, CreateCarriesExplicitIsHidden)
+{
+    auto result =
+        FileNode::create("C:/data/.gitignore", 20, someTime(), someTime(), FileType::Regular, /*isHidden=*/true);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(result.value().isHidden());
+}
+
+TEST(FileNode, WithHashPreservesIsHidden)
+{
+    auto original =
+        FileNode::create("C:/data/.secret", 10, someTime(), someTime(), FileType::Regular, /*isHidden=*/true)
+            .value();
+
+    FileNode withHash = original.withHash(0x1234);
+
+    EXPECT_TRUE(withHash.isHidden());
+}
+
+TEST(FileNode, WithDisplayNamePreservesIsHidden)
+{
+    auto original =
+        FileNode::create("C:/data/.secret", 10, someTime(), someTime(), FileType::Regular, /*isHidden=*/true)
+            .value();
+
+    FileNode withName = original.withDisplayName("Secret");
+
+    EXPECT_TRUE(withName.isHidden());
+}
+
+TEST(FileNode, EqualityComparesIsHidden)
+{
+    auto visible = FileNode::create("C:/data/a.txt", 10, someTime(), someTime(), FileType::Regular).value();
+    auto hidden =
+        FileNode::create("C:/data/a.txt", 10, someTime(), someTime(), FileType::Regular, /*isHidden=*/true).value();
+
+    EXPECT_NE(visible, hidden);
+}
+
 TEST(FileNode, CreateFailsWithEmptyPath)
 {
     auto result = FileNode::create("", 0, someTime(), someTime(), FileType::Regular);

@@ -46,10 +46,12 @@ QStringList TabViewModel::suggestFolders(const std::filesystem::path& directory)
         return {};
     }
 
+    const bool showHidden = FileListModel::showHiddenFilesEnabled();
+
     QStringList names;
     for (const FileNode& entry : result.value())
     {
-        if (entry.isDirectory())
+        if (entry.isDirectory() && (showHidden || !entry.isHidden()))
         {
             names.append(QString::fromStdWString(entry.name().wstring()));
         }

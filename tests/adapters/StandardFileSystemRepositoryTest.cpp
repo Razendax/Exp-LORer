@@ -2,6 +2,10 @@
 
 #include <fstream>
 
+#ifdef _WIN32
+#include <Windows.h>
+#endif
+
 #include "StandardFileSystemRepository.h"
 #include "VirtualPaths.h"
 
@@ -198,6 +202,47 @@ TEST_F(StandardFileSystemRepositoryTest, CreateFileFromTemplateFailsIfDestinatio
     ASSERT_TRUE(result.hasError());
     EXPECT_EQ(result.error().code, ErrorCode::AlreadyExists);
 }
+
+#ifdef _WIN32
+TEST_F(StandardFileSystemRepositoryTest, ListDirectoryReportsWindowsHiddenAttribute)
+{
+    writeFile(m_tempDir / "visible.txt", "hello");
+    writeFile(m_tempDir / "hidden.txt", "secret");
+    ASSERT_TRUE(SetFileAttributesW((m_tempDir / "hidden.txt").c_str(), FILE_ATTRIBUTE_HIDDEN));
+
+    auto result = m_repository.listDirectory(m_tempDir);
+
+    ASSERT_TRUE(result.hasValue());
+    bool foundVisible = false;
+    bool foundHidden = false;
+    for (const FileNode& entry : result.value())
+    {
+        if (entry.name() == "visible.txt")
+        {
+            foundVisible = true;
+            EXPECT_FALSE(entry.isHidden());
+        }
+        else if (entry.name() == "hidden.txt")
+        {
+            foundHidden = true;
+            EXPECT_TRUE(entry.isHidden());
+        }
+    }
+    EXPECT_TRUE(foundVisible);
+    EXPECT_TRUE(foundHidden);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, StatReportsWindowsHiddenAttribute)
+{
+    writeFile(m_tempDir / "hidden.txt", "secret");
+    ASSERT_TRUE(SetFileAttributesW((m_tempDir / "hidden.txt").c_str(), FILE_ATTRIBUTE_HIDDEN));
+
+    auto result = m_repository.stat(m_tempDir / "hidden.txt");
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(result.value().isHidden());
+}
+#endif
 
 TEST_F(StandardFileSystemRepositoryTest, ComputeFileHashIsDeterministic)
 {

@@ -24,6 +24,7 @@
 #include "WorkspaceController.h"
 #include "WorkspaceLayoutWidget.h"
 #include "WorkspacePaneId.h"
+#include "WorkspacePaneViewModel.h"
 #include "WorkspacePaneWidget.h"
 
 namespace
@@ -108,6 +109,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     createLayoutActions();
     createSortByActions();
     createContextMenuModeAction();
+    createShowHiddenFilesAction();
     createMenuBar();
     createLayoutToolBar();
     createWorkspace();
@@ -198,6 +200,30 @@ void MainWindow::createContextMenuModeAction()
     });
 }
 
+void MainWindow::createShowHiddenFilesAction()
+{
+    m_showHiddenFilesAction = new QAction(tr("Show hidden files/folders"), this);
+    m_showHiddenFilesAction->setCheckable(true);
+    m_showHiddenFilesAction->setChecked(FileListModel::showHiddenFilesEnabled());
+
+    connect(m_showHiddenFilesAction, &QAction::toggled, this, [this](bool checked) {
+        QSettings settings;
+        settings.setValue(QLatin1String(FileListModel::kShowHiddenFilesSettingsKey), checked);
+
+        for (WorkspacePaneId id : kAllPanes)
+        {
+            WorkspacePaneViewModel* pane = m_workspaceController->pane(id);
+            for (int i = 0; i < pane->tabCount(); ++i)
+            {
+                TabViewModel* tab = pane->tabAt(i);
+                tab->fileListModel()->setShowHiddenFiles(checked);
+                tab->searchResultsModel()->setShowHiddenFiles(checked);
+                tab->advancedSearchResultsModel()->setShowHiddenFiles(checked);
+            }
+        }
+    });
+}
+
 void MainWindow::createMenuBar()
 {
     QMenu* fileMenu = menuBar()->addMenu(tr("&File"));
@@ -218,6 +244,7 @@ void MainWindow::createMenuBar()
 
     viewMenu->addSeparator();
     viewMenu->addAction(m_extendedContextMenuAction);
+    viewMenu->addAction(m_showHiddenFilesAction);
 
     menuBar()->addMenu(tr("F&avorites"));
     menuBar()->addMenu(tr("&Tools"));

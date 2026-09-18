@@ -73,6 +73,19 @@ namespace
         return FileType::Other;
     }
 
+    // Windows: the actual FILE_ATTRIBUTE_HIDDEN bit. Other platforms (future Linux backend):
+    // the conventional leading-dot filename fallback.
+    bool detectHidden(const fs::directory_entry& entry)
+    {
+#ifdef _WIN32
+        const DWORD attrs = GetFileAttributesW(entry.path().c_str());
+        return attrs != INVALID_FILE_ATTRIBUTES && (attrs & FILE_ATTRIBUTE_HIDDEN) != 0;
+#else
+        const std::string filename = entry.path().filename().string();
+        return !filename.empty() && filename.front() == '.';
+#endif
+    }
+
     // std::filesystem exposes only last-write time portably; creation time is approximated with
     // it since std::filesystem has no portable creation-time accessor.
     Result<FileNode> buildFileNode(const fs::path& outwardPath, const fs::directory_entry& entry)
@@ -87,7 +100,8 @@ namespace
         }
 
         const auto modificationTime = std::chrono::clock_cast<std::chrono::system_clock>(lastWrite);
-        return FileNode::create(outwardPath, size, modificationTime, modificationTime, toFileType(entry));
+        return FileNode::create(outwardPath, size, modificationTime, modificationTime, toFileType(entry),
+                                 detectHidden(entry));
     }
 
 #ifdef _WIN32

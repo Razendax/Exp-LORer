@@ -48,6 +48,7 @@ private:
     void createLayoutActions();
     void createSortByActions();
     void createContextMenuModeAction();
+    void createShowHiddenFilesAction();
     void createMenuBar();
     void createLayoutToolBar();
     void createSearchBar(QToolBar* toolBar);
@@ -92,6 +93,12 @@ private:
     // key independently at build-menu time, so no direct wiring exists between this action and
     // any pane.
     QAction* m_extendedContextMenuAction = nullptr;
+
+    // Hidden files/folders visibility toggle (Architecture.md §14.21), persisted via QSettings
+    // under FileListModel::kShowHiddenFilesSettingsKey. Unlike the context-menu toggle above, this
+    // one is live-broadcast to every already-open tab's models on toggle, since hidden state
+    // affects an already-populated model rather than something read fresh at next use.
+    QAction* m_showHiddenFilesAction = nullptr;
 
     // Details-view column widths (Architecture.md §14.14): loaded from AppConfig, handed to
     // WorkspaceLayoutWidget so every pane's FileBrowserView starts out sized this way, then
