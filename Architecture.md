@@ -66,6 +66,8 @@ Converts between Domain/Application types and framework types.
   (§14.14).
 * **Media** (`adapters/media`) — `QtMediaDecoder`/`FFmpegMediaDecoder`, implements `IMediaDecoder`;
   not yet implemented.
+* **Logging** (`adapters/logging`) — `Logging`, a thin wrapper over spdlog (rotating file sink,
+  console sink in debug builds); the only place spdlog is referenced (§6, §14.22).
 
 ### 2.3.1 View Modes
 
@@ -197,7 +199,8 @@ CREATE TABLE FileTags (
 
 * **Locations:** database, logs, and thumbnail cache live under `%LOCALAPPDATA%/Exp-LORer/`
   (Windows), via `QStandardPaths` so the Linux path (`~/.local/share`, `~/.cache`) needs no code
-  change.
+  change. Logs specifically live in a `logs/` subfolder there (§14.22), written via
+  `Logging` (`adapters/logging`).
 * **Session/settings:** window geometry and the split-window session (layout, each pane's tabs —
   path/view mode/sort order — focused pane) persist to `config.json` (§14.14), written by
   `AppConfigStore`, same directory as `explorer.db`. `QSettings` remains in use only for the
@@ -224,12 +227,15 @@ Exp-LORer/
 │   │   ├── filesystem/  # StandardFileSystemRepository
 │   │   ├── shell/       # ShellContextMenuProvider
 │   │   ├── config/      # AppConfigStore (JSON session persistence)
-│   │   └── media/       # QtMediaDecoder / FFmpegMediaDecoder (not yet implemented)
+│   │   ├── media/       # QtMediaDecoder / FFmpegMediaDecoder (not yet implemented)
+│   │   └── logging/     # Logging (spdlog wrapper: rotating file + console sinks, §14.22)
 │   ├── ui/
 │   │   ├── widgets/     # Qt Widgets shell: MainWindow, panes, dialogs, delegates
 │   │   └── qml/         # QML media viewer (not yet implemented)
 │   └── app/
 │       ├── CompositionRoot.cpp/.h
+│       ├── ExpLorerApplication.cpp/.h   # QApplication subclass catching event-loop exceptions (§14.22)
+│       ├── ExceptionHandler.cpp/.h      # fatal-exception dialog + logging + exit (§14.22)
 │       └── main.cpp
 ├── tests/
 │   ├── domain/          # plain unit tests
@@ -662,3 +668,32 @@ so no live-broadcast plumbing is needed there). Not built: a per-item way to tog
 hidden attribute (Properties-dialog territory); any Linux-specific hidden-file semantics beyond the
 one-line dotfile fallback above. Untested per §11 beyond the `FileNode`/`StandardFileSystemRepository`
 attribute-detection cases (the rest is UI/ViewModel glue, same posture as §14.18/§14.19/§14.20).
+
+### 14.22 Startup/Exit Logging and Fatal Exception Handling
+
+A `Logging` module (`adapters/logging`) wraps spdlog behind `Logging::init/shutdown/log` (Debug/
+Info/Warning/Error, timestamped, rotating file sink under `%LOCALAPPDATA%/Exp-LORer/logs/` plus a
+console sink in debug builds) — the sole spdlog call site (§6). At this stage it is called only
+from `main.cpp`, logging one line at startup (after `init()`) and one at clean exit (before
+`shutdown()`); no call sites exist yet elsewhere in the app.
+
+Any uncaught C++ exception is caught, logged at Error level, and shown to the user in a modal
+dialog (title, exception message, a single "Exit" button) before the process terminates —
+`ExceptionHandler::handleFatal` (`src/app`), invoked from two places: a top-level `try/catch`
+around `main()`'s body (covers setup before the event loop starts, e.g. `SQLiteTagRepository`
+failing to open the DB) and `ExpLorerApplication::notify()` (a thin `QApplication` subclass
+overriding `notify()` to catch exceptions thrown during Qt event dispatch — input events, paint
+events, queued slot invocations — while `app.exec()` is running).
+
+**Scope:** main-thread exceptions only, consistent with all Port calls still being synchronous on
+the UI thread in v1 (§5) — there is no second thread whose exceptions would need separate handling
+yet. **Not built:** call-site logging beyond the two startup/exit lines above; an `ILogger` Port for
+Domain/Application to log through (deferred until those layers actually need to log — `Logging` is
+plain infrastructure, not wired through the composition root); native/SEH crash handling for
+non-C++-exception crashes (e.g. access violations); per-thread exception handling for a future
+background-dispatch thread (§5's deferred background-dispatch work would need its own try/catch at
+each thread's entry point, since exceptions can't cross threads). `ExceptionHandler`/
+`ExpLorerApplication` are UI-layer bootstrap code, out of CTest scope per §11 (same posture as the
+other UI carve-outs) — smoke-tested manually; `Logging` itself gets an adapter test (`:memory:`-style
+real temp directory, per §11) verifying `init()`/`log()`/`shutdown()` produce a log file with the
+expected content.
