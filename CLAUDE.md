@@ -43,6 +43,8 @@ Follow it automatically, without being asked each time:
 Requires `VCPKG_ROOT` set to a vcpkg checkout, and either a Visual Studio Developer PowerShell or MSVC
 discoverable via `vswhere`.
 
+Before building, ensure that the application is not running, if it is, kill it.
+
 ```powershell
 .\build.ps1                    # configure (if needed) + build the Release preset
 .\build.ps1 -Reconfigure        # force a fresh CMake configure
