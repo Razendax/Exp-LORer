@@ -119,6 +119,9 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 * Robust handling of file path changes (handling renames/moves gracefully by tracking file hashes or updating paths in the database).
 
 **Tag Panel:**
+* Housed in a collapsible, tabbed side panel (Architecture.md §14.24) on the right edge of the
+  window — collapsed by default, expanding when its "Tags" tab is clicked, with room for
+  additional tabs alongside it later. The panel's own tag behavior below is unchanged by this.
 * A panel sharing the window with the workspace pane area shows, for whichever pane/tab currently
   has focus: (1) the tags of the active pane's current folder together with every ancestor
   folder's tags (ancestors listed before the folder's own tags); (2) a search box over all tags;

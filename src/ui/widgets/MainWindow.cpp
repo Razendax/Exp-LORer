@@ -20,6 +20,7 @@
 #include "TabViewModel.h"
 #include "TagManagerDialog.h"
 #include "TagManagerViewModel.h"
+#include "RightPanelWidget.h"
 #include "TagPanelWidget.h"
 #include "WorkspaceController.h"
 #include "WorkspaceLayoutWidget.h"
@@ -284,14 +285,26 @@ void MainWindow::createSearchBar(QToolBar* toolBar)
 void MainWindow::createWorkspace()
 {
     m_workspaceLayoutWidget = new WorkspaceLayoutWidget(m_workspaceController, m_columnWidths, this);
-    m_tagPanelWidget = new TagPanelWidget(m_workspaceController->tagListViewModel(), this);
+
+    // Right panel (Architecture.md §14.23): the side-panel counterpart of BottomPanelWidget, a
+    // collapsible tab strip with a single "Tags" tab, wrapping the existing tag UI instead of
+    // placing it directly in the splitter.
+    m_rightPanelWidget = new RightPanelWidget(this);
+    m_tagPanelWidget = new TagPanelWidget(m_workspaceController->tagListViewModel(), m_rightPanelWidget);
+    m_rightPanelWidget->addPanelTab(tr("Tags"), m_tagPanelWidget);
 
     auto* splitter = new QSplitter(Qt::Horizontal, this);
     splitter->addWidget(m_workspaceLayoutWidget);
-    splitter->addWidget(m_tagPanelWidget);
-    splitter->setStretchFactor(0, 4);
-    splitter->setStretchFactor(1, 1);
+    splitter->addWidget(m_rightPanelWidget);
+    splitter->setCollapsible(0, false);
+    splitter->setSizes({ 1000, m_rightPanelWidget->collapsedWidth() });
     setCentralWidget(splitter);
+
+    connect(m_rightPanelWidget, &RightPanelWidget::expansionChanged, splitter, [splitter, rightPanel = m_rightPanelWidget](bool expanded) {
+        const int total = std::max(splitter->width(), splitter->sizeHint().width());
+        const int rightWidth = expanded ? rightPanel->preferredExpandedWidth() : rightPanel->collapsedWidth();
+        splitter->setSizes({ total - rightWidth, rightWidth });
+    });
 
     for (WorkspacePaneId id : kAllPanes)
     {

@@ -108,7 +108,7 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
 | Domain | `FileNode`, `Tag`, `MediaMetadata`, `FileTagAssociation` |
 | Application | `FileNavigationUseCase`, `TagManagementUseCase`, `MediaProcessingUseCase`, and their Ports (§2.2) |
 | Adapters | `SQLiteTagRepository`, `StandardFileSystemRepository`, `ShellContextMenuProvider`, `AppConfigStore`, plus the ViewModels listed in §2.3 |
-| UI (Widgets) | `MainWindow`, `WorkspaceLayoutWidget`, `WorkspacePaneWidget`, `FileBrowserView`, `TagPanelWidget`, `ContextMenuBuilder`, dialogs |
+| UI (Widgets) | `MainWindow`, `WorkspaceLayoutWidget`, `WorkspacePaneWidget`, `FileBrowserView`, `RightPanelWidget`, `TagPanelWidget`, `ContextMenuBuilder`, dialogs |
 | UI (QML) | Media viewer (not yet implemented) |
 
 ## 5. Concurrency and Threading Model
@@ -751,3 +751,26 @@ hides/shows the still-running session). Closing the tab kills the process.
   subsequent navigation in its tab (only the directory at first-expand time). No automated coverage
   beyond `AnsiTerminalBuffer` — ConPTY spawning and the painting/input widget fall under the existing
   §11 UI/OS-shell carve-out, smoke-tested manually.
+
+### 14.24 Right Panel (Tabbed, Collapsible)
+
+The window's right-hand side panel uses the same VS Code-style collapsible-panel shell as the
+bottom panel (§14.23), on the horizontal axis instead of the vertical one. `RightPanelWidget`
+(`src/ui/widgets`) mirrors `BottomPanelWidget`'s mechanics — checkable panel-tab buttons over a
+`QStackedWidget`, starting collapsed, `expansionChanged`/`panelTabFirstActivated` signals,
+splitter-drag detection in `resizeEvent` — but its header strip is a vertical column of buttons on
+the widget's left edge (next to the workspace) rather than a horizontal row on top, since the
+collapse axis is width (`collapsedWidth()`/`preferredExpandedWidth()`) rather than height. It is a
+sibling class, not a shared abstraction with `BottomPanelWidget`: the two header strips lay out
+buttons in opposite directions and the two widgets sit in splitters of opposite orientation, so
+forcing one orientation-parameterized base class for two call sites wasn't worth the indirection.
+
+`MainWindow::createWorkspace` wraps the existing `TagPanelWidget` (§14.9/Specification.md "Tag
+Panel") as the content of a single "Tags" panel tab, added to a `RightPanelWidget` placed as the
+second child of the central horizontal `QSplitter` (in place of `TagPanelWidget` directly). The
+splitter uses explicit `setSizes`/`setCollapsible(0, false)` plus a `RightPanelWidget::
+expansionChanged` handler that resizes the splitter, the same posture as the bottom panel's
+splitter wiring in `WorkspacePaneWidget::addPageForTab` — no stretch factors. `TagPanelWidget`
+itself is unmodified; only its container changed. Only "Tags" exists in v1, but more tabs can be
+added later without further plumbing, same intent as the bottom panel's Terminal-only v1 scope.
+Like the bottom panel, expanded/collapsed state is not persisted across restarts.
