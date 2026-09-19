@@ -10,7 +10,7 @@ layers under `src/` currently contain only `.gitkeep` placeholders and `tests/` 
 placeholder GTest files — `CompositionRoot`, `MainWindow`, and `main.cpp` are the only real code so far.
 
 Full requirements and design are in `Specification.md` and `Architecture.md` at the repo root — read
-these before implementing a new component or feature, refactoring the code or making significant changes;
+these before implementing a new component or feature, refactoring the code, or making changes in code;
 they define the layering, threading model, DB schema, file hashing strategy, and v1 scope exclusions in detail.
 Do not restate their content here — refer to them.
 
