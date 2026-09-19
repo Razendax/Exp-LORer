@@ -99,7 +99,7 @@ std::vector<FileNode> FileNavigationUseCase::sortBy(std::vector<FileNode> files,
             case SortCriterion::ModificationDate:
                 return lhs.modificationDate() < rhs.modificationDate();
             case SortCriterion::FileType:
-                return lhs.fileType() < rhs.fileType();
+                return toLower(PathUtf8::toUtf8(lhs.path().extension())) < toLower(PathUtf8::toUtf8(rhs.path().extension()));
         }
         return false;
     };

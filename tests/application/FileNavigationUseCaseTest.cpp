@@ -113,6 +113,36 @@ TEST(FileNavigationUseCase, SortBySizeDescending)
     EXPECT_EQ(sorted[1].size(), 1u);
 }
 
+TEST(FileNavigationUseCase, SortByFileTypeOrdersByExtension)
+{
+    std::vector<FileNode> files{
+        makeFile("C:/data/a.txt", 1),
+        makeFile("C:/data/b.jpg", 2),
+        makeFile("C:/data/c.avi", 3),
+    };
+
+    auto sorted = FileNavigationUseCase::sortBy(files, SortCriterion::FileType, true);
+
+    ASSERT_EQ(sorted.size(), 3u);
+    EXPECT_EQ(sorted[0].name(), "c.avi");
+    EXPECT_EQ(sorted[1].name(), "b.jpg");
+    EXPECT_EQ(sorted[2].name(), "a.txt");
+}
+
+TEST(FileNavigationUseCase, SortByFileTypeIsCaseInsensitive)
+{
+    std::vector<FileNode> files{
+        makeFile("C:/data/a.TXT", 1),
+        makeFile("C:/data/b.jpg", 2),
+    };
+
+    auto sorted = FileNavigationUseCase::sortBy(files, SortCriterion::FileType, true);
+
+    ASSERT_EQ(sorted.size(), 2u);
+    EXPECT_EQ(sorted[0].name(), "b.jpg");
+    EXPECT_EQ(sorted[1].name(), "a.TXT");
+}
+
 TEST(FileNavigationUseCase, SortByNameAscendingGroupsFoldersBeforeFiles)
 {
     std::vector<FileNode> files{
