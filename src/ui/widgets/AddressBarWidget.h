@@ -41,6 +41,7 @@ protected:
     // cannot claim Tab away from that default "move to next widget" behavior.
     bool event(QEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    void focusInEvent(QFocusEvent* event) override;
     void focusOutEvent(QFocusEvent* event) override;
 
 private:

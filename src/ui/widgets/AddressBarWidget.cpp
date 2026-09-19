@@ -278,6 +278,16 @@ bool AddressBarWidget::event(QEvent* ev)
     return QLineEdit::event(ev);
 }
 
+void AddressBarWidget::focusInEvent(QFocusEvent* event)
+{
+    QLineEdit::focusInEvent(event);
+
+    // Deferred to the next event-loop iteration: when focus arrives via a mouse click, Qt delivers
+    // this focusInEvent *before* the mousePressEvent that placed the cursor/click-selection, so a
+    // selectAll() called directly here would just be undone by that mousePressEvent right after.
+    QTimer::singleShot(0, this, &QLineEdit::selectAll);
+}
+
 void AddressBarWidget::focusOutEvent(QFocusEvent* event)
 {
     hidePopup();
