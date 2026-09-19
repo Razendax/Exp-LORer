@@ -92,15 +92,26 @@ namespace
     Result<FileNode> buildFileNode(const fs::path& outwardPath, const fs::directory_entry& entry)
     {
         std::error_code ec;
-        const auto size = entry.is_regular_file(ec) ? entry.file_size(ec) : 0;
+        const bool isSymlink = entry.is_symlink(ec);
         ec.clear();
+
+        // is_regular_file()/file_size() follow the link to the target, which would report the
+        // target's size for a symlink; report 0 instead so the link itself (not what it points
+        // to) is what's described, matching Windows Explorer's treatment of reparse points.
+        const auto size = (!isSymlink && entry.is_regular_file(ec)) ? entry.file_size(ec) : 0;
+        ec.clear();
+
         const auto lastWrite = entry.last_write_time(ec);
-        if (ec)
+        if (ec && !isSymlink)
         {
             return Result<FileNode>::failure(Error(ErrorCode::IoError, ec.message()));
         }
 
-        const auto modificationTime = std::chrono::clock_cast<std::chrono::system_clock>(lastWrite);
+        // A symlink whose target is missing or inaccessible cannot have its target stat'd
+        // (last_write_time follows the link), but it must still appear in listings rather than
+        // silently vanishing — fall back to the epoch instead of failing the whole entry.
+        const auto modificationTime = ec ? std::chrono::system_clock::time_point{}
+                                          : std::chrono::clock_cast<std::chrono::system_clock>(lastWrite);
         return FileNode::create(outwardPath, size, modificationTime, modificationTime, toFileType(entry),
                                  detectHidden(entry));
     }
@@ -228,7 +239,11 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursi
         for (const auto& entry :
              fs::recursive_directory_iterator(target, fs::directory_options::skip_permission_denied))
         {
-            const fs::path relative = fs::relative(entry.path(), target);
+            // fs::relative() canonicalizes both paths, which resolves symlinks (including the
+            // entry's own final path component if it is itself a symlink) — a symlink entry would
+            // silently be remapped onto its target's path/name instead of keeping its own.
+            // lexically_relative() is purely textual and never touches the filesystem.
+            const fs::path relative = entry.path().lexically_relative(target);
             auto node = buildFileNode(root / relative, entry);
             if (node.hasValue())
             {

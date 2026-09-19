@@ -239,6 +239,75 @@ TEST_F(StandardFileSystemRepositoryTest, CreateFileFromTemplateFailsIfDestinatio
     EXPECT_EQ(result.error().code, ErrorCode::AlreadyExists);
 }
 
+TEST_F(StandardFileSystemRepositoryTest, ListDirectoryIncludesValidSymlink)
+{
+    writeFile(m_tempDir / "target.txt", "hello");
+
+    std::error_code ec;
+    fs::create_symlink(m_tempDir / "target.txt", m_tempDir / "link.txt", ec);
+    ASSERT_FALSE(ec) << ec.message();
+
+    auto result = m_repository.listDirectory(m_tempDir);
+
+    ASSERT_TRUE(result.hasValue());
+    const auto it = std::find_if(result.value().begin(), result.value().end(),
+                                  [](const FileNode& entry) { return entry.name() == "link.txt"; });
+    ASSERT_NE(it, result.value().end());
+    EXPECT_EQ(it->fileType(), FileType::Symlink);
+    // The link's own size, not the target's ("hello" is 5 bytes), is what's reported.
+    EXPECT_EQ(it->size(), 0u);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, ListDirectoryIncludesDanglingSymlink)
+{
+    std::error_code ec;
+    fs::create_symlink(m_tempDir / "does-not-exist.txt", m_tempDir / "dangling.txt", ec);
+    ASSERT_FALSE(ec) << ec.message();
+
+    Result<std::vector<FileNode>> result = Result<std::vector<FileNode>>::failure(Error(ErrorCode::IoError, "unset"));
+    EXPECT_NO_THROW(result = m_repository.listDirectory(m_tempDir));
+
+    ASSERT_TRUE(result.hasValue());
+    const auto it = std::find_if(result.value().begin(), result.value().end(),
+                                  [](const FileNode& entry) { return entry.name() == "dangling.txt"; });
+    ASSERT_NE(it, result.value().end());
+    EXPECT_EQ(it->fileType(), FileType::Symlink);
+}
+
+// Regression test: advanced search (SearchCriteriaPanel/TabViewModel::runAdvancedSearch) is built
+// on listDirectoryRecursive, not listDirectory — symlinks must survive the recursive walk too.
+TEST_F(StandardFileSystemRepositoryTest, ListDirectoryRecursiveIncludesSymlinks)
+{
+    writeFile(m_tempDir / "target.txt", "hello");
+    fs::create_directory(m_tempDir / "sub");
+
+    std::error_code ec;
+    fs::create_symlink(m_tempDir / "target.txt", m_tempDir / "sub" / "link.txt", ec);
+    ASSERT_FALSE(ec) << ec.message();
+
+    fs::create_symlink(m_tempDir / "does-not-exist.txt", m_tempDir / "sub" / "dangling.txt", ec);
+    ASSERT_FALSE(ec) << ec.message();
+
+    auto result = m_repository.listDirectoryRecursive(m_tempDir);
+
+    ASSERT_TRUE(result.hasValue());
+
+    const auto findByName = [&result](const char* name) {
+        return std::find_if(result.value().begin(), result.value().end(),
+                             [name](const FileNode& entry) { return entry.name() == name; });
+    };
+
+    const auto link = findByName("link.txt");
+    ASSERT_NE(link, result.value().end());
+    EXPECT_EQ(link->fileType(), FileType::Symlink);
+    EXPECT_EQ(link->size(), 0u);
+
+    const auto dangling = findByName("dangling.txt");
+    ASSERT_NE(dangling, result.value().end());
+    EXPECT_EQ(dangling->fileType(), FileType::Symlink);
+    EXPECT_EQ(dangling->size(), 0u);
+}
+
 #ifdef _WIN32
 TEST_F(StandardFileSystemRepositoryTest, ListDirectoryReportsWindowsHiddenAttribute)
 {

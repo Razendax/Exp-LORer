@@ -15,6 +15,11 @@ namespace
 
     QString fileTypeLabel(const FileNode& entry)
     {
+        if (entry.fileType() == FileType::Symlink)
+        {
+            return QObject::tr("Symbolic link");
+        }
+
         if (entry.isDirectory())
         {
             return QObject::tr("File folder");

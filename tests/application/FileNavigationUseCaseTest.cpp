@@ -338,6 +338,25 @@ TEST(FileNavigationUseCase, FilterByCriteriaAllUnsetIsPassthrough)
     EXPECT_EQ(filtered.size(), 2u);
 }
 
+// Regression: advanced search (TabViewModel::runAdvancedSearch -> filterByCriteria) must surface
+// symlinks. A symlink is reported with size 0 (StandardFileSystemRepository doesn't follow it to
+// the target's size), so it must not be treated like a zero-byte file some filter excludes.
+TEST(FileNavigationUseCase, FilterByCriteriaIncludesSymlinks)
+{
+    std::vector<FileNode> files{
+        makeFile("C:/data/report.txt", 50),
+        makeFile("C:/data/link.txt", 0, FileType::Symlink),
+    };
+
+    SearchCriteria criteria;
+    criteria.nameQuery = "link";
+
+    auto filtered = FileNavigationUseCase::filterByCriteria(files, criteria);
+
+    ASSERT_EQ(filtered.size(), 1u);
+    EXPECT_EQ(filtered[0].fileType(), FileType::Symlink);
+}
+
 TEST(FileNavigationUseCase, FilterByPathsMatchesByPath)
 {
     std::vector<FileNode> files{ makeFile("C:/data/a.txt", 1), makeFile("C:/data/b.txt", 2) };
