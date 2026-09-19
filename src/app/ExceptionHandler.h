@@ -7,8 +7,9 @@
 // Architecture.md §14.22.
 namespace ExceptionHandler
 {
-    // Logs the message at Error level, shows a modal dialog (title "Unexpected Error", the
-    // message, a single "Exit" button), then terminates the process (std::exit(1)) once dismissed.
+    // Logs the message at Error level, along with a best-effort symbolized call stack captured at
+    // the catch site (DbgHelp), then shows a modal dialog (title "Unexpected Error", the message
+    // only, a single "Exit" button), then terminates the process (std::exit(1)) once dismissed.
     // Never returns.
     [[noreturn]] void handleFatal(const std::string& message);
 }

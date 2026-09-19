@@ -20,6 +20,11 @@ target_link_libraries(Exp-LORer PRIVATE
     Qt6::Widgets
 )
 
+# DbgHelp symbolizes the fatal-exception call stack logged by ExceptionHandler (Architecture.md §14.22).
+if(WIN32)
+    target_link_libraries(Exp-LORer PRIVATE Dbghelp)
+endif()
+
 # Qt's platform plugin (qwindows.dll) is loaded dynamically at runtime from a
 # "platforms" subfolder next to the executable. vcpkg's applocal DLL copying
 # only handles directly-linked DLLs, so it never picks this up; deploy it
