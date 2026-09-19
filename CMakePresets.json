@@ -30,6 +30,19 @@
         "VCPKG_INSTALL_OPTIONS": "--x-buildtrees-root=C:/bt;--clean-after-build",
         "VCPKG_TARGET_TRIPLET": "x64-windows-release"
       }
+    },
+    {
+      "name": "DebugFast",
+      "displayName": "Debug (PDB, minimal optimization, release deps)",
+      "inherits": "base",
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO": "/MD /Zi /Od /Ob0 /DNDEBUG",
+        "CMAKE_C_FLAGS_RELWITHDEBINFO": "/MD /Zi /Od /Ob0 /DNDEBUG",
+        "VCPKG_INSTALL_OPTIONS": "--x-buildtrees-root=C:/bt;--clean-after-build",
+        "VCPKG_TARGET_TRIPLET": "x64-windows-release"
+      }
     }
   ]
 }

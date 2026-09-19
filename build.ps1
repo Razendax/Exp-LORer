@@ -1,6 +1,9 @@
 <#
 .SYNOPSIS
-    Configures and builds Exp-LORer (CMake + Ninja + vcpkg) using the "windows" preset.
+    Configures and builds Exp-LORer (CMake + Ninja + vcpkg) using a CMake preset.
+
+.PARAMETER Preset
+    Build preset: windows, release, or debug. Defaults to release.
 
 .PARAMETER Reconfigure
     Forces a fresh CMake configure step even if a cache already exists.
@@ -9,13 +12,19 @@
     Optional CMake build target (defaults to building everything).
 #>
 param(
+    [ValidateSet("windows", "release", "debug")]
+    [string]$Preset = "release",
     [switch]$Reconfigure,
     [string]$Target
 )
 
 $ErrorActionPreference = "Stop"
-$Preset = "Release"
-$BinaryDir = Join-Path $PSScriptRoot "build\$Preset"
+$CMakePreset = switch ($Preset) {
+    "windows" { "windows" }
+    "release" { "Release" }
+    "debug" { "DebugFast" }
+}
+$BinaryDir = Join-Path $PSScriptRoot "build\$CMakePreset"
 
 # vcpkg manifest mode needs VCPKG_ROOT to locate the toolchain file.
 if (-not $env:VCPKG_ROOT) {
@@ -45,7 +54,7 @@ if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
 }
 
 if ($Reconfigure -or -not (Test-Path (Join-Path $BinaryDir "CMakeCache.txt"))) {
-    cmake --preset $Preset
+    cmake --preset $CMakePreset
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
