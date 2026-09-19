@@ -5,10 +5,12 @@
 
 #include <QAction>
 #include <QActionGroup>
+#include <QDir>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QSettings>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QStyle>
 #include <QTabWidget>
@@ -17,6 +19,7 @@
 #include <QVBoxLayout>
 
 #include "AddressBarWidget.h"
+#include "BottomPanelWidget.h"
 #include "ContextMenuBuilder.h"
 #include "FileBrowserView.h"
 #include "FileOperationsController.h"
@@ -24,6 +27,7 @@
 #include "SearchCriteriaPanel.h"
 #include "SearchResultsPane.h"
 #include "TabViewModel.h"
+#include "TerminalWidget.h"
 #include "VirtualPaths.h"
 #include "WorkspacePaneViewModel.h"
 
@@ -230,8 +234,6 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     wireBrowserView(advancedSearchPane->browserView(), tab);
     stack->addWidget(advancedSearchPane); // page 2: advanced search results
 
-    m_tabWidget->insertTab(index, stack, tabLabelFor(tab->currentPath()));
-
     connect(tab, &TabViewModel::currentPathChanged, this, [this, tab](const std::filesystem::path& path) {
         const int idx = indexOfTab(tab);
         if (idx >= 0)
@@ -282,6 +284,45 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
             [advancedSearchPane, tab](const SearchCriteria& criteria) {
                 advancedSearchPane->setCriteria(criteria, tab->resolveTagCriteria());
             });
+
+    // Bottom panel (Architecture.md §14.23): a splitter over the existing browse/search/
+    // advanced-search stack and a collapsible BottomPanelWidget with a single "Terminal" tab, wrapped
+    // as the actual tab page instead of inserting `stack` directly.
+    auto* bottomPanel = new BottomPanelWidget(m_tabWidget);
+    auto* terminalWidget = new TerminalWidget(bottomPanel);
+    bottomPanel->addPanelTab(tr("Terminal"), terminalWidget);
+
+    auto* splitter = new QSplitter(Qt::Vertical, m_tabWidget);
+    splitter->addWidget(stack);
+    splitter->addWidget(bottomPanel);
+    splitter->setCollapsible(0, false);
+    splitter->setSizes({ 1000, bottomPanel->collapsedHeight() });
+
+    connect(bottomPanel, &BottomPanelWidget::expansionChanged, splitter, [splitter, bottomPanel](bool expanded) {
+        const int total = std::max(splitter->height(), splitter->sizeHint().height());
+        const int bottomHeight = expanded ? bottomPanel->preferredExpandedHeight() : bottomPanel->collapsedHeight();
+        splitter->setSizes({ total - bottomHeight, bottomHeight });
+    });
+
+    connect(bottomPanel, &BottomPanelWidget::panelTabFirstActivated, terminalWidget, [terminalWidget, tab](int) {
+        auto cwd = tab->currentPath();
+        if (cwd == VirtualPaths::ThisPC || cwd.empty())
+        {
+            cwd = std::filesystem::path(QDir::homePath().toStdWString());
+        }
+        terminalWidget->start(cwd);
+    });
+
+    connect(terminalWidget, &TerminalWidget::restartRequested, terminalWidget, [terminalWidget, tab]() {
+        auto cwd = tab->currentPath();
+        if (cwd == VirtualPaths::ThisPC || cwd.empty())
+        {
+            cwd = std::filesystem::path(QDir::homePath().toStdWString());
+        }
+        terminalWidget->start(cwd);
+    });
+
+    m_tabWidget->insertTab(index, splitter, tabLabelFor(tab->currentPath()));
 }
 
 void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewModel* tab)
@@ -524,7 +565,11 @@ void WorkspacePaneWidget::onDeleteRequested(TabViewModel* tab, bool permanent)
 
 void WorkspacePaneWidget::onViewModeChanged(ViewMode mode)
 {
-    if (auto* stack = qobject_cast<QStackedWidget*>(m_tabWidget->currentWidget()))
+    // The tab page is now a QSplitter (browse/search/advanced-search stack + BottomPanelWidget,
+    // Architecture.md §14.23); the stack is always its first direct child (bottomPanel, the
+    // splitter's other child, is never itself a QStackedWidget), so this unwrap stays unambiguous.
+    auto* splitter = qobject_cast<QSplitter*>(m_tabWidget->currentWidget());
+    if (auto* stack = splitter ? qobject_cast<QStackedWidget*>(splitter->widget(0)) : nullptr)
     {
         for (int i = 0; i < stack->count(); ++i)
         {
@@ -554,9 +599,10 @@ void WorkspacePaneWidget::onViewModeChanged(ViewMode mode)
 
 std::array<int, FileListModel::ColumnCount> WorkspacePaneWidget::currentColumnWidths() const
 {
-    // Same heterogeneous-stack shape as onViewModeChanged: page 2 is a SearchResultsPane wrapping
-    // a FileBrowserView, pages 0/1 are plain FileBrowserView.
-    if (auto* stack = qobject_cast<QStackedWidget*>(m_tabWidget->currentWidget()))
+    // Same splitter-unwrap and heterogeneous-stack shape as onViewModeChanged: page 2 is a
+    // SearchResultsPane wrapping a FileBrowserView, pages 0/1 are plain FileBrowserView.
+    auto* splitter = qobject_cast<QSplitter*>(m_tabWidget->currentWidget());
+    if (auto* stack = splitter ? qobject_cast<QStackedWidget*>(splitter->widget(0)) : nullptr)
     {
         if (auto* browserView = qobject_cast<FileBrowserView*>(stack->currentWidget()))
         {

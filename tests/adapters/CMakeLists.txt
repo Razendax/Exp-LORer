@@ -8,6 +8,7 @@ add_executable(explorer_adapters_tests
     AppConfigStoreTest.cpp
     WorkspaceControllerTest.cpp
     LoggingTest.cpp
+    AnsiTerminalBufferTest.cpp
 )
 
 target_link_libraries(explorer_adapters_tests PRIVATE
@@ -17,6 +18,7 @@ target_link_libraries(explorer_adapters_tests PRIVATE
     explorer_adapters_shell
     explorer_adapters_config
     explorer_adapters_logging
+    explorer_adapters_terminal
     Qt6::Core
     GTest::gtest
 )

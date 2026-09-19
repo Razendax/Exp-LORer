@@ -23,6 +23,7 @@ class WorkspacePaneViewModel;
 class TabViewModel;
 class FileOperationsController;
 class AddressBarWidget;
+class BottomPanelWidget;
 
 // One pane's full self-contained UI: its own toolbar (back/forward/up QActions, address
 // QLineEdit, view-mode QToolButton+menu — the per-pane counterpart of MainWindow's former

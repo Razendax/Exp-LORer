@@ -40,6 +40,11 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   hidden files/folders appear in every view mode and in search results with grayed-out text so
   they're visually distinguishable; when off, they're excluded from directory listings, search
   results, and address-bar autocomplete entirely.
+* **Integrated terminal (Architecture.md §14.23):** Each tab has its own collapsible panel at the
+  bottom, collapsed by default, showing a strip of panel tabs (only "Terminal" in v1). Clicking
+  "Terminal" the first time expands the panel and opens a `cmd.exe` session already in that tab's
+  current folder; collapsing and re-expanding the panel leaves that session running. Closing the tab
+  ends its terminal session.
 
 **File Operations:**
 * Create, open, rename, delete (move to trash/permanently delete), and copy/paste files and folders.
@@ -194,4 +199,9 @@ The following are explicitly out of scope for the initial release (v1), pending 
   exists outside the v1 CTest suite, Architecture.md §11; comprehensive automated UI coverage
   remains excluded).
 * Internationalization/localization — UI strings are English-only for v1.
+* Integrated terminal (Architecture.md §14.23) limitations: Windows-only (`cmd.exe` via ConPTY, no
+  Linux shell backend); no text selection or copy/paste inside the terminal; only one terminal
+  instance per tab; no 256-color/truecolor rendering; panel open/closed state and size are not
+  persisted across restarts; the terminal's working directory is fixed at first use and does not
+  follow later navigation within that tab.
 

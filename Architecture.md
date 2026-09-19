@@ -705,3 +705,49 @@ each thread's entry point, since exceptions can't cross threads). `ExceptionHand
 other UI carve-outs) — smoke-tested manually; `Logging` itself gets an adapter test (`:memory:`-style
 real temp directory, per §11) verifying `init()`/`log()`/`shutdown()` produce a log file with the
 expected content.
+
+### 14.23 Bottom Panel and Integrated Terminal
+
+A VS Code-style collapsible panel at the bottom of every tab's own page (this app's tab, i.e. one
+page of a pane's `QTabWidget` — not a top-level window), showing a strip of "panel tabs"; only
+"Terminal" exists in v1, built so more (e.g. Problems/Output) can be added later without new
+plumbing. Collapsed by default; the first time a tab's Terminal panel tab is clicked, a `cmd.exe`
+session is lazily spawned in that tab's current folder at that moment — it does not follow later
+navigation in the same tab, and is not restarted by later clicks (collapsing/re-expanding just
+hides/shows the still-running session). Closing the tab kills the process.
+
+* **No Application-layer Port.** Like `Logging` (§14.22), this has no Domain/Application business
+  logic to abstract behind an interface, so it's plain UI-adjacent infrastructure with no
+  `CompositionRoot`/use-case involvement.
+* **`src/adapters/terminal`** (new module, `explorer_adapters_terminal`): `AnsiTerminalBuffer` — pure
+  logic (no Qt Widgets, no OS calls), a resizable cell grid + cursor + capped scrollback, fed raw
+  bytes via `feed()` and interpreting a practical VT/ANSI subset (cursor motion, erase-in-line/
+  display, 16-color SGR) — no 256-color/truecolor. The one piece of this feature that's pure and
+  GTest-covered (`tests/adapters/AnsiTerminalBufferTest.cpp`), same posture as `DriveLabel`/
+  `WorkspaceLayoutTopology`. `WindowsConPtyProcess` (Windows-only, same "Windows first" posture as
+  `ShellContextMenuProvider`) — a `QObject` wrapping ConPTY (`CreatePseudoConsole` + `CreateProcessW`
+  of `%ComSpec%`); runs one background `std::thread` blocking on `ReadFile` of the output pipe,
+  posting each chunk back to the UI thread via `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`
+  as `dataReceived(QByteArray)` — the only cross-thread hop, keeping ConPTY's blocking I/O off the UI
+  thread (§5); emits `processExited(int)` when the pipe closes. `writeInput`/`resize` are synchronous
+  UI-thread calls (`WriteFile`/`ResizePseudoConsole`), the same accepted posture as `ShellExecuteW`
+  (§14.11). No `IPtyProcess` interface: Qt doesn't support pure-virtual signals, and nothing outside
+  the UI layer needs to mock this (§11 already excludes UI from CTest) — a future Linux
+  `PosixPtyProcess` is deferred until Linux support is actually built, at which point an interface
+  can be introduced alongside it.
+* **`src/ui/widgets`**: `TerminalWidget` — owns one `AnsiTerminalBuffer` + one `WindowsConPtyProcess`,
+  paints the grid with a monospace font, translates key events to VT byte sequences, and resizes the
+  pty on `resizeEvent`. On process exit, shows an inline restart prompt rather than auto-restarting.
+  `BottomPanelWidget` — the generic collapsible panel shell: a header strip of checkable panel-tab
+  buttons over a `QStackedWidget` of panel-tab content, starting collapsed; emits `expansionChanged`
+  (for the owning splitter to resize) and `panelTabFirstActivated` (for lazy terminal start), staying
+  itself splitter-agnostic. `WorkspacePaneWidget::addPageForTab` wraps its existing per-tab
+  browse/search/advanced-search `QStackedWidget` and a `BottomPanelWidget` in a vertical `QSplitter`
+  as the actual tab page; `onViewModeChanged`/`currentColumnWidths` unwrap `splitter->widget(0)`
+  instead of assuming the tab page is the `QStackedWidget` directly.
+* **Not built:** a Linux backend; text selection/copy-paste inside the terminal; multiple terminal
+  instances per tab; 256-color/truecolor; persisting panel open/closed state or size across restart
+  (no `WorkspaceConfig`/§14.14 involvement — resets every launch); the terminal's directory following
+  subsequent navigation in its tab (only the directory at first-expand time). No automated coverage
+  beyond `AnsiTerminalBuffer` — ConPTY spawning and the painting/input widget fall under the existing
+  §11 UI/OS-shell carve-out, smoke-tested manually.
