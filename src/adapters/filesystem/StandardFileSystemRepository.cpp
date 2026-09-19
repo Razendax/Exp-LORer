@@ -15,6 +15,7 @@
 #include <xxhash.h>
 
 #include "DriveLabel.h"
+#include "PathUtf8.h"
 #include "VirtualPaths.h"
 
 namespace
@@ -182,7 +183,7 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectory(const 
     if (!fs::is_directory(target, ec))
     {
         return Result<std::vector<FileNode>>::failure(
-            Error(ErrorCode::NotFound, directory.string() + " is not a directory"));
+            Error(ErrorCode::NotFound, PathUtf8::toUtf8(directory) + " is not a directory"));
     }
 
     std::vector<FileNode> files;
@@ -218,7 +219,7 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursi
     std::error_code ec;
     if (!fs::is_directory(target, ec))
     {
-        return Result<std::vector<FileNode>>::failure(Error(ErrorCode::NotFound, root.string() + " is not a directory"));
+        return Result<std::vector<FileNode>>::failure(Error(ErrorCode::NotFound, PathUtf8::toUtf8(root) + " is not a directory"));
     }
 
     std::vector<FileNode> files;
@@ -261,7 +262,7 @@ Result<FileNode> StandardFileSystemRepository::stat(const std::filesystem::path&
     std::error_code ec;
     if (!fs::exists(target, ec))
     {
-        return Result<FileNode>::failure(Error(ErrorCode::NotFound, path.string() + " does not exist"));
+        return Result<FileNode>::failure(Error(ErrorCode::NotFound, PathUtf8::toUtf8(path) + " does not exist"));
     }
 
     return buildFileNode(path, fs::directory_entry(target));
@@ -391,7 +392,7 @@ Result<void> StandardFileSystemRepository::createDirectory(const std::filesystem
     std::error_code ec;
     if (fs::exists(target, ec))
     {
-        return Result<void>::failure(Error(ErrorCode::AlreadyExists, directory.string() + " already exists"));
+        return Result<void>::failure(Error(ErrorCode::AlreadyExists, PathUtf8::toUtf8(directory) + " already exists"));
     }
 
     ec.clear();
@@ -411,7 +412,7 @@ Result<FileNode> StandardFileSystemRepository::createFileFromTemplate(const std:
     std::error_code ec;
     if (fs::exists(target, ec))
     {
-        return Result<FileNode>::failure(Error(ErrorCode::AlreadyExists, destinationFile.string() + " already exists"));
+        return Result<FileNode>::failure(Error(ErrorCode::AlreadyExists, PathUtf8::toUtf8(destinationFile) + " already exists"));
     }
 
     try
@@ -425,7 +426,7 @@ Result<FileNode> StandardFileSystemRepository::createFileFromTemplate(const std:
             std::ofstream stream(target, std::ios::binary);
             if (!stream)
             {
-                return Result<FileNode>::failure(Error(ErrorCode::IoError, "Failed to create " + destinationFile.string()));
+                return Result<FileNode>::failure(Error(ErrorCode::IoError, "Failed to create " + PathUtf8::toUtf8(destinationFile)));
             }
         }
     }
@@ -460,7 +461,7 @@ Result<void> StandardFileSystemRepository::showProperties(const std::filesystem:
 
     if (!ok)
     {
-        return Result<void>::failure(Error(ErrorCode::IoError, "Failed to show properties for " + path.string()));
+        return Result<void>::failure(Error(ErrorCode::IoError, "Failed to show properties for " + PathUtf8::toUtf8(path)));
     }
     return Result<void>::success();
 #else

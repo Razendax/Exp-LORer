@@ -47,6 +47,42 @@ TEST_F(StandardFileSystemRepositoryTest, ListDirectoryReturnsEntries)
     EXPECT_EQ(result.value().size(), 2u);
 }
 
+TEST_F(StandardFileSystemRepositoryTest, ListDirectoryHandlesNonAsciiEntryNames)
+{
+    const fs::path nonAsciiDir = m_tempDir / fs::path(std::u8string(u8"Café"));
+    fs::create_directory(nonAsciiDir);
+    writeFile(nonAsciiDir / fs::path(std::u8string(u8"文件.txt")), "hello");
+
+    Result<std::vector<FileNode>> result = Result<std::vector<FileNode>>::failure(Error(ErrorCode::IoError, "unset"));
+    EXPECT_NO_THROW(result = m_repository.listDirectory(nonAsciiDir));
+
+    ASSERT_TRUE(result.hasValue());
+    ASSERT_EQ(result.value().size(), 1u);
+    EXPECT_EQ(result.value().front().name(), fs::path(std::u8string(u8"文件.txt")));
+}
+
+TEST_F(StandardFileSystemRepositoryTest, StatRoundTripsNonAsciiName)
+{
+    const fs::path nonAsciiFile = m_tempDir / fs::path(std::u8string(u8"café.txt"));
+    writeFile(nonAsciiFile, "hello");
+
+    auto result = m_repository.stat(nonAsciiFile);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().name(), fs::path(std::u8string(u8"café.txt")));
+}
+
+TEST_F(StandardFileSystemRepositoryTest, StatOnMissingNonAsciiPathReturnsNotFoundWithoutThrowing)
+{
+    const fs::path missing = m_tempDir / fs::path(std::u8string(u8"café-missing.txt"));
+
+    Result<FileNode> result = Result<FileNode>::failure(Error(ErrorCode::IoError, "unset"));
+    EXPECT_NO_THROW(result = m_repository.stat(missing));
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::NotFound);
+}
+
 TEST_F(StandardFileSystemRepositoryTest, ListDirectoryFailsForMissingPath)
 {
     auto result = m_repository.listDirectory(m_tempDir / "does-not-exist");

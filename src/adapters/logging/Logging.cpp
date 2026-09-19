@@ -43,8 +43,13 @@ void Logging::init(const std::filesystem::path& logDirectory)
     std::filesystem::create_directories(logDirectory, errorCode);
 
     std::vector<spdlog::sink_ptr> sinks;
+#ifdef _WIN32
+    sinks.push_back(std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+        (logDirectory / "exp-lorer.log").wstring(), kMaxFileSize, kMaxFiles));
+#else
     sinks.push_back(std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
         (logDirectory / "exp-lorer.log").string(), kMaxFileSize, kMaxFiles));
+#endif
 
 #if !defined(NDEBUG)
     sinks.push_back(std::make_shared<spdlog::sinks::stdout_color_sink_mt>());

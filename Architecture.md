@@ -141,8 +141,16 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
   injection. Use cases/ViewModels only ever depend on Application-layer interfaces.
 * **Paths:** carried as `std::filesystem::path` through Domain/Application/Adapters, never raw
   `std::string`. Windows long paths (>260 chars) go through the `\\?\` prefix inside
-  `StandardFileSystemRepository`; conversion to UTF-8 happens only at the SQLite boundary
-  (`SQLiteTagRepository`), since SQLite stores/compares `TEXT` as UTF-8.
+  `StandardFileSystemRepository`; conversion to a narrow `std::string` happens at two kinds of
+  boundary, both routed through `PathUtf8::toUtf8()` (`src/domain/PathUtf8.h`) rather than
+  `std::filesystem::path::string()` — on Windows the latter narrows through the process's ANSI code
+  page and throws for filenames it can't represent (accented/CJK/Cyrillic/emoji), which
+  `u8string()`-based `PathUtf8::toUtf8()` cannot: at the SQLite boundary (`SQLiteTagRepository`,
+  since SQLite stores/compares `TEXT` as UTF-8) and wherever Domain/Application/Adapters need narrow
+  text from a path for comparisons, error messages, or log lines (e.g.
+  `FileNavigationUseCase`'s name/extension filters, `StandardFileSystemRepository`'s error messages).
+  Actual file I/O keeps using the `path` object (or `.wstring()` on Windows) directly and is
+  unaffected by this.
 * **Single-instance enforcement:** a named mutex (`CreateMutexW`, Windows) / `flock`'d PID file
   (Linux) per user session. A second launch forwards its startup args to the running instance over
   local IPC (e.g. `QLocalSocket`) and exits. Exists to stop two processes writing to `explorer.db`/

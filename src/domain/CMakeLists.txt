@@ -1,6 +1,7 @@
 add_library(explorer_domain STATIC
     Error.h
     Result.h
+    PathUtf8.h
     FileNode.h
     FileNode.cpp
     Tag.h

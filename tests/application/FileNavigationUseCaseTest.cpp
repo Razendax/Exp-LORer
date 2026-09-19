@@ -86,6 +86,22 @@ TEST(FileNavigationUseCase, SortByNameAscending)
     EXPECT_EQ(sorted[1].name(), "b.txt");
 }
 
+TEST(FileNavigationUseCase, SortByNameIsCaseInsensitive)
+{
+    std::vector<FileNode> files{
+        makeFile("C:/data/Banana.txt", 1),
+        makeFile("C:/data/apple.txt", 2),
+        makeFile("C:/data/cherry.txt", 3),
+    };
+
+    auto sorted = FileNavigationUseCase::sortBy(files, SortCriterion::Name, true);
+
+    ASSERT_EQ(sorted.size(), 3u);
+    EXPECT_EQ(sorted[0].name(), "apple.txt");
+    EXPECT_EQ(sorted[1].name(), "Banana.txt");
+    EXPECT_EQ(sorted[2].name(), "cherry.txt");
+}
+
 TEST(FileNavigationUseCase, SortBySizeDescending)
 {
     std::vector<FileNode> files{ makeFile("C:/data/a.txt", 1), makeFile("C:/data/b.txt", 100) };
@@ -143,6 +159,17 @@ TEST(FileNavigationUseCase, FilterByExtensionIsCaseInsensitive)
     EXPECT_EQ(filtered[0].name(), "a.TXT");
 }
 
+TEST(FileNavigationUseCase, FilterByExtensionMatchesFilesWithNonAsciiNameWithoutThrowing)
+{
+    std::vector<FileNode> files{ makeFile(std::filesystem::path(std::u8string(u8"Café report.txt")), 1),
+                                  makeFile("C:/data/b.jpg", 2) };
+
+    std::vector<FileNode> filtered;
+    EXPECT_NO_THROW(filtered = FileNavigationUseCase::filterByExtension(files, ".txt"));
+
+    ASSERT_EQ(filtered.size(), 1u);
+}
+
 TEST(FileNavigationUseCase, FilterByNameEmptyQueryMatchesEverything)
 {
     std::vector<FileNode> files{ makeFile("C:/data/a.txt", 1), makeFile("C:/data/b.jpg", 2) };
@@ -170,6 +197,18 @@ TEST(FileNavigationUseCase, FilterByNameMatchesSubstringMidName)
 
     ASSERT_EQ(filtered.size(), 1u);
     EXPECT_EQ(filtered[0].name(), "quarterly_report_final.txt");
+}
+
+TEST(FileNavigationUseCase, FilterByNameMatchesNonAsciiCharactersWithoutThrowing)
+{
+    std::vector<FileNode> files{ makeFile(std::filesystem::path(std::u8string(u8"Café report.txt")), 1),
+                                  makeFile("C:/data/b.jpg", 2) };
+
+    std::vector<FileNode> filtered;
+    EXPECT_NO_THROW(filtered = FileNavigationUseCase::filterByName(files, "report"));
+
+    ASSERT_EQ(filtered.size(), 1u);
+    EXPECT_EQ(filtered[0].name(), std::filesystem::path(std::u8string(u8"Café report.txt")));
 }
 
 TEST(FileNavigationUseCase, FilterByNameReturnsEmptyWhenNoMatches)

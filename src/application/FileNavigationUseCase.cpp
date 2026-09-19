@@ -4,6 +4,8 @@
 #include <cctype>
 #include <set>
 
+#include "PathUtf8.h"
+
 namespace
 {
     std::string toLower(std::string text)
@@ -91,7 +93,7 @@ std::vector<FileNode> FileNavigationUseCase::sortBy(std::vector<FileNode> files,
         switch (criterion)
         {
             case SortCriterion::Name:
-                return lhs.name() < rhs.name();
+                return toLower(PathUtf8::toUtf8(lhs.name())) < toLower(PathUtf8::toUtf8(rhs.name()));
             case SortCriterion::Size:
                 return lhs.size() < rhs.size();
             case SortCriterion::ModificationDate:
@@ -122,7 +124,7 @@ std::vector<FileNode> FileNavigationUseCase::filterByExtension(std::vector<FileN
 
     std::vector<FileNode> result;
     std::copy_if(files.begin(), files.end(), std::back_inserter(result), [&wanted](const FileNode& file) {
-        return toLower(file.path().extension().string()) == wanted;
+        return toLower(PathUtf8::toUtf8(file.path().extension())) == wanted;
     });
 
     return result;
@@ -139,7 +141,7 @@ std::vector<FileNode> FileNavigationUseCase::filterByName(std::vector<FileNode> 
 
     std::vector<FileNode> result;
     std::copy_if(files.begin(), files.end(), std::back_inserter(result), [&wanted](const FileNode& file) {
-        return toLower(file.name().string()).find(wanted) != std::string::npos;
+        return toLower(PathUtf8::toUtf8(file.name())).find(wanted) != std::string::npos;
     });
 
     return result;
@@ -195,7 +197,7 @@ std::vector<FileNode> FileNavigationUseCase::filterByExtensions(std::vector<File
         {
             return false;
         }
-        const std::string extension = toLower(file.path().extension().string());
+        const std::string extension = toLower(PathUtf8::toUtf8(file.path().extension()));
         return std::find(wanted.begin(), wanted.end(), extension) != wanted.end();
     });
 

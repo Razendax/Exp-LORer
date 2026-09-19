@@ -1,5 +1,6 @@
 add_executable(explorer_domain_tests
     ResultTest.cpp
+    PathUtf8Test.cpp
     FileNodeTest.cpp
     TagTest.cpp
     MediaMetadataTest.cpp
