@@ -20,6 +20,7 @@
 #include "TabViewModel.h"
 #include "TagManagerDialog.h"
 #include "TagManagerViewModel.h"
+#include "PreviewPanelWidget.h"
 #include "RightPanelWidget.h"
 #include "TagPanelWidget.h"
 #include "WorkspaceController.h"
@@ -292,6 +293,9 @@ void MainWindow::createWorkspace()
     m_rightPanelWidget = new RightPanelWidget(this);
     m_tagPanelWidget = new TagPanelWidget(m_workspaceController->tagListViewModel(), m_rightPanelWidget);
     m_rightPanelWidget->addPanelTab(tr("Tags"), m_tagPanelWidget);
+
+    m_previewPanelWidget = new PreviewPanelWidget(m_workspaceController->filePreviewViewModel(), m_rightPanelWidget);
+    m_rightPanelWidget->addPanelTab(tr("Preview"), m_previewPanelWidget);
 
     auto* splitter = new QSplitter(Qt::Horizontal, this);
     splitter->addWidget(m_workspaceLayoutWidget);

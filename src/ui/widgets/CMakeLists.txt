@@ -37,6 +37,8 @@ add_library(explorer_ui_widgets STATIC
     BottomPanelWidget.cpp
     RightPanelWidget.h
     RightPanelWidget.cpp
+    PreviewPanelWidget.h
+    PreviewPanelWidget.cpp
 )
 
 target_include_directories(explorer_ui_widgets PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

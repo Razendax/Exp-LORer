@@ -7,6 +7,7 @@ add_executable(explorer_application_tests
     FileNavigationUseCaseTest.cpp
     TagManagementUseCaseTest.cpp
     MediaProcessingUseCaseTest.cpp
+    FilePreviewUseCaseTest.cpp
 )
 
 target_link_libraries(explorer_application_tests PRIVATE

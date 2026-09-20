@@ -22,6 +22,7 @@ class WorkspaceController;
 class WorkspaceLayoutWidget;
 class TagPanelWidget;
 class RightPanelWidget;
+class PreviewPanelWidget;
 class TabViewModel;
 
 // Application shell: menu bar (File/Edit/View/Favorites/Tools/Help), a small Layout toolbar, and
@@ -68,6 +69,7 @@ private:
     TagManagementUseCase& m_tagManagementUseCase;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;
+    PreviewPanelWidget* m_previewPanelWidget = nullptr;
     RightPanelWidget* m_rightPanelWidget = nullptr;
     TabViewModel* m_sortTrackedTab = nullptr;
     TabViewModel* m_searchTrackedTab = nullptr;

@@ -9,6 +9,10 @@ add_executable(explorer_adapters_tests
     WorkspaceControllerTest.cpp
     LoggingTest.cpp
     AnsiTerminalBufferTest.cpp
+    ThumbnailCacheTest.cpp
+    CachingMediaDecoderTest.cpp
+    VipsImageDecoderTest.cpp
+    FFmpegMediaDecoderTest.cpp
 )
 
 target_link_libraries(explorer_adapters_tests PRIVATE
@@ -19,8 +23,10 @@ target_link_libraries(explorer_adapters_tests PRIVATE
     explorer_adapters_config
     explorer_adapters_logging
     explorer_adapters_terminal
+    explorer_adapters_media
     Qt6::Core
     GTest::gtest
+    GTest::gmock
 )
 
 gtest_discover_tests(explorer_adapters_tests)

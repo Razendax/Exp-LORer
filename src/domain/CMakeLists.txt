@@ -2,6 +2,7 @@ add_library(explorer_domain STATIC
     Error.h
     Result.h
     PathUtf8.h
+    WindowsLongPath.h
     FileNode.h
     FileNode.cpp
     Tag.h
@@ -10,6 +11,8 @@ add_library(explorer_domain STATIC
     MediaMetadata.cpp
     FileTagAssociation.h
     FileTagAssociation.cpp
+    FilePreview.h
+    FilePreview.cpp
 )
 
 target_include_directories(explorer_domain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

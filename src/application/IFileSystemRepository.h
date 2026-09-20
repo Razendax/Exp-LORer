@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -52,4 +53,9 @@ public:
     // SHObjectProperties on Windows; "Not supported on this platform" elsewhere — same posture as
     // openWithDefaultApplication.
     virtual Result<void> showProperties(const std::filesystem::path& path, NativeWindowHandle ownerWindow) = 0;
+
+    // Reads up to maxBytes from the start of the file (Architecture.md §14.25). Used for the text
+    // preview; not a general file-read API.
+    virtual Result<std::vector<std::byte>> readFilePrefix(const std::filesystem::path& path,
+                                                            std::size_t maxBytes) const = 0;
 };

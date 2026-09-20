@@ -21,4 +21,6 @@ public:
                 (const std::filesystem::path& destinationFile, const std::optional<std::filesystem::path>& templateFile),
                 (override));
     MOCK_METHOD(Result<void>, showProperties, (const std::filesystem::path& path, NativeWindowHandle ownerWindow), (override));
+    MOCK_METHOD(Result<std::vector<std::byte>>, readFilePrefix, (const std::filesystem::path& path, std::size_t maxBytes),
+                (const, override));
 };

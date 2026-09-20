@@ -17,10 +17,13 @@
 #include "DriveLabel.h"
 #include "PathUtf8.h"
 #include "VirtualPaths.h"
+#include "WindowsLongPath.h"
 
 namespace
 {
     namespace fs = std::filesystem;
+
+    using WindowsLongPath::withPrefix;
 
 #ifdef _WIN32
     std::string utf8FromWide(const std::wstring& wide)
@@ -38,21 +41,6 @@ namespace
         return result;
     }
 #endif
-
-    fs::path withLongPathPrefix(const fs::path& path)
-    {
-#ifdef _WIN32
-        const std::wstring native = path.wstring();
-        constexpr std::size_t maxPath = 260;
-        if (native.size() < maxPath || native.rfind(LR"(\\?\)", 0) == 0)
-        {
-            return path;
-        }
-        return fs::path(LR"(\\?\)" + native);
-#else
-        return path;
-#endif
-    }
 
     FileType toFileType(const fs::directory_entry& entry)
     {
@@ -188,7 +176,7 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectory(const 
         return listThisPc();
     }
 
-    const fs::path target = withLongPathPrefix(directory);
+    const fs::path target = withPrefix(directory);
 
     std::error_code ec;
     if (!fs::is_directory(target, ec))
@@ -225,7 +213,7 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursi
             Error(ErrorCode::InvalidArgument, "Cannot recursively search This PC"));
     }
 
-    const fs::path target = withLongPathPrefix(root);
+    const fs::path target = withPrefix(root);
 
     std::error_code ec;
     if (!fs::is_directory(target, ec))
@@ -272,7 +260,7 @@ Result<FileNode> StandardFileSystemRepository::stat(const std::filesystem::path&
         return Result<FileNode>::success(node.value().withDisplayName("This PC"));
     }
 
-    const fs::path target = withLongPathPrefix(path);
+    const fs::path target = withPrefix(path);
 
     std::error_code ec;
     if (!fs::exists(target, ec))
@@ -287,34 +275,34 @@ Result<FileNode> StandardFileSystemRepository::move(const std::filesystem::path&
 {
     try
     {
-        fs::rename(withLongPathPrefix(source), withLongPathPrefix(destination));
+        fs::rename(withPrefix(source), withPrefix(destination));
     }
     catch (const fs::filesystem_error& e)
     {
         return Result<FileNode>::failure(toError(e));
     }
 
-    return buildFileNode(destination, fs::directory_entry(withLongPathPrefix(destination)));
+    return buildFileNode(destination, fs::directory_entry(withPrefix(destination)));
 }
 
 Result<FileNode> StandardFileSystemRepository::copy(const std::filesystem::path& source, const std::filesystem::path& destination)
 {
     try
     {
-        fs::copy(withLongPathPrefix(source), withLongPathPrefix(destination), fs::copy_options::recursive);
+        fs::copy(withPrefix(source), withPrefix(destination), fs::copy_options::recursive);
     }
     catch (const fs::filesystem_error& e)
     {
         return Result<FileNode>::failure(toError(e));
     }
 
-    return buildFileNode(destination, fs::directory_entry(withLongPathPrefix(destination)));
+    return buildFileNode(destination, fs::directory_entry(withPrefix(destination)));
 }
 
 Result<void> StandardFileSystemRepository::deletePermanently(const std::filesystem::path& path)
 {
     std::error_code ec;
-    fs::remove_all(withLongPathPrefix(path), ec);
+    fs::remove_all(withPrefix(path), ec);
     if (ec)
     {
         return Result<void>::failure(Error(ErrorCode::IoError, ec.message()));
@@ -349,7 +337,7 @@ Result<void> StandardFileSystemRepository::moveToTrash(const std::filesystem::pa
 Result<void> StandardFileSystemRepository::openWithDefaultApplication(const std::filesystem::path& path)
 {
 #ifdef _WIN32
-    const std::wstring nativePath = withLongPathPrefix(path).wstring();
+    const std::wstring nativePath = withPrefix(path).wstring();
     const HINSTANCE result = ShellExecuteW(nullptr, L"open", nativePath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     // ShellExecute returns a value > 32 on success (Windows API convention).
     if (reinterpret_cast<INT_PTR>(result) <= 32)
@@ -364,7 +352,7 @@ Result<void> StandardFileSystemRepository::openWithDefaultApplication(const std:
 
 Result<std::uint64_t> StandardFileSystemRepository::computeFileHash(const FileNode& file) const
 {
-    const fs::path target = withLongPathPrefix(file.path());
+    const fs::path target = withPrefix(file.path());
 
     std::ifstream stream(target, std::ios::binary);
     if (!stream)
@@ -402,7 +390,7 @@ Result<std::uint64_t> StandardFileSystemRepository::computeFileHash(const FileNo
 
 Result<void> StandardFileSystemRepository::createDirectory(const std::filesystem::path& directory)
 {
-    const fs::path target = withLongPathPrefix(directory);
+    const fs::path target = withPrefix(directory);
 
     std::error_code ec;
     if (fs::exists(target, ec))
@@ -422,7 +410,7 @@ Result<void> StandardFileSystemRepository::createDirectory(const std::filesystem
 Result<FileNode> StandardFileSystemRepository::createFileFromTemplate(const std::filesystem::path& destinationFile,
                                                                         const std::optional<std::filesystem::path>& templateFile)
 {
-    const fs::path target = withLongPathPrefix(destinationFile);
+    const fs::path target = withPrefix(destinationFile);
 
     std::error_code ec;
     if (fs::exists(target, ec))
@@ -434,7 +422,7 @@ Result<FileNode> StandardFileSystemRepository::createFileFromTemplate(const std:
     {
         if (templateFile)
         {
-            fs::copy_file(withLongPathPrefix(*templateFile), target);
+            fs::copy_file(withPrefix(*templateFile), target);
         }
         else
         {
@@ -456,7 +444,7 @@ Result<FileNode> StandardFileSystemRepository::createFileFromTemplate(const std:
 Result<void> StandardFileSystemRepository::showProperties(const std::filesystem::path& path, NativeWindowHandle ownerWindow)
 {
 #ifdef _WIN32
-    const std::wstring nativePath = withLongPathPrefix(path).wstring();
+    const std::wstring nativePath = withPrefix(path).wstring();
 
     // Unlike ShellExecuteW/SHFileOperationW elsewhere in this file, SHObjectProperties does not
     // auto-initialize COM on the calling thread — it just returns FALSE if COM isn't already
@@ -484,6 +472,25 @@ Result<void> StandardFileSystemRepository::showProperties(const std::filesystem:
     (void)ownerWindow;
     return Result<void>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
 #endif
+}
+
+Result<std::vector<std::byte>> StandardFileSystemRepository::readFilePrefix(const std::filesystem::path& path,
+                                                                              std::size_t maxBytes) const
+{
+    const fs::path target = withPrefix(path);
+
+    std::ifstream stream(target, std::ios::binary);
+    if (!stream)
+    {
+        return Result<std::vector<std::byte>>::failure(
+            Error(ErrorCode::IoError, "Failed to open " + PathUtf8::toUtf8(path) + " for reading"));
+    }
+
+    std::vector<std::byte> buffer(maxBytes);
+    stream.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(maxBytes));
+    buffer.resize(static_cast<std::size_t>(stream.gcount()));
+
+    return Result<std::vector<std::byte>>::success(std::move(buffer));
 }
 
 Result<std::vector<FileNode>> StandardFileSystemRepository::listThisPc() const

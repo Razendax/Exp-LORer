@@ -34,10 +34,16 @@ instance safely serves concurrent callers from every tab/pane (§14.2).
 * `TagManagementUseCase` — create/update/delete/assign tags; resolves broken paths via file hash;
   aggregates tags for the tag panel and ranks tag search results.
 * `MediaProcessingUseCase` — thumbnail/metadata extraction for images and video.
+* `FilePreviewUseCase` — classifies a target as folder/text/image/video/unsupported and builds a
+  `FilePreview` for the right panel's Preview tab (§14.25): folder listing (directories first),
+  capped text-prefix read, or a decoded thumbnail via `IMediaDecoder`. Stateless, depends only on
+  `IFileSystemRepository`/`IMediaDecoder` — never on another use case, same posture as the rest of
+  this layer.
 
 **Ports:**
 * `IFileSystemRepository` — file operations: list, recursive list, move, copy, delete, hash,
-  single-path stat, create folder/file, open-with-default-app, show OS properties dialog.
+  single-path stat, create folder/file, open-with-default-app, show OS properties dialog, read a
+  capped byte prefix of a file (`readFilePrefix`, §14.25).
 * `ITagRepository` — persists tags and file/tag associations.
 * `IMediaDecoder` — decodes media streams, extracts thumbnails.
 * `IContextMenuProvider` — builds a registry/COM-sourced context menu as plain data
@@ -64,8 +70,12 @@ Converts between Domain/Application types and framework types.
   reading Windows Registry verbs and optional COM shell-extension handlers (§14.13).
 * **Config** (`adapters/config`) — `AppConfigStore`, JSON session/window-geometry persistence
   (§14.14).
-* **Media** (`adapters/media`) — `QtMediaDecoder`/`FFmpegMediaDecoder`, implements `IMediaDecoder`;
-  not yet implemented.
+* **Media** (`adapters/media`) — `MediaDecoder`, the concrete `IMediaDecoder` registered in
+  `CompositionRoot`; dispatches by extension to `VipsImageDecoder` (images, via libvips) or
+  `FFmpegMediaDecoder` (video, one representative frame via libavformat/libavcodec/libswscale) —
+  each self-contained, not cross-calling the other. `ThumbnailCache` (on-disk, keyed by
+  path+size+mtime+requested dimensions, §8) and `CachingMediaDecoder` (a decorator implementing
+  `IMediaDecoder` around it) sit in front so callers never see cache logic. §14.25.
 * **Logging** (`adapters/logging`) — `Logging`, a thin wrapper over spdlog (rotating file sink,
   console sink in debug builds); the only place spdlog is referenced (§6, §14.22).
 
@@ -119,7 +129,12 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
   signals/slots.
 * **Current state:** most Port calls (navigation, file ops, context menu, recursive search) are
   still synchronous on the UI thread — an accepted, tracked gap against the design intent above,
-  not a regression. Background dispatch is deferred throughout §14.
+  not a regression. Background dispatch is deferred throughout §14, with one exception:
+  `FilePreviewViewModel` (§14.25) dispatches `FilePreviewUseCase` calls to a dedicated worker
+  thread, since preview generation (image/video decode) is the first Port-adjacent call slow
+  enough, and frequent enough, to need it. "Cancelling" an in-flight preview means discarding a
+  stale result by a generation-id check when it arrives, not aborting the decode itself — the
+  underlying libvips/FFmpeg calls aren't interruptible mid-call.
 * **Database concurrency:** `SQLiteTagRepository` runs SQLite in serialized/thread-safe mode (or a
   single dedicated DB thread) to avoid `SQLITE_BUSY` during concurrent tag reads/writes. This
   covers in-process concurrency only — cross-process concurrency is prevented separately by
@@ -140,8 +155,11 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
   (`src/app/CompositionRoot.cpp`) constructs concrete adapters and injects them via constructor
   injection. Use cases/ViewModels only ever depend on Application-layer interfaces.
 * **Paths:** carried as `std::filesystem::path` through Domain/Application/Adapters, never raw
-  `std::string`. Windows long paths (>260 chars) go through the `\\?\` prefix inside
-  `StandardFileSystemRepository`; conversion to a narrow `std::string` happens at two kinds of
+  `std::string`. Windows long paths (>260 chars) go through the `\\?\` prefix, applied via the
+  shared `WindowsLongPath::withPrefix()` helper (`src/domain/WindowsLongPath.h`) by every adapter
+  that opens a path directly (`StandardFileSystemRepository`, `VipsImageDecoder`,
+  `FFmpegMediaDecoder`, `CachingMediaDecoder`) rather than each reimplementing it; conversion to a
+  narrow `std::string` happens at two kinds of
   boundary, both routed through `PathUtf8::toUtf8()` (`src/domain/PathUtf8.h`) rather than
   `std::filesystem::path::string()` — on Windows the latter narrows through the process's ANSI code
   page and throws for filenames it can't represent (accented/CJK/Cyrillic/emoji), which
@@ -197,9 +215,13 @@ CREATE TABLE FileTags (
   xxHash64 — not cryptographic, since files can be large media. Sufficient to detect renames/moves;
   a documented heuristic, not a uniqueness guarantee (two files with identical size/edges/mtime
   collide — an accepted trade-off for tagging, not a security boundary).
-* **Thumbnail cache:** on disk under the app-local cache directory, keyed by the same hash; entries
-  store the thumbnail plus source `size`/`modified_at` so stale ones regenerate automatically. An
-  in-memory LRU sits in front for the visible viewport.
+* **Thumbnail cache:** on disk under the app-local cache directory (`ThumbnailCache`,
+  `adapters/media`, §14.25), entries keyed by `xxHash64(path, size, modified_at, requested width,
+  requested height)` rather than the file-identity hash above — a changed source file naturally
+  produces a different cache filename, so no separate staleness bookkeeping is needed; the
+  identity hash above is a rename/move-detection heuristic for tagging (§7), a different problem,
+  and isn't involved here. An in-memory LRU sits in front for the visible viewport. Shared by the
+  Preview tab's image/video thumbnails (§14.25) and, later, grid-view icons.
 * **Cache eviction:** capped by total size (default 512MB); least-recently-accessed entries pruned
   on startup or when exceeded.
 
@@ -774,3 +796,61 @@ splitter wiring in `WorkspacePaneWidget::addPageForTab` — no stretch factors. 
 itself is unmodified; only its container changed. Only "Tags" exists in v1, but more tabs can be
 added later without further plumbing, same intent as the bottom panel's Terminal-only v1 scope.
 Like the bottom panel, expanded/collapsed state is not persisted across restarts.
+
+### 14.25 Right-Panel File Preview (Preview Tab)
+
+A second `RightPanelWidget` tab, "Preview" (§14.24's panel already supports more than one tab with
+no further plumbing), showing content for whatever the focused pane/tab currently has selected —
+or its browsed folder when nothing is selected, same resolution rule `TagListViewModel::
+resolveTarget()` already uses for the tag panel (§14.9). This is also the first concrete
+implementation of `adapters/media` (previously `.gitkeep` only) and the first feature to actually
+do background-thread Port dispatch (§5).
+
+* **Scope by file type:** a directory shows its immediate children only (directories first, then
+  files, both alphabetical — not a recursive tree); a recognized text/source extension
+  (txt/html/xml/json/md/ini/log/yaml/csv, common source extensions cs/cpp/h/hpp/c/py/js/ts/css/…)
+  shows a capped byte-prefix of its content, falling back to "unsupported" if a `\0` appears in
+  that prefix (binary guard); an image extension (jpg/png/bmp/gif/webp) shows a scaled preview
+  decoded via **libvips** (new vcpkg dependency), per the product requirement to use that library
+  specifically rather than Qt's own image codecs; a video extension (mp4/mkv/avi/mov/…) shows a
+  scaled **static poster frame** decoded via FFmpeg (already a dependency) — no inline playback,
+  which belongs to the still-unbuilt full-window QML viewer (Specification §2.3/§2.4) instead.
+  Anything else shows "no preview available."
+* **`FilePreviewUseCase`** (new, `src/application`) — stateless, depends on
+  `IFileSystemRepository` (folder listing via the existing `listDirectory`; a new
+  `readFilePrefix(path, maxBytes)` method for text) and `IMediaDecoder` (image/video thumbnail
+  bytes, reusing the existing `generateThumbnail(path, maxWidth, maxHeight)` contract) — never on
+  `MediaProcessingUseCase` or any other use case, preserving this layer's "depend on Ports only"
+  testability posture (§11). Returns a new Domain entity, `FilePreview` (kind + folder
+  entries/text/image-or-poster bytes).
+* **`adapters/media`** (new target `explorer_adapters_media`): `MediaDecoder` — the concrete
+  `IMediaDecoder` dispatching by extension to `VipsImageDecoder` (images, libvips end to end:
+  decode, resize, JPEG-encode) or `FFmpegMediaDecoder` (video, one representative frame via
+  libavformat/libavcodec, scaled via libswscale, JPEG-encoded via libavcodec's MJPEG encoder) —
+  each self-contained, not cross-calling the other, keeping the two backends independently
+  swappable. `ThumbnailCache` + `CachingMediaDecoder` (§8) sit in front as a transparent decorator,
+  so `FilePreviewUseCase` never sees caching logic.
+* **`FilePreviewViewModel`** (new, `adapters/viewmodels`) — the shared ViewModel, owned by
+  `WorkspaceController` and retargeted via `setActiveTab()` exactly like `TagListViewModel` (§14.9)
+  — a **distinct component from the still-unbuilt `MediaPreviewViewModel`** named in §2.3, which is
+  QML-facing state for the future full-window viewer, not this panel; the two must not be
+  conflated. Owns one dedicated background `QThread` + `FilePreviewWorker` (one always-alive
+  worker, not a pool — only one active preview needed at a time), the same "one background thread,
+  results marshaled back via a queued signal" shape `WindowsConPtyProcess` already established
+  (§14.23). A `setPanelActive(bool)` slot, driven by the widget's `showEvent`/`hideEvent`, stops
+  background work while the Preview tab isn't the visible one and catches up immediately on
+  reactivation. Cancellation is a generation-id fence (§5) — switching the selection bumps a
+  counter, and a result that arrives for a stale generation is dropped, never shown; the
+  in-flight libvips/FFmpeg call itself still runs to completion, since neither library exposes a
+  mid-call abort. A small in-memory LRU (~20 entries) caches `Text`/`Folder` results only —
+  image/video results are already cached on disk by `CachingMediaDecoder`, so caching them a
+  second time here would be redundant.
+* **`PreviewPanelWidget`** (new, `src/ui/widgets`) — a `QStackedWidget` switching between an image/
+  poster `QLabel`, a read-only monospace `QPlainTextEdit` for text, a flat `QListWidget` (existing
+  `QFileIconProvider` icons) for the one-level folder listing, and loading/unsupported/error
+  states, driven by `FilePreviewViewModel`'s signals. `MainWindow::createWorkspace` adds it as a
+  second `RightPanelWidget` tab next to "Tags" — no change needed to `RightPanelWidget` itself.
+* **Not built:** video playback; a recursive/multi-level folder tree; animated-GIF playback beyond
+  a static first frame (goes through the image path); syntax highlighting for text; full-content
+  display beyond the byte cap; persisting the Preview tab's expanded/collapsed state (matches
+  §14.23/§14.24's existing unpersisted posture); a Linux media-decoding backend.

@@ -3,6 +3,8 @@
 #include <fstream>
 
 #include "FileNavigationUseCase.h"
+#include "FilePreviewUseCase.h"
+#include "MediaDecoder.h"
 #include "SQLiteTagRepository.h"
 #include "ShellContextMenuProvider.h"
 #include "StandardFileSystemRepository.h"
@@ -41,7 +43,10 @@ namespace
         FileNavigationUseCase m_fileNavigationUseCase{ m_fileSystemRepository, m_contextMenuProvider };
         SQLiteTagRepository m_tagRepository{ fs::path(":memory:") };
         TagManagementUseCase m_tagManagementUseCase{ m_tagRepository, m_fileSystemRepository };
-        WorkspaceController m_controller{ m_fileNavigationUseCase, m_tagManagementUseCase };
+        MediaDecoder m_mediaDecoder;
+        FilePreviewUseCase m_filePreviewUseCase{ m_fileSystemRepository, m_mediaDecoder };
+        WorkspaceController m_controller{ m_fileNavigationUseCase, m_tagManagementUseCase, m_filePreviewUseCase,
+                                           m_fileSystemRepository };
     };
 }
 
@@ -73,7 +78,8 @@ TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsThroughRestoreFromConfig)
     // A fresh controller (nothing seeded yet) restored from the captured snapshot.
     SQLiteTagRepository restoredTagRepository{ fs::path(":memory:") };
     TagManagementUseCase restoredTagManagementUseCase{ restoredTagRepository, m_fileSystemRepository };
-    WorkspaceController restoredController{ m_fileNavigationUseCase, restoredTagManagementUseCase };
+    WorkspaceController restoredController{ m_fileNavigationUseCase, restoredTagManagementUseCase, m_filePreviewUseCase,
+                                             m_fileSystemRepository };
 
     const bool restored = restoredController.restoreFromConfig(captured);
     ASSERT_TRUE(restored);

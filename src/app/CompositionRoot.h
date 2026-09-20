@@ -3,11 +3,15 @@
 #include <memory>
 
 #include "AppConfigStore.h"
+#include "CachingMediaDecoder.h"
 #include "FileNavigationUseCase.h"
+#include "FilePreviewUseCase.h"
+#include "MediaDecoder.h"
 #include "SQLiteTagRepository.h"
 #include "ShellContextMenuProvider.h"
 #include "StandardFileSystemRepository.h"
 #include "TagManagementUseCase.h"
+#include "ThumbnailCache.h"
 #include "WorkspacePaneId.h"
 
 class TabViewModel;
@@ -37,4 +41,9 @@ private:
     SQLiteTagRepository m_tagRepository;
     TagManagementUseCase m_tagManagementUseCase;
     AppConfigStore m_appConfigStore;
+
+    MediaDecoder m_mediaDecoder;
+    ThumbnailCache m_thumbnailCache;
+    CachingMediaDecoder m_cachingMediaDecoder;
+    FilePreviewUseCase m_filePreviewUseCase;
 };

@@ -25,6 +25,14 @@ namespace
         const auto appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
         return std::filesystem::path(appDataDir.toStdWString()) / "config.json";
     }
+
+    // Architecture.md §8/§9/§14.25: thumbnail cache lives under the same app-data location, in its
+    // own "cache/thumbnails" subfolder.
+    std::filesystem::path thumbnailCacheDir()
+    {
+        const auto appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        return std::filesystem::path(appDataDir.toStdWString()) / "cache" / "thumbnails";
+    }
 }
 
 CompositionRoot::CompositionRoot()
@@ -32,6 +40,9 @@ CompositionRoot::CompositionRoot()
     , m_tagRepository(databasePath())
     , m_tagManagementUseCase(m_tagRepository, m_fileSystemRepository)
     , m_appConfigStore(configFilePath())
+    , m_thumbnailCache(thumbnailCacheDir())
+    , m_cachingMediaDecoder(m_mediaDecoder, m_thumbnailCache)
+    , m_filePreviewUseCase(m_fileSystemRepository, m_cachingMediaDecoder)
 {
 }
 
@@ -49,5 +60,6 @@ std::unique_ptr<WorkspacePaneViewModel> CompositionRoot::createWorkspacePaneView
 
 std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController()
 {
-    return std::make_unique<WorkspaceController>(m_fileNavigationUseCase, m_tagManagementUseCase);
+    return std::make_unique<WorkspaceController>(m_fileNavigationUseCase, m_tagManagementUseCase, m_filePreviewUseCase,
+                                                   m_fileSystemRepository);
 }

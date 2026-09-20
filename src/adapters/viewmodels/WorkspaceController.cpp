@@ -1,6 +1,7 @@
 #include "WorkspaceController.h"
 
 #include "FileOperationsController.h"
+#include "FilePreviewViewModel.h"
 #include "TabViewModel.h"
 #include "TagListViewModel.h"
 #include "WorkspacePaneViewModel.h"
@@ -14,6 +15,7 @@ namespace
 }
 
 WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
+                                           FilePreviewUseCase& filePreviewUseCase, IFileSystemRepository& fileSystemRepository,
                                            QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
@@ -28,6 +30,7 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
         new WorkspacePaneViewModel(fileNavigationUseCase, tagManagementUseCase, WorkspacePaneId::PaneD, this);
 
     m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, this);
+    m_filePreviewViewModel = new FilePreviewViewModel(filePreviewUseCase, fileSystemRepository, this);
     m_fileOperationsController = new FileOperationsController(m_fileNavigationUseCase, this);
 
     connect(this, &WorkspaceController::focusedPaneChanged, this, &WorkspaceController::retargetFocusedTab);
@@ -133,6 +136,7 @@ void WorkspaceController::setFocusedPane(WorkspacePaneId id)
 void WorkspaceController::retargetFocusedTab()
 {
     m_tagListViewModel->setActiveTab(focusedTab());
+    m_filePreviewViewModel->setActiveTab(focusedTab());
     emit focusedTabChanged(focusedTab());
 }
 

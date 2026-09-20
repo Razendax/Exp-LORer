@@ -13,6 +13,14 @@
     "ffmpeg",
     "spdlog",
     "gtest",
-    "xxhash"
+    "xxhash",
+    {
+      "name": "libvips",
+      "features": ["jpeg", "png", "webp"]
+    },
+    {
+      "name": "pkgconf",
+      "host": true
+    }
   ]
 }

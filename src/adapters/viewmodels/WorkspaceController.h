@@ -11,9 +11,12 @@
 
 class FileNavigationUseCase;
 class TagManagementUseCase;
+class FilePreviewUseCase;
+class IFileSystemRepository;
 class WorkspacePaneViewModel;
 class TabViewModel;
 class TagListViewModel;
+class FilePreviewViewModel;
 class FileOperationsController;
 
 // Mediator owning all 4 WorkspacePaneViewModels (always instantiated, regardless of which are
@@ -29,6 +32,7 @@ class WorkspaceController : public QObject
 
 public:
     WorkspaceController(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
+                         FilePreviewUseCase& filePreviewUseCase, IFileSystemRepository& fileSystemRepository,
                          QObject* parent = nullptr);
 
     WorkspacePaneViewModel* pane(WorkspacePaneId id) const;
@@ -36,6 +40,7 @@ public:
     WorkspacePaneId focusedPane() const noexcept { return m_focusedPane; }
     TabViewModel* focusedTab() const;
     TagListViewModel* tagListViewModel() const noexcept { return m_tagListViewModel; }
+    FilePreviewViewModel* filePreviewViewModel() const noexcept { return m_filePreviewViewModel; }
     FileOperationsController* fileOperationsController() const noexcept { return m_fileOperationsController; }
 
     // Snapshots the current layout/focused pane and every pane's ordered tabs (path, ViewMode,
@@ -71,5 +76,6 @@ private:
     SplitLayout m_layout = SplitLayout::Single;
     WorkspacePaneId m_focusedPane = WorkspacePaneId::PaneA;
     TagListViewModel* m_tagListViewModel = nullptr;
+    FilePreviewViewModel* m_filePreviewViewModel = nullptr;
     FileOperationsController* m_fileOperationsController = nullptr;
 };

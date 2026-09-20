@@ -16,6 +16,7 @@ target_link_libraries(Exp-LORer PRIVATE
     explorer_adapters_config
     explorer_adapters_logging
     explorer_adapters_viewmodels
+    explorer_adapters_media
     explorer_application
     Qt6::Widgets
 )
@@ -50,3 +51,20 @@ if(WIN32 AND TARGET Qt6::QSQLiteDriverPlugin)
         COMMENT "Deploying Qt SQLite driver plugin (qsqlite.dll)"
     )
 endif()
+
+# Same applocal-DLL-copy gap as above: QImage loads JPEG/GIF/ICO support from an "imageformats"
+# subfolder next to the executable at runtime -- without it, PreviewPanelWidget's
+# QImage::loadFromData("JPG") silently fails (VipsImageDecoder always re-encodes thumbnails as
+# JPEG, regardless of the source file's format), and the Preview tab falls back to
+# "No preview available." for every image (Architecture.md §14.25).
+foreach(imageFormatPlugin IN ITEMS Qt6::QJpegPlugin Qt6::QGifPlugin Qt6::QICOPlugin)
+    if(WIN32 AND TARGET ${imageFormatPlugin})
+        add_custom_command(TARGET Exp-LORer POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Exp-LORer>/imageformats"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "$<TARGET_FILE:${imageFormatPlugin}>"
+                    "$<TARGET_FILE_DIR:Exp-LORer>/imageformats/"
+            COMMENT "Deploying Qt image format plugin (${imageFormatPlugin})"
+        )
+    endif()
+endforeach()

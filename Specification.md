@@ -136,6 +136,21 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   (Specification.md §2.1) on the currently active tab with that tag added as a search criterion,
   giving a one-click path from "see a tag" to "find everything else with that tag."
 
+**Preview Panel:**
+* Housed as a second tab, "Preview" (Architecture.md §14.25), alongside "Tags" in the same
+  collapsible right-edge panel (Architecture.md §14.24) — collapsed by default, expanding when
+  clicked.
+* Shows a preview of whatever is selected in the currently focused pane/tab (or its browsed folder
+  if nothing is selected): a folder's immediate contents (folders first, then files, both
+  alphabetical); a text/source file's content (txt/html/xml/json/md/ini/log/yaml/csv, common
+  source extensions such as cs/cpp/h/hpp/c/py/js/ts/css); a scaled preview image for supported
+  image formats (2.3); or a static representative frame for supported video formats (2.4) — full
+  video playback belongs to the built-in video player below, not this panel. Anything else shows
+  "no preview available."
+* Generation happens in the background so the UI never freezes; switching the selection cancels
+  whatever preview was still loading for the previous one. Recently viewed previews are cached for
+  faster redisplay.
+
 ### 2.3 Built-in Image Viewer
 
 **Supported Formats:** Common image formats including JPEG, PNG, BMP, GIF, and WebP.

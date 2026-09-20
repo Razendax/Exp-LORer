@@ -116,7 +116,15 @@ and implemented in `src/adapters`.
 Key conventions from `Architecture.md` to preserve when adding code:
 
 - **Paths**: carried as `std::filesystem::path` everywhere in domain/application/adapters, never
-  `std::string`. Convert to UTF-8 only at the SQLite boundary in `SQLiteTagRepository`.
+  `std::string`. The app MUST support non-ASCII (accented/CJK/Cyrillic/emoji) file and folder names —
+  this is a hard requirement (Specification.md line 34), not an edge case. **Never call
+  `std::filesystem::path::string()`** (or `.generic_string()`) anywhere on a path that can contain
+  non-ASCII characters: on Windows it narrows through the process's ANSI code page and **throws
+  `std::system_error`** — uncaught, this crashes the whole app.
+  Use `PathUtf8::toUtf8()` (`src/domain/PathUtf8.h`) instead for any narrow/UTF-8 text needed for
+  comparisons, sorting, error messages, log lines, or the SQLite boundary in `SQLiteTagRepository`.
+  Actual file I/O keeps using the `path` object (or `.wstring()` on Windows) directly, never a
+  narrowed string. See Architecture.md §6 ("Paths") for the full rationale.
 - **Errors**: domain/application layers return `std::expected<T, Error>` (or an equivalent `Result<T>`),
   not exceptions; adapters may catch third-party exceptions at the boundary and translate them.
 - **Threading**: no disk/DB I/O on the Qt UI thread — dispatch through the Application layer's Ports to
