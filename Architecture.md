@@ -173,6 +173,12 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
   (Linux) per user session. A second launch forwards its startup args to the running instance over
   local IPC (e.g. `QLocalSocket`) and exits. Exists to stop two processes writing to `explorer.db`/
   the thumbnail cache concurrently (§5, §8).
+* **vcpkg overlay ports:** a repo-local `vcpkg-overlays/ports/` directory, registered via a root
+  `vcpkg-configuration.json`, holds small custom ports for third-party pieces the public vcpkg
+  registry doesn't package (e.g. individual tree-sitter grammars, §14.26) — each is a normal vcpkg
+  port (`vcpkg.json` + `portfile.cmake`) that fetches a pinned upstream release archive and builds
+  it, so acquisition still goes through vcpkg rather than vendoring generated sources into the repo
+  or introducing a second fetch mechanism (e.g. CMake `FetchContent`).
 
 ## 7. Database Schema (SQLite)
 
@@ -851,6 +857,64 @@ do background-thread Port dispatch (§5).
   states, driven by `FilePreviewViewModel`'s signals. `MainWindow::createWorkspace` adds it as a
   second `RightPanelWidget` tab next to "Tags" — no change needed to `RightPanelWidget` itself.
 * **Not built:** video playback; a recursive/multi-level folder tree; animated-GIF playback beyond
-  a static first frame (goes through the image path); syntax highlighting for text; full-content
-  display beyond the byte cap; persisting the Preview tab's expanded/collapsed state (matches
-  §14.23/§14.24's existing unpersisted posture); a Linux media-decoding backend.
+  a static first frame (goes through the image path); full-content display beyond the byte cap
+  (syntax highlighting of the shown prefix is covered by §14.26); persisting the Preview tab's
+  expanded/collapsed state (matches §14.23/§14.24's existing unpersisted posture); a Linux
+  media-decoding backend.
+
+### 14.26 Text-Preview Syntax Highlighting
+
+Recognized text/source files shown in the Preview tab (§14.25) are syntax-highlighted using
+tree-sitter as the parsing engine, plus a `File > Settings...` dialog letting the user recolor each
+language's tokens. Like the integrated terminal (§14.23), tree-sitter is a plain C library — not
+Qt/SQLite/FFmpeg — but this is a presentation concern, not a Domain/Application business rule, so
+**no Application-layer Port and no `CompositionRoot` use-case wiring** are introduced.
+
+* **Grammar sourcing.** vcpkg's public registry ships only tree-sitter's core C library plus a
+  `tree-sitter-c` grammar — no C++/C#/Python/JS/TS/JSON/HTML/CSS grammars. Those are sourced via
+  small **vcpkg overlay ports** (§6) — `vcpkg-overlays/ports/tree-sitter-<lang>/`, one per grammar,
+  each fetching that grammar's upstream release archive (`vcpkg_from_github`, pinned tag) and
+  compiling its `src/parser.c` (+ `src/scanner.c`/`.cc` where present, e.g. C++/TypeScript/Python)
+  into a static lib, installing the header plus that grammar's own `queries/highlights.scm`.
+* **Language scope (this pass):** C, C++, C#, Python, JavaScript, TypeScript, JSON, HTML, CSS. The
+  remaining text extensions §14.25 already accepts (txt/xml/md/ini/log/yaml/csv/sql/sh/bat/ps1/
+  xaml/toml) keep rendering as plain, unhighlighted text — a documented scope exclusion, not a
+  limitation of the mechanism (more languages are added by vendoring more overlay-port grammars).
+* **`src/adapters/highlighting`** (new, pure logic, no Qt except one resource-loading function):
+  `Language` (plain enum, one per supported language); `LanguageRegistry::languageForExtension`
+  (extension → optional `Language`, same static-dispatch shape as `MediaExtensions`);
+  `SyntaxHighlightEngine` — owns one `TSParser`/compiled `TSQuery` per `Language` (lazy-built,
+  query text loaded from that language's bundled `highlights.scm` via Qt resources, the same
+  mechanism `resources/qml.qrc` already uses). `highlight(Language, source)` returns
+  `{byteOffset, byteLength, captureName}` spans; `captureNamesFor(Language)` returns exactly the
+  capture names that language's own `highlights.scm` defines (e.g. CSS has no `function` capture),
+  so the Settings dialog never shows a hardcoded universal token list. GTest-covered like
+  `AnsiTerminalBuffer` (`tests/adapters/SyntaxHighlightEngineTest.cpp`) — no Qt/disk/SQLite touched.
+* **`src/adapters/config`** gains a second store, deliberately separate from `AppConfig`/
+  `AppConfigStore` because it is a persistent user *preference* (edited from Settings, saved
+  immediately) rather than session/window state (saved only on close, §14.14): `HighlightTheme` — a
+  language → capture-name → hex-color map, seeded with built-in defaults (one shared base palette:
+  keyword/blue, string/green, comment/gray, number/teal, function/purple, type/cyan,
+  variable/operator/default-foreground) wherever the user hasn't overridden a token —  and
+  `HighlightThemeStore`, the same tolerant-load/atomic-save shape as `AppConfigStore`, its own
+  `highlight_theme.json` alongside `config.json`/`explorer.db` under the app-data directory.
+* **`src/ui/widgets`:** `SyntaxHighlighter` (`QSyntaxHighlighter` subclass) attached to
+  `PreviewPanelWidget`'s text view — `showText()` sets the active `Language` from the previewed
+  path's extension (unmapped extensions stay unhighlighted, as today); since preview text is capped
+  and read-only, spans are computed once per preview load, not per keystroke, and a `themeChanged()`
+  signal triggers `rehighlight()` so an open preview updates live from Settings. `SettingsDialog`
+  (new) — a `QTreeWidget` category tree on the left (Highlight → Languages → one entry per
+  `Language`) and a `QStackedWidget` on the right listing the selected language's capture names
+  (from `captureNamesFor`) each with a `QColorDialog`-backed color swatch; a single "Close" button,
+  no OK/Cancel, edits apply and persist immediately (same posture as `TagManagerDialog`'s tag
+  edits) — structured generically so a future non-highlighting settings category slots in without
+  reshaping the dialog. `HighlightThemeViewModel` (new, `adapters/viewmodels`) wraps
+  `HighlightTheme`/`HighlightThemeStore` (`tokenColor`/`setTokenColor`/`themeChanged`), owned once
+  by `CompositionRoot`/`MainWindow` like `TagListViewModel` so `SettingsDialog` and every
+  `SyntaxHighlighter` observe the same live theme. `MainWindow::createMenuBar()` adds
+  `File > Settings...`, opening `SettingsDialog`.
+* **Not built:** highlighting for the plain-text extensions listed above; highlighting anywhere
+  outside the Preview panel (e.g. not inside the §14.23 terminal); theme import/export, light/dark
+  presets, or a "reset to defaults" button; automated UI coverage for `SettingsDialog`/
+  `SyntaxHighlighter` beyond `SyntaxHighlightEngine`'s own GTest coverage (§11's existing UI/
+  ViewModel-glue carve-out).

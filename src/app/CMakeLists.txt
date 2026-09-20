@@ -17,6 +17,7 @@ target_link_libraries(Exp-LORer PRIVATE
     explorer_adapters_logging
     explorer_adapters_viewmodels
     explorer_adapters_media
+    explorer_adapters_highlighting
     explorer_application
     Qt6::Widgets
 )

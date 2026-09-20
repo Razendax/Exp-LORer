@@ -13,6 +13,8 @@ add_executable(explorer_adapters_tests
     CachingMediaDecoderTest.cpp
     VipsImageDecoderTest.cpp
     FFmpegMediaDecoderTest.cpp
+    SyntaxHighlightEngineTest.cpp
+    HighlightThemeTest.cpp
 )
 
 target_link_libraries(explorer_adapters_tests PRIVATE
@@ -24,6 +26,7 @@ target_link_libraries(explorer_adapters_tests PRIVATE
     explorer_adapters_logging
     explorer_adapters_terminal
     explorer_adapters_media
+    explorer_adapters_highlighting
     Qt6::Core
     GTest::gtest
     GTest::gmock

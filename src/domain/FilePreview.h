@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -21,7 +22,10 @@ class FilePreview
 {
 public:
     static FilePreview folder(std::vector<FileNode> entries);
-    static FilePreview text(std::string content, bool truncated);
+    // `path` is the previewed file's own path -- carried through so the Preview panel can dispatch
+    // syntax highlighting off its extension (Architecture.md §14.26) without FilePreview itself
+    // knowing anything about highlighting.
+    static FilePreview text(std::string content, bool truncated, std::filesystem::path path);
     static FilePreview image(std::vector<std::byte> encodedBytes);
     static FilePreview video(std::vector<std::byte> encodedPosterBytes);
     static FilePreview unsupported();
@@ -37,6 +41,9 @@ public:
     // Text only; false for every other kind.
     bool textTruncated() const noexcept { return m_textTruncated; }
 
+    // Text only; empty for every other kind.
+    const std::filesystem::path& path() const noexcept { return m_path; }
+
     // Image or Video only (the encoded thumbnail/poster-frame bytes); empty for every other kind.
     const std::vector<std::byte>& imageBytes() const noexcept { return m_imageBytes; }
 
@@ -47,5 +54,6 @@ private:
     std::vector<FileNode> m_folderEntries;
     std::string m_text;
     bool m_textTruncated = false;
+    std::filesystem::path m_path;
     std::vector<std::byte> m_imageBytes;
 };

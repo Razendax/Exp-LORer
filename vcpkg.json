@@ -14,6 +14,16 @@
     "spdlog",
     "gtest",
     "xxhash",
+    "tree-sitter",
+    "tree-sitter-c",
+    "tree-sitter-cpp",
+    "tree-sitter-c-sharp",
+    "tree-sitter-python",
+    "tree-sitter-javascript",
+    "tree-sitter-typescript",
+    "tree-sitter-json",
+    "tree-sitter-html",
+    "tree-sitter-css",
     {
       "name": "libvips",
       "features": ["jpeg", "png", "webp"]

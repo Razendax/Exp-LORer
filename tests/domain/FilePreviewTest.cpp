@@ -24,19 +24,20 @@ TEST(FilePreview, FolderFactorySetsKindAndEntries)
     EXPECT_TRUE(preview.imageBytes().empty());
 }
 
-TEST(FilePreview, TextFactorySetsKindContentAndTruncated)
+TEST(FilePreview, TextFactorySetsKindContentTruncatedAndPath)
 {
-    FilePreview preview = FilePreview::text("hello world", true);
+    FilePreview preview = FilePreview::text("hello world", true, "C:/data/a.cpp");
 
     EXPECT_EQ(preview.kind(), FilePreviewKind::Text);
     EXPECT_EQ(preview.text(), "hello world");
     EXPECT_TRUE(preview.textTruncated());
+    EXPECT_EQ(preview.path(), "C:/data/a.cpp");
     EXPECT_TRUE(preview.folderEntries().empty());
 }
 
 TEST(FilePreview, TextFactoryDefaultsTruncatedFalseWhenNotTruncated)
 {
-    FilePreview preview = FilePreview::text("hello", false);
+    FilePreview preview = FilePreview::text("hello", false, "C:/data/a.txt");
 
     EXPECT_FALSE(preview.textTruncated());
 }

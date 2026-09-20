@@ -1,14 +1,13 @@
 #include "AppConfigStore.h"
 
 #include <array>
+#include <optional>
 
-#include <QDebug>
-#include <QFile>
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QJsonObject>
-#include <QSaveFile>
 #include <QString>
+
+#include "JsonFileStore.h"
 
 namespace
 {
@@ -270,28 +269,19 @@ AppConfig AppConfigStore::load() const
 {
     AppConfig config;
 
-    QFile file(QString::fromStdWString(m_configFilePath.wstring()));
-    if (!file.open(QIODevice::ReadOnly))
+    const std::optional<QJsonObject> root = JsonFileStore::tryLoad(m_configFilePath, "AppConfigStore");
+    if (!root)
     {
         return config;
     }
 
-    QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
-    if (parseError.error != QJsonParseError::NoError || !document.isObject())
-    {
-        qWarning() << "AppConfigStore: failed to parse" << file.fileName() << ":" << parseError.errorString();
-        return config;
-    }
-
-    const QJsonObject root = document.object();
-    config.windowGeometry = QByteArray::fromBase64(root.value(QStringLiteral("windowGeometry")).toString().toLatin1());
-    config.workspace = workspaceConfigFromJson(root.value(QStringLiteral("workspace")));
+    config.windowGeometry = QByteArray::fromBase64(root->value(QStringLiteral("windowGeometry")).toString().toLatin1());
+    config.workspace = workspaceConfigFromJson(root->value(QStringLiteral("workspace")));
 
     // Tolerant of a missing/malformed/wrong-length array (e.g. an older config.json predating this
     // field, or ColumnCount changing in a future version): any column left unread keeps its
     // default-constructed 0 ("unset").
-    const QJsonArray columnWidths = root.value(QStringLiteral("detailsColumnWidths")).toArray();
+    const QJsonArray columnWidths = root->value(QStringLiteral("detailsColumnWidths")).toArray();
     for (int i = 0; i < columnWidths.size() && i < static_cast<int>(config.detailsColumnWidths.size()); ++i)
     {
         config.detailsColumnWidths[static_cast<size_t>(i)] = columnWidths.at(i).toInt();
@@ -314,23 +304,5 @@ bool AppConfigStore::save(const AppConfig& config) const
     root[QStringLiteral("workspace")] = workspaceConfigToJson(config.workspace);
     root[QStringLiteral("detailsColumnWidths")] = columnWidths;
 
-    std::error_code errorCode;
-    std::filesystem::create_directories(m_configFilePath.parent_path(), errorCode);
-
-    QSaveFile file(QString::fromStdWString(m_configFilePath.wstring()));
-    if (!file.open(QIODevice::WriteOnly))
-    {
-        qWarning() << "AppConfigStore: failed to open" << file.fileName() << "for writing";
-        return false;
-    }
-
-    file.write(QJsonDocument(root).toJson());
-
-    if (!file.commit())
-    {
-        qWarning() << "AppConfigStore: failed to save" << file.fileName();
-        return false;
-    }
-
-    return true;
+    return JsonFileStore::trySave(m_configFilePath, root, "AppConfigStore");
 }

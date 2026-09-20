@@ -6,6 +6,9 @@
 
 class FilePreview;
 class FilePreviewViewModel;
+class HighlightThemeViewModel;
+class SyntaxHighlightEngine;
+class SyntaxHighlighter;
 class QHideEvent;
 class QLabel;
 class QListWidget;
@@ -25,7 +28,8 @@ class PreviewPanelWidget : public QWidget
     Q_OBJECT
 
 public:
-    explicit PreviewPanelWidget(FilePreviewViewModel* viewModel, QWidget* parent = nullptr);
+    PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHighlightEngine& syntaxHighlightEngine,
+                        HighlightThemeViewModel& highlightThemeViewModel, QWidget* parent = nullptr);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -55,4 +59,5 @@ private:
 
     QFileIconProvider m_iconProvider;
     QPixmap m_currentImage;
+    SyntaxHighlighter* m_syntaxHighlighter = nullptr;
 };

@@ -33,6 +33,15 @@ namespace
         const auto appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
         return std::filesystem::path(appDataDir.toStdWString()) / "cache" / "thumbnails";
     }
+
+    // Architecture.md §14.26: a persistent user *preference* (edited from Settings, saved
+    // immediately), deliberately kept in its own file alongside config.json/explorer.db rather than
+    // folded into AppConfig (session/window state, saved only on close).
+    std::filesystem::path highlightThemeFilePath()
+    {
+        const auto appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        return std::filesystem::path(appDataDir.toStdWString()) / "highlight_theme.json";
+    }
 }
 
 CompositionRoot::CompositionRoot()
@@ -43,6 +52,9 @@ CompositionRoot::CompositionRoot()
     , m_thumbnailCache(thumbnailCacheDir())
     , m_cachingMediaDecoder(m_mediaDecoder, m_thumbnailCache)
     , m_filePreviewUseCase(m_fileSystemRepository, m_cachingMediaDecoder)
+    , m_highlightThemeStore(highlightThemeFilePath())
+    , m_highlightTheme(m_highlightThemeStore.load())
+    , m_highlightThemeViewModel(m_highlightTheme, m_highlightThemeStore)
 {
 }
 

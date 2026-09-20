@@ -115,6 +115,10 @@ TEST(FilePreviewUseCase, TextExtensionReadsPrefixAndReturnsText)
     EXPECT_EQ(result.value().kind(), FilePreviewKind::Text);
     EXPECT_EQ(result.value().text(), "hello world");
     EXPECT_FALSE(result.value().textTruncated());
+    // PreviewPanelWidget::showText() derives the syntax-highlighting language from this path
+    // (Architecture.md §14.26) -- generatePreview() must thread the target's own path through
+    // unchanged, not an empty/default-constructed one.
+    EXPECT_EQ(result.value().path(), std::filesystem::path("C:/data/notes.txt"));
 }
 
 TEST(FilePreviewUseCase, TextExtensionMarksTruncatedWhenFileIsLargerThanCap)

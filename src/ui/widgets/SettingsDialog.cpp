@@ -1,0 +1,209 @@
+#include "SettingsDialog.h"
+
+#include <array>
+
+#include <QColorDialog>
+#include <QGridLayout>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QPushButton>
+#include <QSplitter>
+#include <QStackedWidget>
+#include <QTreeWidget>
+#include <QVBoxLayout>
+
+#include "HighlightThemeViewModel.h"
+#include "SyntaxHighlightEngine.h"
+
+namespace
+{
+    constexpr std::array<Language, 9> kAllLanguages = {
+        Language::C,      Language::Cpp,        Language::CSharp, Language::Python, Language::JavaScript,
+        Language::TypeScript, Language::Json,   Language::Html,   Language::Css,
+    };
+
+    QString languageDisplayName(Language language)
+    {
+        switch (language)
+        {
+            case Language::C:
+                return QObject::tr("C");
+            case Language::Cpp:
+                return QObject::tr("C++");
+            case Language::CSharp:
+                return QObject::tr("C#");
+            case Language::Python:
+                return QObject::tr("Python");
+            case Language::JavaScript:
+                return QObject::tr("JavaScript");
+            case Language::TypeScript:
+                return QObject::tr("TypeScript");
+            case Language::Json:
+                return QObject::tr("JSON");
+            case Language::Html:
+                return QObject::tr("HTML");
+            case Language::Css:
+                return QObject::tr("CSS");
+        }
+        return QString();
+    }
+
+    constexpr int kLanguageIndexRole = Qt::UserRole;
+}
+
+SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeViewModel& themeViewModel, QWidget* parent)
+    : QDialog(parent)
+    , m_engine(engine)
+    , m_themeViewModel(themeViewModel)
+{
+    setWindowTitle(tr("Settings"));
+    resize(640, 420);
+
+    auto* mainLayout = new QVBoxLayout(this);
+
+    auto* splitter = new QSplitter(Qt::Horizontal, this);
+
+    m_categoryTree = new QTreeWidget(splitter);
+    m_categoryTree->setHeaderHidden(true);
+    m_categoryTree->setMaximumWidth(220);
+
+    auto* highlightRoot = new QTreeWidgetItem(m_categoryTree, QStringList{ tr("Highlight") });
+    highlightRoot->setData(0, kLanguageIndexRole, -1);
+    auto* languagesRoot = new QTreeWidgetItem(highlightRoot, QStringList{ tr("Languages") });
+    languagesRoot->setData(0, kLanguageIndexRole, -1);
+
+    m_pageStack = new QStackedWidget(splitter);
+    m_languagePages.assign(kAllLanguages.size(), nullptr);
+
+    for (std::size_t i = 0; i < kAllLanguages.size(); ++i)
+    {
+        const Language language = kAllLanguages[i];
+
+        auto* item = new QTreeWidgetItem(languagesRoot, QStringList{ languageDisplayName(language) });
+        item->setData(0, kLanguageIndexRole, static_cast<int>(i));
+
+        // Cheap placeholder -- ensureLanguagePageBuilt() swaps in the real page (built via
+        // buildLanguagePage/captureNamesFor, which compiles this language's tree-sitter query) only
+        // once this language is actually selected.
+        m_pageStack->addWidget(new QWidget(m_pageStack));
+    }
+
+    m_categoryTree->expandAll();
+
+    splitter->addWidget(m_categoryTree);
+    splitter->addWidget(m_pageStack);
+    splitter->setStretchFactor(1, 1);
+    mainLayout->addWidget(splitter, 1);
+
+    auto* buttonLayout = new QHBoxLayout();
+    buttonLayout->addStretch();
+    auto* closeButton = new QPushButton(tr("Close"), this);
+    buttonLayout->addWidget(closeButton);
+    mainLayout->addLayout(buttonLayout);
+
+    connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
+    connect(m_categoryTree, &QTreeWidget::currentItemChanged, this, &SettingsDialog::onCategoryChanged);
+    connect(&m_themeViewModel, &HighlightThemeViewModel::themeChanged, this, &SettingsDialog::refreshSwatchColors);
+
+    if (!kAllLanguages.empty())
+    {
+        m_categoryTree->setCurrentItem(languagesRoot->child(0));
+    }
+}
+
+void SettingsDialog::onCategoryChanged(QTreeWidgetItem* current, QTreeWidgetItem* /*previous*/)
+{
+    if (!current)
+    {
+        return;
+    }
+
+    const int languageIndex = current->data(0, kLanguageIndexRole).toInt();
+    if (languageIndex < 0 || languageIndex >= static_cast<int>(kAllLanguages.size()))
+    {
+        return;
+    }
+
+    ensureLanguagePageBuilt(static_cast<std::size_t>(languageIndex));
+    m_pageStack->setCurrentIndex(languageIndex);
+}
+
+void SettingsDialog::ensureLanguagePageBuilt(std::size_t languageIndex)
+{
+    if (m_languagePages[languageIndex])
+    {
+        return;
+    }
+
+    QWidget* placeholder = m_pageStack->widget(static_cast<int>(languageIndex));
+    QWidget* page = buildLanguagePage(kAllLanguages[languageIndex]);
+
+    // Remove the placeholder before inserting the real page at the same index -- insertWidget()
+    // shifts everything at/after that index forward by one, so inserting first (while the
+    // placeholder still occupies the slot) would permanently misalign every later language's index
+    // against its QTreeWidgetItem's kLanguageIndexRole.
+    m_pageStack->removeWidget(placeholder);
+    m_pageStack->insertWidget(static_cast<int>(languageIndex), page);
+    placeholder->deleteLater();
+
+    m_languagePages[languageIndex] = page;
+}
+
+QWidget* SettingsDialog::buildLanguagePage(Language language)
+{
+    auto* page = new QWidget(m_pageStack);
+    auto* grid = new QGridLayout(page);
+    grid->setColumnStretch(0, 1);
+
+    int row = 0;
+    for (const std::string& captureName : m_engine.captureNamesFor(language))
+    {
+        auto* label = new QLabel(QString::fromStdString(captureName), page);
+        grid->addWidget(label, row, 0);
+
+        auto* swatchButton = new QPushButton(page);
+        swatchButton->setFixedWidth(60);
+        grid->addWidget(swatchButton, row, 1);
+
+        m_tokenRows.push_back({ language, captureName, swatchButton });
+        connect(swatchButton, &QPushButton::clicked, this,
+                [this, language, captureName, swatchButton]() { openColorPicker(language, captureName, swatchButton); });
+
+        ++row;
+    }
+
+    grid->setRowStretch(row, 1);
+
+    refreshSwatchColors();
+    return page;
+}
+
+void SettingsDialog::openColorPicker(Language language, const std::string& captureName, QPushButton* swatchButton)
+{
+    const QColor initial = m_themeViewModel.tokenColor(language, captureName);
+    const QColor chosen = QColorDialog::getColor(initial.isValid() ? initial : QColor(Qt::black), this,
+                                                  tr("Choose Color for \"%1\"").arg(QString::fromStdString(captureName)));
+    if (!chosen.isValid())
+    {
+        return;
+    }
+
+    m_themeViewModel.setTokenColor(language, captureName, chosen);
+    swatchButton->setStyleSheet(QStringLiteral("background-color: %1;").arg(chosen.name()));
+}
+
+void SettingsDialog::refreshSwatchColors()
+{
+    for (const TokenRow& row : m_tokenRows)
+    {
+        const QColor color = m_themeViewModel.tokenColor(row.language, row.captureName);
+        if (color.isValid())
+        {
+            row.swatchButton->setStyleSheet(QStringLiteral("background-color: %1;").arg(color.name()));
+        }
+        else
+        {
+            row.swatchButton->setStyleSheet(QString());
+        }
+    }
+}

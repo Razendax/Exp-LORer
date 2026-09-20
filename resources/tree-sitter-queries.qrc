@@ -1,0 +1,13 @@
+<RCC>
+    <qresource prefix="/highlighting">
+        <file alias="c.scm">tree-sitter-queries/c.scm</file>
+        <file alias="cpp.scm">tree-sitter-queries/cpp.scm</file>
+        <file alias="csharp.scm">tree-sitter-queries/csharp.scm</file>
+        <file alias="python.scm">tree-sitter-queries/python.scm</file>
+        <file alias="javascript.scm">tree-sitter-queries/javascript.scm</file>
+        <file alias="typescript.scm">tree-sitter-queries/typescript.scm</file>
+        <file alias="json.scm">tree-sitter-queries/json.scm</file>
+        <file alias="html.scm">tree-sitter-queries/html.scm</file>
+        <file alias="css.scm">tree-sitter-queries/css.scm</file>
+    </qresource>
+</RCC>

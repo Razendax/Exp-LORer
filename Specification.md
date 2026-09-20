@@ -45,6 +45,11 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   "Terminal" the first time expands the panel and opens a `cmd.exe` session already in that tab's
   current folder; collapsing and re-expanding the panel leaves that session running. Closing the tab
   ends its terminal session.
+* **Settings dialog (Architecture.md §14.26):** `File > Settings...` opens a dialog with a
+  hierarchical category tree on the left and that category's settings on the right; in v1 this
+  holds one category, Highlight > Languages, listing the languages with syntax highlighting
+  (2.2 "Preview Panel") and, per language, each of its token types with a color swatch the user can
+  change via a color picker. Changes apply and persist immediately.
 
 **File Operations:**
 * Create, open, rename, delete (move to trash/permanently delete), and copy/paste files and folders.
@@ -147,6 +152,10 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   image formats (2.3); or a static representative frame for supported video formats (2.4) — full
   video playback belongs to the built-in video player below, not this panel. Anything else shows
   "no preview available."
+* **Syntax highlighting** (Architecture.md §14.26): recognized source files (C, C++, C#, Python,
+  JavaScript, TypeScript, JSON, HTML, CSS in this pass) are shown with tree-sitter-based syntax
+  highlighting rather than plain monospace text; other accepted text extensions remain plain text.
+  Token colors are customizable per language (see the Settings dialog below).
 * Generation happens in the background so the UI never freezes; switching the selection cancels
   whatever preview was still loading for the previous one. Recently viewed previews are cached for
   faster redisplay.

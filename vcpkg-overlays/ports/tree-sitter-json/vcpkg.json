@@ -1,0 +1,14 @@
+{
+  "name": "tree-sitter-json",
+  "version": "0.24.8",
+  "description": "JSON grammar for tree-sitter",
+  "homepage": "https://github.com/tree-sitter/tree-sitter-json",
+  "license": "MIT",
+  "dependencies": [
+    "tree-sitter",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    }
+  ]
+}

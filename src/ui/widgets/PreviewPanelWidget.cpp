@@ -13,6 +13,9 @@
 
 #include "FilePreview.h"
 #include "FilePreviewViewModel.h"
+#include "LanguageRegistry.h"
+#include "MediaExtensions.h"
+#include "SyntaxHighlighter.h"
 
 namespace
 {
@@ -22,7 +25,8 @@ namespace
     }
 }
 
-PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, QWidget* parent)
+PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHighlightEngine& syntaxHighlightEngine,
+                                        HighlightThemeViewModel& highlightThemeViewModel, QWidget* parent)
     : QWidget(parent)
     , m_viewModel(viewModel)
 {
@@ -42,6 +46,8 @@ PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, QWidget*
     monospaceFont.setStyleHint(QFont::Monospace);
     m_textView->setFont(monospaceFont);
     m_stack->addWidget(m_textView);
+
+    m_syntaxHighlighter = new SyntaxHighlighter(m_textView->document(), syntaxHighlightEngine, highlightThemeViewModel);
 
     m_folderList = new QListWidget(m_stack);
     m_stack->addWidget(m_folderList);
@@ -145,7 +151,19 @@ void PreviewPanelWidget::showText(const FilePreview& preview)
         content += tr("\n\n[...truncated...]");
     }
 
+    // QSyntaxHighlighter reformats automatically on every QTextDocument::contentsChange, so
+    // setPlainText() below would otherwise trigger one highlightBlock pass using whatever language
+    // the highlighter was still holding from the previous preview (a visible flash of wrong-language
+    // highlighting, and wasted work). Block the document's signals for that one call so the only
+    // highlight pass is the correct one setLanguage() triggers explicitly right after, against both
+    // the new text and the new language.
+    m_textView->document()->blockSignals(true);
     m_textView->setPlainText(content);
+    m_textView->document()->blockSignals(false);
+
+    const std::string extension = MediaExtensions::lowercaseExtension(preview.path());
+    m_syntaxHighlighter->setLanguage(LanguageRegistry::languageForExtension(extension));
+
     m_stack->setCurrentWidget(m_textView);
 }
 

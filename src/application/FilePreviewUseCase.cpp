@@ -16,9 +16,9 @@ namespace
 
     bool isTextExtension(const std::string& extension)
     {
-        static const std::array<std::string, 26> kTextExtensions{
-            ".txt", ".html", ".htm", ".xml", ".json", ".md",  ".ini", ".log", ".yaml", ".yml", ".csv",  ".cs",  ".cpp",
-            ".h",   ".hpp",  ".c",   ".py",  ".js",   ".ts",  ".css", ".sql", ".sh",   ".bat", ".ps1",  ".xaml", ".toml",
+        static const std::array<std::string, 28> kTextExtensions{
+            ".txt", ".html", ".htm", ".xml", ".json", ".md",  ".ini", ".log", ".yaml", ".yml",  ".csv",  ".cs",   ".cpp", ".cc",
+            ".cxx", ".h",    ".hpp", ".c",   ".py",   ".js",  ".ts",  ".css", ".sql",  ".sh",   ".bat",  ".ps1",  ".xaml", ".toml",
         };
         return std::find(kTextExtensions.begin(), kTextExtensions.end(), extension) != kTextExtensions.end();
     }
@@ -103,7 +103,7 @@ Result<FilePreview> FilePreviewUseCase::generatePreview(const FileNode& target, 
         // longer and got capped" -- both read exactly maxTextBytes. target.size() (from the prior
         // stat) gives the true file size to compare against.
         const bool truncated = target.size() > maxTextBytes;
-        return Result<FilePreview>::success(FilePreview::text(std::move(content), truncated));
+        return Result<FilePreview>::success(FilePreview::text(std::move(content), truncated, target.path()));
     }
 
     return Result<FilePreview>::success(FilePreview::unsupported());

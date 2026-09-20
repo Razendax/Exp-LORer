@@ -7,11 +7,12 @@ FilePreview FilePreview::folder(std::vector<FileNode> entries)
     return preview;
 }
 
-FilePreview FilePreview::text(std::string content, bool truncated)
+FilePreview FilePreview::text(std::string content, bool truncated, std::filesystem::path path)
 {
     FilePreview preview(FilePreviewKind::Text);
     preview.m_text = std::move(content);
     preview.m_textTruncated = truncated;
+    preview.m_path = std::move(path);
     return preview;
 }
 

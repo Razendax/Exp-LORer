@@ -6,10 +6,14 @@
 #include "CachingMediaDecoder.h"
 #include "FileNavigationUseCase.h"
 #include "FilePreviewUseCase.h"
+#include "HighlightTheme.h"
+#include "HighlightThemeStore.h"
+#include "HighlightThemeViewModel.h"
 #include "MediaDecoder.h"
 #include "SQLiteTagRepository.h"
 #include "ShellContextMenuProvider.h"
 #include "StandardFileSystemRepository.h"
+#include "SyntaxHighlightEngine.h"
 #include "TagManagementUseCase.h"
 #include "ThumbnailCache.h"
 #include "WorkspacePaneId.h"
@@ -33,6 +37,8 @@ public:
 
     AppConfigStore& appConfigStore() noexcept { return m_appConfigStore; }
     TagManagementUseCase& tagManagementUseCase() noexcept { return m_tagManagementUseCase; }
+    SyntaxHighlightEngine& syntaxHighlightEngine() noexcept { return m_syntaxHighlightEngine; }
+    HighlightThemeViewModel& highlightThemeViewModel() noexcept { return m_highlightThemeViewModel; }
 
 private:
     StandardFileSystemRepository m_fileSystemRepository;
@@ -46,4 +52,12 @@ private:
     ThumbnailCache m_thumbnailCache;
     CachingMediaDecoder m_cachingMediaDecoder;
     FilePreviewUseCase m_filePreviewUseCase;
+
+    // Architecture.md §14.26: text-preview syntax highlighting -- deliberately no Application-layer
+    // Port/use-case for this, just plain adapter instances shared between PreviewPanelWidget's
+    // SyntaxHighlighter and SettingsDialog (both need the same engine/theme).
+    SyntaxHighlightEngine m_syntaxHighlightEngine;
+    HighlightThemeStore m_highlightThemeStore;
+    HighlightTheme m_highlightTheme;
+    HighlightThemeViewModel m_highlightThemeViewModel;
 };

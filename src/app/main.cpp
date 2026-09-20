@@ -42,7 +42,7 @@ int main(int argc, char* argv[])
         const bool restored = workspaceController->restoreFromConfig(initialConfig.workspace);
 
         MainWindow mainWindow(workspaceController.get(), compositionRoot.appConfigStore(), compositionRoot.tagManagementUseCase(),
-                              initialConfig);
+                              compositionRoot.syntaxHighlightEngine(), compositionRoot.highlightThemeViewModel(), initialConfig);
         mainWindow.show();
 
         if (!restored)

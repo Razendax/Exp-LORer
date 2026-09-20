@@ -17,6 +17,7 @@
 
 #include "AppConfigStore.h"
 #include "FileOperationsController.h"
+#include "SettingsDialog.h"
 #include "TabViewModel.h"
 #include "TagManagerDialog.h"
 #include "TagManagerViewModel.h"
@@ -90,11 +91,14 @@ namespace
 }
 
 MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore,
-                         TagManagementUseCase& tagManagementUseCase, const AppConfig& initialConfig, QWidget* parent)
+                         TagManagementUseCase& tagManagementUseCase, SyntaxHighlightEngine& syntaxHighlightEngine,
+                         HighlightThemeViewModel& highlightThemeViewModel, const AppConfig& initialConfig, QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceController(workspaceController)
     , m_configStore(configStore)
     , m_tagManagementUseCase(tagManagementUseCase)
+    , m_syntaxHighlightEngine(syntaxHighlightEngine)
+    , m_highlightThemeViewModel(highlightThemeViewModel)
     , m_columnWidths(initialConfig.detailsColumnWidths)
 {
     setWindowTitle(tr("Exp-LORer"));
@@ -229,6 +233,8 @@ void MainWindow::createShowHiddenFilesAction()
 void MainWindow::createMenuBar()
 {
     QMenu* fileMenu = menuBar()->addMenu(tr("&File"));
+    fileMenu->addAction(tr("&Settings..."), this, &MainWindow::showSettingsDialog);
+    fileMenu->addSeparator();
     fileMenu->addAction(tr("E&xit"), this, &QWidget::close);
 
     QMenu* editMenu = menuBar()->addMenu(tr("&Edit"));
@@ -294,7 +300,8 @@ void MainWindow::createWorkspace()
     m_tagPanelWidget = new TagPanelWidget(m_workspaceController->tagListViewModel(), m_rightPanelWidget);
     m_rightPanelWidget->addPanelTab(tr("Tags"), m_tagPanelWidget);
 
-    m_previewPanelWidget = new PreviewPanelWidget(m_workspaceController->filePreviewViewModel(), m_rightPanelWidget);
+    m_previewPanelWidget = new PreviewPanelWidget(m_workspaceController->filePreviewViewModel(), m_syntaxHighlightEngine,
+                                                   m_highlightThemeViewModel, m_rightPanelWidget);
     m_rightPanelWidget->addPanelTab(tr("Preview"), m_previewPanelWidget);
 
     auto* splitter = new QSplitter(Qt::Horizontal, this);
@@ -323,6 +330,12 @@ void MainWindow::showTagManagerDialog()
 {
     TagManagerViewModel viewModel(m_tagManagementUseCase);
     TagManagerDialog dialog(&viewModel, this);
+    dialog.exec();
+}
+
+void MainWindow::showSettingsDialog()
+{
+    SettingsDialog dialog(m_syntaxHighlightEngine, m_highlightThemeViewModel, this);
     dialog.exec();
 }
 

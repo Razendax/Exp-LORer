@@ -17,6 +17,8 @@ class QMenu;
 class QLineEdit;
 class QToolBar;
 class AppConfigStore;
+class HighlightThemeViewModel;
+class SyntaxHighlightEngine;
 class TagManagementUseCase;
 class WorkspaceController;
 class WorkspaceLayoutWidget;
@@ -35,6 +37,7 @@ class MainWindow : public QMainWindow
 
 public:
     MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore, TagManagementUseCase& tagManagementUseCase,
+               SyntaxHighlightEngine& syntaxHighlightEngine, HighlightThemeViewModel& highlightThemeViewModel,
                const AppConfig& initialConfig, QWidget* parent = nullptr);
 
 protected:
@@ -56,6 +59,7 @@ private:
     void createSearchBar(QToolBar* toolBar);
     void createWorkspace();
     void showTagManagerDialog();
+    void showSettingsDialog();
 
     void onLayoutChanged(SplitLayout layout);
     void onStatusMessage(const QString& message);
@@ -67,6 +71,8 @@ private:
     WorkspaceController* m_workspaceController = nullptr;
     AppConfigStore& m_configStore;
     TagManagementUseCase& m_tagManagementUseCase;
+    SyntaxHighlightEngine& m_syntaxHighlightEngine;
+    HighlightThemeViewModel& m_highlightThemeViewModel;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;
     PreviewPanelWidget* m_previewPanelWidget = nullptr;
