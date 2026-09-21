@@ -6,6 +6,9 @@
 
 #include <QAbstractTableModel>
 #include <QFileIconProvider>
+#include <QHash>
+#include <QIcon>
+#include <QString>
 
 #include "FileDecorationRules.h"
 #include "FileNavigationUseCase.h"
@@ -117,6 +120,13 @@ private:
     std::vector<FileNode> m_entries;
     std::vector<int> m_visibleRows;
     QFileIconProvider m_iconProvider;
+
+    // Dimmed (QStyle::generatedIconPixmap) variant of a hidden entry's icon, cached per icon
+    // "kind" (extension/directory/symlink, see data()) rather than rebuilt on every data() call --
+    // with many hidden entries visible (.git, node_modules, ...) rebuilding per repaint reintroduces
+    // the UI-freeze class of issue efd8132 fixed for the base icon.
+    mutable QHash<QString, QIcon> m_dimmedIconCache;
+
     SortCriterion m_sortCriterion = SortCriterion::Name;
     bool m_sortAscending = true;
     bool m_showHiddenFiles = false;

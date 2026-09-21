@@ -154,8 +154,9 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
     if (role == Qt::DecorationRole && index.column() == NameColumn)
     {
         const QFileInfo info(toQString(entry.path()));
+        const bool archiveSynthesizedDir = entry.isDirectory() && !info.exists();
         QIcon icon;
-        if (entry.isDirectory() && !info.exists())
+        if (archiveSynthesizedDir)
         {
             // Archive-synthesized directories (Architecture.md §14.28) have no real path on disk,
             // so QFileIconProvider::icon(QFileInfo) can't stat them and falls back to a generic/file
@@ -166,7 +167,33 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
         {
             icon = m_iconProvider.icon(info);
         }
-        return entry.isHidden() ? dimmedIcon(icon) : icon;
+
+        if (!entry.isHidden())
+        {
+            return icon;
+        }
+
+        // Cache the dimmed variant per icon "kind" instead of rebuilding it on every data() call --
+        // all entries of the same kind (extension/directory/symlink) share the same base icon, so
+        // this collapses the per-row/per-repaint cost down to one generatedIconPixmap() per kind.
+        QString cacheKey = archiveSynthesizedDir  ? QStringLiteral("@archive-dir")
+                            : entry.isDirectory() ? QStringLiteral("@dir")
+                                                   : toQString(entry.path().extension()).toLower();
+        if (cacheKey.isEmpty())
+        {
+            cacheKey = QStringLiteral("@file");
+        }
+        if (entry.fileType() == FileType::Symlink)
+        {
+            cacheKey.prepend(QStringLiteral("@symlink:"));
+        }
+
+        auto cached = m_dimmedIconCache.constFind(cacheKey);
+        if (cached == m_dimmedIconCache.constEnd())
+        {
+            cached = m_dimmedIconCache.insert(cacheKey, dimmedIcon(icon));
+        }
+        return cached.value();
     }
 
     if (role == Qt::ForegroundRole)

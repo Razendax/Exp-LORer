@@ -1,8 +1,6 @@
 #pragma once
 
 #include <functional>
-#include <optional>
-#include <string>
 #include <vector>
 
 #include <QObject>
@@ -36,10 +34,6 @@ class FileDecorationsViewModel : public QObject
 public:
     FileDecorationsViewModel(FileDecorationRules& rules, FileDecorationRulesStore& store, QObject* parent = nullptr);
     ~FileDecorationsViewModel() override;
-
-    // The rule that would win for `nameUtf8`/`isDirectory`, or std::nullopt if none matches -- a
-    // copy, since FileDecorationRule is a plain value type.
-    std::optional<FileDecorationRule> decorationFor(const std::string& nameUtf8, bool isDirectory) const;
 
     std::vector<FileDecorationRule> rules() const { return m_rules.rules(); }
     void setRules(std::vector<FileDecorationRule> rules);

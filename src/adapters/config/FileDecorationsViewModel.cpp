@@ -21,15 +21,6 @@ FileDecorationsViewModel::~FileDecorationsViewModel()
     delete m_saveWorker;
 }
 
-std::optional<FileDecorationRule> FileDecorationsViewModel::decorationFor(const std::string& nameUtf8, bool isDirectory) const
-{
-    if (const FileDecorationRule* rule = m_rules.resolve(nameUtf8, isDirectory))
-    {
-        return *rule;
-    }
-    return std::nullopt;
-}
-
 void FileDecorationsViewModel::setRules(std::vector<FileDecorationRule> rules)
 {
     applyAndSave([&rules](FileDecorationRules& target) { target.setRules(std::move(rules)); });

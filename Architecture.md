@@ -1112,8 +1112,8 @@ adapter-layer pure logic plus Qt-facing config/ViewModel/UI, mirroring the
 * **`src/adapters/config`** gains `FileDecorationRulesStore` (own `file_decorations.json`, same
   tolerant-load/atomic-save shape as `HighlightThemeStore`), `FileDecorationRulesSaveWorker` (same
   background-thread-save shape as `HighlightThemeSaveWorker`), and `FileDecorationsViewModel` (the
-  live `QObject` wrapper — `decorationFor(nameUtf8, isDirectory)`, `rules()`/`setRules()`,
-  `rulesChanged()` — owned once by `CompositionRoot`/`MainWindow` like `HighlightThemeViewModel` so
+  live `QObject` wrapper — `rules()`/`setRules()`, `rulesChanged()` — owned once by
+  `CompositionRoot`/`MainWindow` like `HighlightThemeViewModel` so
   `SettingsDialog` and every `FileListModel` observe the same live rule set).
 * **Threading into every `FileListModel` — deliberately *not* a `FileDecorationsViewModel&`:**
   `src/adapters/config` already depends on `src/adapters/viewmodels` (`AppConfig` needs

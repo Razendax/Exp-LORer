@@ -20,5 +20,5 @@ public:
     void updateEditorGeometry(QWidget* editor, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
 
 private:
-    static QRect nameRectFor(const QStyleOptionViewItem& option);
+    static QRect nameRectFor(const QStyleOptionViewItem& option, const QModelIndex& index);
 };

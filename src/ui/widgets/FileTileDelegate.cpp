@@ -1,5 +1,7 @@
 #include "FileTileDelegate.h"
 
+#include <algorithm>
+
 #include <QColor>
 #include <QFont>
 #include <QFontMetrics>
@@ -15,6 +17,15 @@ namespace
     constexpr int kTileWidth = 220;
     constexpr int kTileHeight = 56;
     constexpr int kPadding = 8;
+
+    // The row's Qt::FontRole (set by a decoration rule) if it has one, otherwise the view's
+    // default font -- paint(), nameRectFor() and sizeHint() must all agree on this or a
+    // rule-supplied larger font gets clipped by a name rect/tile height sized for the default font.
+    QFont resolvedFont(const QStyleOptionViewItem& option, const QModelIndex& index)
+    {
+        const QVariant fontData = index.data(Qt::FontRole);
+        return fontData.canConvert<QFont>() ? fontData.value<QFont>() : option.font;
+    }
 
     QString secondaryLine(const QModelIndex& index)
     {
@@ -38,7 +49,7 @@ FileTileDelegate::FileTileDelegate(QObject* parent)
 {
 }
 
-QRect FileTileDelegate::nameRectFor(const QStyleOptionViewItem& option)
+QRect FileTileDelegate::nameRectFor(const QStyleOptionViewItem& option, const QModelIndex& index)
 {
     const QRect iconRect(option.rect.left() + kPadding,
                           option.rect.top() + (option.rect.height() - kIconSize) / 2,
@@ -50,7 +61,7 @@ QRect FileTileDelegate::nameRectFor(const QStyleOptionViewItem& option)
                           option.rect.right() - iconRect.right() - 2 * kPadding,
                           option.rect.height() - 2 * kPadding);
 
-    const QFontMetrics nameMetrics(option.font);
+    const QFontMetrics nameMetrics(resolvedFont(option, index));
     return QRect(textRect.left(), textRect.top(), textRect.width(), nameMetrics.height());
 }
 
@@ -81,15 +92,10 @@ void FileTileDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
                           option.rect.right() - iconRect.right() - 2 * kPadding,
                           option.rect.height() - 2 * kPadding);
 
-    QFont font = option.font;
-    const QVariant fontData = index.data(Qt::FontRole);
-    if (fontData.canConvert<QFont>())
-    {
-        font = fontData.value<QFont>();
-    }
+    const QFont font = resolvedFont(option, index);
 
     const QFontMetrics nameMetrics(font);
-    const QRect nameRect = nameRectFor(option);
+    const QRect nameRect = nameRectFor(option, index);
     const QRect secondaryRect(textRect.left(), nameRect.bottom(), textRect.width(), nameMetrics.height());
 
     const QString name = index.data(Qt::DisplayRole).toString();
@@ -108,14 +114,18 @@ void FileTileDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
 
 QSize FileTileDelegate::sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
-    Q_UNUSED(option);
-    Q_UNUSED(index);
+    const QFont font = resolvedFont(option, index);
+    const QFontMetrics nameMetrics(font);
 
-    return QSize(kTileWidth, kTileHeight);
+    QFont secondaryFont = font;
+    secondaryFont.setPointSizeF(secondaryFont.pointSizeF() * 0.85);
+    const QFontMetrics secondaryMetrics(secondaryFont);
+
+    const int contentHeight = 2 * kPadding + nameMetrics.height() + secondaryMetrics.height();
+    return QSize(kTileWidth, std::max(kTileHeight, contentHeight));
 }
 
 void FileTileDelegate::updateEditorGeometry(QWidget* editor, const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
-    Q_UNUSED(index);
-    editor->setGeometry(nameRectFor(option));
+    editor->setGeometry(nameRectFor(option, index));
 }

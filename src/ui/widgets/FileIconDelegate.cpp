@@ -13,6 +13,15 @@ namespace
 {
     constexpr int kPadding = 8;
     constexpr int kMinTextWidth = 60;
+
+    // The row's Qt::FontRole (set by a decoration rule) if it has one, otherwise the view's
+    // default font -- paint(), nameRectFor() and sizeHint() must all agree on this or a
+    // rule-supplied larger font gets clipped by a text rect/row height sized for the default font.
+    QFont resolvedFont(const QStyleOptionViewItem& option, const QModelIndex& index)
+    {
+        const QVariant fontData = index.data(Qt::FontRole);
+        return fontData.canConvert<QFont>() ? fontData.value<QFont>() : option.font;
+    }
 }
 
 FileIconDelegate::FileIconDelegate(QObject* parent)
@@ -20,7 +29,7 @@ FileIconDelegate::FileIconDelegate(QObject* parent)
 {
 }
 
-QRect FileIconDelegate::nameRectFor(const QStyleOptionViewItem& option)
+QRect FileIconDelegate::nameRectFor(const QStyleOptionViewItem& option, const QModelIndex& index)
 {
     const QSize iconSize = option.decorationSize;
     const QRect iconRect(option.rect.left() + (option.rect.width() - iconSize.width()) / 2,
@@ -28,7 +37,7 @@ QRect FileIconDelegate::nameRectFor(const QStyleOptionViewItem& option)
                           iconSize.width(),
                           iconSize.height());
 
-    const QFontMetrics fontMetrics(option.font);
+    const QFontMetrics fontMetrics(resolvedFont(option, index));
     return QRect(option.rect.left() + kPadding,
                  iconRect.bottom() + kPadding,
                  option.rect.width() - 2 * kPadding,
@@ -47,14 +56,9 @@ void FileIconDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
                           iconSize.height());
     icon.paint(painter, iconRect);
 
-    const QRect textRect = nameRectFor(option);
+    const QRect textRect = nameRectFor(option, index);
 
-    QFont font = option.font;
-    const QVariant fontData = index.data(Qt::FontRole);
-    if (fontData.canConvert<QFont>())
-    {
-        font = fontData.value<QFont>();
-    }
+    const QFont font = resolvedFont(option, index);
     const QFontMetrics fontMetrics(font);
 
     painter->setFont(font);
@@ -84,10 +88,8 @@ void FileIconDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
 
 QSize FileIconDelegate::sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
-    Q_UNUSED(index);
-
     const QSize iconSize = option.decorationSize;
-    const QFontMetrics fontMetrics(option.font);
+    const QFontMetrics fontMetrics(resolvedFont(option, index));
 
     const int width = std::max(iconSize.width(), kMinTextWidth) + 2 * kPadding;
     const int height = iconSize.height() + kPadding + fontMetrics.height() + kPadding;
@@ -97,6 +99,5 @@ QSize FileIconDelegate::sizeHint(const QStyleOptionViewItem& option, const QMode
 
 void FileIconDelegate::updateEditorGeometry(QWidget* editor, const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
-    Q_UNUSED(index);
-    editor->setGeometry(nameRectFor(option));
+    editor->setGeometry(nameRectFor(option, index));
 }

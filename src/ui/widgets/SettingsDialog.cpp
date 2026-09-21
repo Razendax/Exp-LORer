@@ -396,8 +396,21 @@ void SettingsDialog::addDecorationRule()
     }
 
     m_decorationRules.push_back(std::move(defaultRule).value());
+    const auto row = static_cast<size_t>(m_decorationRules.size()) - 1;
     refreshDecorationRows();
-    editDecorationRule(static_cast<int>(m_decorationRules.size()) - 1);
+
+    FileDecorationRuleDialog dialog(m_decorationRules[row], this);
+    if (dialog.exec() != QDialog::Accepted)
+    {
+        // Roll back the placeholder rule pushed above -- otherwise it stays in m_decorationRules
+        // and gets silently persisted on the next unrelated edit/move/remove.
+        m_decorationRules.pop_back();
+        refreshDecorationRows();
+        return;
+    }
+
+    m_decorationRules[row] = dialog.rule();
+    commitDecorationRules();
 }
 
 void SettingsDialog::editDecorationRule(int row)
