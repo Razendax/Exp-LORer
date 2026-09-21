@@ -202,20 +202,37 @@ TEST(AnsiTerminalBuffer, PrivateModeCursorVisibilityToggle)
     EXPECT_TRUE(buffer.cursorVisible());
 }
 
-TEST(AnsiTerminalBuffer, UnrecognizedEscapeSequenceIsConsumedNotLeakedAsText)
+TEST(AnsiTerminalBuffer, OscSequenceTerminatedByBelIsConsumedNotLeakedAsText)
 {
     AnsiTerminalBuffer buffer;
     buffer.resize(20, 3);
-    // Only '[' starts a recognized (CSI) sequence -- an OSC-style "ESC ]" is unsupported, so the
-    // parser drops back to Ground after consuming just the ESC and ']' bytes. Everything after that
-    // (including the BEL, a C0 control byte that's simply ignored) is parsed as if the escape had
-    // never happened.
-    buffer.feed(QByteArrayView("\x1b]0;hi\x07ok"));
+    // OSC (ESC ]) sequences -- e.g. the window-title updates cmd.exe/PowerShell send on every
+    // prompt -- are consumed through their BEL terminator, not leaked into the grid as text.
+    buffer.feed(QByteArrayView("\x1b]0;C:\\WINDOWS\\system32\\cmd.exe\x07ok"));
 
-    EXPECT_EQ(charAt(buffer, 0, 0), QLatin1Char('0'));
-    EXPECT_EQ(charAt(buffer, 0, 1), QLatin1Char(';'));
-    EXPECT_EQ(charAt(buffer, 0, 2), QLatin1Char('h'));
-    EXPECT_EQ(charAt(buffer, 0, 3), QLatin1Char('i'));
-    EXPECT_EQ(charAt(buffer, 0, 4), QLatin1Char('o'));
-    EXPECT_EQ(charAt(buffer, 0, 5), QLatin1Char('k'));
+    EXPECT_EQ(charAt(buffer, 0, 0), QLatin1Char('o'));
+    EXPECT_EQ(charAt(buffer, 0, 1), QLatin1Char('k'));
+}
+
+TEST(AnsiTerminalBuffer, OscSequenceTerminatedBySTIsConsumedNotLeakedAsText)
+{
+    AnsiTerminalBuffer buffer;
+    buffer.resize(20, 3);
+    // ST (ESC \) is the other standard OSC terminator alongside BEL.
+    buffer.feed(QByteArrayView("\x1b]0;title\x1b\\ok"));
+
+    EXPECT_EQ(charAt(buffer, 0, 0), QLatin1Char('o'));
+    EXPECT_EQ(charAt(buffer, 0, 1), QLatin1Char('k'));
+}
+
+TEST(AnsiTerminalBuffer, OtherUnrecognizedEscapeSequenceIsConsumedNotLeakedAsText)
+{
+    AnsiTerminalBuffer buffer;
+    buffer.resize(20, 3);
+    // Only '[' (CSI) and ']' (OSC) are recognized escape kinds -- anything else drops back to
+    // Ground after consuming just the ESC and the following byte.
+    buffer.feed(QByteArrayView("\x1b=ok"));
+
+    EXPECT_EQ(charAt(buffer, 0, 0), QLatin1Char('o'));
+    EXPECT_EQ(charAt(buffer, 0, 1), QLatin1Char('k'));
 }

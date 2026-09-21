@@ -368,11 +368,30 @@ void AnsiTerminalBuffer::feed(QByteArrayView bytes)
                     m_csiCurrentValueSet = false;
                     m_csiPrivateMarker = false;
                 }
+                else if (b == ']')
+                {
+                    // OSC -- e.g. "ESC]0;<title>BEL" window-title updates. Consume the whole
+                    // payload through its terminator rather than dropping only the ESC/']' bytes
+                    // and letting the rest fall through to Ground as literal text.
+                    m_parseState = ParseState::Osc;
+                }
                 else
                 {
-                    // Unsupported escape kind (OSC, DCS, single-char escapes, ...) -- drop it.
+                    // Unsupported escape kind (DCS, single-char escapes, ...) -- drop it.
                     m_parseState = ParseState::Ground;
                 }
+                break;
+
+            case ParseState::Osc:
+                if (b == 0x07) // BEL terminator
+                {
+                    m_parseState = ParseState::Ground;
+                }
+                else if (b == 0x1B) // possible start of an ST (ESC \) terminator
+                {
+                    m_parseState = ParseState::Escape;
+                }
+                // else: OSC payload byte -- consumed, not printed.
                 break;
 
             case ParseState::CsiParams:

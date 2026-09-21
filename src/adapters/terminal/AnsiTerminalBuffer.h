@@ -58,7 +58,9 @@ public:
     // DECTCEM ?25h/?25l cursor-visibility toggle) -- no 256-color/truecolor (Architecture.md
     // §14.23). Parser state persists across calls, so a sequence split across two feed() calls (a
     // ConPTY read boundary landing mid-escape-sequence) still parses correctly. Unrecognized escape
-    // sequences are consumed and ignored rather than leaking their bytes into the grid as text.
+    // sequences are consumed and ignored rather than leaking their bytes into the grid as text --
+    // including OSC (ESC ]) sequences like the window-title updates cmd.exe/PowerShell send on
+    // every prompt, which are consumed through to their BEL or ST terminator.
     void feed(QByteArrayView bytes);
 
 signals:
@@ -70,6 +72,10 @@ private:
         Ground,
         Escape,
         CsiParams,
+        // OSC (Operating System Command, ESC ]) payload -- consumed and discarded up to its
+        // terminator (BEL, or ST i.e. ESC \) rather than leaked into the grid as text. cmd.exe and
+        // PowerShell emit these for window-title updates on every prompt.
+        Osc,
     };
 
     void putChar(QChar ch);
