@@ -249,6 +249,12 @@ Result<void> FileNavigationUseCase::openFile(const std::filesystem::path& path)
     return m_fileSystemRepository.openWithDefaultApplication(path);
 }
 
+Result<void> FileNavigationUseCase::extractArchive(const std::filesystem::path& archiveFile,
+                                                     const std::filesystem::path& destinationDirectory)
+{
+    return m_fileSystemRepository.extractArchive(archiveFile, destinationDirectory);
+}
+
 Result<std::vector<ContextMenuEntry>> FileNavigationUseCase::buildItemContextMenu(
     const std::vector<std::filesystem::path>& paths, ContextMenuSourceMode mode)
 {

@@ -28,6 +28,13 @@ public:
         QAction* rename = nullptr;
         QAction* newFolder = nullptr;
         QAction* properties = nullptr;
+
+        // Archive browsing (Architecture.md §14.28): "Extract Here" (destination = the archive's
+        // own containing folder) and "Extract to..." (folder-picker dialog). Shown either for a
+        // not-yet-entered archive-file selection, or (targeting the in-archive selection instead)
+        // while browsing inside one.
+        QAction* extractHere = nullptr;
+        QAction* extractTo = nullptr;
     };
 
     // Returned QMenu is parented to parent (caller does not need to delete it manually if parent

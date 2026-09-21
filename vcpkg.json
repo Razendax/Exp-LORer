@@ -29,6 +29,10 @@
       "features": ["jpeg", "png", "webp"]
     },
     {
+      "name": "libarchive",
+      "features": ["bzip2", "lz4", "lzma", "zstd"]
+    },
+    {
       "name": "pkgconf",
       "host": true
     }

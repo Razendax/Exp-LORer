@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 
+#include "ArchiveExtensions.h"
 #include "FileNavigationUseCase.h"
 #include "TabViewModel.h"
 #include "TagColorPalette.h"
@@ -138,28 +139,41 @@ std::optional<FileNode> TagListViewModel::resolveTarget() const
         return std::nullopt;
     }
 
+    std::optional<FileNode> target;
+
     const std::vector<FileNode>& selected = m_activeTab->selectedEntries();
     if (selected.size() == 1)
     {
-        return selected.front();
+        target = selected.front();
     }
-    if (selected.size() > 1)
+    else if (selected.empty())
+    {
+        if (m_activeTab->currentPath() == VirtualPaths::ThisPC)
+        {
+            return std::nullopt;
+        }
+
+        auto stat = m_fileNavigationUseCase.stat(m_activeTab->currentPath());
+        if (!stat)
+        {
+            return std::nullopt;
+        }
+        target = stat.value();
+    }
+    else
     {
         return std::nullopt;
     }
 
-    if (m_activeTab->currentPath() == VirtualPaths::ThisPC)
+    // Tagging inside an archive is disabled (Architecture.md §14.28): computeFileHash's
+    // rename/move-relocation fallback can't be computed for a virtual entry without a full
+    // extraction, so add/remove/view here degrades to "no target" rather than half-working.
+    if (target && ArchiveExtensions::archiveAncestorInPath(target->path()))
     {
         return std::nullopt;
     }
 
-    auto stat = m_fileNavigationUseCase.stat(m_activeTab->currentPath());
-    if (!stat)
-    {
-        return std::nullopt;
-    }
-
-    return stat.value();
+    return target;
 }
 
 void TagListViewModel::refreshFolderTags()

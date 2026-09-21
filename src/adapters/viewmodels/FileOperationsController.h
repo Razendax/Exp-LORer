@@ -40,6 +40,10 @@ public slots:
     void deletePermanently(const std::filesystem::path& path);
     void openFile(const std::filesystem::path& path);
 
+    // Read-only archive extraction (Architecture.md §14.28) -- backs both "Extract Here"/
+    // "Extract to..." on a not-yet-entered archive file and "Extract..." on a selection inside one.
+    void extractArchive(const std::filesystem::path& archiveFile, const std::filesystem::path& destinationDirectory);
+
     // Rename is just a same-directory move (Architecture.md §14.13) — no new Port method needed.
     void renamePath(const std::filesystem::path& source, const std::filesystem::path& destination);
 

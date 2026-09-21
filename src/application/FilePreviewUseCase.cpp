@@ -5,6 +5,7 @@
 #include <cctype>
 #include <string>
 
+#include "ArchiveExtensions.h"
 #include "IFileSystemRepository.h"
 #include "IMediaDecoder.h"
 #include "MediaExtensions.h"
@@ -41,7 +42,7 @@ FilePreviewUseCase::FilePreviewUseCase(IFileSystemRepository& fileSystemReposito
 Result<FilePreview> FilePreviewUseCase::generatePreview(const FileNode& target, int maxImageWidth, int maxImageHeight,
                                                           std::size_t maxTextBytes) const
 {
-    if (target.isDirectory())
+    if (target.isDirectory() || ArchiveExtensions::isArchiveExtension(target.path()))
     {
         auto listing = m_fileSystemRepository.listDirectory(target.path());
         if (!listing)
@@ -63,9 +64,25 @@ Result<FilePreview> FilePreviewUseCase::generatePreview(const FileNode& target, 
 
     const std::string extension = MediaExtensions::lowercaseExtension(target.path());
 
+    // target.path() may name an entry *inside* an archive (Architecture.md §14.28) rather than a
+    // real on-disk file -- the isArchiveExtension() check above already ruled out target itself
+    // being an archive root, so any archive ancestor found here means target is nested inside one.
+    // Materialize a real, readable path before handing it to the media decoder or readFilePrefix,
+    // both of which need actual file I/O.
+    fs::path readablePath = target.path();
+    if (ArchiveExtensions::archiveAncestorInPath(target.path()))
+    {
+        auto materialized = m_fileSystemRepository.materializeForReading(target.path());
+        if (!materialized)
+        {
+            return Result<FilePreview>::failure(materialized.error());
+        }
+        readablePath = std::move(materialized).value();
+    }
+
     if (MediaExtensions::isImageExtension(extension))
     {
-        auto bytes = m_mediaDecoder.generateThumbnail(target.path(), maxImageWidth, maxImageHeight);
+        auto bytes = m_mediaDecoder.generateThumbnail(readablePath, maxImageWidth, maxImageHeight);
         if (!bytes)
         {
             return Result<FilePreview>::failure(bytes.error());
@@ -75,7 +92,7 @@ Result<FilePreview> FilePreviewUseCase::generatePreview(const FileNode& target, 
 
     if (MediaExtensions::isVideoExtension(extension))
     {
-        auto bytes = m_mediaDecoder.generateThumbnail(target.path(), maxImageWidth, maxImageHeight);
+        auto bytes = m_mediaDecoder.generateThumbnail(readablePath, maxImageWidth, maxImageHeight);
         if (!bytes)
         {
             return Result<FilePreview>::failure(bytes.error());
@@ -85,7 +102,7 @@ Result<FilePreview> FilePreviewUseCase::generatePreview(const FileNode& target, 
 
     if (isTextExtension(extension))
     {
-        auto prefix = m_fileSystemRepository.readFilePrefix(target.path(), maxTextBytes);
+        auto prefix = m_fileSystemRepository.readFilePrefix(readablePath, maxTextBytes);
         if (!prefix)
         {
             return Result<FilePreview>::failure(prefix.error());

@@ -68,6 +68,18 @@ QMenu* ContextMenuBuilder::buildItemMenu(const std::vector<ContextMenuEntry>& en
         menu->addAction(actions.open);
         menu->addSeparator();
     }
+    if (actions.extractHere)
+    {
+        menu->addAction(actions.extractHere);
+    }
+    if (actions.extractTo)
+    {
+        menu->addAction(actions.extractTo);
+    }
+    if (actions.extractHere || actions.extractTo)
+    {
+        menu->addSeparator();
+    }
     if (actions.cut)
     {
         menu->addAction(actions.cut);

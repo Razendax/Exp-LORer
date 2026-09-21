@@ -452,6 +452,19 @@ TEST(FileNavigationUseCase, OpenFileDelegatesToRepository)
     EXPECT_TRUE(result.hasValue());
 }
 
+TEST(FileNavigationUseCase, ExtractArchiveDelegatesToRepository)
+{
+    MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
+    EXPECT_CALL(repository, extractArchive(std::filesystem::path("C:/data/photos.zip"), std::filesystem::path("C:/data/out")))
+        .WillOnce(Return(Result<void>::success()));
+
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
+    auto result = useCase.extractArchive("C:/data/photos.zip", "C:/data/out");
+
+    EXPECT_TRUE(result.hasValue());
+}
+
 TEST(FileNavigationUseCase, BuildItemContextMenuDelegatesToProvider)
 {
     MockFileSystemRepository repository;

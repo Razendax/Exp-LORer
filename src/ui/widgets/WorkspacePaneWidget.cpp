@@ -7,6 +7,7 @@
 #include <QActionGroup>
 #include <QDir>
 #include <QEvent>
+#include <QFileDialog>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
@@ -22,6 +23,7 @@
 #include <QVBoxLayout>
 
 #include "AddressBarWidget.h"
+#include "ArchiveExtensions.h"
 #include "BottomPanelWidget.h"
 #include "ContextMenuBuilder.h"
 #include "FileBrowserView.h"
@@ -340,7 +342,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
 
     connect(bottomPanel, &BottomPanelWidget::panelTabFirstActivated, terminalWidget, [terminalWidget, tab](int) {
         auto cwd = tab->currentPath();
-        if (cwd == VirtualPaths::ThisPC || cwd.empty())
+        if (cwd == VirtualPaths::ThisPC || cwd.empty() || ArchiveExtensions::archiveAncestorInPath(cwd))
         {
             cwd = std::filesystem::path(QDir::homePath().toStdWString());
         }
@@ -349,7 +351,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
 
     connect(terminalWidget, &TerminalWidget::restartRequested, terminalWidget, [terminalWidget, tab]() {
         auto cwd = tab->currentPath();
-        if (cwd == VirtualPaths::ThisPC || cwd.empty())
+        if (cwd == VirtualPaths::ThisPC || cwd.empty() || ArchiveExtensions::archiveAncestorInPath(cwd))
         {
             cwd = std::filesystem::path(QDir::homePath().toStdWString());
         }
@@ -362,7 +364,12 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
 void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewModel* tab)
 {
     connect(browserView, &FileBrowserView::itemActivated, tab, [this, tab](const std::filesystem::path& path, bool isDirectory) {
-        if (isDirectory)
+        // Archive browsing (Architecture.md §14.28): a real, not-yet-entered archive file
+        // navigates in (like a folder) instead of launching an external app. An archive-looking
+        // entry already *inside* another archive degrades gracefully via navigateTo's own
+        // NotFound handling (nested archives aren't browsable) rather than being special-cased
+        // here.
+        if (isDirectory || ArchiveExtensions::isArchiveExtension(path))
         {
             tab->navigateTo(path);
         }
@@ -772,6 +779,15 @@ void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, FileBrowserView
     const std::filesystem::path directory = paths.front().parent_path();
     const std::filesystem::path targetPath = paths.front();
 
+    // Archive browsing (Architecture.md §14.28): a lexical hint only (ArchiveExtensions), the
+    // adapter layer re-verifies against real disk state before doing anything -- a mismatch here
+    // just shows/hides the wrong menu items, never crashes.
+    const bool browsingInsideArchive = ArchiveExtensions::archiveAncestorInPath(tab->currentPath()).has_value();
+    const bool selectionIsUnenteredArchives =
+        !browsingInsideArchive &&
+        std::all_of(paths.begin(), paths.end(),
+                    [](const std::filesystem::path& p) { return ArchiveExtensions::archiveAncestorInPath(p) == p; });
+
     auto* openAction = new QAction(tr("Open"));
     auto* cutAction = new QAction(tr("Cut"));
     auto* copyAction = new QAction(tr("Copy"));
@@ -779,6 +795,8 @@ void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, FileBrowserView
     auto* deleteAction = new QAction(tr("Delete"));
     auto* renameAction = new QAction(tr("Rename"));
     auto* propertiesAction = new QAction(tr("Properties"));
+    auto* extractHereAction = new QAction(tr("Extract Here"));
+    auto* extractToAction = new QAction(browsingInsideArchive ? tr("Extract...") : tr("Extract to..."));
 
     connect(openAction, &QAction::triggered, this, [this, targetPath]() { m_fileOperationsController->openFile(targetPath); });
     connect(cutAction, &QAction::triggered, this, [this, paths]() { m_fileOperationsController->cutToClipboard(paths); });
@@ -789,14 +807,52 @@ void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, FileBrowserView
     connect(propertiesAction, &QAction::triggered, this, [this, targetPath, ownerWindow]() {
         m_fileOperationsController->showProperties(targetPath, ownerWindow);
     });
+    connect(extractHereAction, &QAction::triggered, this, [this, paths]() {
+        for (const std::filesystem::path& archiveFile : paths)
+        {
+            m_fileOperationsController->extractArchive(archiveFile, archiveFile.parent_path() / archiveFile.stem());
+        }
+    });
+    connect(extractToAction, &QAction::triggered, this, [this, paths]() {
+        const QString chosen = QFileDialog::getExistingDirectory(this, tr("Extract to"));
+        if (chosen.isEmpty())
+        {
+            return;
+        }
+        const std::filesystem::path destination(chosen.toStdWString());
+
+        if (paths.size() == 1)
+        {
+            m_fileOperationsController->extractArchive(paths.front(), destination);
+            return;
+        }
+
+        // Multiple sources sharing one destination: extract each into its own subfolder named
+        // after the source's own filename (unique -- paths are siblings from the same directory
+        // listing) instead of flattening them all directly into destination, where same-named
+        // entries from different sources would silently overwrite each other.
+        for (const std::filesystem::path& source : paths)
+        {
+            m_fileOperationsController->extractArchive(source, destination / source.filename());
+        }
+    });
 
     // Rename/Properties/Open are single-target-only (rename-as-move, showProperties, and
     // openFile/itemActivated all take one path) — disable rather than guess a multi-item
     // behavior when more than one item is selected (Architecture.md §14.13.2/§14.13.6).
     const bool singleTarget = paths.size() == 1;
     openAction->setEnabled(singleTarget);
-    renameAction->setEnabled(singleTarget);
-    propertiesAction->setEnabled(singleTarget);
+    renameAction->setEnabled(singleTarget && !browsingInsideArchive);
+    propertiesAction->setEnabled(singleTarget && !browsingInsideArchive);
+
+    // A read-only, virtual archive location has no real CF_HDROP paths for the OS clipboard, and
+    // Cut/Paste/Delete/New Folder/Properties aren't meaningful for it either (Architecture.md
+    // §14.28); the UI disables these proactively even though StandardFileSystemRepository also
+    // refuses them defensively.
+    cutAction->setEnabled(!browsingInsideArchive);
+    copyAction->setEnabled(!browsingInsideArchive);
+    pasteAction->setEnabled(!browsingInsideArchive);
+    deleteAction->setEnabled(!browsingInsideArchive);
 
     ContextMenuBuilder::NativeActions actions;
     actions.open = openAction;
@@ -806,6 +862,15 @@ void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, FileBrowserView
     actions.deleteAction = deleteAction;
     actions.rename = renameAction;
     actions.properties = propertiesAction;
+    if (selectionIsUnenteredArchives)
+    {
+        actions.extractHere = extractHereAction;
+        actions.extractTo = extractToAction;
+    }
+    else if (browsingInsideArchive)
+    {
+        actions.extractTo = extractToAction;
+    }
 
     const ContextMenuSourceMode mode =
         extendedShellExtensionsEnabled() ? ContextMenuSourceMode::StaticAndShellExtensions : ContextMenuSourceMode::StaticVerbsOnly;
@@ -835,7 +900,8 @@ void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, FileBrowserView
     }
 
     menu->deleteLater();
-    for (QAction* action : { openAction, cutAction, copyAction, pasteAction, deleteAction, renameAction, propertiesAction })
+    for (QAction* action :
+         { openAction, cutAction, copyAction, pasteAction, deleteAction, renameAction, propertiesAction, extractHereAction, extractToAction })
     {
         action->deleteLater();
     }
@@ -850,6 +916,7 @@ void WorkspacePaneWidget::showBackgroundContextMenu(TabViewModel* tab, FileBrows
     }
 
     const auto ownerWindow = reinterpret_cast<NativeWindowHandle>(window()->winId());
+    const bool browsingInsideArchive = ArchiveExtensions::archiveAncestorInPath(directory).has_value();
 
     auto* pasteAction = new QAction(tr("Paste"));
     auto* newFolderAction = new QAction(tr("New Folder"));
@@ -865,6 +932,12 @@ void WorkspacePaneWidget::showBackgroundContextMenu(TabViewModel* tab, FileBrows
     connect(propertiesAction, &QAction::triggered, this, [this, directory, ownerWindow]() {
         m_fileOperationsController->showProperties(directory, ownerWindow);
     });
+
+    // Read-only, virtual archive location (Architecture.md §14.28): none of these are meaningful
+    // there, same posture as the item-selection context menu.
+    pasteAction->setEnabled(!browsingInsideArchive);
+    newFolderAction->setEnabled(!browsingInsideArchive);
+    propertiesAction->setEnabled(!browsingInsideArchive);
 
     ContextMenuBuilder::NativeActions actions;
     actions.paste = pasteAction;

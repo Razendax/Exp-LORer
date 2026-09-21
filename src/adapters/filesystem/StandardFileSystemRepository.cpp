@@ -3,6 +3,7 @@
 #include <array>
 #include <chrono>
 #include <fstream>
+#include <map>
 #include <system_error>
 
 #ifdef _WIN32
@@ -14,7 +15,9 @@
 
 #include <xxhash.h>
 
+#include "ArchivePathResolver.h"
 #include "DriveLabel.h"
+#include "LibArchiveReader.h"
 #include "PathUtf8.h"
 #include "VirtualPaths.h"
 #include "WindowsLongPath.h"
@@ -176,6 +179,11 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectory(const 
         return listThisPc();
     }
 
+    if (auto resolution = ArchivePathResolver::resolve(directory))
+    {
+        return listArchiveDirectory(directory, *resolution);
+    }
+
     const fs::path target = withPrefix(directory);
 
     std::error_code ec;
@@ -211,6 +219,12 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursi
     {
         return Result<std::vector<FileNode>>::failure(
             Error(ErrorCode::InvalidArgument, "Cannot recursively search This PC"));
+    }
+
+    if (ArchivePathResolver::resolve(root))
+    {
+        return Result<std::vector<FileNode>>::failure(
+            Error(ErrorCode::InvalidArgument, "Cannot recursively search inside an archive"));
     }
 
     const fs::path target = withPrefix(root);
@@ -260,6 +274,11 @@ Result<FileNode> StandardFileSystemRepository::stat(const std::filesystem::path&
         return Result<FileNode>::success(node.value().withDisplayName("This PC"));
     }
 
+    if (auto resolution = ArchivePathResolver::resolve(path); resolution && !resolution->entryPathInArchive.empty())
+    {
+        return statArchiveEntry(path, *resolution);
+    }
+
     const fs::path target = withPrefix(path);
 
     std::error_code ec;
@@ -271,8 +290,29 @@ Result<FileNode> StandardFileSystemRepository::stat(const std::filesystem::path&
     return buildFileNode(path, fs::directory_entry(target));
 }
 
+namespace
+{
+    // Defense-in-depth for the read-only-archive guards below -- the UI also disables these
+    // actions proactively (Architecture.md §14.28).
+    Result<void> readOnlyArchiveError()
+    {
+        return Result<void>::failure(Error(ErrorCode::InvalidArgument, "Cannot modify a read-only archive"));
+    }
+
+    bool isInsideArchive(const std::filesystem::path& path)
+    {
+        auto resolution = ArchivePathResolver::resolve(path);
+        return resolution && !resolution->entryPathInArchive.empty();
+    }
+}
+
 Result<FileNode> StandardFileSystemRepository::move(const std::filesystem::path& source, const std::filesystem::path& destination)
 {
+    if (isInsideArchive(source) || isInsideArchive(destination))
+    {
+        return Result<FileNode>::failure(readOnlyArchiveError().error());
+    }
+
     try
     {
         fs::rename(withPrefix(source), withPrefix(destination));
@@ -287,6 +327,24 @@ Result<FileNode> StandardFileSystemRepository::move(const std::filesystem::path&
 
 Result<FileNode> StandardFileSystemRepository::copy(const std::filesystem::path& source, const std::filesystem::path& destination)
 {
+    // A destination inside an archive is always rejected, even though source-inside-archive is a
+    // legitimate extraction request below -- an archive is read-only regardless of which operand
+    // names it.
+    if (isInsideArchive(destination))
+    {
+        return Result<FileNode>::failure(readOnlyArchiveError().error());
+    }
+
+    if (auto resolution = ArchivePathResolver::resolve(source); resolution && !resolution->entryPathInArchive.empty())
+    {
+        auto extracted = LibArchiveReader::extractEntries(resolution->archiveFile, resolution->entryPathInArchive, destination);
+        if (!extracted)
+        {
+            return Result<FileNode>::failure(std::move(extracted).error());
+        }
+        return stat(destination);
+    }
+
     try
     {
         fs::copy(withPrefix(source), withPrefix(destination), fs::copy_options::recursive);
@@ -301,6 +359,11 @@ Result<FileNode> StandardFileSystemRepository::copy(const std::filesystem::path&
 
 Result<void> StandardFileSystemRepository::deletePermanently(const std::filesystem::path& path)
 {
+    if (isInsideArchive(path))
+    {
+        return readOnlyArchiveError();
+    }
+
     std::error_code ec;
     fs::remove_all(withPrefix(path), ec);
     if (ec)
@@ -313,6 +376,11 @@ Result<void> StandardFileSystemRepository::deletePermanently(const std::filesyst
 
 Result<void> StandardFileSystemRepository::moveToTrash(const std::filesystem::path& path)
 {
+    if (isInsideArchive(path))
+    {
+        return readOnlyArchiveError();
+    }
+
 #ifdef _WIN32
     std::wstring nativePath = path.wstring();
     nativePath.push_back(L'\0'); // SHFileOperationW requires a double-null-terminated list.
@@ -336,6 +404,11 @@ Result<void> StandardFileSystemRepository::moveToTrash(const std::filesystem::pa
 
 Result<void> StandardFileSystemRepository::openWithDefaultApplication(const std::filesystem::path& path)
 {
+    if (auto resolution = ArchivePathResolver::resolve(path); resolution && !resolution->entryPathInArchive.empty())
+    {
+        return openArchiveEntryWithDefaultApplication(*resolution);
+    }
+
 #ifdef _WIN32
     const std::wstring nativePath = withPrefix(path).wstring();
     const HINSTANCE result = ShellExecuteW(nullptr, L"open", nativePath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -390,6 +463,11 @@ Result<std::uint64_t> StandardFileSystemRepository::computeFileHash(const FileNo
 
 Result<void> StandardFileSystemRepository::createDirectory(const std::filesystem::path& directory)
 {
+    if (isInsideArchive(directory))
+    {
+        return readOnlyArchiveError();
+    }
+
     const fs::path target = withPrefix(directory);
 
     std::error_code ec;
@@ -410,6 +488,11 @@ Result<void> StandardFileSystemRepository::createDirectory(const std::filesystem
 Result<FileNode> StandardFileSystemRepository::createFileFromTemplate(const std::filesystem::path& destinationFile,
                                                                         const std::optional<std::filesystem::path>& templateFile)
 {
+    if (isInsideArchive(destinationFile))
+    {
+        return Result<FileNode>::failure(readOnlyArchiveError().error());
+    }
+
     const fs::path target = withPrefix(destinationFile);
 
     std::error_code ec;
@@ -530,4 +613,252 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listThisPc() const
 #else
     return Result<std::vector<FileNode>>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
 #endif
+}
+
+std::chrono::system_clock::time_point StandardFileSystemRepository::archiveModificationTime(
+    const std::filesystem::path& archiveFile) const
+{
+    std::error_code ec;
+    const auto mtime = fs::last_write_time(archiveFile, ec);
+    return ec ? std::chrono::system_clock::time_point{} : std::chrono::clock_cast<std::chrono::system_clock>(mtime);
+}
+
+namespace
+{
+    // Aggregated state for one immediate child of an archive-rooted directory. A directory is
+    // "synthesized" (isDirectory but no matching leaf entry ever set size/modificationTime) when
+    // the archive format doesn't carry explicit directory entries for it (common for zip).
+    struct ArchiveChildInfo
+    {
+        bool isDirectory = false;
+        std::uintmax_t size = 0;
+        std::chrono::system_clock::time_point modificationTime;
+    };
+}
+
+Result<std::vector<FileNode>> StandardFileSystemRepository::listArchiveDirectory(
+    const std::filesystem::path& directory, const ArchivePathResolver::Resolution& resolution) const
+{
+    auto listed = m_archiveIndexCache.entriesFor(resolution.archiveFile);
+    if (!listed)
+    {
+        return Result<std::vector<FileNode>>::failure(std::move(listed).error());
+    }
+
+    const fs::path& prefix = resolution.entryPathInArchive;
+    const auto fallbackModTime = archiveModificationTime(resolution.archiveFile);
+
+    std::map<fs::path, ArchiveChildInfo> children;
+    bool prefixIsExplicitDirectory = false;
+    bool prefixIsExplicitFile = false;
+
+    for (const auto& entry : listed.value())
+    {
+        if (entry.relativePath == prefix)
+        {
+            // The prefix's own entry, not one of its children. A *file* entry matching prefix
+            // means prefix names a file, not a folder -- not listable, even though stat() on the
+            // same path succeeds (see statArchiveEntry).
+            if (entry.isDirectory)
+            {
+                prefixIsExplicitDirectory = true;
+            }
+            else
+            {
+                prefixIsExplicitFile = true;
+            }
+            continue;
+        }
+
+        const fs::path relative = prefix.empty() ? entry.relativePath : entry.relativePath.lexically_relative(prefix);
+        if (relative.empty() || *relative.begin() == fs::path(".."))
+        {
+            continue; // Not a descendant of prefix.
+        }
+
+        auto componentIt = relative.begin();
+        const fs::path childName = *componentIt;
+        const bool hasMoreComponents = ++componentIt != relative.end();
+
+        ArchiveChildInfo& info = children[childName];
+        if (hasMoreComponents)
+        {
+            info.isDirectory = true;
+        }
+        else if (entry.isDirectory)
+        {
+            info.isDirectory = true;
+        }
+        else
+        {
+            info.size = entry.size;
+            info.modificationTime = entry.modificationTime;
+        }
+    }
+
+    // Listable when: it's the archive root; it has an explicit directory entry; or (zip-style,
+    // no explicit directory entries) at least one descendant was found and prefix didn't also
+    // match a *file* entry exactly.
+    const bool listable = prefix.empty() || prefixIsExplicitDirectory || (!prefixIsExplicitFile && !children.empty());
+    if (!listable)
+    {
+        return Result<std::vector<FileNode>>::failure(
+            Error(ErrorCode::NotFound, PathUtf8::toUtf8(directory) + " does not exist in archive"));
+    }
+
+    std::vector<FileNode> result;
+    result.reserve(children.size());
+    for (const auto& [childName, info] : children)
+    {
+        const auto modTime = info.isDirectory ? fallbackModTime : info.modificationTime;
+        auto node = FileNode::create(directory / childName, info.isDirectory ? 0 : info.size, modTime, modTime,
+                                      info.isDirectory ? FileType::Directory : FileType::Regular);
+        if (node.hasValue())
+        {
+            result.push_back(std::move(node).value());
+        }
+    }
+
+    return Result<std::vector<FileNode>>::success(std::move(result));
+}
+
+Result<FileNode> StandardFileSystemRepository::statArchiveEntry(const std::filesystem::path& outwardPath,
+                                                                   const ArchivePathResolver::Resolution& resolution) const
+{
+    auto listed = m_archiveIndexCache.entriesFor(resolution.archiveFile);
+    if (!listed)
+    {
+        return Result<FileNode>::failure(std::move(listed).error());
+    }
+
+    const fs::path& prefix = resolution.entryPathInArchive;
+    const auto fallbackModTime = archiveModificationTime(resolution.archiveFile);
+
+    bool found = false;
+    bool isDirectory = false;
+    std::uintmax_t size = 0;
+    auto modTime = fallbackModTime;
+
+    for (const auto& entry : listed.value())
+    {
+        if (entry.relativePath == prefix)
+        {
+            found = true;
+            if (entry.isDirectory)
+            {
+                isDirectory = true;
+            }
+            else
+            {
+                size = entry.size;
+                modTime = entry.modificationTime;
+            }
+            continue;
+        }
+
+        if (!isDirectory)
+        {
+            const fs::path relative = entry.relativePath.lexically_relative(prefix);
+            if (!relative.empty() && *relative.begin() != fs::path(".."))
+            {
+                // A descendant exists even without an explicit directory entry (zip-style).
+                found = true;
+                isDirectory = true;
+            }
+        }
+    }
+
+    if (!found)
+    {
+        return Result<FileNode>::failure(Error(ErrorCode::NotFound, PathUtf8::toUtf8(outwardPath) + " does not exist in archive"));
+    }
+
+    return FileNode::create(outwardPath, isDirectory ? 0 : size, modTime, modTime,
+                             isDirectory ? FileType::Directory : FileType::Regular);
+}
+
+Result<void> StandardFileSystemRepository::openArchiveEntryWithDefaultApplication(
+    const ArchivePathResolver::Resolution& resolution)
+{
+#ifdef _WIN32
+    auto entryStat = statArchiveEntry(resolution.archiveFile / resolution.entryPathInArchive, resolution);
+    if (!entryStat)
+    {
+        return Result<void>::failure(std::move(entryStat).error());
+    }
+
+    auto sessionDir = extractEntryToTempDir(resolution);
+    if (!sessionDir)
+    {
+        return Result<void>::failure(std::move(sessionDir).error());
+    }
+
+    const fs::path openTarget = entryStat.value().isDirectory() ? sessionDir.value()
+                                                                  : sessionDir.value() / resolution.entryPathInArchive.filename();
+
+    const std::wstring nativePath = withPrefix(openTarget).wstring();
+    const HINSTANCE result = ShellExecuteW(nullptr, L"open", nativePath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(result) <= 32)
+    {
+        return Result<void>::failure(Error(ErrorCode::IoError, "Failed to open extracted file"));
+    }
+    return Result<void>::success();
+#else
+    (void)resolution;
+    return Result<void>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
+#endif
+}
+
+Result<fs::path> StandardFileSystemRepository::extractEntryToTempDir(const ArchivePathResolver::Resolution& resolution) const
+{
+    std::error_code ec;
+    const fs::path baseTemp = fs::temp_directory_path(ec);
+    if (ec)
+    {
+        return Result<fs::path>::failure(Error(ErrorCode::IoError, "No temp directory available"));
+    }
+
+    // Unique per call (not cleaned up by the app -- relies on normal OS temp-dir lifecycle,
+    // Architecture.md §14.28) so repeated extractions of the same/different entries never collide.
+    const auto uniqueSuffix = std::chrono::steady_clock::now().time_since_epoch().count();
+    const fs::path sessionDir = baseTemp / L"Exp-LORer" / L"archive-preview" /
+                                 (std::to_wstring(fs::hash_value(resolution.entryPathInArchive)) + L"-" +
+                                  std::to_wstring(static_cast<unsigned long long>(uniqueSuffix)));
+
+    auto extracted = LibArchiveReader::extractEntries(resolution.archiveFile, resolution.entryPathInArchive, sessionDir);
+    if (!extracted)
+    {
+        return Result<fs::path>::failure(std::move(extracted).error());
+    }
+
+    return Result<fs::path>::success(sessionDir);
+}
+
+Result<fs::path> StandardFileSystemRepository::materializeForReading(const std::filesystem::path& path) const
+{
+    auto resolution = ArchivePathResolver::resolve(path);
+    if (!resolution || resolution->entryPathInArchive.empty())
+    {
+        return Result<fs::path>::success(path);
+    }
+
+    auto sessionDir = extractEntryToTempDir(*resolution);
+    if (!sessionDir)
+    {
+        return sessionDir;
+    }
+
+    return Result<fs::path>::success(sessionDir.value() / resolution->entryPathInArchive.filename());
+}
+
+Result<void> StandardFileSystemRepository::extractArchive(const std::filesystem::path& archiveFile,
+                                                             const std::filesystem::path& destinationDirectory)
+{
+    auto resolution = ArchivePathResolver::resolve(archiveFile);
+    if (!resolution)
+    {
+        return Result<void>::failure(Error(ErrorCode::InvalidArgument, PathUtf8::toUtf8(archiveFile) + " is not inside a known archive"));
+    }
+
+    return LibArchiveReader::extractEntries(resolution->archiveFile, resolution->entryPathInArchive, destinationDirectory);
 }

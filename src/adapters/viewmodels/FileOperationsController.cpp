@@ -177,6 +177,19 @@ void FileOperationsController::openFile(const std::filesystem::path& path)
     }
 }
 
+void FileOperationsController::extractArchive(const std::filesystem::path& archiveFile,
+                                                const std::filesystem::path& destinationDirectory)
+{
+    auto result = m_fileNavigationUseCase.extractArchive(archiveFile, destinationDirectory);
+    if (result.hasError())
+    {
+        emit operationFailed(QString::fromStdString(result.error().message));
+        return;
+    }
+
+    emit directoryContentsMayHaveChanged(destinationDirectory);
+}
+
 void FileOperationsController::renamePath(const std::filesystem::path& source, const std::filesystem::path& destination)
 {
     auto result = m_fileNavigationUseCase.moveFile(source, destination);

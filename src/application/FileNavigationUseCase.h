@@ -67,6 +67,11 @@ public:
     Result<void> deleteFilePermanently(const std::filesystem::path& path);
     Result<void> openFile(const std::filesystem::path& path);
 
+    // Read-only extraction (Architecture.md §14.28): every entry under archiveFile (or, if
+    // archiveFile names a folder inside an archive, every entry under that subtree) into
+    // destinationDirectory, preserving relative structure.
+    Result<void> extractArchive(const std::filesystem::path& archiveFile, const std::filesystem::path& destinationDirectory);
+
     Result<std::vector<ContextMenuEntry>> buildItemContextMenu(const std::vector<std::filesystem::path>& paths,
                                                                  ContextMenuSourceMode mode);
     Result<std::vector<ContextMenuEntry>> buildBackgroundContextMenu(const std::filesystem::path& folder,

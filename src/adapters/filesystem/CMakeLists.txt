@@ -6,7 +6,7 @@ add_library(explorer_adapters_filesystem STATIC
 )
 
 target_include_directories(explorer_adapters_filesystem PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(explorer_adapters_filesystem PUBLIC explorer_application)
+target_link_libraries(explorer_adapters_filesystem PUBLIC explorer_application explorer_adapters_archive)
 
 find_package(xxHash CONFIG REQUIRED)
 target_link_libraries(explorer_adapters_filesystem PRIVATE xxHash::xxhash)

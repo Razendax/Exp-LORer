@@ -179,12 +179,104 @@ TEST(FilePreviewUseCase, UnknownExtensionReturnsUnsupportedWithoutTouchingPorts)
     MockFileSystemRepository fileSystemRepository;
     MockMediaDecoder mediaDecoder;
 
+    EXPECT_CALL(fileSystemRepository, listDirectory(_)).Times(0);
     EXPECT_CALL(fileSystemRepository, readFilePrefix(_, _)).Times(0);
     EXPECT_CALL(mediaDecoder, generateThumbnail(_, _, _)).Times(0);
 
     FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
-    auto result = useCase.generatePreview(makeNode("C:/data/archive.zip", FileType::Regular), 200, 200, 1024);
+    auto result = useCase.generatePreview(makeNode("C:/data/unknown.xyz", FileType::Regular), 200, 200, 1024);
 
     ASSERT_TRUE(result.hasValue());
     EXPECT_EQ(result.value().kind(), FilePreviewKind::Unsupported);
+}
+
+// Archive browsing (Architecture.md §14.28): a not-yet-entered archive file (Regular FileType, not
+// Directory) gets the same folder treatment a real directory does, since listDirectory() on its
+// own path already returns its top-level entries once StandardFileSystemRepository resolves it.
+// A file selected while browsing *inside* an archive (Architecture.md §14.28) has a virtual path
+// with no real file on disk -- generatePreview() must materialize it to a real temp file before
+// handing it to the media decoder, rather than passing the virtual path straight through.
+TEST(FilePreviewUseCase, ImageInsideArchiveIsMaterializedBeforeDecoding)
+{
+    MockFileSystemRepository fileSystemRepository;
+    MockMediaDecoder mediaDecoder;
+
+    const std::filesystem::path virtualPath("C:/data/photos.zip/vacation/img.jpg");
+    const std::filesystem::path realPath("C:/temp/archive-preview/1/img.jpg");
+
+    EXPECT_CALL(fileSystemRepository, materializeForReading(virtualPath))
+        .WillOnce(Return(Result<std::filesystem::path>::success(realPath)));
+
+    std::vector<std::byte> jpegBytes{ std::byte{ 0xFF }, std::byte{ 0xD8 } };
+    EXPECT_CALL(mediaDecoder, generateThumbnail(realPath, 200, 200))
+        .WillOnce(Return(Result<std::vector<std::byte>>::success(jpegBytes)));
+
+    FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
+    auto result = useCase.generatePreview(makeNode(virtualPath, FileType::Regular), 200, 200, 1024);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().kind(), FilePreviewKind::Image);
+    EXPECT_EQ(result.value().imageBytes(), jpegBytes);
+}
+
+TEST(FilePreviewUseCase, TextInsideArchiveIsMaterializedBeforeReading)
+{
+    MockFileSystemRepository fileSystemRepository;
+    MockMediaDecoder mediaDecoder;
+
+    const std::filesystem::path virtualPath("C:/data/docs.zip/readme.txt");
+    const std::filesystem::path realPath("C:/temp/archive-preview/2/readme.txt");
+
+    EXPECT_CALL(fileSystemRepository, materializeForReading(virtualPath))
+        .WillOnce(Return(Result<std::filesystem::path>::success(realPath)));
+    EXPECT_CALL(fileSystemRepository, readFilePrefix(realPath, 1024u))
+        .WillOnce(Return(Result<std::vector<std::byte>>::success(toBytes("hello world"))));
+
+    FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
+    auto result = useCase.generatePreview(makeNode(virtualPath, FileType::Regular), 200, 200, 1024);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().kind(), FilePreviewKind::Text);
+    EXPECT_EQ(result.value().text(), "hello world");
+    // Syntax highlighting still keys off the target's own (virtual) path, not the materialized
+    // temp path.
+    EXPECT_EQ(result.value().path(), virtualPath);
+}
+
+TEST(FilePreviewUseCase, ImageInsideArchivePropagatesMaterializeFailure)
+{
+    MockFileSystemRepository fileSystemRepository;
+    MockMediaDecoder mediaDecoder;
+
+    const std::filesystem::path virtualPath("C:/data/photos.zip/vacation/img.jpg");
+
+    EXPECT_CALL(fileSystemRepository, materializeForReading(virtualPath))
+        .WillOnce(Return(Result<std::filesystem::path>::failure(Error(ErrorCode::IoError, "extraction failed"))));
+    EXPECT_CALL(mediaDecoder, generateThumbnail(_, _, _)).Times(0);
+
+    FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
+    auto result = useCase.generatePreview(makeNode(virtualPath, FileType::Regular), 200, 200, 1024);
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::IoError);
+}
+
+TEST(FilePreviewUseCase, ArchiveExtensionDispatchesToListDirectoryAsFolder)
+{
+    MockFileSystemRepository fileSystemRepository;
+    MockMediaDecoder mediaDecoder;
+
+    std::vector<FileNode> listing{
+        makeNode("C:/data/photos.zip/readme.txt", FileType::Regular),
+        makeNode("C:/data/photos.zip/vacation", FileType::Directory),
+    };
+    EXPECT_CALL(fileSystemRepository, listDirectory(std::filesystem::path("C:/data/photos.zip")))
+        .WillOnce(Return(Result<std::vector<FileNode>>::success(listing)));
+
+    FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
+    auto result = useCase.generatePreview(makeNode("C:/data/photos.zip", FileType::Regular), 200, 200, 1024);
+
+    ASSERT_TRUE(result.hasValue());
+    ASSERT_EQ(result.value().kind(), FilePreviewKind::Folder);
+    EXPECT_EQ(result.value().folderEntries().size(), 2u);
 }

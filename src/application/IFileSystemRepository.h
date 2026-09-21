@@ -30,6 +30,10 @@ public:
     virtual Result<FileNode> stat(const std::filesystem::path& path) const = 0;
 
     virtual Result<FileNode> move(const std::filesystem::path& source, const std::filesystem::path& destination) = 0;
+
+    // Byte-copies a real source. When source resolves to an entry *inside* an archive
+    // (Architecture.md §14.28), extracts instead -- the read-only counterpart of a normal copy,
+    // sharing implementation with extractArchive below.
     virtual Result<FileNode> copy(const std::filesystem::path& source, const std::filesystem::path& destination) = 0;
 
     // Moves to the OS trash where available; see moveToTrash vs. deletePermanently distinction in Architecture.md §9.
@@ -58,4 +62,18 @@ public:
     // preview; not a general file-read API.
     virtual Result<std::vector<std::byte>> readFilePrefix(const std::filesystem::path& path,
                                                             std::size_t maxBytes) const = 0;
+
+    // Extracts every entry under archiveFile (or, if archiveFile names a folder *inside* an
+    // archive, every entry under that subtree) into destinationDirectory, preserving relative
+    // structure. Read-only counterpart to createDirectory/copy for archive content
+    // (Architecture.md §14.28).
+    virtual Result<void> extractArchive(const std::filesystem::path& archiveFile,
+                                         const std::filesystem::path& destinationDirectory) = 0;
+
+    // Resolves path to a real, on-disk file for callers that need actual file I/O rather than a
+    // possibly-virtual path (image/video thumbnailing, text-prefix reads): identity for a real
+    // filesystem path, or a private temp-extracted copy when path names an entry *inside* an
+    // archive (Architecture.md §14.28). Used by FilePreviewUseCase before handing a path to
+    // IMediaDecoder or readFilePrefix above.
+    virtual Result<std::filesystem::path> materializeForReading(const std::filesystem::path& path) const = 0;
 };

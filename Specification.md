@@ -195,6 +195,23 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 
 
 
+### 2.5 Archive Browsing, Preview, and Extraction (Read-Only)
+
+* Common archive files (ZIP, 7-Zip, TAR, TAR.GZ, TAR.BZ2, and RAR — RAR read-only) can be browsed
+  as if they were a folder: double-clicking/pressing Enter on one navigates into it in the same
+  window rather than launching a separate archive-manager application, with full support for the
+  standard navigation controls (Back/Forward/Up/breadcrumb), sorting, view modes, and multi-
+  selection while inside it (Architecture.md §14.28).
+* Selecting an archive file (without entering it) shows its top-level contents in the Preview
+  panel (2.2), the same way a folder's contents are shown.
+* Right-clicking an archive file offers archive-specific actions ("Extract Here", "Extract to...")
+  in addition to the standard file context menu; while browsing inside an archive, the context
+  menu drops actions that don't apply to a read-only, virtual location (Cut, Paste, Rename,
+  Delete, New Folder, Properties) and offers an equivalent Extract action for the selected
+  entry/entries instead.
+* **V1 is read-only**: creating a new archive, or adding/removing/modifying files inside an
+  existing one, is out of scope (see §5).
+
 ## 3. Non-Functional Requirements
 
 ### 3.1 Performance & Resource Management
@@ -231,6 +248,8 @@ The following are explicitly out of scope for the initial release (v1), pending 
 
 * Undo/redo for file operations (delete/move/rename) and tag assignment.
 * Linux-specific trash integration — Windows trash ships first; Linux falls back to permanent delete until implemented.
+* Archive creation and in-archive editing (2.5): browsing/preview/extraction only, no
+  "compress to archive" / "add to archive" support, and no nested-archive browsing.
 * Automated UI testing — manual smoke testing only for v1 (a minimal opt-in blackbox smoke check
   exists outside the v1 CTest suite, Architecture.md §11; comprehensive automated UI coverage
   remains excluded).

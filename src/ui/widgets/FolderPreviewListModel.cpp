@@ -36,7 +36,15 @@ QVariant FolderPreviewListModel::data(const QModelIndex& index, int role) const
 
     if (role == Qt::DecorationRole)
     {
-        return m_iconProvider.icon(QFileInfo(toQString(entry.path())));
+        const QFileInfo info(toQString(entry.path()));
+        if (entry.isDirectory() && !info.exists())
+        {
+            // Archive-synthesized directories (Architecture.md §14.28) have no real path on disk,
+            // so QFileIconProvider::icon(QFileInfo) can't stat them and falls back to a generic/file
+            // icon instead of a folder icon.
+            return m_iconProvider.icon(QFileIconProvider::Folder);
+        }
+        return m_iconProvider.icon(info);
     }
 
     return {};

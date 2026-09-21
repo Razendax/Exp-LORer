@@ -6,6 +6,7 @@
 #include <Windows.h>
 #endif
 
+#include "ArchiveFixture.h"
 #include "StandardFileSystemRepository.h"
 #include "VirtualPaths.h"
 
@@ -348,6 +349,212 @@ TEST_F(StandardFileSystemRepositoryTest, StatReportsWindowsHiddenAttribute)
     EXPECT_TRUE(result.value().isHidden());
 }
 #endif
+
+// Archive browsing (Architecture.md §14.28): the fixture zip has no explicit directory entry for
+// "vacation" (writeZip only ever writes file entries), so these also exercise the
+// synthesized-directory path that real zip archives commonly need.
+TEST_F(StandardFileSystemRepositoryTest, ListDirectoryReturnsArchiveTopLevelEntries)
+{
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, {
+                                               { "vacation/img.jpg", "jpgbytes" },
+                                               { "readme.txt", "hello" },
+                                           });
+
+    auto result = m_repository.listDirectory(archivePath);
+
+    ASSERT_TRUE(result.hasValue());
+    ASSERT_EQ(result.value().size(), 2u);
+
+    const auto findByName = [&result](const wchar_t* name) {
+        return std::find_if(result.value().begin(), result.value().end(),
+                             [name](const FileNode& entry) { return entry.name() == fs::path(name); });
+    };
+
+    const auto vacation = findByName(L"vacation");
+    ASSERT_NE(vacation, result.value().end());
+    EXPECT_TRUE(vacation->isDirectory());
+
+    const auto readme = findByName(L"readme.txt");
+    ASSERT_NE(readme, result.value().end());
+    EXPECT_FALSE(readme->isDirectory());
+    EXPECT_EQ(readme->size(), 5u);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, ListDirectoryReturnsArchiveSubfolderEntries)
+{
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, { { "vacation/img.jpg", "jpgbytes" } });
+
+    auto result = m_repository.listDirectory(archivePath / "vacation");
+
+    ASSERT_TRUE(result.hasValue());
+    ASSERT_EQ(result.value().size(), 1u);
+    EXPECT_EQ(result.value().front().name(), fs::path("img.jpg"));
+}
+
+TEST_F(StandardFileSystemRepositoryTest, ListDirectoryFailsGracefullyForNonExistentArchiveEntry)
+{
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, { { "readme.txt", "hello" } });
+
+    // "readme.txt" is a plain file entry in the archive, not a folder -- navigating "into" it
+    // (e.g. it looking like a nested archive) must fail gracefully, never crash.
+    auto result = m_repository.listDirectory(archivePath / "readme.txt");
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::NotFound);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, StatResolvesSynthesizedArchiveDirectory)
+{
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, { { "vacation/img.jpg", "jpgbytes" } });
+
+    auto result = m_repository.stat(archivePath / "vacation");
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(result.value().isDirectory());
+}
+
+TEST_F(StandardFileSystemRepositoryTest, StatResolvesArchiveFileEntry)
+{
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, { { "readme.txt", "hello" } });
+
+    auto result = m_repository.stat(archivePath / "readme.txt");
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_FALSE(result.value().isDirectory());
+    EXPECT_EQ(result.value().size(), 5u);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, CopyExtractsArchiveEntryToRealDestination)
+{
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, { { "vacation/img.jpg", "jpgbytes" } });
+
+    auto result = m_repository.copy(archivePath / "vacation", m_tempDir / "vacationCopy");
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(fs::exists(m_tempDir / "vacationCopy" / "img.jpg"));
+}
+
+TEST_F(StandardFileSystemRepositoryTest, ExtractArchiveWritesWholeArchive)
+{
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, {
+                                               { "vacation/img.jpg", "jpgbytes" },
+                                               { "readme.txt", "hello" },
+                                           });
+
+    auto result = m_repository.extractArchive(archivePath, m_tempDir / "out");
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(fs::exists(m_tempDir / "out" / "vacation" / "img.jpg"));
+    EXPECT_TRUE(fs::exists(m_tempDir / "out" / "readme.txt"));
+}
+
+TEST_F(StandardFileSystemRepositoryTest, MoveFailsForPathInsideArchive)
+{
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, { { "readme.txt", "hello" } });
+
+    auto result = m_repository.move(archivePath / "readme.txt", m_tempDir / "moved.txt");
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::InvalidArgument);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, CreateDirectoryFailsForPathInsideArchive)
+{
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, { { "readme.txt", "hello" } });
+
+    auto result = m_repository.createDirectory(archivePath / "newFolder");
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::InvalidArgument);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, DeletePermanentlyFailsForPathInsideArchive)
+{
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, { { "readme.txt", "hello" } });
+
+    auto result = m_repository.deletePermanently(archivePath / "readme.txt");
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::InvalidArgument);
+}
+
+// A real, not-yet-entered archive file is unaffected by any of the read-only guards above --
+// renaming/deleting/copying the .zip itself is a completely normal file operation.
+TEST_F(StandardFileSystemRepositoryTest, MoveSucceedsForTheArchiveFileItself)
+{
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, { { "readme.txt", "hello" } });
+
+    auto result = m_repository.move(archivePath, m_tempDir / "renamed.zip");
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(fs::exists(m_tempDir / "renamed.zip"));
+}
+
+// Ctrl+V (FileOperationsController::pasteInto -> FileNavigationUseCase::copyFile/moveFile) has no
+// UI-level guard of its own against pasting into an archive-rooted directory, unlike the paste
+// QAction -- the repository must reject it itself, not just the source side.
+TEST_F(StandardFileSystemRepositoryTest, CopyFailsWhenDestinationIsInsideArchive)
+{
+    writeFile(m_tempDir / "source.txt", "data");
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, { { "readme.txt", "hello" } });
+
+    auto result = m_repository.copy(m_tempDir / "source.txt", archivePath / "pasted.txt");
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::InvalidArgument);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, MoveFailsWhenDestinationIsInsideArchive)
+{
+    writeFile(m_tempDir / "source.txt", "data");
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, { { "readme.txt", "hello" } });
+
+    auto result = m_repository.move(m_tempDir / "source.txt", archivePath / "moved.txt");
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::InvalidArgument);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, MaterializeForReadingReturnsRealPathUnchanged)
+{
+    writeFile(m_tempDir / "plain.txt", "data");
+
+    auto result = m_repository.materializeForReading(m_tempDir / "plain.txt");
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value(), m_tempDir / "plain.txt");
+}
+
+// FilePreviewUseCase relies on this to hand the media decoder / text reader a real file when
+// previewing an entry selected while browsing inside an archive (Architecture.md §14.28).
+TEST_F(StandardFileSystemRepositoryTest, MaterializeForReadingExtractsArchiveEntryToRealFile)
+{
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, { { "docs/readme.txt", "hello world" } });
+
+    auto result = m_repository.materializeForReading(archivePath / "docs" / "readme.txt");
+
+    ASSERT_TRUE(result.hasValue());
+    ASSERT_TRUE(fs::exists(result.value()));
+    EXPECT_EQ(result.value().filename(), fs::path("readme.txt"));
+
+    std::ifstream stream(result.value(), std::ios::binary);
+    const std::string content((std::istreambuf_iterator<char>(stream)), std::istreambuf_iterator<char>());
+    EXPECT_EQ(content, "hello world");
+}
 
 TEST_F(StandardFileSystemRepositoryTest, ComputeFileHashIsDeterministic)
 {

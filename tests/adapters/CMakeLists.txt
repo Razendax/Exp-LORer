@@ -15,6 +15,9 @@ add_executable(explorer_adapters_tests
     FFmpegMediaDecoderTest.cpp
     SyntaxHighlightEngineTest.cpp
     HighlightThemeTest.cpp
+    ArchivePathResolverTest.cpp
+    LibArchiveReaderTest.cpp
+    ArchiveIndexCacheTest.cpp
 )
 
 target_link_libraries(explorer_adapters_tests PRIVATE
@@ -27,6 +30,7 @@ target_link_libraries(explorer_adapters_tests PRIVATE
     explorer_adapters_terminal
     explorer_adapters_media
     explorer_adapters_highlighting
+    explorer_adapters_archive
     Qt6::Core
     GTest::gtest
     GTest::gmock

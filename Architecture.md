@@ -43,7 +43,10 @@ instance safely serves concurrent callers from every tab/pane (§14.2).
 **Ports:**
 * `IFileSystemRepository` — file operations: list, recursive list, move, copy, delete, hash,
   single-path stat, create folder/file, open-with-default-app, show OS properties dialog, read a
-  capped byte prefix of a file (`readFilePrefix`, §14.25).
+  capped byte prefix of a file (`readFilePrefix`, §14.25), extract archive content
+  (`extractArchive`, §14.28), and resolve a path to a real, on-disk file for callers that need
+  actual file I/O (`materializeForReading` — identity for a real path, a private temp-extracted
+  copy for an entry inside an archive, §14.28).
 * `ITagRepository` — persists tags and file/tag associations.
 * `IMediaDecoder` — decodes media streams, extracts thumbnails.
 * `IContextMenuProvider` — builds a registry/COM-sourced context menu as plain data
@@ -147,8 +150,8 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
   can be added without touching Domain/Application.
 * **Qt 6** (Widgets + Quick/QML hybrid, §2.4).
 * **vcpkg** manifest mode (`vcpkg.json`) for all third-party dependencies (Qt6, SQLite3, FFmpeg,
-  spdlog, GoogleTest/GoogleMock, xxHash), consumed via `find_package`; `CMakePresets.json` pins the
-  vcpkg toolchain.
+  spdlog, GoogleTest/GoogleMock, xxHash, libarchive per §14.28), consumed via `find_package`;
+  `CMakePresets.json` pins the vcpkg toolchain.
 * **Logging:** `spdlog`, wrapped behind a thin `Logging::log(...)` call site so it isn't referenced
   outside one adapter header.
 * **Dependency injection:** no framework — a single composition root
@@ -264,6 +267,7 @@ Exp-LORer/
 │   │   ├── shell/       # ShellContextMenuProvider
 │   │   ├── config/      # AppConfigStore (JSON session persistence)
 │   │   ├── media/       # QtMediaDecoder / FFmpegMediaDecoder (not yet implemented)
+│   │   ├── archive/     # ArchivePathResolver / LibArchiveReader / ArchiveIndexCache (§14.28)
 │   │   └── logging/     # Logging (spdlog wrapper: rotating file + console sinks, §14.22)
 │   ├── ui/
 │   │   ├── widgets/     # Qt Widgets shell: MainWindow, panes, dialogs, delegates
@@ -973,3 +977,78 @@ unchanged by this feature.
   No Domain/Application change — every count and listing the bar needs already exists on
   `TabViewModel`/`FileListModel`. No automated coverage: pure UI/ViewModel glue, same carve-out
   as the toolbar and address-bar autocomplete (§11).
+
+### 14.28 Archive Browsing, Preview, and Extraction (Read-Only)
+
+Lets the user browse into a `.zip`/`.7z`/`.tar`/`.tar.gz`/`.tar.bz2` archive (or a **read-only**
+`.rar`) as if it were a folder, preview its contents in the right panel, and extract from it — no
+archive creation or in-archive editing in v1.
+
+* **Archives as virtual paths.** Exactly the same posture as "This PC" (§14.15): a real archive
+  file's own path, once entered, *is* the navigation location for everything below it — e.g.
+  `C:\Downloads\photos.zip\vacation\img.jpg` is a legal `std::filesystem::path` (no real file backs
+  it) that `parent_path()`/`filename()`/`/`-append all handle correctly with zero special-casing
+  outside `StandardFileSystemRepository`. Every existing path-based mechanism (`TabViewModel::
+  navigateTo`, history, breadcrumbs, session persistence, §14.20 address-bar autocomplete, sort/
+  view-mode/multi-selection/status bar) therefore works unmodified. `Up`/`Backspace` from an
+  archive's root lands on its real containing folder for free, via the same `parent_path()` call
+  every other navigation already uses.
+* **One new Port method**, `IFileSystemRepository::extractArchive(archiveFile,
+  destinationDirectory)` (extracts everything under `archiveFile`, or under a folder-inside-an-
+  archive path, preserving relative structure) — every other interaction reuses existing Port
+  methods, made archive-aware only inside `StandardFileSystemRepository`:
+  * `listDirectory`/`stat` on an archive-rooted path return synthesized `FileNode`s (directories
+    inferred from entry-path prefixes when a format doesn't carry explicit directory entries, e.g.
+    zip; size 0 and the archive's own `modificationDate` for those synthesized directories).
+  * `copy(source, destination)` extracts instead of `fs::copy` only when `source` resolves *inside*
+    an archive; a real, not-yet-entered archive file as `source` is unaffected (still a literal
+    byte copy — Ctrl+C/Ctrl+V on a `.zip` still duplicates the `.zip`). This is what makes
+    Copy→Paste out of an archive into a real folder work with no new UI plumbing, and it shares one
+    internal extraction helper with `extractArchive` itself.
+  * `move`/`moveToTrash`/`deletePermanently`/`createDirectory`/`createFileFromTemplate` return
+    `Error(ErrorCode::InvalidArgument, "Cannot modify a read-only archive")` when the target is
+    inside an archive — defense-in-depth; the UI also disables these proactively.
+  * `openWithDefaultApplication` on a file entry inside an archive extracts it to a per-session
+    temp directory (`%TEMP%\Exp-LORer\archive-preview\...`, not cleaned up by the app — relies on
+    normal OS temp lifecycle) and launches the extracted copy — mirrors Explorer's/7-Zip's own
+    zip-folder "open" behavior.
+  * `listDirectoryRecursive` rejects an archive-rooted `root`, the same way it already rejects
+    `VirtualPaths::ThisPC` — recursive search does not reach inside archives in v1.
+* **`FilePreviewUseCase`** (§14.25): the folder-preview branch's condition widens from
+  `target.isDirectory()` to `target.isDirectory() || ArchiveExtensions::isArchiveExtension(...)` —
+  an archive file gets the identical `FilePreview::folder(entries)` treatment a real folder does,
+  since `listDirectory()` on its own path already returns its top-level entries once the adapter
+  change above lands. `PreviewPanelWidget` needs no changes — it already renders `Folder` kind.
+* **`src/application/ArchiveExtensions.h`** (new, pure, mirrors `MediaExtensions.h`): the
+  supported-extension list, plus a pure/lexical (no I/O) `archiveAncestorInPath(path)` used only by
+  the UI layer as a cheap hint for which context-menu actions to show — the authoritative,
+  disk-verified check lives in the adapter (below). A UI/adapter mismatch (e.g. a real folder
+  literally named `foo.zip\`) degrades to a disabled button or a graceful `Result` failure, never a
+  crash.
+* **`src/adapters/archive`** (new module, `explorer_adapters_archive`, mirrors `adapters/media`):
+  `ArchivePathResolver` (walks a path's ancestors for the outermost real, on-disk archive file —
+  nested archives are not resolved further; navigating into an archive-looking entry inside another
+  archive fails gracefully as `NotFound`, not a crash — explicit v1 exclusion); `LibArchiveReader`
+  (thin wrapper over libarchive's `archive_read_*`, only the in-scope formats/filters enabled, not
+  `archive_read_support_format_all()`); `ArchiveIndexCache` (small in-memory-only LRU, ~4 archives,
+  keyed by `(path, size, mtime)` — same staleness-free posture as `ThumbnailCache`, §8 — so
+  navigating between folders inside one archive doesn't re-scan the whole stream each time).
+* **UI wiring**: `WorkspacePaneWidget::wireBrowserView`'s `itemActivated` handler navigates
+  (instead of calling `openFile`) whenever the target is a directory *or* an archive-extensioned
+  entry — satisfying "opening an archive doesn't launch an external app." `ContextMenuBuilder::
+  NativeActions` gains two nullable actions, `extractHere`/`extractTo`, shown when every selected
+  path is a real archive file; while the tab is browsing inside an archive, `cut`/`copy`/`paste`/
+  `rename`/`deleteAction`/`newFolder`/`properties` are disabled (OS-clipboard copy needs a real
+  `CF_HDROP` path, which a virtual archive entry isn't) and the same Extract actions target the
+  in-archive selection instead. The bottom-panel terminal's cwd fallback (§14.23, already guarding
+  `cwd == VirtualPaths::ThisPC`) gains the same guard for an archive-rooted `cwd`.
+* **Not built:** archive creation/add-to-archive/any write support; nested-archive browsing;
+  recursive/advanced search reaching inside archives; tagging a target inside an archive (disabled
+  — `computeFileHash`'s rename/move-relocation fallback can't be computed for a virtual entry
+  without a full extraction); guaranteed type-specific icons for in-archive entries
+  (`QFileIconProvider` needs a real on-disk file; may fall back to a generic icon); RAR5 coverage
+  beyond whatever the vcpkg-pinned libarchive version supports (legacy RAR4 is the safe floor).
+  Adapter-layer pieces (`ArchiveExtensions`, `ArchivePathResolver`, `LibArchiveReader`, the
+  archive-aware `StandardFileSystemRepository`/`FilePreviewUseCase` paths) are GTest-covered per
+  §11; the UI-layer changes above fall under the existing UI/ViewModel-glue carve-out, smoke-tested
+  manually.
