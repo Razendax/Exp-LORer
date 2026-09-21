@@ -219,6 +219,7 @@ void TabViewModel::startSearch(const QString& query)
     filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
     m_searchResultsModel->setEntries(m_searchRoot, filtered);
 
+    setSelectedEntries({});
     emit searchModeChanged(true);
     emit searchResultsChanged(filtered);
 }
@@ -251,6 +252,7 @@ void TabViewModel::exitSearch()
     m_searchQuery.clear();
     m_searchRoot.clear();
 
+    setSelectedEntries({});
     emit searchModeChanged(false);
 }
 
@@ -264,6 +266,7 @@ void TabViewModel::showAdvancedSearchPanel()
     exitSearch();
 
     m_advancedSearchActive = true;
+    setSelectedEntries({});
     emit advancedSearchModeChanged(true);
 }
 
@@ -303,6 +306,7 @@ void TabViewModel::exitAdvancedSearch()
     m_advancedSearchCriteria = SearchCriteria();
     m_advancedSearchRoot.clear();
 
+    setSelectedEntries({});
     emit advancedSearchModeChanged(false);
 }
 
@@ -319,6 +323,7 @@ void TabViewModel::addTagSearchCriterion(Tag::Id tagId)
     {
         exitSearch();
         m_advancedSearchActive = true;
+        setSelectedEntries({});
         emit advancedSearchModeChanged(true);
     }
 
@@ -414,6 +419,7 @@ void TabViewModel::runAdvancedSearch(bool forceRescan)
     if (!m_advancedSearchActive)
     {
         m_advancedSearchActive = true;
+        setSelectedEntries({});
         emit advancedSearchModeChanged(true);
     }
 

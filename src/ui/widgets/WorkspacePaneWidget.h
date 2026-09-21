@@ -24,6 +24,7 @@ class TabViewModel;
 class FileOperationsController;
 class AddressBarWidget;
 class BottomPanelWidget;
+class StatusBarWidget;
 
 // One pane's full self-contained UI: its own toolbar (back/forward/up QActions, address
 // QLineEdit, view-mode QToolButton+menu — the per-pane counterpart of MainWindow's former
@@ -54,7 +55,9 @@ public:
     static constexpr const char* kShowShellExtensionsSettingsKey = "ContextMenu/ShowShellExtensions";
 
 signals:
-    // Bubbled up so MainWindow (the only widget with a shared status bar) can report it.
+    // Bubbled up so MainWindow (whose QMainWindow::statusBar() is a separate, transient,
+    // window-wide message bar for navigation/search failures -- distinct from this pane's own
+    // always-visible StatusBarWidget, Architecture.md §14.27) can report it.
     void navigationFailed(const QString& message);
 
 private:
@@ -66,6 +69,12 @@ private:
     void wireBrowserView(FileBrowserView* browserView, TabViewModel* tab);
     void bindToolBarToTab(TabViewModel* tab);
     int indexOfTab(TabViewModel* tab) const;
+
+    // Resolves the FileBrowserView backing whichever page (normal browsing, search results, or
+    // advanced search results) the current tab is currently showing -- factors out the splitter ->
+    // QStackedWidget -> (FileBrowserView or SearchResultsPane::browserView()) unwrap also used by
+    // currentColumnWidths(). Returns nullptr if it can't be resolved (e.g. no tabs at all).
+    FileBrowserView* currentBrowserView() const;
 
     void onTabAdded(int index);
     void onTabClosed(int index);
@@ -80,6 +89,11 @@ private:
     void onViewModeChanged(ViewMode mode);
     void onDeleteRequested(TabViewModel* tab, bool permanent);
 
+    // Status bar (Architecture.md §14.27): reads counts directly off m_boundTab rather than off a
+    // signal payload, so it's correct regardless of which of the six wired signals fired.
+    void refreshStatusCounts();
+    void onQuickSelectTextChanged(const QString& text);
+
     void showItemContextMenu(TabViewModel* tab, FileBrowserView* browserView, const std::vector<std::filesystem::path>& paths,
                               const QPoint& globalPos);
     void showBackgroundContextMenu(TabViewModel* tab, FileBrowserView* browserView, const QPoint& globalPos);
@@ -91,6 +105,7 @@ private:
 
     QTabWidget* m_tabWidget = nullptr;
     AddressBarWidget* m_addressBar = nullptr;
+    StatusBarWidget* m_statusBar = nullptr;
     QAction* m_backAction = nullptr;
     QAction* m_forwardAction = nullptr;
     QAction* m_upAction = nullptr;

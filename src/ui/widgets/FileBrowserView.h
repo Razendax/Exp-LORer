@@ -64,6 +64,16 @@ public:
     // §14.13.6). No-op in AdvancedSearchResults mode, or if `path` isn't currently listed.
     void beginRename(const std::filesystem::path& path);
 
+    // Quick-select (status bar, Architecture.md §14.27): selects and scrolls to every row whose
+    // displayed Name contains `text` (case-insensitive, substring match anywhere in the name).
+    // Empty text is a no-op (leaves the existing selection alone). No match clears the selection,
+    // so the field's state always reflects reality. Returns whether any match was found.
+    bool selectEntriesContaining(const QString& text);
+
+    // Returns keyboard focus to whichever inner view (list or tree) is currently showing, e.g.
+    // after the status bar's quick-select field is dismissed via Escape.
+    void focusView();
+
 signals:
     // Emitted on double-click/Enter on a row; isDirectory decides whether MainWindow forwards
     // this to TabViewModel::navigateTo (file activation is out of scope, no viewer yet).

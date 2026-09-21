@@ -397,6 +397,49 @@ void FileBrowserView::beginRename(const std::filesystem::path& path)
     view->edit(*index);
 }
 
+bool FileBrowserView::selectEntriesContaining(const QString& text)
+{
+    if (text.isEmpty())
+    {
+        return false;
+    }
+
+    QItemSelection selection;
+    QModelIndex firstMatch;
+    for (int row = 0; row < m_model->rowCount(); ++row)
+    {
+        const QModelIndex nameIndex = m_model->index(row, FileListModel::NameColumn);
+        const QString name = nameIndex.data(Qt::DisplayRole).toString();
+        if (name.contains(text, Qt::CaseInsensitive))
+        {
+            selection.select(nameIndex, nameIndex);
+            if (!firstMatch.isValid())
+            {
+                firstMatch = nameIndex;
+            }
+        }
+    }
+
+    m_selectionModel->select(selection, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+
+    if (!firstMatch.isValid())
+    {
+        return false;
+    }
+
+    m_selectionModel->setCurrentIndex(firstMatch, QItemSelectionModel::NoUpdate);
+    auto* view = (m_stack->currentWidget() == m_treeView) ? static_cast<QAbstractItemView*>(m_treeView)
+                                                            : static_cast<QAbstractItemView*>(m_listView);
+    view->scrollTo(firstMatch);
+    return true;
+}
+
+void FileBrowserView::focusView()
+{
+    QWidget* view = (m_stack->currentWidget() == m_treeView) ? static_cast<QWidget*>(m_treeView) : static_cast<QWidget*>(m_listView);
+    view->setFocus();
+}
+
 void FileBrowserView::onRenameCommitted(const QModelIndex& index, const QString& newName)
 {
     const auto oldPath = std::filesystem::path(index.data(FileListModel::FilePathRole).toString().toStdWString());

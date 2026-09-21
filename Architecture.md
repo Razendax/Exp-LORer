@@ -918,3 +918,48 @@ Qt/SQLite/FFmpeg — but this is a presentation concern, not a Domain/Applicatio
   presets, or a "reset to defaults" button; automated UI coverage for `SettingsDialog`/
   `SyntaxHighlighter` beyond `SyntaxHighlightEngine`'s own GTest coverage (§11's existing UI/
   ViewModel-glue carve-out).
+
+### 14.27 Per-Pane Status Bar
+
+A persistent status bar shown at the bottom of every pane, reporting the currently focused
+tab's object count / selection count and hosting a quick-select field — distinct from
+`MainWindow`'s existing `QMainWindow::statusBar()` (a transient, window-wide 5-second
+auto-hiding message bar for navigation/search failures, `MainWindow::onStatusMessage`), which is
+unchanged by this feature.
+
+* **One widget per pane, rebound to the active tab** — the same shape `WorkspacePaneWidget`
+  already uses for its toolbar (address bar, back/forward/up): a single `StatusBarWidget`
+  instance, not one per tab page, so the existing per-tab splitter/`QStackedWidget` structure
+  (`addPageForTab`, §14.23) is untouched. `bindToolBarToTab()` — already the tab-switch rebind
+  point — additionally wires the new tab's `directoryContentsChanged`, `searchResultsChanged`,
+  `advancedSearchResultsChanged`, `searchModeChanged`, `advancedSearchModeChanged`, and
+  `selectedEntriesChanged` signals to a `refreshStatusCounts()` handler that reads the counts
+  directly off the tab (`advancedSearchActive()`/`searchActive()` pick which of
+  `fileListModel()`/`searchResultsModel()`/`advancedSearchResultsModel()`'s `rowCount()` is
+  "current", plus `selectedEntries().size()`), so it's correct regardless of which signal fired.
+* **`StatusBarWidget`** (new, `src/ui/widgets`) — a plain display widget, same posture as
+  `AddressBarWidget`: a `QLabel` (`"<N> items"`, or `"<N> items, <M> selected"` once something is
+  selected) plus a `QLineEdit` quick-select field emitting `quickSelectTextChanged(QString)` on
+  every keystroke; Escape clears it. No `TabViewModel`/`FileListModel` dependency — it only
+  emits signals, `WorkspacePaneWidget` mediates, exactly like the address bar's
+  `folderSuggestionsRequested` (§14.20). Fixed height, appended below `m_tabWidget` in
+  `WorkspacePaneWidget`'s own top-level layout (not inside any per-tab splitter).
+* **Quick select** (`FileBrowserView::selectEntriesContaining(text)`, new) — a linear scan over
+  the currently active tab page's model (mirroring `indexForPath`'s existing scan), matching
+  against the Name column's *displayed* text (`Qt::DisplayRole`, so synthetic `displayName()`
+  overrides like "This PC" drives, §14.15, match what's typed) rather than `FileNode::name()`
+  directly. Every case-insensitive substring match (anywhere in the name, not just a prefix) is
+  selected; the first match is scrolled into view. Empty text is a no-op (leaves the existing
+  selection alone); no match clears the selection. `WorkspacePaneWidget` resolves "the currently
+  active tab page's browser view" via a new `currentBrowserView()` helper, factored out of the
+  unwrap `onViewModeChanged()`/`currentColumnWidths()` already duplicated (splitter →
+  `QStackedWidget` → `FileBrowserView`-or-`SearchResultsPane::browserView()`).
+* **Reset points:** the quick-select field is cleared (`StatusBarWidget::clearQuickSelect()`) on
+  tab switch and on the bound tab's `currentPathChanged`/search-mode-toggle signals, since the
+  visible item set changes completely at each of those points — same ephemeral-per-context
+  posture as the quick-search/advanced-search boxes' own state (§14.18/§14.19).
+* **Not built:** cycling through multiple matches (Tab/F3) — all matches are selected at once;
+  persisting the quick-select text across navigation or restart; per-tab status bar instances.
+  No Domain/Application change — every count and listing the bar needs already exists on
+  `TabViewModel`/`FileListModel`. No automated coverage: pure UI/ViewModel glue, same carve-out
+  as the toolbar and address-bar autocomplete (§11).

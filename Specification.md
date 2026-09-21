@@ -50,6 +50,12 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   holds one category, Highlight > Languages, listing the languages with syntax highlighting
   (2.2 "Preview Panel") and, per language, each of its token types with a color swatch the user can
   change via a color picker. Changes apply and persist immediately.
+* **Status bar (Architecture.md §14.27):** each pane shows a status bar at the bottom, always
+  reflecting whichever tab in that pane currently has focus: the number of objects in the
+  current listing (the browsed folder, or the active search/advanced-search results) and, once
+  something is selected, the number of selected objects. It also hosts a quick-select field —
+  typing in it live-selects every item whose name contains what's been typed so far (anywhere in
+  the name, not just at the start) and scrolls to the first match, with no need to press Enter.
 
 **File Operations:**
 * Create, open, rename, delete (move to trash/permanently delete), and copy/paste files and folders.

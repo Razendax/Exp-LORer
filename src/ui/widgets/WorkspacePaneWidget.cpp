@@ -26,6 +26,7 @@
 #include "IContextMenuProvider.h"
 #include "SearchCriteriaPanel.h"
 #include "SearchResultsPane.h"
+#include "StatusBarWidget.h"
 #include "TabViewModel.h"
 #include "TerminalWidget.h"
 #include "VirtualPaths.h"
@@ -112,11 +113,21 @@ WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOpera
     QToolBar* toolBar = createToolBar();
     createTabArea();
 
+    m_statusBar = new StatusBarWidget(this);
+    connect(m_statusBar, &StatusBarWidget::quickSelectTextChanged, this, &WorkspacePaneWidget::onQuickSelectTextChanged);
+    connect(m_statusBar, &StatusBarWidget::quickSelectCancelled, this, [this]() {
+        if (auto* browserView = currentBrowserView())
+        {
+            browserView->focusView();
+        }
+    });
+
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
     layout->addWidget(toolBar);
     layout->addWidget(m_tabWidget);
+    layout->addWidget(m_statusBar);
 
     connect(m_pane, &WorkspacePaneViewModel::tabAdded, this, &WorkspacePaneWidget::onTabAdded);
     connect(m_pane, &WorkspacePaneViewModel::tabClosed, this, &WorkspacePaneWidget::onTabClosed);
@@ -400,6 +411,17 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
         disconnect(m_boundTab, &TabViewModel::upAvailableChanged, m_upAction, &QAction::setEnabled);
         disconnect(m_boundTab, &TabViewModel::navigationFailed, this, &WorkspacePaneWidget::onNavigationFailed);
         disconnect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged);
+
+        disconnect(m_boundTab, &TabViewModel::directoryContentsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
+        disconnect(m_boundTab, &TabViewModel::searchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
+        disconnect(m_boundTab, &TabViewModel::advancedSearchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
+        disconnect(m_boundTab, &TabViewModel::searchModeChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
+        disconnect(m_boundTab, &TabViewModel::advancedSearchModeChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
+        disconnect(m_boundTab, &TabViewModel::selectedEntriesChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
+
+        disconnect(m_boundTab, &TabViewModel::currentPathChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
+        disconnect(m_boundTab, &TabViewModel::searchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
+        disconnect(m_boundTab, &TabViewModel::advancedSearchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
     }
 
     m_boundTab = tab;
@@ -410,6 +432,8 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
         m_forwardAction->setEnabled(false);
         m_upAction->setEnabled(false);
         m_addressBar->clear();
+        m_statusBar->setCounts(0, 0);
+        m_statusBar->clearQuickSelect();
         return;
     }
 
@@ -420,6 +444,17 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
     connect(m_boundTab, &TabViewModel::navigationFailed, this, &WorkspacePaneWidget::onNavigationFailed);
     connect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged);
 
+    connect(m_boundTab, &TabViewModel::directoryContentsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
+    connect(m_boundTab, &TabViewModel::searchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
+    connect(m_boundTab, &TabViewModel::advancedSearchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
+    connect(m_boundTab, &TabViewModel::searchModeChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
+    connect(m_boundTab, &TabViewModel::advancedSearchModeChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
+    connect(m_boundTab, &TabViewModel::selectedEntriesChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
+
+    connect(m_boundTab, &TabViewModel::currentPathChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
+    connect(m_boundTab, &TabViewModel::searchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
+    connect(m_boundTab, &TabViewModel::advancedSearchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
+
     // Sync against a tab that already navigated before this binding existed (e.g. tabs restored
     // from the saved workspace config navigate before MainWindow/WorkspacePaneWidget are
     // constructed) -- the *Changed signals above only fire on future navigation, not retroactively.
@@ -428,7 +463,9 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
     m_upAction->setEnabled(m_boundTab->upAvailable());
 
     m_addressBar->setText(displayPathText(m_boundTab->currentPath()));
+    m_statusBar->clearQuickSelect();
     onViewModeChanged(m_boundTab->viewMode());
+    refreshStatusCounts();
 }
 
 int WorkspacePaneWidget::indexOfTab(TabViewModel* tab) const
@@ -606,6 +643,16 @@ void WorkspacePaneWidget::onViewModeChanged(ViewMode mode)
 
 std::array<int, FileListModel::ColumnCount> WorkspacePaneWidget::currentColumnWidths() const
 {
+    if (auto* browserView = currentBrowserView())
+    {
+        return browserView->columnWidths();
+    }
+
+    return m_initialColumnWidths;
+}
+
+FileBrowserView* WorkspacePaneWidget::currentBrowserView() const
+{
     // Same splitter-unwrap and heterogeneous-stack shape as onViewModeChanged: page 2 is a
     // SearchResultsPane wrapping a FileBrowserView, pages 0/1 are plain FileBrowserView.
     auto* splitter = qobject_cast<QSplitter*>(m_tabWidget->currentWidget());
@@ -613,15 +660,37 @@ std::array<int, FileListModel::ColumnCount> WorkspacePaneWidget::currentColumnWi
     {
         if (auto* browserView = qobject_cast<FileBrowserView*>(stack->currentWidget()))
         {
-            return browserView->columnWidths();
+            return browserView;
         }
         if (auto* searchPane = qobject_cast<SearchResultsPane*>(stack->currentWidget()))
         {
-            return searchPane->browserView()->columnWidths();
+            return searchPane->browserView();
         }
     }
 
-    return m_initialColumnWidths;
+    return nullptr;
+}
+
+void WorkspacePaneWidget::refreshStatusCounts()
+{
+    if (!m_boundTab)
+    {
+        return;
+    }
+
+    const int total = m_boundTab->advancedSearchActive() ? m_boundTab->advancedSearchResultsModel()->rowCount()
+                     : m_boundTab->searchActive()          ? m_boundTab->searchResultsModel()->rowCount()
+                                                            : m_boundTab->fileListModel()->rowCount();
+    const int selected = static_cast<int>(m_boundTab->selectedEntries().size());
+    m_statusBar->setCounts(total, selected);
+}
+
+void WorkspacePaneWidget::onQuickSelectTextChanged(const QString& text)
+{
+    if (auto* browserView = currentBrowserView())
+    {
+        browserView->selectEntriesContaining(text);
+    }
 }
 
 bool WorkspacePaneWidget::extendedShellExtensionsEnabled()
