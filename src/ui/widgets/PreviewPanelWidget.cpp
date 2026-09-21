@@ -1,10 +1,9 @@
 #include "PreviewPanelWidget.h"
 
-#include <QFileInfo>
 #include <QFont>
 #include <QHideEvent>
 #include <QLabel>
-#include <QListWidget>
+#include <QListView>
 #include <QPlainTextEdit>
 #include <QResizeEvent>
 #include <QShowEvent>
@@ -13,17 +12,10 @@
 
 #include "FilePreview.h"
 #include "FilePreviewViewModel.h"
+#include "FolderPreviewListModel.h"
 #include "LanguageRegistry.h"
 #include "MediaExtensions.h"
 #include "SyntaxHighlighter.h"
-
-namespace
-{
-    QString toQString(const std::filesystem::path& path)
-    {
-        return QString::fromStdWString(path.wstring());
-    }
-}
 
 PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHighlightEngine& syntaxHighlightEngine,
                                         HighlightThemeViewModel& highlightThemeViewModel, QWidget* parent)
@@ -49,7 +41,10 @@ PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHi
 
     m_syntaxHighlighter = new SyntaxHighlighter(m_textView->document(), syntaxHighlightEngine, highlightThemeViewModel);
 
-    m_folderList = new QListWidget(m_stack);
+    m_folderList = new QListView(m_stack);
+    m_folderList->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_folderModel = new FolderPreviewListModel(this);
+    m_folderList->setModel(m_folderModel);
     m_stack->addWidget(m_folderList);
 
     m_loadingLabel = new QLabel(tr("Loading..."), m_stack);
@@ -169,15 +164,7 @@ void PreviewPanelWidget::showText(const FilePreview& preview)
 
 void PreviewPanelWidget::showFolder(const FilePreview& preview)
 {
-    m_folderList->clear();
-
-    for (const FileNode& entry : preview.folderEntries())
-    {
-        const QString name = entry.displayName() ? QString::fromStdString(*entry.displayName()) : toQString(entry.name());
-        auto* item = new QListWidgetItem(m_iconProvider.icon(QFileInfo(toQString(entry.path()))), name);
-        m_folderList->addItem(item);
-    }
-
+    m_folderModel->setEntries(preview.folderEntries());
     m_stack->setCurrentWidget(m_folderList);
 }
 

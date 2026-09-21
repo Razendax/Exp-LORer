@@ -41,6 +41,8 @@ add_library(explorer_ui_widgets STATIC
     RightPanelWidget.cpp
     PreviewPanelWidget.h
     PreviewPanelWidget.cpp
+    FolderPreviewListModel.h
+    FolderPreviewListModel.cpp
     SyntaxHighlighter.h
     SyntaxHighlighter.cpp
     SettingsDialog.h

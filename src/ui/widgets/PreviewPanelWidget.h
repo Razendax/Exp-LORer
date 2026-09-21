@@ -1,17 +1,17 @@
 #pragma once
 
-#include <QFileIconProvider>
 #include <QPixmap>
 #include <QWidget>
 
 class FilePreview;
 class FilePreviewViewModel;
+class FolderPreviewListModel;
 class HighlightThemeViewModel;
 class SyntaxHighlightEngine;
 class SyntaxHighlighter;
 class QHideEvent;
 class QLabel;
-class QListWidget;
+class QListView;
 class QPlainTextEdit;
 class QResizeEvent;
 class QShowEvent;
@@ -22,7 +22,9 @@ class QStackedWidget;
 // monospace text view, a flat one-level folder listing (existing QFileIconProvider icons), and
 // loading/unsupported/error states, driven by FilePreviewViewModel's signals. Calls
 // setPanelActive(true/false) from showEvent/hideEvent so no background generation happens while
-// this tab isn't the visible one.
+// this tab isn't the visible one. The folder listing is backed by a QListView/FolderPreviewListModel
+// rather than an eagerly-populated QListWidget so that per-entry icon lookups (expensive for
+// executables) only happen for rows the view actually paints.
 class PreviewPanelWidget : public QWidget
 {
     Q_OBJECT
@@ -52,12 +54,12 @@ private:
     QStackedWidget* m_stack = nullptr;
     QLabel* m_imageLabel = nullptr;
     QPlainTextEdit* m_textView = nullptr;
-    QListWidget* m_folderList = nullptr;
+    QListView* m_folderList = nullptr;
+    FolderPreviewListModel* m_folderModel = nullptr;
     QLabel* m_loadingLabel = nullptr;
     QLabel* m_unsupportedLabel = nullptr;
     QLabel* m_errorLabel = nullptr;
 
-    QFileIconProvider m_iconProvider;
     QPixmap m_currentImage;
     SyntaxHighlighter* m_syntaxHighlighter = nullptr;
 };
