@@ -34,9 +34,6 @@ Follow it automatically, without being asked each time:
 1. Follow the plan.
 2. When implementation is complete, rename `.claude/active_work/plan.md` to
    `.claude/active_work/prev_plan.md` (overwrite any existing `prev_plan.md`).
-3. Ask the user whether to commit the changes — never commit automatically.
-   If user approves, commit the changes.
-   Otherwise, do nothing.
 
 ## Build
 
