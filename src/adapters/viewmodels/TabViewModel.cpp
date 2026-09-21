@@ -33,6 +33,22 @@ std::filesystem::path TabViewModel::currentPath() const
     return m_history.current().value_or(std::filesystem::path());
 }
 
+bool TabViewModel::backAvailable() const
+{
+    return m_history.canGoBack();
+}
+
+bool TabViewModel::forwardAvailable() const
+{
+    return m_history.canGoForward();
+}
+
+bool TabViewModel::upAvailable() const
+{
+    const auto current = m_history.current();
+    return current.has_value() && *current != VirtualPaths::ThisPC;
+}
+
 SortCriterion TabViewModel::sortCriterion() const noexcept
 {
     return m_fileListModel->sortCriterion();
@@ -407,10 +423,7 @@ void TabViewModel::runAdvancedSearch(bool forceRescan)
 
 void TabViewModel::emitAvailability()
 {
-    emit backAvailableChanged(m_history.canGoBack());
-    emit forwardAvailableChanged(m_history.canGoForward());
-
-    const auto current = m_history.current();
-    const bool upAvailable = current.has_value() && *current != VirtualPaths::ThisPC;
-    emit upAvailableChanged(upAvailable);
+    emit backAvailableChanged(backAvailable());
+    emit forwardAvailableChanged(forwardAvailable());
+    emit upAvailableChanged(upAvailable());
 }

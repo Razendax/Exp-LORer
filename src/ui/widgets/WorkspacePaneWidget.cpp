@@ -420,6 +420,13 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
     connect(m_boundTab, &TabViewModel::navigationFailed, this, &WorkspacePaneWidget::onNavigationFailed);
     connect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged);
 
+    // Sync against a tab that already navigated before this binding existed (e.g. tabs restored
+    // from the saved workspace config navigate before MainWindow/WorkspacePaneWidget are
+    // constructed) -- the *Changed signals above only fire on future navigation, not retroactively.
+    m_backAction->setEnabled(m_boundTab->backAvailable());
+    m_forwardAction->setEnabled(m_boundTab->forwardAvailable());
+    m_upAction->setEnabled(m_boundTab->upAvailable());
+
     m_addressBar->setText(displayPathText(m_boundTab->currentPath()));
     onViewModeChanged(m_boundTab->viewMode());
 }

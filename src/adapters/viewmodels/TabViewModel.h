@@ -32,6 +32,9 @@ public:
     TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase, QObject* parent = nullptr);
 
     std::filesystem::path currentPath() const;
+    bool backAvailable() const;
+    bool forwardAvailable() const;
+    bool upAvailable() const;
     ViewMode viewMode() const noexcept { return m_viewMode; }
     FileListModel* fileListModel() const noexcept { return m_fileListModel; }
     FileListModel* searchResultsModel() const noexcept { return m_searchResultsModel; }
