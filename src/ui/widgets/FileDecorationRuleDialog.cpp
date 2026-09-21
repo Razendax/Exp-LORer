@@ -41,11 +41,23 @@ namespace
     }
 }
 
-FileDecorationRuleDialog::FileDecorationRuleDialog(const FileDecorationRule& initialRule, QWidget* parent)
+FileDecorationRuleDialog::FileDecorationRuleDialog(const FileDecorationRule& initialRule, QWidget* parent, Kind kind)
     : QDialog(parent)
+    , m_kind(kind)
     , m_rule(initialRule)
 {
-    setWindowTitle(tr("Edit Decoration Rule"));
+    switch (m_kind)
+    {
+        case Kind::PatternRule:
+            setWindowTitle(tr("Edit Decoration Rule"));
+            break;
+        case Kind::HiddenFiles:
+            setWindowTitle(tr("Edit Hidden Files Style"));
+            break;
+        case Kind::HiddenFolders:
+            setWindowTitle(tr("Edit Hidden Folders Style"));
+            break;
+    }
 
     if (initialRule.hexColor())
     {
@@ -56,11 +68,21 @@ FileDecorationRuleDialog::FileDecorationRuleDialog(const FileDecorationRule& ini
 
     auto* helpLabel = new QLabel(patternHelpText(), this);
     helpLabel->setWordWrap(true);
+    helpLabel->setVisible(m_kind == Kind::PatternRule);
     mainLayout->addWidget(helpLabel);
 
     auto* form = new QFormLayout();
 
-    m_patternsEdit = new QLineEdit(QString::fromStdString(initialRule.patternsRaw()), this);
+    if (m_kind == Kind::PatternRule)
+    {
+        m_patternsEdit = new QLineEdit(QString::fromStdString(initialRule.patternsRaw()), this);
+    }
+    else
+    {
+        m_patternsEdit =
+            new QLineEdit(m_kind == Kind::HiddenFiles ? tr("(all hidden files)") : tr("(all hidden folders)"), this);
+        m_patternsEdit->setEnabled(false);
+    }
     form->addRow(tr("Patterns:"), m_patternsEdit);
 
     auto* colorLayout = new QHBoxLayout();
@@ -264,7 +286,7 @@ void FileDecorationRuleDialog::updatePreview()
 
 void FileDecorationRuleDialog::accept()
 {
-    const std::string patternsRaw = m_patternsEdit->text().toStdString();
+    const std::string patternsRaw = m_kind == Kind::PatternRule ? m_patternsEdit->text().toStdString() : std::string();
     const std::optional<std::string> hexColor = m_color ? std::optional<std::string>(m_color->name().toStdString()) : std::nullopt;
 
     const QString familyText = m_fontFamilyEdit->text().trimmed();

@@ -24,7 +24,17 @@ class FileDecorationRuleDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit FileDecorationRuleDialog(const FileDecorationRule& initialRule, QWidget* parent = nullptr);
+    // PatternRule is a normal, user-removable name-pattern rule. HiddenFiles/HiddenFolders are the
+    // two built-in rows (Architecture.md §14.29): their Patterns field is fixed/non-editable and
+    // accept() always parses an empty pattern string instead of the field's text.
+    enum class Kind
+    {
+        PatternRule,
+        HiddenFiles,
+        HiddenFolders,
+    };
+
+    explicit FileDecorationRuleDialog(const FileDecorationRule& initialRule, QWidget* parent = nullptr, Kind kind = Kind::PatternRule);
 
     // Only meaningful after exec() returns QDialog::Accepted.
     const FileDecorationRule& rule() const { return m_rule; }
@@ -37,6 +47,7 @@ private:
     void updatePreview();
     void accept() override;
 
+    Kind m_kind = Kind::PatternRule;
     QLineEdit* m_patternsEdit = nullptr;
     QPushButton* m_colorButton = nullptr;
     QLineEdit* m_fontFamilyEdit = nullptr;

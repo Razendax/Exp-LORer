@@ -53,23 +53,32 @@ private:
     void refreshSwatchColors();
 
     // General -> Colors page (Architecture.md §14.29): per-file/folder font & color customization
-    // by name pattern. m_decorationRules is a local editable copy of
-    // m_fileDecorationsViewModel.rules() -- every mutation (add/edit/reorder/remove) updates it and
-    // immediately calls setRules() to persist + broadcast, matching every other Settings control's
-    // immediate-apply posture.
+    // by name pattern, plus two built-in non-removable rows (Hidden Files/Hidden Folders) always
+    // pinned at the top of the table. m_decorationRules is a local editable copy of
+    // m_fileDecorationsViewModel.rules(); m_hiddenFilesRule/m_hiddenFoldersRule likewise mirror
+    // hiddenFilesRule()/hiddenFoldersRule() -- every mutation (add/edit/reorder/remove for pattern
+    // rules, edit for the two hidden rows) updates the local copy and immediately calls the
+    // matching setRules()/setHiddenFilesRule()/setHiddenFoldersRule() to persist + broadcast,
+    // matching every other Settings control's immediate-apply posture. Table rows 0/1 are always
+    // the hidden rows; general rules render at row `2 + i` for vector index `i`.
     QWidget* buildFileDecorationsPage();
     void refreshDecorationRows();
     void addDecorationRule();
     void editDecorationRule(int row);
+    void editHiddenRule(bool isDirectory);
     void moveDecorationRule(int row, int delta);
     void removeDecorationRule(int row);
     void commitDecorationRules();
+
+    static constexpr int kHiddenRowCount = 2;
 
     SyntaxHighlightEngine& m_engine;
     HighlightThemeViewModel& m_themeViewModel;
     FileDecorationsViewModel& m_fileDecorationsViewModel;
     QTableWidget* m_decorationsTable = nullptr;
     std::vector<FileDecorationRule> m_decorationRules;
+    FileDecorationRule m_hiddenFilesRule;
+    FileDecorationRule m_hiddenFoldersRule;
 
     QTreeWidget* m_categoryTree = nullptr;
     QStackedWidget* m_pageStack = nullptr;

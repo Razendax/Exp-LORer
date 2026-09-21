@@ -36,6 +36,16 @@ TEST_F(FileDecorationRulesStoreTest, LoadOnMissingFileReturnsEmptyRuleList)
     EXPECT_TRUE(rules.rules().empty());
 }
 
+TEST_F(FileDecorationRulesStoreTest, LoadOnMissingFileDefaultsHiddenRulesToNoOverride)
+{
+    FileDecorationRulesStore store(m_rulesFilePath);
+
+    const FileDecorationRules rules = store.load();
+
+    EXPECT_EQ(rules.hiddenFilesRule().hexColor(), std::nullopt);
+    EXPECT_EQ(rules.hiddenFoldersRule().hexColor(), std::nullopt);
+}
+
 TEST_F(FileDecorationRulesStoreTest, SaveThenLoadRoundTripsOrderAndEveryField)
 {
     FileDecorationRulesStore store(m_rulesFilePath);
@@ -69,6 +79,45 @@ TEST_F(FileDecorationRulesStoreTest, SaveThenLoadRoundTripsOrderAndEveryField)
     EXPECT_TRUE(loadedSecond.italic());
     EXPECT_TRUE(loadedSecond.underline());
     EXPECT_TRUE(loadedSecond.strikeout());
+}
+
+TEST_F(FileDecorationRulesStoreTest, SaveThenLoadRoundTripsHiddenFilesAndHiddenFoldersRules)
+{
+    FileDecorationRulesStore store(m_rulesFilePath);
+
+    Result<FileDecorationRule> hiddenFiles =
+        FileDecorationRule::create("", std::string("#AAAAAA"), std::nullopt, std::nullopt, true, false, false, false);
+    Result<FileDecorationRule> hiddenFolders =
+        FileDecorationRule::create("", std::nullopt, std::string("Consolas"), 14, false, true, false, false);
+    ASSERT_TRUE(hiddenFiles);
+    ASSERT_TRUE(hiddenFolders);
+
+    FileDecorationRules rules;
+    rules.setHiddenFilesRule(std::move(hiddenFiles).value());
+    rules.setHiddenFoldersRule(std::move(hiddenFolders).value());
+
+    ASSERT_TRUE(store.save(rules));
+
+    const FileDecorationRules loaded = store.load();
+    EXPECT_EQ(loaded.hiddenFilesRule().hexColor(), "#AAAAAA");
+    EXPECT_TRUE(loaded.hiddenFilesRule().bold());
+    EXPECT_EQ(loaded.hiddenFoldersRule().fontFamily(), "Consolas");
+    EXPECT_EQ(loaded.hiddenFoldersRule().fontPointSize(), 14);
+    EXPECT_TRUE(loaded.hiddenFoldersRule().italic());
+}
+
+TEST_F(FileDecorationRulesStoreTest, LoadDefaultsHiddenRulesToNoOverrideWhenKeysAreAbsentOrMalformed)
+{
+    {
+        std::ofstream file(m_rulesFilePath);
+        file << R"({ "version": 1, "rules": [], "hiddenFiles": "not an object" })";
+    }
+
+    FileDecorationRulesStore store(m_rulesFilePath);
+    const FileDecorationRules rules = store.load();
+
+    EXPECT_EQ(rules.hiddenFilesRule().hexColor(), std::nullopt);
+    EXPECT_EQ(rules.hiddenFoldersRule().hexColor(), std::nullopt);
 }
 
 TEST_F(FileDecorationRulesStoreTest, LoadOnMalformedJsonReturnsEmptyRuleList)

@@ -682,18 +682,28 @@ Windows (a leading-`.` filename convention on a future Linux backend); every exi
 `FileNode`-producing repository call funnels through that one function, so no other adapter code
 changes. Synthetic nodes ("This PC", drives, known folders) are never marked hidden.
 
-`FileListModel` is the single filter/gray point rather than the Application layer or
+`FileListModel` is the single filter/style point rather than the Application layer or
 `TabViewModel`: it already backs normal browsing, §14.18 quick search, and §14.19 advanced search
 alike (one instance each, all fed via `setEntries()`), so implementing it once there covers all
 three. It keeps a `m_visibleRows` index over its full `m_entries`, rebuilt whenever entries/sort/the
-toggle change; with the toggle on, every row stays visible and `data()` returns a dimmed
-`Qt::ForegroundRole` brush for hidden rows (`QGuiApplication::palette()`'s `Disabled`/`Text` color,
-so it already tracks the light/dark palette); with it off, hidden rows are dropped from the index
-entirely. Qt's stock `QStyledItemDelegate` (List/Details views) honors `Qt::ForegroundRole`
-automatically; the three custom delegates that hand-paint text (`FileIconDelegate`,
-`FileTileDelegate`, `SearchResultDelegate`) each read the same role for their non-selected pen color
-instead of the hardcoded `option.palette.text()` they used before, so all seven view modes plus the
-advanced-search results view render consistently.
+toggle change; with the toggle on, every row stays visible; with it off, hidden rows are dropped
+from the index entirely. Text/font styling of hidden rows is not hardcoded here — it's one of
+§14.29's decoration mechanisms: the built-in "Hidden Files"/"Hidden Folders" rows, user-configurable
+from `Settings → General → Colors` like any other decoration rule, with no styling applied by
+default until the user sets one. Qt's stock `QStyledItemDelegate` (List/Details views) honors
+`Qt::ForegroundRole`/`Qt::FontRole` automatically; the three custom delegates that hand-paint text
+(`FileIconDelegate`, `FileTileDelegate`, `SearchResultDelegate`) each read the same roles for their
+non-selected pen color/font instead of the hardcoded `option.palette.text()` they used before, so
+all seven view modes plus the advanced-search results view render consistently.
+
+The **icon** stays hardcoded-dimmed regardless of decoration rules, unlike text/font: `data()`'s
+`Qt::DecorationRole` branch runs a hidden entry's icon through a `dimmedIcon()` helper that rebuilds
+it one size at a time via `QStyle::generatedIconPixmap(QIcon::Disabled, ...)` — the same graying Qt
+applies to a disabled toolbar action, so it already tracks the light/dark palette without needing a
+color to be configured. This is deliberate: §14.29 only ever exposed a hex color/font, never an icon
+override, and Explorer-style dimmed icons are expected even when a user hasn't set (or has cleared)
+the Hidden Files/Hidden Folders text style, unlike the text color which intentionally starts at
+"no override" (see §14.29).
 
 The toggle itself is a `QSettings`-backed app-wide preference (`MainWindow`, modeled on
 `createContextMenuModeAction()`) rather than `config.json`/`WorkspaceConfig` state — same posture as
@@ -1085,6 +1095,20 @@ adapter-layer pure logic plus Qt-facing config/ViewModel/UI, mirroring the
   `resolve(nameUtf8, isDirectory)` returns the first match or `nullptr` — **first-match-wins, not
   merged**, so rule order is priority and the Settings page exposes Up/Down reordering). GTest-
   covered like `LanguageRegistry`/`SyntaxHighlightEngine`.
+* **Built-in Hidden Files/Hidden Folders rows (§14.21):** `FileDecorationRules` additionally holds
+  two always-present `FileDecorationRule` members — `hiddenFilesRule()`/`hiddenFoldersRule()`
+  (read) and `setHiddenFilesRule()`/`setHiddenFoldersRule()` (write), selected by
+  `hiddenStyle(isDirectory)` — that are **structurally excluded from `resolve()`**: they're stored
+  outside `m_rules` and never participate in name-pattern matching or Up/Down priority. They start
+  with no color/font override (both fields unset, same "(Default)" starting point `Add Rule`
+  produces) until the user sets one — there is deliberately no hardcoded hidden-dim fallback
+  anymore. `FileDecorationRulesStore` persists them as two optional top-level JSON keys,
+  `hiddenFiles`/`hiddenFolders`, holding the same `color`/`fontFamily`/`fontSize`/`bold`/`italic`/
+  `underline`/`strikeout` fields as a rule object but no `patterns` key; missing or malformed keys
+  (old-format file, hand-edited JSON) fall back to the same no-override default, matching the
+  store's tolerant-load posture. `FileDecorationsViewModel` exposes matching
+  `hiddenFilesRule()`/`hiddenFoldersRule()`/`setHiddenFilesRule()`/`setHiddenFoldersRule()`, each
+  broadcasting `rulesChanged()` and queuing a save exactly like `setRules()`.
 * **`src/adapters/config`** gains `FileDecorationRulesStore` (own `file_decorations.json`, same
   tolerant-load/atomic-save shape as `HighlightThemeStore`), `FileDecorationRulesSaveWorker` (same
   background-thread-save shape as `HighlightThemeSaveWorker`), and `FileDecorationsViewModel` (the
@@ -1109,15 +1133,17 @@ adapter-layer pure logic plus Qt-facing config/ViewModel/UI, mirroring the
   already-open listings and search results restyle live the moment a rule is added/edited/removed/
   reordered — the same immediate-apply posture every other Settings page uses.
   `explorer_adapters_viewmodels` links `explorer_adapters_decoration` directly for this.
-* **`FileListModel::data()`:** resolves a decoration via
-  `m_fileDecorationRules.resolve(PathUtf8::toUtf8(entry.name()), entry.isDirectory())` — **never
-  `path::string()`**, per §6 — skipped for synthetic rows (`entry.displayName()` set, e.g. "This
-  PC"'s drives, §14.15), since they have no real on-disk filename to match against. A resolved
-  `hexColor` takes priority over the existing hidden-file dim-color `Qt::ForegroundRole` (unchanged
-  when no rule matches); a resolved font override/style bits produce a new `Qt::FontRole` value
-  (unset when no rule matches, same as today). Neither role is column-scoped — a match styles the
-  whole row across every Details-view column, not just Name — matching the existing hidden-dim
-  behavior's lack of a column guard.
+* **`FileListModel::data()`:** resolves a decoration via a single `resolveDecoration(entry)` point
+  that first tries `m_fileDecorationRules.resolve(PathUtf8::toUtf8(entry.name()),
+  entry.isDirectory())` — **never `path::string()`**, per §6 — skipped for synthetic rows
+  (`entry.displayName()` set, e.g. "This PC"'s drives, §14.15), since they have no real on-disk
+  filename to match against. If no pattern rule matches and `entry.isHidden()`, it falls back to
+  `m_fileDecorationRules.hiddenStyle(entry.isDirectory())` — so a matching name-pattern rule always
+  wins over the built-in hidden style for a hidden entry, and an entry that is neither matched nor
+  hidden resolves to nothing. A resolved `hexColor` becomes the `Qt::ForegroundRole` (unset when
+  nothing resolves or the resolved rule has no color override); a resolved font override/style bits
+  produce a new `Qt::FontRole` value (unset otherwise). Neither role is column-scoped — a match
+  styles the whole row across every Details-view column, not just Name.
 * **Delegates:** `FileIconDelegate`/`FileTileDelegate`/`SearchResultDelegate` already read
   `Qt::ForegroundRole` off the model for their hand-painted text pen color (§14.21); each gains the
   symmetric `Qt::FontRole` read to `painter->setFont(...)`, with `SearchResultDelegate` layering its
@@ -1131,8 +1157,16 @@ adapter-layer pure logic plus Qt-facing config/ViewModel/UI, mirroring the
   the ↑/↓/Remove columns are `ResizeToContents`-sized `QToolButton`s with standard icons
   (`SP_ArrowUp`/`SP_ArrowDown`/`SP_TrashIcon`) rather than text buttons, so the action columns stay
   compact instead of dominating the row. Reordering and removal call `setRules()` immediately (no
-  confirmation — cheap, reversible). A new `FileDecorationRuleDialog` (`src/ui/widgets`) edits one
-  rule: a pattern `QLineEdit` (with a syntax hint covering the four worked examples above); a color
+  confirmation — cheap, reversible). The table's first two rows are always the built-in "Hidden
+  Files"/"Hidden Folders" rows (a fixed label in the Patterns column instead of pattern text,
+  editing their live style Sample the same way as any rule) — they have no ↑/↓/Remove buttons (not
+  reorderable relative to pattern rules, not removable) and sit above the pattern-rule rows, which
+  render starting at table row 2 keyed by their vector index for Up/Down/Remove. A new
+  `FileDecorationRuleDialog` (`src/ui/widgets`) edits one rule: a pattern `QLineEdit` (with a syntax
+  hint covering the four worked examples above) — disabled and showing a fixed placeholder instead
+  (with the syntax hint hidden) when editing one of the two built-in hidden rows, whose `Kind`
+  constructor parameter (`PatternRule`/`HiddenFiles`/`HiddenFolders`) selects this mode and skips
+  pattern parsing on accept (`FileDecorationRule::create("", ...)`, always valid); a color
   row whose button *is* the swatch (background = the chosen color, text = its hex code or
   "(Default)", click opens `QColorDialog`) with a "Reset" button to unset it; and a "Font" group box
   replacing the old `QFontDialog` picker (whose Bold/Italic/Underline/Strikeout never actually

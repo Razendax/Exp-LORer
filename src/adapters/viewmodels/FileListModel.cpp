@@ -1,12 +1,15 @@
 #include "FileListModel.h"
 
+#include <QApplication>
 #include <QColor>
 #include <QDateTime>
 #include <QFileInfo>
 #include <QFont>
-#include <QGuiApplication>
-#include <QPalette>
+#include <QIcon>
+#include <QPixmap>
 #include <QSettings>
+#include <QStyle>
+#include <QStyleOption>
 
 #include "PathUtf8.h"
 
@@ -75,6 +78,35 @@ namespace
                 return FileListModel::NameColumn;
         }
     }
+
+    // Hidden files/folders keep the classic dimmed-icon look (Architecture.md §14.21) independent
+    // of §14.29's now-configurable text/font styling -- rebuilds `icon` with every available size
+    // run through QStyle::generatedIconPixmap(QIcon::Disabled, ...), the same graying Qt applies to
+    // a disabled toolbar action, so it already tracks the light/dark palette.
+    QIcon dimmedIcon(const QIcon& icon)
+    {
+        if (icon.isNull())
+        {
+            return icon;
+        }
+
+        QList<QSize> sizes = icon.availableSizes();
+        if (sizes.isEmpty())
+        {
+            sizes = { QSize(16, 16), QSize(32, 32), QSize(48, 48) };
+        }
+
+        QStyleOption option;
+        option.palette = QApplication::palette();
+
+        QIcon result;
+        for (const QSize& size : sizes)
+        {
+            const QPixmap normalPixmap = icon.pixmap(size);
+            result.addPixmap(QApplication::style()->generatedIconPixmap(QIcon::Disabled, normalPixmap, &option));
+        }
+        return result;
+    }
 }
 
 FileListModel::FileListModel(const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource, QObject* parent)
@@ -122,14 +154,19 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
     if (role == Qt::DecorationRole && index.column() == NameColumn)
     {
         const QFileInfo info(toQString(entry.path()));
+        QIcon icon;
         if (entry.isDirectory() && !info.exists())
         {
             // Archive-synthesized directories (Architecture.md §14.28) have no real path on disk,
             // so QFileIconProvider::icon(QFileInfo) can't stat them and falls back to a generic/file
             // icon instead of a folder icon.
-            return m_iconProvider.icon(QFileIconProvider::Folder);
+            icon = m_iconProvider.icon(QFileIconProvider::Folder);
         }
-        return m_iconProvider.icon(info);
+        else
+        {
+            icon = m_iconProvider.icon(info);
+        }
+        return entry.isHidden() ? dimmedIcon(icon) : icon;
     }
 
     if (role == Qt::ForegroundRole)
@@ -137,10 +174,6 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
         if (const auto decoration = resolveDecoration(entry); decoration && decoration->hexColor())
         {
             return QColor(QString::fromStdString(*decoration->hexColor()));
-        }
-        if (entry.isHidden())
-        {
-            return QGuiApplication::palette().color(QPalette::Disabled, QPalette::Text);
         }
         return {};
     }
@@ -303,6 +336,10 @@ std::optional<FileDecorationRule> FileListModel::resolveDecoration(const FileNod
     if (const FileDecorationRule* rule = m_fileDecorationRules.resolve(PathUtf8::toUtf8(entry.name()), entry.isDirectory()))
     {
         return *rule;
+    }
+    if (entry.isHidden())
+    {
+        return m_fileDecorationRules.hiddenStyle(entry.isDirectory());
     }
     return std::nullopt;
 }

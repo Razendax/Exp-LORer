@@ -32,7 +32,22 @@ std::optional<FileDecorationRule> FileDecorationsViewModel::decorationFor(const 
 
 void FileDecorationsViewModel::setRules(std::vector<FileDecorationRule> rules)
 {
-    m_rules.setRules(std::move(rules));
+    applyAndSave([&rules](FileDecorationRules& target) { target.setRules(std::move(rules)); });
+}
+
+void FileDecorationsViewModel::setHiddenFilesRule(FileDecorationRule rule)
+{
+    applyAndSave([&rule](FileDecorationRules& target) { target.setHiddenFilesRule(std::move(rule)); });
+}
+
+void FileDecorationsViewModel::setHiddenFoldersRule(FileDecorationRule rule)
+{
+    applyAndSave([&rule](FileDecorationRules& target) { target.setHiddenFoldersRule(std::move(rule)); });
+}
+
+void FileDecorationsViewModel::applyAndSave(std::function<void(FileDecorationRules&)> mutate)
+{
+    mutate(m_rules);
     emit rulesChanged();
 
     // Save runs on m_saveThread -- FileDecorationRules is a plain copyable value type, so the

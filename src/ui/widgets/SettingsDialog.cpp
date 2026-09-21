@@ -70,6 +70,8 @@ SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeView
     , m_themeViewModel(themeViewModel)
     , m_fileDecorationsViewModel(fileDecorationsViewModel)
     , m_decorationRules(fileDecorationsViewModel.rules())
+    , m_hiddenFilesRule(fileDecorationsViewModel.hiddenFilesRule())
+    , m_hiddenFoldersRule(fileDecorationsViewModel.hiddenFoldersRule())
 {
     setWindowTitle(tr("Settings"));
     resize(700, 500);
@@ -280,7 +282,22 @@ QWidget* SettingsDialog::buildFileDecorationsPage()
     m_decorationsTable->setSelectionMode(QAbstractItemView::NoSelection);
     layout->addWidget(m_decorationsTable, 1);
 
-    connect(m_decorationsTable, &QTableWidget::cellDoubleClicked, this, [this](int row, int /*column*/) { editDecorationRule(row); });
+    connect(m_decorationsTable, &QTableWidget::cellDoubleClicked, this,
+            [this](int row, int /*column*/)
+            {
+                if (row == 0)
+                {
+                    editHiddenRule(false);
+                }
+                else if (row == 1)
+                {
+                    editHiddenRule(true);
+                }
+                else
+                {
+                    editDecorationRule(row - kHiddenRowCount);
+                }
+            });
 
     auto* addButton = new QPushButton(tr("Add Rule"), page);
     connect(addButton, &QPushButton::clicked, this, &SettingsDialog::addDecorationRule);
@@ -290,18 +307,13 @@ QWidget* SettingsDialog::buildFileDecorationsPage()
     return page;
 }
 
-void SettingsDialog::refreshDecorationRows()
+namespace
 {
-    m_decorationsTable->setRowCount(static_cast<int>(m_decorationRules.size()));
-
-    for (int row = 0; row < static_cast<int>(m_decorationRules.size()); ++row)
+    // Shared by the two fixed Hidden Files/Hidden Folders rows and the general pattern rows --
+    // builds the styled "Sample Text" preview widget for a rule (Architecture.md §14.29).
+    QLabel* buildDecorationSampleLabel(const FileDecorationRule& rule, QWidget* parent)
     {
-        const FileDecorationRule& rule = m_decorationRules[static_cast<size_t>(row)];
-
-        auto* patternsItem = new QTableWidgetItem(QString::fromStdString(rule.patternsRaw()));
-        m_decorationsTable->setItem(row, 0, patternsItem);
-
-        auto* sampleLabel = new QLabel(tr("Sample Text"), m_decorationsTable);
+        auto* sampleLabel = new QLabel(QObject::tr("Sample Text"), parent);
         QFont font = sampleLabel->font();
         if (rule.fontFamily())
         {
@@ -320,29 +332,56 @@ void SettingsDialog::refreshDecorationRows()
         {
             sampleLabel->setStyleSheet(QStringLiteral("color: %1;").arg(QString::fromStdString(*rule.hexColor())));
         }
-        m_decorationsTable->setCellWidget(row, 1, sampleLabel);
+        return sampleLabel;
+    }
+}
+
+void SettingsDialog::refreshDecorationRows()
+{
+    m_decorationsTable->setRowCount(kHiddenRowCount + static_cast<int>(m_decorationRules.size()));
+
+    // Rows 0/1: the built-in Hidden Files/Hidden Folders rows -- fixed label in the Patterns
+    // column, no Move Up/Move Down/Remove buttons (action cells left empty).
+    const std::array<std::pair<QString, const FileDecorationRule*>, kHiddenRowCount> hiddenRows = { {
+        { tr("Hidden Files"), &m_hiddenFilesRule },
+        { tr("Hidden Folders"), &m_hiddenFoldersRule },
+    } };
+    for (int row = 0; row < kHiddenRowCount; ++row)
+    {
+        m_decorationsTable->setItem(row, 0, new QTableWidgetItem(hiddenRows[static_cast<size_t>(row)].first));
+        m_decorationsTable->setCellWidget(row, 1, buildDecorationSampleLabel(*hiddenRows[static_cast<size_t>(row)].second, m_decorationsTable));
+    }
+
+    for (int i = 0; i < static_cast<int>(m_decorationRules.size()); ++i)
+    {
+        const int row = kHiddenRowCount + i;
+        const FileDecorationRule& rule = m_decorationRules[static_cast<size_t>(i)];
+
+        auto* patternsItem = new QTableWidgetItem(QString::fromStdString(rule.patternsRaw()));
+        m_decorationsTable->setItem(row, 0, patternsItem);
+        m_decorationsTable->setCellWidget(row, 1, buildDecorationSampleLabel(rule, m_decorationsTable));
 
         auto* upButton = new QToolButton(m_decorationsTable);
         upButton->setIcon(style()->standardIcon(QStyle::SP_ArrowUp));
         upButton->setAutoRaise(true);
         upButton->setToolTip(tr("Move Up"));
-        upButton->setEnabled(row > 0);
-        connect(upButton, &QToolButton::clicked, this, [this, row]() { moveDecorationRule(row, -1); });
+        upButton->setEnabled(i > 0);
+        connect(upButton, &QToolButton::clicked, this, [this, i]() { moveDecorationRule(i, -1); });
         m_decorationsTable->setCellWidget(row, 2, upButton);
 
         auto* downButton = new QToolButton(m_decorationsTable);
         downButton->setIcon(style()->standardIcon(QStyle::SP_ArrowDown));
         downButton->setAutoRaise(true);
         downButton->setToolTip(tr("Move Down"));
-        downButton->setEnabled(row + 1 < static_cast<int>(m_decorationRules.size()));
-        connect(downButton, &QToolButton::clicked, this, [this, row]() { moveDecorationRule(row, 1); });
+        downButton->setEnabled(i + 1 < static_cast<int>(m_decorationRules.size()));
+        connect(downButton, &QToolButton::clicked, this, [this, i]() { moveDecorationRule(i, 1); });
         m_decorationsTable->setCellWidget(row, 3, downButton);
 
         auto* removeButton = new QToolButton(m_decorationsTable);
         removeButton->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
         removeButton->setAutoRaise(true);
         removeButton->setToolTip(tr("Remove"));
-        connect(removeButton, &QToolButton::clicked, this, [this, row]() { removeDecorationRule(row); });
+        connect(removeButton, &QToolButton::clicked, this, [this, i]() { removeDecorationRule(i); });
         m_decorationsTable->setCellWidget(row, 4, removeButton);
     }
 }
@@ -376,6 +415,30 @@ void SettingsDialog::editDecorationRule(int row)
 
     m_decorationRules[static_cast<size_t>(row)] = dialog.rule();
     commitDecorationRules();
+}
+
+void SettingsDialog::editHiddenRule(bool isDirectory)
+{
+    FileDecorationRule& target = isDirectory ? m_hiddenFoldersRule : m_hiddenFilesRule;
+    const FileDecorationRuleDialog::Kind kind =
+        isDirectory ? FileDecorationRuleDialog::Kind::HiddenFolders : FileDecorationRuleDialog::Kind::HiddenFiles;
+
+    FileDecorationRuleDialog dialog(target, this, kind);
+    if (dialog.exec() != QDialog::Accepted)
+    {
+        return;
+    }
+
+    target = dialog.rule();
+    if (isDirectory)
+    {
+        m_fileDecorationsViewModel.setHiddenFoldersRule(target);
+    }
+    else
+    {
+        m_fileDecorationsViewModel.setHiddenFilesRule(target);
+    }
+    refreshDecorationRows();
 }
 
 void SettingsDialog::moveDecorationRule(int row, int delta)

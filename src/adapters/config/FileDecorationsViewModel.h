@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -43,10 +44,21 @@ public:
     std::vector<FileDecorationRule> rules() const { return m_rules.rules(); }
     void setRules(std::vector<FileDecorationRule> rules);
 
+    // Built-in Hidden Files/Hidden Folders rows (Architecture.md §14.29) -- edited separately from
+    // the pattern-rule list, same immediate-apply-and-save posture as setRules().
+    FileDecorationRule hiddenFilesRule() const { return m_rules.hiddenFilesRule(); }
+    FileDecorationRule hiddenFoldersRule() const { return m_rules.hiddenFoldersRule(); }
+    void setHiddenFilesRule(FileDecorationRule rule);
+    void setHiddenFoldersRule(FileDecorationRule rule);
+
 signals:
     void rulesChanged();
 
 private:
+    // Common "mutate m_rules -> emit rulesChanged() -> queue a background save" tail shared by
+    // setRules()/setHiddenFilesRule()/setHiddenFoldersRule().
+    void applyAndSave(std::function<void(FileDecorationRules&)> mutate);
+
     FileDecorationRules& m_rules;
     FileDecorationRulesStore& m_store;
 
