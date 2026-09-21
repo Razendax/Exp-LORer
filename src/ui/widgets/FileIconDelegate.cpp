@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <QColor>
+#include <QFont>
 #include <QFontMetrics>
 #include <QPainter>
 #include <QPen>
@@ -46,10 +47,17 @@ void FileIconDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
                           iconSize.height());
     icon.paint(painter, iconRect);
 
-    const QFontMetrics fontMetrics(option.font);
     const QRect textRect = nameRectFor(option);
 
-    painter->setFont(option.font);
+    QFont font = option.font;
+    const QVariant fontData = index.data(Qt::FontRole);
+    if (fontData.canConvert<QFont>())
+    {
+        font = fontData.value<QFont>();
+    }
+    const QFontMetrics fontMetrics(font);
+
+    painter->setFont(font);
     const QVariant foreground = index.data(Qt::ForegroundRole);
     if (!(option.state & QStyle::State_Selected) && foreground.canConvert<QColor>())
     {

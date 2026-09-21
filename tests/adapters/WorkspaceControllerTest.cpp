@@ -2,6 +2,9 @@
 
 #include <fstream>
 
+#include "FileDecorationRules.h"
+#include "FileDecorationRulesStore.h"
+#include "FileDecorationsViewModel.h"
 #include "FileNavigationUseCase.h"
 #include "FilePreviewUseCase.h"
 #include "MediaDecoder.h"
@@ -45,8 +48,12 @@ namespace
         TagManagementUseCase m_tagManagementUseCase{ m_tagRepository, m_fileSystemRepository };
         MediaDecoder m_mediaDecoder;
         FilePreviewUseCase m_filePreviewUseCase{ m_fileSystemRepository, m_mediaDecoder };
+        FileDecorationRulesStore m_fileDecorationRulesStore{ fs::temp_directory_path() /
+                                                               "explorer_workspace_controller_test_decorations.json" };
+        FileDecorationRules m_fileDecorationRules;
+        FileDecorationsViewModel m_fileDecorationsViewModel{ m_fileDecorationRules, m_fileDecorationRulesStore };
         WorkspaceController m_controller{ m_fileNavigationUseCase, m_tagManagementUseCase, m_filePreviewUseCase,
-                                           m_fileSystemRepository };
+                                           m_fileSystemRepository, m_fileDecorationRules, m_fileDecorationsViewModel };
     };
 }
 
@@ -79,7 +86,7 @@ TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsThroughRestoreFromConfig)
     SQLiteTagRepository restoredTagRepository{ fs::path(":memory:") };
     TagManagementUseCase restoredTagManagementUseCase{ restoredTagRepository, m_fileSystemRepository };
     WorkspaceController restoredController{ m_fileNavigationUseCase, restoredTagManagementUseCase, m_filePreviewUseCase,
-                                             m_fileSystemRepository };
+                                             m_fileSystemRepository, m_fileDecorationRules, m_fileDecorationsViewModel };
 
     const bool restored = restoredController.restoreFromConfig(captured);
     ASSERT_TRUE(restored);

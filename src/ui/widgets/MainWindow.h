@@ -18,6 +18,7 @@ class QLineEdit;
 class QToolBar;
 class AppConfigStore;
 class HighlightThemeViewModel;
+class FileDecorationsViewModel;
 class SyntaxHighlightEngine;
 class TagManagementUseCase;
 class WorkspaceController;
@@ -38,7 +39,7 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore, TagManagementUseCase& tagManagementUseCase,
                SyntaxHighlightEngine& syntaxHighlightEngine, HighlightThemeViewModel& highlightThemeViewModel,
-               const AppConfig& initialConfig, QWidget* parent = nullptr);
+               FileDecorationsViewModel& fileDecorationsViewModel, const AppConfig& initialConfig, QWidget* parent = nullptr);
 
 protected:
     // Captures window geometry + WorkspaceController::captureConfig() and saves it via
@@ -73,6 +74,7 @@ private:
     TagManagementUseCase& m_tagManagementUseCase;
     SyntaxHighlightEngine& m_syntaxHighlightEngine;
     HighlightThemeViewModel& m_highlightThemeViewModel;
+    FileDecorationsViewModel& m_fileDecorationsViewModel;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;
     PreviewPanelWidget* m_previewPanelWidget = nullptr;

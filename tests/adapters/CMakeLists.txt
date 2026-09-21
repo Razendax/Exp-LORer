@@ -18,6 +18,10 @@ add_executable(explorer_adapters_tests
     ArchivePathResolverTest.cpp
     LibArchiveReaderTest.cpp
     ArchiveIndexCacheTest.cpp
+    FileNamePatternTest.cpp
+    FileDecorationRuleTest.cpp
+    FileDecorationRulesTest.cpp
+    FileDecorationRulesStoreTest.cpp
 )
 
 target_link_libraries(explorer_adapters_tests PRIVATE

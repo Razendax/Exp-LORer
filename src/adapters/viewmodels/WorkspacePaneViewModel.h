@@ -9,6 +9,7 @@
 class FileNavigationUseCase;
 class TagManagementUseCase;
 class TabViewModel;
+class FileDecorationRules;
 
 // Per-pane tab bookkeeping: owns an ordered list of TabViewModel children and tracks which one is
 // active. One instance per WorkspacePaneId, always alive for the pane's lifetime regardless of
@@ -18,7 +19,9 @@ class WorkspacePaneViewModel : public QObject
     Q_OBJECT
 
 public:
+    // See TabViewModel's constructor comment for why fileDecorationsChangeSource is a bare QObject&.
     WorkspacePaneViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
+                            const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                             WorkspacePaneId id, QObject* parent = nullptr);
 
     WorkspacePaneId id() const noexcept { return m_id; }
@@ -47,6 +50,8 @@ signals:
 private:
     FileNavigationUseCase& m_fileNavigationUseCase;
     TagManagementUseCase& m_tagManagementUseCase;
+    const FileDecorationRules& m_fileDecorationRules;
+    QObject& m_fileDecorationsChangeSource;
     WorkspacePaneId m_id;
     std::vector<TabViewModel*> m_tabs;
     int m_activeIndex = -1;

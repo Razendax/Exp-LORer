@@ -29,4 +29,4 @@ add_library(explorer_adapters_viewmodels STATIC
 )
 
 target_include_directories(explorer_adapters_viewmodels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(explorer_adapters_viewmodels PUBLIC explorer_application Qt6::Core Qt6::Widgets)
+target_link_libraries(explorer_adapters_viewmodels PUBLIC explorer_application explorer_adapters_decoration Qt6::Core Qt6::Widgets)

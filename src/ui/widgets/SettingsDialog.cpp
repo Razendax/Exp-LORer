@@ -1,19 +1,28 @@
 #include "SettingsDialog.h"
 
 #include <array>
+#include <utility>
 
+#include <QAbstractItemView>
 #include <QCheckBox>
 #include <QColorDialog>
+#include <QFont>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QHeaderView>
 #include <QLabel>
 #include <QPushButton>
 #include <QSettings>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <QStyle>
+#include <QTableWidget>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include "FileDecorationRuleDialog.h"
+#include "FileDecorationsViewModel.h"
 #include "HighlightThemeViewModel.h"
 #include "SyntaxHighlightEngine.h"
 #include "WorkspacePaneWidget.h"
@@ -54,13 +63,16 @@ namespace
     constexpr int kLanguageIndexRole = Qt::UserRole;
 }
 
-SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeViewModel& themeViewModel, QWidget* parent)
+SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeViewModel& themeViewModel,
+                               FileDecorationsViewModel& fileDecorationsViewModel, QWidget* parent)
     : QDialog(parent)
     , m_engine(engine)
     , m_themeViewModel(themeViewModel)
+    , m_fileDecorationsViewModel(fileDecorationsViewModel)
+    , m_decorationRules(fileDecorationsViewModel.rules())
 {
     setWindowTitle(tr("Settings"));
-    resize(640, 420);
+    resize(700, 500);
 
     auto* mainLayout = new QVBoxLayout(this);
 
@@ -95,10 +107,13 @@ SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeView
     generalRoot->setData(0, kLanguageIndexRole, -1);
     auto* uiItem = new QTreeWidgetItem(generalRoot, QStringList{ tr("UI") });
     uiItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()));
+    auto* colorsItem = new QTreeWidgetItem(generalRoot, QStringList{ tr("Colors") });
+    colorsItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()) + 1);
 
-    // Built eagerly (unlike the lazily-built language pages above) since it's cheap -- a single
-    // checkbox, no tree-sitter/query compilation involved.
+    // Both built eagerly (unlike the lazily-built language pages above) since they're cheap -- no
+    // tree-sitter/query compilation involved.
     m_pageStack->addWidget(buildGeneralUiPage());
+    m_pageStack->addWidget(buildFileDecorationsPage());
 
     m_categoryTree->expandAll();
 
@@ -136,18 +151,13 @@ void SettingsDialog::onCategoryChanged(QTreeWidgetItem* current, QTreeWidgetItem
         return;
     }
 
-    if (index == static_cast<int>(kAllLanguages.size()))
+    // Indices >= kAllLanguages.size() are the General pages (UI, Colors, ...), all built eagerly
+    // in the constructor and added to the stack in tree order, so they need no lazy-build step.
+    if (index < static_cast<int>(kAllLanguages.size()))
     {
-        m_pageStack->setCurrentIndex(index);
-        return;
+        ensureLanguagePageBuilt(static_cast<std::size_t>(index));
     }
 
-    if (index > static_cast<int>(kAllLanguages.size()))
-    {
-        return;
-    }
-
-    ensureLanguagePageBuilt(static_cast<std::size_t>(index));
     m_pageStack->setCurrentIndex(index);
 }
 
@@ -248,4 +258,152 @@ void SettingsDialog::refreshSwatchColors()
             row.swatchButton->setStyleSheet(QString());
         }
     }
+}
+
+QWidget* SettingsDialog::buildFileDecorationsPage()
+{
+    auto* page = new QWidget(m_pageStack);
+    auto* layout = new QVBoxLayout(page);
+
+    m_decorationsTable = new QTableWidget(0, 5, page);
+    m_decorationsTable->setHorizontalHeaderLabels({ tr("Patterns"), tr("Sample"), QString(), QString(), QString() });
+    m_decorationsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Interactive);
+    m_decorationsTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Interactive);
+    m_decorationsTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    m_decorationsTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    m_decorationsTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    m_decorationsTable->horizontalHeader()->setStretchLastSection(false);
+    m_decorationsTable->setColumnWidth(0, 150);
+    m_decorationsTable->setColumnWidth(1, 150);
+    m_decorationsTable->verticalHeader()->setVisible(false);
+    m_decorationsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_decorationsTable->setSelectionMode(QAbstractItemView::NoSelection);
+    layout->addWidget(m_decorationsTable, 1);
+
+    connect(m_decorationsTable, &QTableWidget::cellDoubleClicked, this, [this](int row, int /*column*/) { editDecorationRule(row); });
+
+    auto* addButton = new QPushButton(tr("Add Rule"), page);
+    connect(addButton, &QPushButton::clicked, this, &SettingsDialog::addDecorationRule);
+    layout->addWidget(addButton);
+
+    refreshDecorationRows();
+    return page;
+}
+
+void SettingsDialog::refreshDecorationRows()
+{
+    m_decorationsTable->setRowCount(static_cast<int>(m_decorationRules.size()));
+
+    for (int row = 0; row < static_cast<int>(m_decorationRules.size()); ++row)
+    {
+        const FileDecorationRule& rule = m_decorationRules[static_cast<size_t>(row)];
+
+        auto* patternsItem = new QTableWidgetItem(QString::fromStdString(rule.patternsRaw()));
+        m_decorationsTable->setItem(row, 0, patternsItem);
+
+        auto* sampleLabel = new QLabel(tr("Sample Text"), m_decorationsTable);
+        QFont font = sampleLabel->font();
+        if (rule.fontFamily())
+        {
+            font.setFamily(QString::fromStdString(*rule.fontFamily()));
+        }
+        if (rule.fontPointSize())
+        {
+            font.setPointSize(*rule.fontPointSize());
+        }
+        font.setBold(rule.bold());
+        font.setItalic(rule.italic());
+        font.setUnderline(rule.underline());
+        font.setStrikeOut(rule.strikeout());
+        sampleLabel->setFont(font);
+        if (rule.hexColor())
+        {
+            sampleLabel->setStyleSheet(QStringLiteral("color: %1;").arg(QString::fromStdString(*rule.hexColor())));
+        }
+        m_decorationsTable->setCellWidget(row, 1, sampleLabel);
+
+        auto* upButton = new QToolButton(m_decorationsTable);
+        upButton->setIcon(style()->standardIcon(QStyle::SP_ArrowUp));
+        upButton->setAutoRaise(true);
+        upButton->setToolTip(tr("Move Up"));
+        upButton->setEnabled(row > 0);
+        connect(upButton, &QToolButton::clicked, this, [this, row]() { moveDecorationRule(row, -1); });
+        m_decorationsTable->setCellWidget(row, 2, upButton);
+
+        auto* downButton = new QToolButton(m_decorationsTable);
+        downButton->setIcon(style()->standardIcon(QStyle::SP_ArrowDown));
+        downButton->setAutoRaise(true);
+        downButton->setToolTip(tr("Move Down"));
+        downButton->setEnabled(row + 1 < static_cast<int>(m_decorationRules.size()));
+        connect(downButton, &QToolButton::clicked, this, [this, row]() { moveDecorationRule(row, 1); });
+        m_decorationsTable->setCellWidget(row, 3, downButton);
+
+        auto* removeButton = new QToolButton(m_decorationsTable);
+        removeButton->setIcon(style()->standardIcon(QStyle::SP_TrashIcon));
+        removeButton->setAutoRaise(true);
+        removeButton->setToolTip(tr("Remove"));
+        connect(removeButton, &QToolButton::clicked, this, [this, row]() { removeDecorationRule(row); });
+        m_decorationsTable->setCellWidget(row, 4, removeButton);
+    }
+}
+
+void SettingsDialog::addDecorationRule()
+{
+    Result<FileDecorationRule> defaultRule =
+        FileDecorationRule::create("*", std::nullopt, std::nullopt, std::nullopt, false, false, false, false);
+    if (!defaultRule)
+    {
+        return;
+    }
+
+    m_decorationRules.push_back(std::move(defaultRule).value());
+    refreshDecorationRows();
+    editDecorationRule(static_cast<int>(m_decorationRules.size()) - 1);
+}
+
+void SettingsDialog::editDecorationRule(int row)
+{
+    if (row < 0 || static_cast<size_t>(row) >= m_decorationRules.size())
+    {
+        return;
+    }
+
+    FileDecorationRuleDialog dialog(m_decorationRules[static_cast<size_t>(row)], this);
+    if (dialog.exec() != QDialog::Accepted)
+    {
+        return;
+    }
+
+    m_decorationRules[static_cast<size_t>(row)] = dialog.rule();
+    commitDecorationRules();
+}
+
+void SettingsDialog::moveDecorationRule(int row, int delta)
+{
+    const int target = row + delta;
+    if (row < 0 || target < 0 || static_cast<size_t>(row) >= m_decorationRules.size() ||
+        static_cast<size_t>(target) >= m_decorationRules.size())
+    {
+        return;
+    }
+
+    std::swap(m_decorationRules[static_cast<size_t>(row)], m_decorationRules[static_cast<size_t>(target)]);
+    commitDecorationRules();
+}
+
+void SettingsDialog::removeDecorationRule(int row)
+{
+    if (row < 0 || static_cast<size_t>(row) >= m_decorationRules.size())
+    {
+        return;
+    }
+
+    m_decorationRules.erase(m_decorationRules.begin() + row);
+    commitDecorationRules();
+}
+
+void SettingsDialog::commitDecorationRules()
+{
+    m_fileDecorationsViewModel.setRules(m_decorationRules);
+    refreshDecorationRows();
 }

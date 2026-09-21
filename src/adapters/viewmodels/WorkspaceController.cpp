@@ -16,18 +16,19 @@ namespace
 
 WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                                            FilePreviewUseCase& filePreviewUseCase, IFileSystemRepository& fileSystemRepository,
-                                           QObject* parent)
+                                           const FileDecorationRules& fileDecorationRules,
+                                           QObject& fileDecorationsChangeSource, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
 {
-    m_panes[indexOf(WorkspacePaneId::PaneA)] =
-        new WorkspacePaneViewModel(fileNavigationUseCase, tagManagementUseCase, WorkspacePaneId::PaneA, this);
-    m_panes[indexOf(WorkspacePaneId::PaneB)] =
-        new WorkspacePaneViewModel(fileNavigationUseCase, tagManagementUseCase, WorkspacePaneId::PaneB, this);
-    m_panes[indexOf(WorkspacePaneId::PaneC)] =
-        new WorkspacePaneViewModel(fileNavigationUseCase, tagManagementUseCase, WorkspacePaneId::PaneC, this);
-    m_panes[indexOf(WorkspacePaneId::PaneD)] =
-        new WorkspacePaneViewModel(fileNavigationUseCase, tagManagementUseCase, WorkspacePaneId::PaneD, this);
+    m_panes[indexOf(WorkspacePaneId::PaneA)] = new WorkspacePaneViewModel(
+        fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, WorkspacePaneId::PaneA, this);
+    m_panes[indexOf(WorkspacePaneId::PaneB)] = new WorkspacePaneViewModel(
+        fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, WorkspacePaneId::PaneB, this);
+    m_panes[indexOf(WorkspacePaneId::PaneC)] = new WorkspacePaneViewModel(
+        fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, WorkspacePaneId::PaneC, this);
+    m_panes[indexOf(WorkspacePaneId::PaneD)] = new WorkspacePaneViewModel(
+        fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, WorkspacePaneId::PaneD, this);
 
     m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, this);
     m_filePreviewViewModel = new FilePreviewViewModel(filePreviewUseCase, fileSystemRepository, this);

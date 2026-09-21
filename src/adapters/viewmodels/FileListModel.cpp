@@ -1,10 +1,14 @@
 #include "FileListModel.h"
 
+#include <QColor>
 #include <QDateTime>
 #include <QFileInfo>
+#include <QFont>
 #include <QGuiApplication>
 #include <QPalette>
 #include <QSettings>
+
+#include "PathUtf8.h"
 
 namespace
 {
@@ -73,10 +77,12 @@ namespace
     }
 }
 
-FileListModel::FileListModel(QObject* parent)
+FileListModel::FileListModel(const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource, QObject* parent)
     : QAbstractTableModel(parent)
     , m_showHiddenFiles(showHiddenFilesEnabled())
+    , m_fileDecorationRules(fileDecorationRules)
 {
+    connect(&fileDecorationsChangeSource, SIGNAL(rulesChanged()), this, SLOT(handleFileDecorationsChanged()));
 }
 
 bool FileListModel::showHiddenFilesEnabled()
@@ -128,11 +134,40 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
 
     if (role == Qt::ForegroundRole)
     {
+        if (const auto decoration = resolveDecoration(entry); decoration && decoration->hexColor())
+        {
+            return QColor(QString::fromStdString(*decoration->hexColor()));
+        }
         if (entry.isHidden())
         {
             return QGuiApplication::palette().color(QPalette::Disabled, QPalette::Text);
         }
         return {};
+    }
+
+    if (role == Qt::FontRole)
+    {
+        const auto decoration = resolveDecoration(entry);
+        if (!decoration || (!decoration->fontFamily() && !decoration->fontPointSize() && !decoration->bold() &&
+                             !decoration->italic() && !decoration->underline() && !decoration->strikeout()))
+        {
+            return {};
+        }
+
+        QFont font;
+        if (decoration->fontFamily())
+        {
+            font.setFamily(QString::fromStdString(*decoration->fontFamily()));
+        }
+        if (decoration->fontPointSize())
+        {
+            font.setPointSize(*decoration->fontPointSize());
+        }
+        font.setBold(decoration->bold());
+        font.setItalic(decoration->italic());
+        font.setUnderline(decoration->underline());
+        font.setStrikeOut(decoration->strikeout());
+        return font;
     }
 
     if (role != Qt::DisplayRole)
@@ -254,6 +289,33 @@ void FileListModel::setShowHiddenFiles(bool show)
     m_showHiddenFiles = show;
     rebuildVisibleRows();
     endResetModel();
+}
+
+std::optional<FileDecorationRule> FileListModel::resolveDecoration(const FileNode& entry) const
+{
+    if (entry.displayName())
+    {
+        // Synthetic rows ("This PC"'s drives, quick-access folders, ...) have no real on-disk
+        // filename to match against (Architecture.md §14.29).
+        return std::nullopt;
+    }
+
+    if (const FileDecorationRule* rule = m_fileDecorationRules.resolve(PathUtf8::toUtf8(entry.name()), entry.isDirectory()))
+    {
+        return *rule;
+    }
+    return std::nullopt;
+}
+
+void FileListModel::handleFileDecorationsChanged()
+{
+    if (m_visibleRows.empty())
+    {
+        return;
+    }
+
+    emit dataChanged(index(0, 0), index(static_cast<int>(m_visibleRows.size()) - 1, ColumnCount - 1),
+                      { Qt::ForegroundRole, Qt::FontRole });
 }
 
 void FileListModel::rebuildVisibleRows()

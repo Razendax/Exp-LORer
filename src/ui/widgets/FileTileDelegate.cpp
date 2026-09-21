@@ -1,6 +1,7 @@
 #include "FileTileDelegate.h"
 
 #include <QColor>
+#include <QFont>
 #include <QFontMetrics>
 #include <QLocale>
 #include <QPainter>
@@ -80,15 +81,22 @@ void FileTileDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
                           option.rect.right() - iconRect.right() - 2 * kPadding,
                           option.rect.height() - 2 * kPadding);
 
-    const QFontMetrics nameMetrics(option.font);
+    QFont font = option.font;
+    const QVariant fontData = index.data(Qt::FontRole);
+    if (fontData.canConvert<QFont>())
+    {
+        font = fontData.value<QFont>();
+    }
+
+    const QFontMetrics nameMetrics(font);
     const QRect nameRect = nameRectFor(option);
     const QRect secondaryRect(textRect.left(), nameRect.bottom(), textRect.width(), nameMetrics.height());
 
     const QString name = index.data(Qt::DisplayRole).toString();
-    painter->setFont(option.font);
+    painter->setFont(font);
     painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter, nameMetrics.elidedText(name, Qt::ElideRight, nameRect.width()));
 
-    QFont secondaryFont = option.font;
+    QFont secondaryFont = font;
     secondaryFont.setPointSizeF(secondaryFont.pointSizeF() * 0.85);
     const QFontMetrics secondaryMetrics(secondaryFont);
     painter->setFont(secondaryFont);

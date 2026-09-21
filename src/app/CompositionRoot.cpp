@@ -42,6 +42,14 @@ namespace
         const auto appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
         return std::filesystem::path(appDataDir.toStdWString()) / "highlight_theme.json";
     }
+
+    // Architecture.md §14.29: same persistent-user-preference posture as highlightThemeFilePath()
+    // above, in its own file.
+    std::filesystem::path fileDecorationsFilePath()
+    {
+        const auto appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+        return std::filesystem::path(appDataDir.toStdWString()) / "file_decorations.json";
+    }
 }
 
 CompositionRoot::CompositionRoot()
@@ -55,6 +63,9 @@ CompositionRoot::CompositionRoot()
     , m_highlightThemeStore(highlightThemeFilePath())
     , m_highlightTheme(m_highlightThemeStore.load())
     , m_highlightThemeViewModel(m_highlightTheme, m_highlightThemeStore)
+    , m_fileDecorationRulesStore(fileDecorationsFilePath())
+    , m_fileDecorationRules(m_fileDecorationRulesStore.load())
+    , m_fileDecorationsViewModel(m_fileDecorationRules, m_fileDecorationRulesStore)
 {
 }
 
@@ -62,16 +73,18 @@ CompositionRoot::~CompositionRoot() = default;
 
 std::unique_ptr<TabViewModel> CompositionRoot::createTabViewModel()
 {
-    return std::make_unique<TabViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase);
+    return std::make_unique<TabViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
+                                           m_fileDecorationsViewModel);
 }
 
 std::unique_ptr<WorkspacePaneViewModel> CompositionRoot::createWorkspacePaneViewModel(WorkspacePaneId id)
 {
-    return std::make_unique<WorkspacePaneViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase, id);
+    return std::make_unique<WorkspacePaneViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
+                                                     m_fileDecorationsViewModel, id);
 }
 
 std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController()
 {
     return std::make_unique<WorkspaceController>(m_fileNavigationUseCase, m_tagManagementUseCase, m_filePreviewUseCase,
-                                                   m_fileSystemRepository);
+                                                  m_fileSystemRepository, m_fileDecorationRules, m_fileDecorationsViewModel);
 }

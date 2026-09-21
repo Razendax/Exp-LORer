@@ -47,6 +47,8 @@ add_library(explorer_ui_widgets STATIC
     SyntaxHighlighter.cpp
     SettingsDialog.h
     SettingsDialog.cpp
+    FileDecorationRuleDialog.h
+    FileDecorationRuleDialog.cpp
     UiColors.h
 )
 

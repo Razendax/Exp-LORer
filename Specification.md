@@ -47,12 +47,24 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   ends its terminal session.
 * **Settings dialog (Architecture.md §14.26):** `File > Settings...` opens a dialog with a
   hierarchical category tree on the left and that category's settings on the right; in v1 this
-  holds two categories: Highlight > Languages, listing the languages with syntax highlighting
+  holds three categories: Highlight > Languages, listing the languages with syntax highlighting
   (2.2 "Preview Panel") and, per language, each of its token types with a color swatch the user can
-  change via a color picker; and General > UI, holding a "Show close button on tabs" toggle
+  change via a color picker; General > UI, holding a "Show close button on tabs" toggle
   (default on) controlling whether each pane's tabs render a close ("x") button, app-wide and
-  applied to already-open tabs immediately. Changes in both categories apply and persist
-  immediately.
+  applied to already-open tabs immediately; and General > Colors (Architecture.md §14.29), an
+  editable, ordered list of file/folder appearance rules (see below). Changes in all three
+  categories apply and persist immediately.
+* **Per-file/folder appearance customization (Architecture.md §14.29):** under Settings >
+  General > Colors, the user maintains an ordered list of rules, each pairing a comma-separated set
+  of name patterns with a style (custom color, custom font, and independently toggleable bold,
+  italic, underline, and strikeout). Patterns support `*` (any characters), `?` (a single
+  character), `"..."` to escape a literal comma inside a pattern, and a leading `#` to mark a
+  pattern as matching folders instead of the default of files only — e.g. `*.exe` (files with the
+  exe extension), `Image_?.png` (matches `Image_1.png`/`Image_2.png` but not `Image_2121.png`), or
+  `#.git` (a folder literally named `.git`). For any given file or folder, the first rule in the
+  list with a matching pattern determines its appearance everywhere it's listed (browsing, quick
+  search, and advanced search, in every view mode); rules can be reordered, since order determines
+  precedence when more than one would match.
 * **Status bar (Architecture.md §14.27):** each pane shows a status bar at the bottom, always
   reflecting whichever tab in that pane currently has focus: the number of objects in the
   current listing (the browsed folder, or the active search/advanced-search results) and, once

@@ -19,6 +19,7 @@
 class FileNavigationUseCase;
 class TagManagementUseCase;
 class FileListModel;
+class FileDecorationRules;
 
 // Binds address-bar/navigation-toolbar UI to FileNavigationUseCase and NavigationHistory for a
 // single tab. Owns the FileListModel that backs that tab's FileBrowserView, wiring
@@ -29,7 +30,11 @@ class TabViewModel : public QObject
     Q_OBJECT
 
 public:
-    TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase, QObject* parent = nullptr);
+    // `fileDecorationsChangeSource` is threaded through only as a generic QObject& -- see
+    // FileDecorationsViewModel.h for why FileListModel/TabViewModel/WorkspacePaneViewModel/
+    // WorkspaceController deliberately don't reference that concrete type.
+    TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
+                 const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource, QObject* parent = nullptr);
 
     std::filesystem::path currentPath() const;
     bool backAvailable() const;

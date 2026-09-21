@@ -1,6 +1,7 @@
 #include "SearchResultDelegate.h"
 
 #include <QColor>
+#include <QFont>
 #include <QFontMetrics>
 #include <QPainter>
 
@@ -63,8 +64,16 @@ void SearchResultDelegate::paintNameColumn(QPainter* painter, const QStyleOption
                           option.rect.height());
 
     const QString name = index.data(Qt::DisplayRole).toString();
-    painter->setFont(option.font);
-    const QFontMetrics metrics(option.font);
+
+    QFont font = option.font;
+    const QVariant fontData = index.data(Qt::FontRole);
+    if (fontData.canConvert<QFont>())
+    {
+        font = fontData.value<QFont>();
+    }
+
+    painter->setFont(font);
+    const QFontMetrics metrics(font);
 
     int matchStart = -1;
     int matchLength = 0;
@@ -110,7 +119,9 @@ void SearchResultDelegate::paintNameColumn(QPainter* painter, const QStyleOption
         return;
     }
 
-    QFont boldFont = option.font;
+    // Layers bold on top of the row's own resolved font (rather than replacing it) so a
+    // customized row's font/style survives inside the highlighted match span too.
+    QFont boldFont = font;
     boldFont.setBold(true);
     const QFontMetrics boldMetrics(boldFont);
     const QString elidedMatch = boldMetrics.elidedText(match, Qt::ElideRight, remainingAfterBefore);
@@ -130,7 +141,7 @@ void SearchResultDelegate::paintNameColumn(QPainter* painter, const QStyleOption
         const int remainingAfterMatch = textRect.right() - x + 1;
         if (remainingAfterMatch > 0 && !after.isEmpty())
         {
-            painter->setFont(option.font);
+            painter->setFont(font);
             painter->drawText(QRect(x, y, remainingAfterMatch, height), Qt::AlignLeft | Qt::AlignVCenter,
                                metrics.elidedText(after, Qt::ElideRight, remainingAfterMatch));
         }

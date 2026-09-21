@@ -13,6 +13,7 @@ class FileNavigationUseCase;
 class TagManagementUseCase;
 class FilePreviewUseCase;
 class IFileSystemRepository;
+class FileDecorationRules;
 class WorkspacePaneViewModel;
 class TabViewModel;
 class TagListViewModel;
@@ -31,8 +32,10 @@ class WorkspaceController : public QObject
     Q_OBJECT
 
 public:
+    // See TabViewModel's constructor comment for why fileDecorationsChangeSource is a bare QObject&.
     WorkspaceController(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                          FilePreviewUseCase& filePreviewUseCase, IFileSystemRepository& fileSystemRepository,
+                         const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                          QObject* parent = nullptr);
 
     WorkspacePaneViewModel* pane(WorkspacePaneId id) const;

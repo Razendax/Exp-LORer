@@ -4,6 +4,9 @@
 
 #include "AppConfigStore.h"
 #include "CachingMediaDecoder.h"
+#include "FileDecorationRules.h"
+#include "FileDecorationRulesStore.h"
+#include "FileDecorationsViewModel.h"
 #include "FileNavigationUseCase.h"
 #include "FilePreviewUseCase.h"
 #include "HighlightTheme.h"
@@ -39,6 +42,7 @@ public:
     TagManagementUseCase& tagManagementUseCase() noexcept { return m_tagManagementUseCase; }
     SyntaxHighlightEngine& syntaxHighlightEngine() noexcept { return m_syntaxHighlightEngine; }
     HighlightThemeViewModel& highlightThemeViewModel() noexcept { return m_highlightThemeViewModel; }
+    FileDecorationsViewModel& fileDecorationsViewModel() noexcept { return m_fileDecorationsViewModel; }
 
 private:
     StandardFileSystemRepository m_fileSystemRepository;
@@ -60,4 +64,10 @@ private:
     HighlightThemeStore m_highlightThemeStore;
     HighlightTheme m_highlightTheme;
     HighlightThemeViewModel m_highlightThemeViewModel;
+
+    // Architecture.md §14.29: per-file/folder font & color customization by name pattern --
+    // presentation-only, same posture as the highlight-theme block above.
+    FileDecorationRulesStore m_fileDecorationRulesStore;
+    FileDecorationRules m_fileDecorationRules;
+    FileDecorationsViewModel m_fileDecorationsViewModel;
 };

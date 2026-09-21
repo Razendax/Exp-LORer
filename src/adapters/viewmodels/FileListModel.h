@@ -7,6 +7,7 @@
 #include <QAbstractTableModel>
 #include <QFileIconProvider>
 
+#include "FileDecorationRules.h"
 #include "FileNavigationUseCase.h"
 #include "FileNode.h"
 
@@ -35,7 +36,14 @@ public:
         IsDirectoryRole,
     };
 
-    explicit FileListModel(QObject* parent = nullptr);
+    // `fileDecorationsChangeSource` is a bare QObject& (not FileDecorationsViewModel&, the concrete
+    // Qt-facing owner in src/adapters/config) deliberately: src/adapters/config already depends on
+    // src/adapters/viewmodels (AppConfig needs FileListModel::ColumnCount), so a
+    // FileDecorationsViewModel& constructor parameter here would create a build-graph cycle.
+    // FileListModel connects to its rulesChanged() signal via the string-based SIGNAL/SLOT
+    // overload of connect() instead, which needs no compile-time knowledge of the concrete type
+    // (Architecture.md §14.29).
+    FileListModel(const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource, QObject* parent = nullptr);
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
     int columnCount(const QModelIndex& parent = QModelIndex()) const override;
@@ -89,10 +97,21 @@ public slots:
 signals:
     void sortOrderChanged(SortCriterion criterion, bool ascending);
 
+private slots:
+    // Connected to fileDecorationsChangeSource's rulesChanged() signal (Architecture.md §14.29).
+    // Emits dataChanged() for every row across ForegroundRole/FontRole so already-open folders/
+    // search results restyle live when a rule is added/edited/removed/reordered -- a full model
+    // reset is unnecessary and would lose selection/scroll position.
+    void handleFileDecorationsChanged();
+
 private:
     // Rebuilds m_visibleRows from m_entries/m_showHiddenFiles. Caller is responsible for the
     // surrounding beginResetModel()/endResetModel() pair.
     void rebuildVisibleRows();
+
+    // std::nullopt for synthetic rows (entry.displayName() set, e.g. "This PC"'s drives) and for
+    // any entry no rule matches.
+    std::optional<FileDecorationRule> resolveDecoration(const FileNode& entry) const;
 
     std::filesystem::path m_directory;
     std::vector<FileNode> m_entries;
@@ -101,4 +120,5 @@ private:
     SortCriterion m_sortCriterion = SortCriterion::Name;
     bool m_sortAscending = true;
     bool m_showHiddenFiles = false;
+    const FileDecorationRules& m_fileDecorationRules;
 };

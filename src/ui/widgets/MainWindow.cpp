@@ -94,13 +94,15 @@ namespace
 
 MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore,
                          TagManagementUseCase& tagManagementUseCase, SyntaxHighlightEngine& syntaxHighlightEngine,
-                         HighlightThemeViewModel& highlightThemeViewModel, const AppConfig& initialConfig, QWidget* parent)
+                         HighlightThemeViewModel& highlightThemeViewModel, FileDecorationsViewModel& fileDecorationsViewModel,
+                         const AppConfig& initialConfig, QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceController(workspaceController)
     , m_configStore(configStore)
     , m_tagManagementUseCase(tagManagementUseCase)
     , m_syntaxHighlightEngine(syntaxHighlightEngine)
     , m_highlightThemeViewModel(highlightThemeViewModel)
+    , m_fileDecorationsViewModel(fileDecorationsViewModel)
     , m_columnWidths(initialConfig.detailsColumnWidths)
 {
     setWindowTitle(tr("Exp-LORer"));
@@ -347,7 +349,7 @@ void MainWindow::showTagManagerDialog()
 
 void MainWindow::showSettingsDialog()
 {
-    SettingsDialog dialog(m_syntaxHighlightEngine, m_highlightThemeViewModel, this);
+    SettingsDialog dialog(m_syntaxHighlightEngine, m_highlightThemeViewModel, m_fileDecorationsViewModel, this);
 
     connect(&dialog, &SettingsDialog::showTabCloseButtonsChanged, this, [this](bool visible) {
         for (WorkspacePaneId id : kAllPanes)

@@ -5,13 +5,16 @@
 
 #include <QDialog>
 
+#include "FileDecorationRule.h"
 #include "Language.h"
 
 class HighlightThemeViewModel;
+class FileDecorationsViewModel;
 class SyntaxHighlightEngine;
 class QCheckBox;
 class QPushButton;
 class QStackedWidget;
+class QTableWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -28,7 +31,8 @@ class SettingsDialog : public QDialog
     Q_OBJECT
 
 public:
-    SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeViewModel& themeViewModel, QWidget* parent = nullptr);
+    SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeViewModel& themeViewModel,
+                   FileDecorationsViewModel& fileDecorationsViewModel, QWidget* parent = nullptr);
 
 signals:
     // General > UI "Show close button on tabs" checkbox toggled -- MainWindow propagates this to
@@ -48,8 +52,24 @@ private:
     void openColorPicker(Language language, const std::string& captureName, QPushButton* swatchButton);
     void refreshSwatchColors();
 
+    // General -> Colors page (Architecture.md §14.29): per-file/folder font & color customization
+    // by name pattern. m_decorationRules is a local editable copy of
+    // m_fileDecorationsViewModel.rules() -- every mutation (add/edit/reorder/remove) updates it and
+    // immediately calls setRules() to persist + broadcast, matching every other Settings control's
+    // immediate-apply posture.
+    QWidget* buildFileDecorationsPage();
+    void refreshDecorationRows();
+    void addDecorationRule();
+    void editDecorationRule(int row);
+    void moveDecorationRule(int row, int delta);
+    void removeDecorationRule(int row);
+    void commitDecorationRules();
+
     SyntaxHighlightEngine& m_engine;
     HighlightThemeViewModel& m_themeViewModel;
+    FileDecorationsViewModel& m_fileDecorationsViewModel;
+    QTableWidget* m_decorationsTable = nullptr;
+    std::vector<FileDecorationRule> m_decorationRules;
 
     QTreeWidget* m_categoryTree = nullptr;
     QStackedWidget* m_pageStack = nullptr;

@@ -16,13 +16,14 @@ namespace
     }
 }
 
-TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase, QObject* parent)
+TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
+                           const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagManagementUseCase(tagManagementUseCase)
-    , m_fileListModel(new FileListModel(this))
-    , m_searchResultsModel(new FileListModel(this))
-    , m_advancedSearchResultsModel(new FileListModel(this))
+    , m_fileListModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
+    , m_searchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
+    , m_advancedSearchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
 {
     connect(this, &TabViewModel::directoryContentsChanged, m_fileListModel, &FileListModel::setEntries);
     connect(m_fileListModel, &FileListModel::sortOrderChanged, this, &TabViewModel::sortOrderChanged);
