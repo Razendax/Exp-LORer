@@ -6,6 +6,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include "UiColors.h"
+
 RightPanelWidget::RightPanelWidget(QWidget* parent)
     : QWidget(parent)
 {
@@ -14,6 +16,8 @@ RightPanelWidget::RightPanelWidget(QWidget* parent)
     layout->setSpacing(0);
 
     m_headerStrip = new QWidget(this);
+    m_headerStrip->setAttribute(Qt::WA_StyledBackground, true);
+    m_headerStrip->setStyleSheet(QString("background-color: %1;").arg(QLatin1String(UiColors::kRightPanelBackground)));
     auto* headerLayout = new QVBoxLayout(m_headerStrip);
     headerLayout->setContentsMargins(2, 4, 2, 4);
     headerLayout->setSpacing(2);

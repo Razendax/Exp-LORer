@@ -2,11 +2,13 @@
 
 #include <array>
 
+#include <QCheckBox>
 #include <QColorDialog>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QSettings>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QTreeWidget>
@@ -14,6 +16,7 @@
 
 #include "HighlightThemeViewModel.h"
 #include "SyntaxHighlightEngine.h"
+#include "WorkspacePaneWidget.h"
 
 namespace
 {
@@ -88,6 +91,15 @@ SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeView
         m_pageStack->addWidget(new QWidget(m_pageStack));
     }
 
+    auto* generalRoot = new QTreeWidgetItem(m_categoryTree, QStringList{ tr("General") });
+    generalRoot->setData(0, kLanguageIndexRole, -1);
+    auto* uiItem = new QTreeWidgetItem(generalRoot, QStringList{ tr("UI") });
+    uiItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()));
+
+    // Built eagerly (unlike the lazily-built language pages above) since it's cheap -- a single
+    // checkbox, no tree-sitter/query compilation involved.
+    m_pageStack->addWidget(buildGeneralUiPage());
+
     m_categoryTree->expandAll();
 
     splitter->addWidget(m_categoryTree);
@@ -118,14 +130,25 @@ void SettingsDialog::onCategoryChanged(QTreeWidgetItem* current, QTreeWidgetItem
         return;
     }
 
-    const int languageIndex = current->data(0, kLanguageIndexRole).toInt();
-    if (languageIndex < 0 || languageIndex >= static_cast<int>(kAllLanguages.size()))
+    const int index = current->data(0, kLanguageIndexRole).toInt();
+    if (index < 0)
     {
         return;
     }
 
-    ensureLanguagePageBuilt(static_cast<std::size_t>(languageIndex));
-    m_pageStack->setCurrentIndex(languageIndex);
+    if (index == static_cast<int>(kAllLanguages.size()))
+    {
+        m_pageStack->setCurrentIndex(index);
+        return;
+    }
+
+    if (index > static_cast<int>(kAllLanguages.size()))
+    {
+        return;
+    }
+
+    ensureLanguagePageBuilt(static_cast<std::size_t>(index));
+    m_pageStack->setCurrentIndex(index);
 }
 
 void SettingsDialog::ensureLanguagePageBuilt(std::size_t languageIndex)
@@ -147,6 +170,25 @@ void SettingsDialog::ensureLanguagePageBuilt(std::size_t languageIndex)
     placeholder->deleteLater();
 
     m_languagePages[languageIndex] = page;
+}
+
+QWidget* SettingsDialog::buildGeneralUiPage()
+{
+    auto* page = new QWidget(m_pageStack);
+    auto* layout = new QVBoxLayout(page);
+
+    m_showTabCloseButtonsCheckBox = new QCheckBox(tr("Show close button on tabs"), page);
+    m_showTabCloseButtonsCheckBox->setChecked(WorkspacePaneWidget::tabCloseButtonsEnabled());
+    layout->addWidget(m_showTabCloseButtonsCheckBox);
+    layout->addStretch(1);
+
+    connect(m_showTabCloseButtonsCheckBox, &QCheckBox::toggled, this, [this](bool checked) {
+        QSettings settings;
+        settings.setValue(QLatin1String(WorkspacePaneWidget::kShowTabCloseButtonsSettingsKey), checked);
+        emit showTabCloseButtonsChanged(checked);
+    });
+
+    return page;
 }
 
 QWidget* SettingsDialog::buildLanguagePage(Language language)

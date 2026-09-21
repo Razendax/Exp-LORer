@@ -43,6 +43,10 @@ public:
 
     WorkspacePaneViewModel* pane() const noexcept { return m_pane; }
 
+    // Catches middle-click on the tab bar to close a tab even when the close button is hidden
+    // (setTabCloseButtonsVisible(false)) -- QTabBar has no built-in middle-click-to-close signal.
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
     // Details-view column widths of whichever FileBrowserView the pane's current tab is currently
     // showing (Architecture.md §14.14), falling back to initialColumnWidths if the current tab's
     // stack page can't be resolved to a FileBrowserView (e.g. the pane has no tabs at all).
@@ -53,6 +57,17 @@ public:
     // than wired directly to that QAction, so the Application layer stays agnostic of where the
     // preference is stored.
     static constexpr const char* kShowShellExtensionsSettingsKey = "ContextMenu/ShowShellExtensions";
+
+    // General > UI "Show close button on tabs" toggle (SettingsDialog), persisted via QSettings and
+    // propagated live to every open pane by MainWindow::showSettingsDialog() -- same posture as the
+    // hidden-files toggle in MainWindow::createShowHiddenFilesAction.
+    static constexpr const char* kShowTabCloseButtonsSettingsKey = "UI/ShowTabCloseButtons";
+    static bool tabCloseButtonsEnabled();
+    void setTabCloseButtonsVisible(bool visible);
+
+    // Focused-pane accent (WorkspaceLayoutWidget, driven by WorkspaceController::focusedPaneChanged):
+    // toggles the "paneActive" dynamic property on this pane's toolbar and forces a restyle.
+    void setActive(bool active);
 
 signals:
     // Bubbled up so MainWindow (whose QMainWindow::statusBar() is a separate, transient,
@@ -104,6 +119,7 @@ private:
     TabViewModel* m_boundTab = nullptr;
 
     QTabWidget* m_tabWidget = nullptr;
+    QToolBar* m_toolBar = nullptr;
     AddressBarWidget* m_addressBar = nullptr;
     StatusBarWidget* m_statusBar = nullptr;
     QAction* m_backAction = nullptr;

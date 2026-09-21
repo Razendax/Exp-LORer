@@ -35,6 +35,11 @@ private:
     QWidget* buildContent(SplitLayout layout);
     void onFocusChanged(QWidget* old, QWidget* now);
 
+    // Bluish accent on the focused pane's toolbar (UiColors::kActivePaneAccentBackground), but only
+    // when more than one pane is visible -- nothing to distinguish it from in the default
+    // single-pane layout, so the accent is skipped there.
+    void updatePaneActiveStates();
+
     WorkspaceController* m_controller = nullptr;
     std::array<WorkspacePaneWidget*, 4> m_paneWidgets{};
     QVBoxLayout* m_layout = nullptr;

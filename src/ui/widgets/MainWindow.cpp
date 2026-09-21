@@ -14,6 +14,7 @@
 #include <QSplitter>
 #include <QStatusBar>
 #include <QToolBar>
+#include <QToolButton>
 
 #include "AppConfigStore.h"
 #include "FileOperationsController.h"
@@ -24,6 +25,7 @@
 #include "PreviewPanelWidget.h"
 #include "RightPanelWidget.h"
 #include "TagPanelWidget.h"
+#include "UiColors.h"
 #include "WorkspaceController.h"
 #include "WorkspaceLayoutWidget.h"
 #include "WorkspacePaneId.h"
@@ -287,6 +289,16 @@ void MainWindow::createSearchBar(QToolBar* toolBar)
             tab->showAdvancedSearchPanel();
         }
     });
+
+    if (auto* button = qobject_cast<QToolButton*>(toolBar->widgetForAction(m_advancedSearchAction)))
+    {
+        button->setObjectName(QStringLiteral("advancedSearchButton"));
+        button->setStyleSheet(QStringLiteral(
+            "QToolButton#advancedSearchButton { background: %1; border: 1px solid %2; border-radius: 3px; }"
+            "QToolButton#advancedSearchButton:hover { background: %3; }")
+            .arg(QLatin1String(UiColors::kAdvancedSearchButtonBackground), QLatin1String(UiColors::kAccentBlue),
+                 QLatin1String(UiColors::kAdvancedSearchButtonHoverBackground)));
+    }
 }
 
 void MainWindow::createWorkspace()
@@ -336,6 +348,14 @@ void MainWindow::showTagManagerDialog()
 void MainWindow::showSettingsDialog()
 {
     SettingsDialog dialog(m_syntaxHighlightEngine, m_highlightThemeViewModel, this);
+
+    connect(&dialog, &SettingsDialog::showTabCloseButtonsChanged, this, [this](bool visible) {
+        for (WorkspacePaneId id : kAllPanes)
+        {
+            m_workspaceLayoutWidget->paneWidget(id)->setTabCloseButtonsVisible(visible);
+        }
+    });
+
     dialog.exec();
 }
 

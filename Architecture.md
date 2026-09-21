@@ -912,7 +912,17 @@ Qt/SQLite/FFmpeg — but this is a presentation concern, not a Domain/Applicatio
   `HighlightTheme`/`HighlightThemeStore` (`tokenColor`/`setTokenColor`/`themeChanged`), owned once
   by `CompositionRoot`/`MainWindow` like `TagListViewModel` so `SettingsDialog` and every
   `SyntaxHighlighter` observe the same live theme. `MainWindow::createMenuBar()` adds
-  `File > Settings...`, opening `SettingsDialog`.
+  `File > Settings...`, opening `SettingsDialog`. `SettingsDialog` also hosts a second, non-
+  highlighting category — General > UI, one `QCheckBox` ("Show close button on tabs") — exercising
+  the "future category slots in without reshaping the dialog" extension point above: its own
+  `QSettings`-backed key (`WorkspacePaneWidget::kShowTabCloseButtonsSettingsKey`,
+  `"UI/ShowTabCloseButtons"`, default on) and a `showTabCloseButtonsChanged(bool)` signal that
+  `MainWindow` fans out to every pane's `WorkspacePaneWidget::setTabCloseButtonsVisible()`, same
+  propagation shape as the existing "Show hidden files/folders" View-menu toggle (§14.21).
+  Separately, `src/ui/widgets/UiColors.h` (new, header-only) centralizes the fixed, muted-blue hex
+  constants used for panel/tab visual-distinction styling (active pane/tab tint, bottom/right panel
+  header tint, advanced-search button, tags-panel section backgrounds) — plain `setStyleSheet` calls
+  scoped by `objectName`, not a theming engine; the app has no dark-mode/theme-switching support.
 * **Not built:** highlighting for the plain-text extensions listed above; highlighting anywhere
   outside the Preview panel (e.g. not inside the §14.23 terminal); theme import/export, light/dark
   presets, or a "reset to defaults" button; automated UI coverage for `SettingsDialog`/

@@ -45,6 +45,7 @@ add_library(explorer_ui_widgets STATIC
     SyntaxHighlighter.cpp
     SettingsDialog.h
     SettingsDialog.cpp
+    UiColors.h
 )
 
 target_include_directories(explorer_ui_widgets PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

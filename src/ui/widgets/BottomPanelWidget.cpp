@@ -6,6 +6,8 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include "UiColors.h"
+
 BottomPanelWidget::BottomPanelWidget(QWidget* parent)
     : QWidget(parent)
 {
@@ -14,6 +16,8 @@ BottomPanelWidget::BottomPanelWidget(QWidget* parent)
     layout->setSpacing(0);
 
     m_headerStrip = new QWidget(this);
+    m_headerStrip->setAttribute(Qt::WA_StyledBackground, true);
+    m_headerStrip->setStyleSheet(QString("background-color: %1;").arg(QLatin1String(UiColors::kBottomPanelBackground)));
     auto* headerLayout = new QHBoxLayout(m_headerStrip);
     headerLayout->setContentsMargins(4, 2, 4, 2);
     headerLayout->setSpacing(2);

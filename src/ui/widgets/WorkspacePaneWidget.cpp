@@ -6,13 +6,16 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QDir>
+#include <QEvent>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QSettings>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStyle>
+#include <QTabBar>
 #include <QTabWidget>
 #include <QToolBar>
 #include <QToolButton>
@@ -29,6 +32,7 @@
 #include "StatusBarWidget.h"
 #include "TabViewModel.h"
 #include "TerminalWidget.h"
+#include "UiColors.h"
 #include "VirtualPaths.h"
 #include "WorkspacePaneViewModel.h"
 
@@ -175,6 +179,15 @@ QToolBar* WorkspacePaneWidget::createToolBar()
     toolBar->setMovable(false);
     toolBar->setToolButtonStyle(Qt::ToolButtonIconOnly);
 
+    m_toolBar = toolBar;
+    toolBar->setObjectName(QStringLiteral("paneToolBar"));
+    toolBar->setAttribute(Qt::WA_StyledBackground, true);
+    toolBar->setProperty("paneActive", false);
+    toolBar->setStyleSheet(QStringLiteral("QToolBar#paneToolBar { background: %1; } "
+                                           "QToolBar#paneToolBar[paneActive=\"true\"] { background: %2; }")
+                                .arg(QLatin1String(UiColors::kNavigationPanelBackground),
+                                     QLatin1String(UiColors::kActivePaneAccentBackground)));
+
     m_backAction = toolBar->addAction(style()->standardIcon(QStyle::SP_ArrowBack), tr("Back"));
     m_forwardAction = toolBar->addAction(style()->standardIcon(QStyle::SP_ArrowForward), tr("Forward"));
     m_upAction = toolBar->addAction(style()->standardIcon(QStyle::SP_FileDialogToParent), tr("Up"));
@@ -210,8 +223,18 @@ QToolBar* WorkspacePaneWidget::createToolBar()
 void WorkspacePaneWidget::createTabArea()
 {
     m_tabWidget = new QTabWidget(this);
-    m_tabWidget->setTabsClosable(true);
+    m_tabWidget->setObjectName(QStringLiteral("paneTabWidget"));
+    m_tabWidget->setStyleSheet(QStringLiteral(
+        // The selected-tab rule below adds a 2px bottom border; giving every tab (not just the
+        // selected one) that same border width -- transparent when unselected -- reserves the
+        // space up front so switching tabs doesn't change tab height/width and jitter the tab bar.
+        "QTabWidget#paneTabWidget::pane { border-top: 1px solid palette(mid); }"
+        "QTabWidget#paneTabWidget QTabBar::tab { border-bottom: 2px solid transparent; min-width: 80px; max-width: 220px; }"
+        "QTabWidget#paneTabWidget QTabBar::tab:selected { background: %1; border-bottom: 2px solid %2; }")
+        .arg(QLatin1String(UiColors::kActiveTabBackground), QLatin1String(UiColors::kAccentBlue)));
+    m_tabWidget->setTabsClosable(tabCloseButtonsEnabled());
     m_tabWidget->setMovable(false);
+    m_tabWidget->tabBar()->installEventFilter(this);
 
     auto* newTabButton = new QToolButton(m_tabWidget);
     newTabButton->setText(QStringLiteral("+"));
@@ -697,6 +720,44 @@ bool WorkspacePaneWidget::extendedShellExtensionsEnabled()
 {
     QSettings settings;
     return settings.value(QLatin1String(kShowShellExtensionsSettingsKey), false).toBool();
+}
+
+bool WorkspacePaneWidget::tabCloseButtonsEnabled()
+{
+    QSettings settings;
+    return settings.value(QLatin1String(kShowTabCloseButtonsSettingsKey), true).toBool();
+}
+
+void WorkspacePaneWidget::setTabCloseButtonsVisible(bool visible)
+{
+    m_tabWidget->setTabsClosable(visible);
+}
+
+void WorkspacePaneWidget::setActive(bool active)
+{
+    m_toolBar->setProperty("paneActive", active);
+    m_toolBar->style()->unpolish(m_toolBar);
+    m_toolBar->style()->polish(m_toolBar);
+    m_toolBar->update();
+}
+
+bool WorkspacePaneWidget::eventFilter(QObject* watched, QEvent* event)
+{
+    if (watched == m_tabWidget->tabBar() && event->type() == QEvent::MouseButtonRelease)
+    {
+        auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() == Qt::MiddleButton)
+        {
+            const int index = m_tabWidget->tabBar()->tabAt(mouseEvent->pos());
+            if (index >= 0)
+            {
+                m_pane->closeTab(index);
+                return true;
+            }
+        }
+    }
+
+    return QWidget::eventFilter(watched, event);
 }
 
 void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, FileBrowserView* browserView,

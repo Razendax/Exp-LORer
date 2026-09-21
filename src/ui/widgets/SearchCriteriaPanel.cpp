@@ -11,6 +11,7 @@
 
 #include "FlowLayout.h"
 #include "TagChipWidget.h"
+#include "UiColors.h"
 
 namespace
 {
@@ -42,6 +43,11 @@ SearchCriteriaPanel::SearchCriteriaPanel(QWidget* parent)
     m_closeButton = new QToolButton(this);
     m_closeButton->setText(QStringLiteral("×"));
     m_closeButton->setToolTip(tr("Close advanced search"));
+    m_closeButton->setObjectName(QStringLiteral("advancedSearchCloseButton"));
+    m_closeButton->setStyleSheet(QStringLiteral(
+        "QToolButton#advancedSearchCloseButton { color: white; background: %1; border: none; border-radius: 3px; padding: 2px 6px; }"
+        "QToolButton#advancedSearchCloseButton:hover { background: %2; }")
+        .arg(QLatin1String(UiColors::kCloseButtonRed), QLatin1String(UiColors::kCloseButtonRedHover)));
 
     auto* fieldsRow = new QHBoxLayout();
     fieldsRow->addWidget(new QLabel(tr("Name:"), this));

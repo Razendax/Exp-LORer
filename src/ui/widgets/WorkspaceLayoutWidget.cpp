@@ -40,9 +40,12 @@ WorkspaceLayoutWidget::WorkspaceLayoutWidget(WorkspaceController* controller,
     m_layout->setContentsMargins(0, 0, 0, 0);
 
     connect(m_controller, &WorkspaceController::layoutChanged, this, &WorkspaceLayoutWidget::applyLayout);
+    connect(m_controller, &WorkspaceController::layoutChanged, this, &WorkspaceLayoutWidget::updatePaneActiveStates);
+    connect(m_controller, &WorkspaceController::focusedPaneChanged, this, &WorkspaceLayoutWidget::updatePaneActiveStates);
     connect(qApp, &QApplication::focusChanged, this, &WorkspaceLayoutWidget::onFocusChanged);
 
     applyLayout(m_controller->layout());
+    updatePaneActiveStates();
 }
 
 WorkspacePaneWidget* WorkspaceLayoutWidget::paneWidget(WorkspacePaneId id) const
@@ -158,6 +161,19 @@ QWidget* WorkspaceLayoutWidget::buildContent(SplitLayout layout)
     WorkspacePaneWidget* paneA = m_paneWidgets[indexOf(WorkspacePaneId::PaneA)];
     paneA->setParent(this);
     return paneA;
+}
+
+void WorkspaceLayoutWidget::updatePaneActiveStates()
+{
+    const auto visible = WorkspaceLayoutTopology::visiblePanes(m_controller->layout());
+    const bool multiplePanesVisible = visible.size() > 1;
+    const WorkspacePaneId focused = m_controller->focusedPane();
+
+    for (int i = 0; i < 4; ++i)
+    {
+        const bool active = multiplePanesVisible && static_cast<WorkspacePaneId>(i) == focused;
+        m_paneWidgets[static_cast<size_t>(i)]->setActive(active);
+    }
 }
 
 void WorkspaceLayoutWidget::onFocusChanged(QWidget* old, QWidget* now)

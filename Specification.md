@@ -47,9 +47,12 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   ends its terminal session.
 * **Settings dialog (Architecture.md §14.26):** `File > Settings...` opens a dialog with a
   hierarchical category tree on the left and that category's settings on the right; in v1 this
-  holds one category, Highlight > Languages, listing the languages with syntax highlighting
+  holds two categories: Highlight > Languages, listing the languages with syntax highlighting
   (2.2 "Preview Panel") and, per language, each of its token types with a color swatch the user can
-  change via a color picker. Changes apply and persist immediately.
+  change via a color picker; and General > UI, holding a "Show close button on tabs" toggle
+  (default on) controlling whether each pane's tabs render a close ("x") button, app-wide and
+  applied to already-open tabs immediately. Changes in both categories apply and persist
+  immediately.
 * **Status bar (Architecture.md §14.27):** each pane shows a status bar at the bottom, always
   reflecting whichever tab in that pane currently has focus: the number of objects in the
   current listing (the browsed folder, or the active search/advanced-search results) and, once

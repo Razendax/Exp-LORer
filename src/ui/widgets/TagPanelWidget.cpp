@@ -9,6 +9,7 @@
 #include "FlowLayout.h"
 #include "TagChipWidget.h"
 #include "TagListViewModel.h"
+#include "UiColors.h"
 
 TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, QWidget* parent)
     : QWidget(parent)
@@ -16,19 +17,19 @@ TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, QWidget* parent)
 {
     auto* mainLayout = new QVBoxLayout(this);
 
-    m_folderTagsLayout = addChipSection(mainLayout, tr("Folder tags"));
+    m_folderTagsLayout = addChipSection(mainLayout, tr("Folder tags"), UiColors::kFolderTagsBackground);
 
     m_searchEdit = new QLineEdit(this);
     m_searchEdit->setPlaceholderText(tr("Search tags..."));
     mainLayout->addWidget(m_searchEdit);
 
-    m_searchResultsLayout = addChipSection(mainLayout, tr("Matching tags"));
+    m_searchResultsLayout = addChipSection(mainLayout, tr("Matching tags"), UiColors::kMatchingTagsBackground);
 
     m_createTagButton = new QPushButton(this);
     m_createTagButton->hide();
     mainLayout->addWidget(m_createTagButton);
 
-    m_selectedItemTagsLayout = addChipSection(mainLayout, tr("Tags on selection"));
+    m_selectedItemTagsLayout = addChipSection(mainLayout, tr("Tags on selection"), UiColors::kSelectedItemTagsBackground);
 
     connect(m_searchEdit, &QLineEdit::textChanged, m_viewModel, &TagListViewModel::setSearchQuery);
     connect(m_createTagButton, &QPushButton::clicked, m_viewModel, &TagListViewModel::createAndAddTagFromQuery);
@@ -44,17 +45,22 @@ TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, QWidget* parent)
     updateCreateTagAffordance(m_viewModel->canCreateTagFromQuery());
 }
 
-FlowLayout* TagPanelWidget::addChipSection(QVBoxLayout* mainLayout, const QString& title)
+FlowLayout* TagPanelWidget::addChipSection(QVBoxLayout* mainLayout, const QString& title, const char* backgroundHex)
 {
     mainLayout->addWidget(new QLabel(title, this));
 
     auto* content = new QWidget;
+    content->setAttribute(Qt::WA_StyledBackground, true);
+    content->setStyleSheet(QString("background-color: %1;").arg(QLatin1String(backgroundHex)));
     auto* contentLayout = new FlowLayout(content);
 
     auto* scrollArea = new QScrollArea(this);
+    scrollArea->setAttribute(Qt::WA_StyledBackground, true);
     scrollArea->setWidget(content);
     scrollArea->setWidgetResizable(true);
     scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    scrollArea->setStyleSheet(QStringLiteral("QScrollArea { border: none; }"));
+    scrollArea->viewport()->setStyleSheet(QString("background-color: %1;").arg(QLatin1String(backgroundHex)));
     mainLayout->addWidget(scrollArea);
 
     return contentLayout;
