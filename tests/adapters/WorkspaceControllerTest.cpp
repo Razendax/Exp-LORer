@@ -2,6 +2,7 @@
 
 #include <fstream>
 
+#include "DirectoryWatchUseCase.h"
 #include "FileDecorationRules.h"
 #include "FileDecorationRulesStore.h"
 #include "FileDecorationsViewModel.h"
@@ -13,6 +14,7 @@
 #include "MediaDecoder.h"
 #include "SQLiteTagRepository.h"
 #include "ShellContextMenuProvider.h"
+#include "StandardDirectoryWatcher.h"
 #include "StandardFileSystemRepository.h"
 #include "TabViewModel.h"
 #include "TagManagementUseCase.h"
@@ -58,9 +60,11 @@ namespace
         LibGit2StatusProvider m_gitStatusProvider;
         GitStatusUseCase m_gitStatusUseCase{ m_gitStatusProvider };
         GitStatusService m_gitStatusService{ m_gitStatusUseCase };
+        StandardDirectoryWatcher m_directoryWatcher;
+        DirectoryWatchUseCase m_directoryWatchUseCase{ m_directoryWatcher };
         WorkspaceController m_controller{ m_fileNavigationUseCase,  m_tagManagementUseCase,     m_filePreviewUseCase,
                                            m_fileSystemRepository, m_fileDecorationRules,      m_fileDecorationsViewModel,
-                                           m_gitStatusService };
+                                           m_gitStatusService,     m_directoryWatchUseCase };
     };
 }
 
@@ -94,7 +98,7 @@ TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsThroughRestoreFromConfig)
     TagManagementUseCase restoredTagManagementUseCase{ restoredTagRepository, m_fileSystemRepository };
     WorkspaceController restoredController{ m_fileNavigationUseCase,  restoredTagManagementUseCase, m_filePreviewUseCase,
                                              m_fileSystemRepository, m_fileDecorationRules,        m_fileDecorationsViewModel,
-                                             m_gitStatusService };
+                                             m_gitStatusService,     m_directoryWatchUseCase };
 
     const bool restored = restoredController.restoreFromConfig(captured);
     ASSERT_TRUE(restored);

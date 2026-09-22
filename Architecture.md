@@ -1334,3 +1334,69 @@ after Date Modified.
   carve-out `FilePreviewViewModel`/`DriveSpaceInfoWorker` already fall under; `GitStatusUseCase` is
   covered by an ordinary mock-based test and `LibGit2StatusProvider` by a real-temp-repo adapter
   test (initialized via libgit2's own `git_repository_init`, not a `git` CLI shell-out), per §11.
+
+### 14.32 Live Directory Update (Visible Tabs, Non-Recursive)
+
+Automatically reflects a file being created/deleted/modified in a browsed folder without the user
+pressing Refresh — scoped to the tabs currently **shown** (the active tab of each pane the current
+`SplitLayout` makes visible: 1 in Single, 2 in a split, 4 in the grid) and to that folder's
+**immediate children only**, never a nested subdirectory.
+
+* **New Port**, `IDirectoryWatcher` (`src/application`) — kept separate from
+  `IFileSystemRepository`, same Interface Segregation reasoning as `IGitStatusProvider`/
+  `IContextMenuProvider`/`IMediaDecoder`: `watch(directory, std::function<void()> onChanged) ->
+  Result<DirectoryWatchId>` (multiple independent watches on the same directory are allowed) /
+  `unwatch(DirectoryWatchId)`. A non-real path (the "This PC" sentinel, an archive-virtual path, a
+  path that no longer exists) surfaces as a `Result` failure rather than crashing; the caller
+  simply doesn't get live updates for that tab (same "tolerate by blanking" posture as
+  `driveSpaceInfo`, §14.30). **`DirectoryWatchUseCase`** (new, stateless, single-Port-dependency
+  passthrough, same shape as `GitStatusUseCase`).
+* **`src/adapters/filesystem`** gains `StandardDirectoryWatcher` (implements the Port on top of
+  one owned `QFileSystemWatcher` — chosen over hand-rolling `ReadDirectoryChangesW` because it's
+  already non-recursive per directory by construction, and its Windows backend watches
+  name/attribute/size/last-write changes of immediate children, covering create/delete/rename/
+  modify for free; it also gives a future Linux port (inotify backend) for free) and
+  `DirectoryWatchRegistry` (pure C++, no Qt — refcounted path→watcher-callbacks bookkeeping
+  deciding when to actually start/stop the native watch — same "pure logic factored out of OS
+  glue" split as `AnsiTerminalBuffer`/`WindowsConPtyProcess`, GTest-covered). Path conversion goes
+  through `.wstring()` → `QString::fromStdWString(...)`, never `.string()`/`PathUtf8::toUtf8()`
+  (§6). This is `adapters/filesystem`'s first Qt dependency (`Qt6::Core`, for
+  `QFileSystemWatcher`/`QObject`) — `StandardFileSystemRepository`/`DriveLabel` use plain
+  `std::filesystem`/Win32 only.
+* **`DirectoryWatchService`** (new, `src/adapters/viewmodels`) — owned long-lived by
+  `WorkspaceController` (constructed internally, same posture as `TagListViewModel`/
+  `FilePreviewViewModel`/`FileOperationsController`). `setVisibleTabs(tabs)` diffs against the
+  currently-watched set: newly-visible tabs are watched *and* refreshed once immediately to catch
+  up on anything missed while unwatched (mirrors `FilePreviewViewModel::setPanelActive(true)`'s
+  reactivate-and-catch-up posture); no-longer-visible tabs are unwatched. Each watched tab tracks
+  its `DirectoryWatchId`, a ~400ms debounce `QTimer` (coalesces a burst of native change events —
+  e.g. a multi-file copy — into one refresh), and connections to that tab's `currentPathChanged`
+  (re-point the watch at the new directory, same tab stays watched) and `destroyed()` (cleanup on
+  tab close). A debounced notification calls the existing `TabViewModel::refresh()` slot (§14.10)
+  — no new refresh path. Only the normal-browsing `FileListModel` is affected; a watched tab
+  currently showing quick/advanced-search results still refreshes its (hidden) primary listing in
+  the background, same scope cut §14.31 already made.
+* **`WorkspaceController`** gains a `DirectoryWatchUseCase&` constructor parameter and a private
+  `updateLiveWatchedTabs()` (`WorkspaceLayoutTopology::visiblePanes(m_layout)` → each visible
+  pane's `activeTab()` → `DirectoryWatchService::setVisibleTabs`), called after construction, from
+  `setLayout()`, and from the existing per-pane `activeTabChanged` connection loop — deliberately
+  **not** from `focusedPaneChanged`, since visibility (not focus) decides what's watched: all 4
+  panes' active tabs live-update under `FourGrid` even though only one pane has focus.
+* **Threading** — none new. Registering/unregistering a directory watch is a fast, non-blocking
+  syscall, same "cheap OS call stays synchronous on the UI thread" posture as `driveSpaceInfo`
+  (§14.30)/`ShellExecuteW` (§14.11); `QFileSystemWatcher` delivers notifications through Qt's own
+  event loop with no manual thread. Unlike git-status (a real disk/`.git` scan, needing
+  `GitStatusService`'s background thread), there is no scan to offload here.
+* **Known limitation:** `refresh()`'s `loadAndApply()` already clears the current selection and
+  fully resets `FileListModel` (`beginResetModel()`/`endResetModel()`) on every call — pre-existing
+  behavior for the manual Refresh button and the post-file-op refresh (§14.10), now also triggered
+  by external changes, more frequently and more disruptively than before (Explorer itself
+  preserves selection across a live update). Selection-preserving refresh is a real improvement but
+  a separate, larger change to `FileListModel`/`loadAndApply`; deliberately out of scope here.
+* **Not built:** watching inactive tabs or hidden-pane tabs (they simply go stale until shown or
+  manually refreshed); live updates inside quick-search/advanced-search result views; a Linux
+  `IDirectoryWatcher` implementation (deferred until Linux support is actually built, same posture
+  as every other Windows-first Port). No automated coverage beyond `DirectoryWatchRegistry`
+  (pure bookkeeping) and `DirectoryWatchUseCase` (mocked-Port passthrough) — `WorkspaceController`/
+  `DirectoryWatchService`/`StandardDirectoryWatcher` fall under the existing §11 UI/ViewModel-glue
+  and OS-shell carve-outs, smoke-tested manually.

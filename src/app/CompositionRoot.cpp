@@ -62,6 +62,7 @@ CompositionRoot::CompositionRoot()
     , m_filePreviewUseCase(m_fileSystemRepository, m_cachingMediaDecoder)
     , m_gitStatusUseCase(m_gitStatusProvider)
     , m_gitStatusService(m_gitStatusUseCase)
+    , m_directoryWatchUseCase(m_directoryWatcher)
     , m_highlightThemeStore(highlightThemeFilePath())
     , m_highlightTheme(m_highlightThemeStore.load())
     , m_highlightThemeViewModel(m_highlightTheme, m_highlightThemeStore)
@@ -89,5 +90,5 @@ std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController(
 {
     return std::make_unique<WorkspaceController>(m_fileNavigationUseCase, m_tagManagementUseCase, m_filePreviewUseCase,
                                                   m_fileSystemRepository, m_fileDecorationRules, m_fileDecorationsViewModel,
-                                                  m_gitStatusService);
+                                                  m_gitStatusService, m_directoryWatchUseCase);
 }

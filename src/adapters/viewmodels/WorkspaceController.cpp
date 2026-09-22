@@ -1,9 +1,13 @@
 #include "WorkspaceController.h"
 
+#include <vector>
+
+#include "DirectoryWatchService.h"
 #include "FileOperationsController.h"
 #include "FilePreviewViewModel.h"
 #include "TabViewModel.h"
 #include "TagListViewModel.h"
+#include "WorkspaceLayoutTopology.h"
 #include "WorkspacePaneViewModel.h"
 
 namespace
@@ -17,7 +21,8 @@ namespace
 WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                                            FilePreviewUseCase& filePreviewUseCase, IFileSystemRepository& fileSystemRepository,
                                            const FileDecorationRules& fileDecorationRules,
-                                           QObject& fileDecorationsChangeSource, GitStatusService& gitStatusService, QObject* parent)
+                                           QObject& fileDecorationsChangeSource, GitStatusService& gitStatusService,
+                                           DirectoryWatchUseCase& directoryWatchUseCase, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
 {
@@ -37,17 +42,20 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
     m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, this);
     m_filePreviewViewModel = new FilePreviewViewModel(filePreviewUseCase, fileSystemRepository, this);
     m_fileOperationsController = new FileOperationsController(m_fileNavigationUseCase, this);
+    m_directoryWatchService = new DirectoryWatchService(directoryWatchUseCase, this);
 
     connect(this, &WorkspaceController::focusedPaneChanged, this, &WorkspaceController::retargetFocusedTab);
     for (WorkspacePaneViewModel* pane : m_panes)
     {
         connect(pane, &WorkspacePaneViewModel::activeTabChanged, this, &WorkspaceController::retargetFocusedTab);
+        connect(pane, &WorkspacePaneViewModel::activeTabChanged, this, &WorkspaceController::updateLiveWatchedTabs);
     }
 
     connect(m_fileOperationsController, &FileOperationsController::directoryContentsMayHaveChanged, this,
             &WorkspaceController::refreshTabsShowing);
 
     retargetFocusedTab();
+    updateLiveWatchedTabs();
 }
 
 WorkspacePaneViewModel* WorkspaceController::pane(WorkspacePaneId id) const
@@ -125,6 +133,7 @@ void WorkspaceController::setLayout(SplitLayout layout)
 
     m_layout = layout;
     emit layoutChanged(layout);
+    updateLiveWatchedTabs();
 }
 
 void WorkspaceController::setFocusedPane(WorkspacePaneId id)
@@ -158,4 +167,19 @@ void WorkspaceController::refreshTabsShowing(const std::filesystem::path& direct
             }
         }
     }
+}
+
+void WorkspaceController::updateLiveWatchedTabs()
+{
+    std::vector<TabViewModel*> visibleTabs;
+    for (WorkspacePaneId id : WorkspaceLayoutTopology::visiblePanes(m_layout))
+    {
+        TabViewModel* tab = pane(id)->activeTab();
+        if (tab != nullptr)
+        {
+            visibleTabs.push_back(tab);
+        }
+    }
+
+    m_directoryWatchService->setVisibleTabs(visibleTabs);
 }

@@ -5,11 +5,13 @@ add_executable(explorer_application_tests
     MockTagRepository.h
     MockMediaDecoder.h
     MockGitStatusProvider.h
+    MockDirectoryWatcher.h
     FileNavigationUseCaseTest.cpp
     TagManagementUseCaseTest.cpp
     MediaProcessingUseCaseTest.cpp
     FilePreviewUseCaseTest.cpp
     GitStatusUseCaseTest.cpp
+    DirectoryWatchUseCaseTest.cpp
 )
 
 target_link_libraries(explorer_application_tests PRIVATE

@@ -40,6 +40,13 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   hidden files/folders appear in every view mode and in search results with grayed-out text so
   they're visually distinguishable; when off, they're excluded from directory listings, search
   results, and address-bar autocomplete entirely.
+* **Live directory update (Architecture.md §14.32):** a folder currently browsed in a *shown* tab
+  (the active tab of each pane the current split layout makes visible — one tab in Single, two in
+  a split, four in the grid) automatically reflects files being created, deleted, or modified
+  directly inside it, without pressing Refresh. Only that folder's immediate contents are watched
+  — a change inside a subfolder does not trigger a refresh. A pane hidden by the current layout, or
+  a tab that isn't its pane's active one, is not live-updated; switching to it (or revealing its
+  pane) catches it up once at that point.
 * **Git status badges (Details view, Architecture.md §14.31):** when the currently browsed folder
   is inside a git working tree, a "Git" column at the right of "Date modified" shows a small colored
   badge for any file or folder with a non-clean status — a purple "?" for untracked, blue "M" for a

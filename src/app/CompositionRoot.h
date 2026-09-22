@@ -4,6 +4,7 @@
 
 #include "AppConfigStore.h"
 #include "CachingMediaDecoder.h"
+#include "DirectoryWatchUseCase.h"
 #include "FileDecorationRules.h"
 #include "FileDecorationRulesStore.h"
 #include "FileDecorationsViewModel.h"
@@ -18,6 +19,7 @@
 #include "MediaDecoder.h"
 #include "SQLiteTagRepository.h"
 #include "ShellContextMenuProvider.h"
+#include "StandardDirectoryWatcher.h"
 #include "StandardFileSystemRepository.h"
 #include "SyntaxHighlightEngine.h"
 #include "TagManagementUseCase.h"
@@ -65,6 +67,11 @@ private:
     LibGit2StatusProvider m_gitStatusProvider;
     GitStatusUseCase m_gitStatusUseCase;
     GitStatusService m_gitStatusService;
+
+    // Architecture.md §14.x: live directory-update watching for the visible+active tab set.
+    // Watcher before use case (construction order matches this declaration order).
+    StandardDirectoryWatcher m_directoryWatcher;
+    DirectoryWatchUseCase m_directoryWatchUseCase;
 
     // Architecture.md §14.26: text-preview syntax highlighting -- deliberately no Application-layer
     // Port/use-case for this, just plain adapter instances shared between PreviewPanelWidget's

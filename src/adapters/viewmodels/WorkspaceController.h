@@ -20,6 +20,8 @@ class TagListViewModel;
 class FilePreviewViewModel;
 class FileOperationsController;
 class GitStatusService;
+class DirectoryWatchUseCase;
+class DirectoryWatchService;
 
 // Mediator owning all 4 WorkspacePaneViewModels (always instantiated, regardless of which are
 // currently visible under the active SplitLayout) plus the active SplitLayout, the focused pane,
@@ -37,7 +39,8 @@ public:
     WorkspaceController(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                          FilePreviewUseCase& filePreviewUseCase, IFileSystemRepository& fileSystemRepository,
                          const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
-                         GitStatusService& gitStatusService, QObject* parent = nullptr);
+                         GitStatusService& gitStatusService, DirectoryWatchUseCase& directoryWatchUseCase,
+                         QObject* parent = nullptr);
 
     WorkspacePaneViewModel* pane(WorkspacePaneId id) const;
     SplitLayout layout() const noexcept { return m_layout; }
@@ -76,6 +79,13 @@ private:
     // from is reflected everywhere (Architecture.md §14.10).
     void refreshTabsShowing(const std::filesystem::path& directory);
 
+    // Recomputes the visible+active tab set from m_layout and each visible pane's activeTab(),
+    // and hands it to m_directoryWatchService. Called whenever that set may have changed: after
+    // construction, from setLayout(), and from any pane's activeTabChanged (Architecture.md
+    // §14.x). Deliberately not triggered by focusedPaneChanged -- visibility, not focus, decides
+    // what's live-watched.
+    void updateLiveWatchedTabs();
+
     FileNavigationUseCase& m_fileNavigationUseCase;
     std::array<WorkspacePaneViewModel*, 4> m_panes;
     SplitLayout m_layout = SplitLayout::Single;
@@ -83,4 +93,5 @@ private:
     TagListViewModel* m_tagListViewModel = nullptr;
     FilePreviewViewModel* m_filePreviewViewModel = nullptr;
     FileOperationsController* m_fileOperationsController = nullptr;
+    DirectoryWatchService* m_directoryWatchService = nullptr;
 };

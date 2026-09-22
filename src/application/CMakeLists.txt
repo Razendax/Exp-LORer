@@ -4,6 +4,7 @@ add_library(explorer_application STATIC
     ITagRepository.h
     IMediaDecoder.h
     IGitStatusProvider.h
+    IDirectoryWatcher.h
     MediaExtensions.h
     ArchiveExtensions.h
     VirtualPaths.h
@@ -21,6 +22,8 @@ add_library(explorer_application STATIC
     FilePreviewUseCase.cpp
     GitStatusUseCase.h
     GitStatusUseCase.cpp
+    DirectoryWatchUseCase.h
+    DirectoryWatchUseCase.cpp
 )
 
 target_include_directories(explorer_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
