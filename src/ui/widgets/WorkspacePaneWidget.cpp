@@ -208,6 +208,9 @@ QToolBar* WorkspacePaneWidget::createToolBar()
     viewModeButton->setMenu(viewModeMenu);
     toolBar->addWidget(viewModeButton);
 
+    m_refreshAction = toolBar->addAction(style()->standardIcon(QStyle::SP_BrowserReload), tr("Refresh"));
+    m_refreshAction->setEnabled(false);
+
     m_addressBar = new AddressBarWidget(toolBar);
     m_addressBar->setClearButtonEnabled(true);
     toolBar->addWidget(m_addressBar);
@@ -215,6 +218,7 @@ QToolBar* WorkspacePaneWidget::createToolBar()
     connect(m_backAction, &QAction::triggered, this, [this]() { if (m_boundTab) m_boundTab->goBack(); });
     connect(m_forwardAction, &QAction::triggered, this, [this]() { if (m_boundTab) m_boundTab->goForward(); });
     connect(m_upAction, &QAction::triggered, this, [this]() { if (m_boundTab) m_boundTab->goUp(); });
+    connect(m_refreshAction, &QAction::triggered, this, [this]() { if (m_boundTab) m_boundTab->refresh(); });
     connect(m_addressBar, &QLineEdit::returnPressed, this, &WorkspacePaneWidget::onAddressBarEdited);
     connect(m_addressBar, &AddressBarWidget::folderSuggestionsRequested, this,
             &WorkspacePaneWidget::onAddressBarFolderSuggestionsRequested);
@@ -461,6 +465,7 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
         m_backAction->setEnabled(false);
         m_forwardAction->setEnabled(false);
         m_upAction->setEnabled(false);
+        m_refreshAction->setEnabled(false);
         m_addressBar->clear();
         m_statusBar->setCounts(0, 0);
         m_statusBar->clearQuickSelect();
@@ -491,6 +496,7 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
     m_backAction->setEnabled(m_boundTab->backAvailable());
     m_forwardAction->setEnabled(m_boundTab->forwardAvailable());
     m_upAction->setEnabled(m_boundTab->upAvailable());
+    m_refreshAction->setEnabled(true);
 
     m_addressBar->setText(displayPathText(m_boundTab->currentPath()));
     m_statusBar->clearQuickSelect();

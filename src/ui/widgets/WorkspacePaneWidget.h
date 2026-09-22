@@ -26,7 +26,7 @@ class AddressBarWidget;
 class BottomPanelWidget;
 class StatusBarWidget;
 
-// One pane's full self-contained UI: its own toolbar (back/forward/up QActions, address
+// One pane's full self-contained UI: its own toolbar (back/forward/up/refresh QActions, address
 // QLineEdit, view-mode QToolButton+menu — the per-pane counterpart of MainWindow's former
 // single-pane navigation toolbar, with its own QActionGroup instance) plus its own QTabWidget
 // (closable tabs, a "+" corner button to add a tab), one FileBrowserView page per TabViewModel
@@ -125,6 +125,7 @@ private:
     QAction* m_backAction = nullptr;
     QAction* m_forwardAction = nullptr;
     QAction* m_upAction = nullptr;
+    QAction* m_refreshAction = nullptr;
 
     // One QAction per ViewMode (same order as the anonymous-namespace kViewModes array in the
     // .cpp), shared between this pane's toolbar dropdown and (eventually) its own view menu.
