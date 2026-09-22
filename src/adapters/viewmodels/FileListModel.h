@@ -13,6 +13,7 @@
 #include "FileDecorationRules.h"
 #include "FileNavigationUseCase.h"
 #include "FileNode.h"
+#include "GitDirectoryStatus.h"
 
 // Qt-facing model wrapping directory-listing results (FileNode lists) supplied by
 // TabViewModel, which owns one instance per tab. Feeds both QListView (icon/list/tiles view
@@ -30,6 +31,7 @@ public:
         SizeColumn,
         TypeColumn,
         DateModifiedColumn,
+        GitStatusColumn,
         ColumnCount,
     };
 
@@ -97,6 +99,11 @@ public slots:
     // Live-toggles hidden-entry filtering without re-navigating/rescanning. No-op if unchanged.
     void setShowHiddenFiles(bool show);
 
+    // Sets the per-path git status shown in GitStatusColumn (Architecture.md §14.x), keyed by each
+    // entry's absolute path. Called by TabViewModel after GitStatusService's background scan
+    // completes; entries with no matching key show no badge (clean, or no repository present).
+    void setGitStatuses(const GitStatusByPathMap& statuses);
+
 signals:
     void sortOrderChanged(SortCriterion criterion, bool ascending);
 
@@ -120,6 +127,7 @@ private:
     std::vector<FileNode> m_entries;
     std::vector<int> m_visibleRows;
     QFileIconProvider m_iconProvider;
+    GitStatusByPathMap m_gitStatusByPath;
 
     // Dimmed (QStyle::generatedIconPixmap) variant of a hidden entry's icon, cached per icon
     // "kind" (extension/directory/symlink, see data()) rather than rebuilt on every data() call --

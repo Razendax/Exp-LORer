@@ -4,12 +4,14 @@
 
 WorkspacePaneViewModel::WorkspacePaneViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                                                 const FileDecorationRules& fileDecorationRules,
-                                                QObject& fileDecorationsChangeSource, WorkspacePaneId id, QObject* parent)
+                                                QObject& fileDecorationsChangeSource, GitStatusService& gitStatusService,
+                                                WorkspacePaneId id, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagManagementUseCase(tagManagementUseCase)
     , m_fileDecorationRules(fileDecorationRules)
     , m_fileDecorationsChangeSource(fileDecorationsChangeSource)
+    , m_gitStatusService(gitStatusService)
     , m_id(id)
 {
 }
@@ -32,7 +34,7 @@ TabViewModel* WorkspacePaneViewModel::activeTab() const
 TabViewModel* WorkspacePaneViewModel::addTab()
 {
     auto* tab = new TabViewModel(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
-                                  m_fileDecorationsChangeSource, this);
+                                  m_fileDecorationsChangeSource, m_gitStatusService, this);
     m_tabs.push_back(tab);
 
     const int index = static_cast<int>(m_tabs.size()) - 1;

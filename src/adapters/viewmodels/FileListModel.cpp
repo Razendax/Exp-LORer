@@ -5,7 +5,9 @@
 #include <QDateTime>
 #include <QFileInfo>
 #include <QFont>
+#include <QHash>
 #include <QIcon>
+#include <QPainter>
 #include <QPixmap>
 #include <QSettings>
 #include <QStyle>
@@ -107,6 +109,102 @@ namespace
         }
         return result;
     }
+
+    // Colored circle + glyph per GitFileStatus (Architecture.md §14.x's status/badge table),
+    // rendered once via QPainter and cached per value -- 8 entries, trivial, same caching idea as
+    // m_dimmedIconCache above.
+    QIcon gitStatusBadgeIcon(GitFileStatus status)
+    {
+        static QHash<int, QIcon> cache;
+        const auto cached = cache.constFind(static_cast<int>(status));
+        if (cached != cache.constEnd())
+        {
+            return cached.value();
+        }
+
+        QColor color;
+        QString glyph;
+        switch (status)
+        {
+            case GitFileStatus::Untracked:
+                color = QColor(155, 89, 182);
+                glyph = QStringLiteral("?");
+                break;
+            case GitFileStatus::ModifiedStaged:
+                color = QColor(52, 152, 219);
+                glyph = QStringLiteral("M");
+                break;
+            case GitFileStatus::ModifiedUnstaged:
+                color = QColor(241, 196, 15);
+                glyph = QStringLiteral("M");
+                break;
+            case GitFileStatus::AddedStaged:
+                color = QColor(46, 204, 113);
+                glyph = QStringLiteral("+");
+                break;
+            case GitFileStatus::DeletedStaged:
+                color = QColor(231, 76, 60);
+                glyph = QStringLiteral("-");
+                break;
+            case GitFileStatus::DeletedUnstaged:
+                color = QColor(230, 126, 34);
+                glyph = QStringLiteral("-");
+                break;
+            case GitFileStatus::Conflicted:
+                color = QColor(230, 126, 34);
+                glyph = QStringLiteral("C");
+                break;
+            case GitFileStatus::Ignored:
+                color = QColor(149, 165, 166);
+                glyph = QStringLiteral("I");
+                break;
+        }
+
+        QPixmap pixmap(16, 16);
+        pixmap.fill(Qt::transparent);
+
+        QPainter painter(&pixmap);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(color);
+        painter.drawEllipse(0, 0, 16, 16);
+
+        QFont font = painter.font();
+        font.setBold(true);
+        font.setPixelSize(11);
+        painter.setFont(font);
+        painter.setPen(Qt::white);
+        painter.drawText(QRect(0, 0, 16, 16), Qt::AlignCenter, glyph);
+        painter.end();
+
+        const QIcon icon(pixmap);
+        cache.insert(static_cast<int>(status), icon);
+        return icon;
+    }
+
+    QString gitStatusTooltip(GitFileStatus status)
+    {
+        switch (status)
+        {
+            case GitFileStatus::Untracked:
+                return QObject::tr("Untracked");
+            case GitFileStatus::ModifiedStaged:
+                return QObject::tr("Modified (staged)");
+            case GitFileStatus::ModifiedUnstaged:
+                return QObject::tr("Modified (unstaged)");
+            case GitFileStatus::AddedStaged:
+                return QObject::tr("Added (staged)");
+            case GitFileStatus::DeletedStaged:
+                return QObject::tr("Deleted (staged)");
+            case GitFileStatus::DeletedUnstaged:
+                return QObject::tr("Deleted (unstaged)");
+            case GitFileStatus::Conflicted:
+                return QObject::tr("Conflicted");
+            case GitFileStatus::Ignored:
+                return QObject::tr("Ignored");
+        }
+        return {};
+    }
 }
 
 FileListModel::FileListModel(const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource, QObject* parent)
@@ -194,6 +292,23 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
             cached = m_dimmedIconCache.insert(cacheKey, dimmedIcon(icon));
         }
         return cached.value();
+    }
+
+    if (index.column() == GitStatusColumn && (role == Qt::DecorationRole || role == Qt::ToolTipRole))
+    {
+        if (entry.displayName())
+        {
+            // Synthetic rows ("This PC"'s drives, ...) have no real on-disk path to look up.
+            return {};
+        }
+
+        const auto statusIt = m_gitStatusByPath.find(entry.path());
+        if (statusIt == m_gitStatusByPath.end())
+        {
+            return {};
+        }
+
+        return role == Qt::DecorationRole ? QVariant(gitStatusBadgeIcon(statusIt->second)) : QVariant(gitStatusTooltip(statusIt->second));
     }
 
     if (role == Qt::ForegroundRole)
@@ -287,6 +402,8 @@ QVariant FileListModel::headerData(int section, Qt::Orientation orientation, int
             return tr("Type");
         case DateModifiedColumn:
             return tr("Date modified");
+        case GitStatusColumn:
+            return tr("Git");
         default:
             return {};
     }
@@ -317,6 +434,9 @@ void FileListModel::setEntries(const std::filesystem::path& directory, const std
     beginResetModel();
     m_directory = directory;
     m_entries = FileNavigationUseCase::sortBy(entries, m_sortCriterion, m_sortAscending);
+    // A new directory's git status hasn't been (re)computed yet -- start blank rather than
+    // momentarily showing the previous directory's badges under the new listing.
+    m_gitStatusByPath.clear();
     rebuildVisibleRows();
     endResetModel();
 }
@@ -349,6 +469,19 @@ void FileListModel::setShowHiddenFiles(bool show)
     m_showHiddenFiles = show;
     rebuildVisibleRows();
     endResetModel();
+}
+
+void FileListModel::setGitStatuses(const GitStatusByPathMap& statuses)
+{
+    m_gitStatusByPath = statuses;
+
+    if (m_visibleRows.empty())
+    {
+        return;
+    }
+
+    emit dataChanged(index(0, GitStatusColumn), index(static_cast<int>(m_visibleRows.size()) - 1, GitStatusColumn),
+                      { Qt::DecorationRole, Qt::ToolTipRole });
 }
 
 std::optional<FileDecorationRule> FileListModel::resolveDecoration(const FileNode& entry) const

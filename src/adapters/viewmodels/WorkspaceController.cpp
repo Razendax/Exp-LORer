@@ -17,18 +17,22 @@ namespace
 WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                                            FilePreviewUseCase& filePreviewUseCase, IFileSystemRepository& fileSystemRepository,
                                            const FileDecorationRules& fileDecorationRules,
-                                           QObject& fileDecorationsChangeSource, QObject* parent)
+                                           QObject& fileDecorationsChangeSource, GitStatusService& gitStatusService, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
 {
     m_panes[indexOf(WorkspacePaneId::PaneA)] = new WorkspacePaneViewModel(
-        fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, WorkspacePaneId::PaneA, this);
+        fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
+        WorkspacePaneId::PaneA, this);
     m_panes[indexOf(WorkspacePaneId::PaneB)] = new WorkspacePaneViewModel(
-        fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, WorkspacePaneId::PaneB, this);
+        fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
+        WorkspacePaneId::PaneB, this);
     m_panes[indexOf(WorkspacePaneId::PaneC)] = new WorkspacePaneViewModel(
-        fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, WorkspacePaneId::PaneC, this);
+        fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
+        WorkspacePaneId::PaneC, this);
     m_panes[indexOf(WorkspacePaneId::PaneD)] = new WorkspacePaneViewModel(
-        fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, WorkspacePaneId::PaneD, this);
+        fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
+        WorkspacePaneId::PaneD, this);
 
     m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, this);
     m_filePreviewViewModel = new FilePreviewViewModel(filePreviewUseCase, fileSystemRepository, this);

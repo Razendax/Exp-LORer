@@ -40,6 +40,18 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   hidden files/folders appear in every view mode and in search results with grayed-out text so
   they're visually distinguishable; when off, they're excluded from directory listings, search
   results, and address-bar autocomplete entirely.
+* **Git status badges (Details view, Architecture.md §14.31):** when the currently browsed folder
+  is inside a git working tree, a "Git" column at the right of "Date modified" shows a small colored
+  badge for any file or folder with a non-clean status — a purple "?" for untracked, blue "M" for a
+  staged modification, yellow "M" for an unstaged one, green "+" for a staged addition, red "-" for
+  a staged deletion, orange "-" for an unstaged deletion, grey "I" for ignored — computed in the
+  background so browsing never blocks on it. Each item shows at most one status. A folder's badge
+  reflects the most important change anywhere in its subtree (not just the folder itself), so a
+  modified file nested inside a subfolder is still visible without opening every intermediate
+  folder — an ignored file never outranks a real change (modified/added/deleted/untracked/
+  conflicted) elsewhere in the same subfolder. Badges appear only in Details view, only while
+  normally browsing (not in quick-search/advanced-search results), and refresh only on navigation,
+  not live.
 * **Integrated terminal (Architecture.md §14.23):** Each tab has its own collapsible panel at the
   bottom, collapsed by default, showing a strip of panel tabs (only "Terminal" in v1). Clicking
   "Terminal" the first time expands the panel and opens a `cmd.exe` session already in that tab's

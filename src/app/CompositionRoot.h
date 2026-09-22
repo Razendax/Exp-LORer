@@ -9,9 +9,12 @@
 #include "FileDecorationsViewModel.h"
 #include "FileNavigationUseCase.h"
 #include "FilePreviewUseCase.h"
+#include "GitStatusService.h"
+#include "GitStatusUseCase.h"
 #include "HighlightTheme.h"
 #include "HighlightThemeStore.h"
 #include "HighlightThemeViewModel.h"
+#include "LibGit2StatusProvider.h"
 #include "MediaDecoder.h"
 #include "SQLiteTagRepository.h"
 #include "ShellContextMenuProvider.h"
@@ -56,6 +59,12 @@ private:
     ThumbnailCache m_thumbnailCache;
     CachingMediaDecoder m_cachingMediaDecoder;
     FilePreviewUseCase m_filePreviewUseCase;
+
+    // Architecture.md §14.x: per-file/folder git status badges. Provider before use case before
+    // service (construction order matches this declaration order).
+    LibGit2StatusProvider m_gitStatusProvider;
+    GitStatusUseCase m_gitStatusUseCase;
+    GitStatusService m_gitStatusService;
 
     // Architecture.md §14.26: text-preview syntax highlighting -- deliberately no Application-layer
     // Port/use-case for this, just plain adapter instances shared between PreviewPanelWidget's

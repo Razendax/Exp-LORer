@@ -21,6 +21,7 @@ class FileNavigationUseCase;
 class TagManagementUseCase;
 class FileListModel;
 class FileDecorationRules;
+class GitStatusService;
 
 // Binds address-bar/navigation-toolbar UI to FileNavigationUseCase and NavigationHistory for a
 // single tab. Owns the FileListModel that backs that tab's FileBrowserView, wiring
@@ -35,7 +36,8 @@ public:
     // FileDecorationsViewModel.h for why FileListModel/TabViewModel/WorkspacePaneViewModel/
     // WorkspaceController deliberately don't reference that concrete type.
     TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
-                 const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource, QObject* parent = nullptr);
+                 const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
+                 GitStatusService& gitStatusService, QObject* parent = nullptr);
 
     std::filesystem::path currentPath() const;
     bool backAvailable() const;
@@ -180,6 +182,12 @@ private:
     void loadAndApply(const std::filesystem::path& path, bool recordHistory);
     void emitAvailability();
 
+    // Connected to directoryContentsChanged (normal browsing only -- not the search result
+    // signals, per the v1 scope cut). Dispatches a background git-status scan for `path` and
+    // applies the result to m_fileListModel once it comes back, dropping stale replies for a path
+    // that's no longer current (Architecture.md §14.x).
+    void requestGitStatus(const std::filesystem::path& path);
+
     // Shared implementation of startAdvancedSearch/updateAdvancedSearchCriteria/
     // addTagSearchCriterion/removeTagSearchCriterion: re-scans only when forceRescan or this is
     // the first-ever scan, applies filterByCriteria then (if tagIds non-empty) the tag-path
@@ -188,6 +196,7 @@ private:
 
     FileNavigationUseCase& m_fileNavigationUseCase;
     TagManagementUseCase& m_tagManagementUseCase;
+    GitStatusService& m_gitStatusService;
     NavigationHistory m_history;
     ViewMode m_viewMode = ViewMode::Details;
     FileListModel* m_fileListModel = nullptr;

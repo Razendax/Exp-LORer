@@ -7,6 +7,9 @@
 #include "FileDecorationsViewModel.h"
 #include "FileNavigationUseCase.h"
 #include "FilePreviewUseCase.h"
+#include "GitStatusService.h"
+#include "GitStatusUseCase.h"
+#include "LibGit2StatusProvider.h"
 #include "MediaDecoder.h"
 #include "SQLiteTagRepository.h"
 #include "ShellContextMenuProvider.h"
@@ -52,8 +55,12 @@ namespace
                                                                "explorer_workspace_controller_test_decorations.json" };
         FileDecorationRules m_fileDecorationRules;
         FileDecorationsViewModel m_fileDecorationsViewModel{ m_fileDecorationRules, m_fileDecorationRulesStore };
-        WorkspaceController m_controller{ m_fileNavigationUseCase, m_tagManagementUseCase, m_filePreviewUseCase,
-                                           m_fileSystemRepository, m_fileDecorationRules, m_fileDecorationsViewModel };
+        LibGit2StatusProvider m_gitStatusProvider;
+        GitStatusUseCase m_gitStatusUseCase{ m_gitStatusProvider };
+        GitStatusService m_gitStatusService{ m_gitStatusUseCase };
+        WorkspaceController m_controller{ m_fileNavigationUseCase,  m_tagManagementUseCase,     m_filePreviewUseCase,
+                                           m_fileSystemRepository, m_fileDecorationRules,      m_fileDecorationsViewModel,
+                                           m_gitStatusService };
     };
 }
 
@@ -85,8 +92,9 @@ TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsThroughRestoreFromConfig)
     // A fresh controller (nothing seeded yet) restored from the captured snapshot.
     SQLiteTagRepository restoredTagRepository{ fs::path(":memory:") };
     TagManagementUseCase restoredTagManagementUseCase{ restoredTagRepository, m_fileSystemRepository };
-    WorkspaceController restoredController{ m_fileNavigationUseCase, restoredTagManagementUseCase, m_filePreviewUseCase,
-                                             m_fileSystemRepository, m_fileDecorationRules, m_fileDecorationsViewModel };
+    WorkspaceController restoredController{ m_fileNavigationUseCase,  restoredTagManagementUseCase, m_filePreviewUseCase,
+                                             m_fileSystemRepository, m_fileDecorationRules,        m_fileDecorationsViewModel,
+                                             m_gitStatusService };
 
     const bool restored = restoredController.restoreFromConfig(captured);
     ASSERT_TRUE(restored);

@@ -28,6 +28,10 @@ add_library(explorer_adapters_viewmodels STATIC
     FilePreviewViewModel.cpp
     DriveSpaceInfoWorker.h
     DriveSpaceInfoWorker.cpp
+    GitStatusWorker.h
+    GitStatusWorker.cpp
+    GitStatusService.h
+    GitStatusService.cpp
 )
 
 target_include_directories(explorer_adapters_viewmodels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

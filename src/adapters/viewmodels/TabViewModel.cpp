@@ -4,6 +4,8 @@
 
 #include "FileListModel.h"
 #include "FileNavigationUseCase.h"
+#include "GitDirectoryStatus.h"
+#include "GitStatusService.h"
 #include "TagManagementUseCase.h"
 #include "VirtualPaths.h"
 
@@ -17,16 +19,24 @@ namespace
 }
 
 TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
-                           const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource, QObject* parent)
+                           const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
+                           GitStatusService& gitStatusService, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagManagementUseCase(tagManagementUseCase)
+    , m_gitStatusService(gitStatusService)
     , m_fileListModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_searchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_advancedSearchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
 {
     connect(this, &TabViewModel::directoryContentsChanged, m_fileListModel, &FileListModel::setEntries);
     connect(m_fileListModel, &FileListModel::sortOrderChanged, this, &TabViewModel::sortOrderChanged);
+
+    // Normal browsing only (Architecture.md §14.x's v1 scope cut) -- quick-search/advanced-search
+    // results fire their own searchResultsChanged/advancedSearchResultsChanged signals instead,
+    // which this deliberately does not connect to.
+    connect(this, &TabViewModel::directoryContentsChanged, this,
+            [this](const std::filesystem::path& path, const std::vector<FileNode>&) { requestGitStatus(path); });
 }
 
 std::filesystem::path TabViewModel::currentPath() const
@@ -438,4 +448,17 @@ void TabViewModel::emitAvailability()
     emit backAvailableChanged(backAvailable());
     emit forwardAvailableChanged(forwardAvailable());
     emit upAvailableChanged(upAvailable());
+}
+
+void TabViewModel::requestGitStatus(const std::filesystem::path& path)
+{
+    m_gitStatusService.requestStatus(this, path, [this, path](Result<GitDirectoryStatus> result) {
+        if (path != currentPath())
+        {
+            // A newer navigation has since happened; this reply is stale.
+            return;
+        }
+
+        m_fileListModel->setGitStatuses(result ? result.value().statusByPath : GitStatusByPathMap{});
+    });
 }

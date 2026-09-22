@@ -19,6 +19,7 @@ class TabViewModel;
 class TagListViewModel;
 class FilePreviewViewModel;
 class FileOperationsController;
+class GitStatusService;
 
 // Mediator owning all 4 WorkspacePaneViewModels (always instantiated, regardless of which are
 // currently visible under the active SplitLayout) plus the active SplitLayout, the focused pane,
@@ -36,7 +37,7 @@ public:
     WorkspaceController(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                          FilePreviewUseCase& filePreviewUseCase, IFileSystemRepository& fileSystemRepository,
                          const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
-                         QObject* parent = nullptr);
+                         GitStatusService& gitStatusService, QObject* parent = nullptr);
 
     WorkspacePaneViewModel* pane(WorkspacePaneId id) const;
     SplitLayout layout() const noexcept { return m_layout; }

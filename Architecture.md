@@ -39,6 +39,8 @@ instance safely serves concurrent callers from every tab/pane (§14.2).
   capped text-prefix read, or a decoded thumbnail via `IMediaDecoder`. Stateless, depends only on
   `IFileSystemRepository`/`IMediaDecoder` — never on another use case, same posture as the rest of
   this layer.
+* `GitStatusUseCase` — thin stateless passthrough to `IGitStatusProvider`, backing the Details-view
+  git status column (§14.31).
 
 **Ports:**
 * `IFileSystemRepository` — file operations: list, recursive list, move, copy, delete, hash,
@@ -52,6 +54,8 @@ instance safely serves concurrent callers from every tab/pane (§14.2).
 * `IContextMenuProvider` — builds a registry/COM-sourced context menu as plain data
   (`ContextMenuEntry`) and invokes the chosen entry — it hands back data, it doesn't show the OS's
   own popup (§14.13).
+* `IGitStatusProvider` — resolves a directory's working-tree git status (per-immediate-child
+  `GitFileStatus`, or an empty result when the directory isn't inside a repository), §14.31.
 
 ### 2.3 Interface Adapters Layer
 
@@ -81,6 +85,8 @@ Converts between Domain/Application types and framework types.
   `IMediaDecoder` around it) sit in front so callers never see cache logic. §14.25.
 * **Logging** (`adapters/logging`) — `Logging`, a thin wrapper over spdlog (rotating file sink,
   console sink in debug builds); the only place spdlog is referenced (§6, §14.22).
+* **Git** (`adapters/git`) — `LibGit2Repository` (RAII wrapper over libgit2, the only place libgit2
+  is referenced), `LibGit2StatusProvider`, implements `IGitStatusProvider` (§14.31).
 
 ### 2.3.1 View Modes
 
@@ -150,8 +156,8 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
   can be added without touching Domain/Application.
 * **Qt 6** (Widgets + Quick/QML hybrid, §2.4).
 * **vcpkg** manifest mode (`vcpkg.json`) for all third-party dependencies (Qt6, SQLite3, FFmpeg,
-  spdlog, GoogleTest/GoogleMock, xxHash, libarchive per §14.28), consumed via `find_package`;
-  `CMakePresets.json` pins the vcpkg toolchain.
+  spdlog, GoogleTest/GoogleMock, xxHash, libarchive per §14.28, libgit2 per §14.31), consumed via
+  `find_package`; `CMakePresets.json` pins the vcpkg toolchain.
 * **Logging:** `spdlog`, wrapped behind a thin `Logging::log(...)` call site so it isn't referenced
   outside one adapter header.
 * **Dependency injection:** no framework — a single composition root
@@ -268,6 +274,7 @@ Exp-LORer/
 │   │   ├── config/      # AppConfigStore (JSON session persistence)
 │   │   ├── media/       # QtMediaDecoder / FFmpegMediaDecoder (not yet implemented)
 │   │   ├── archive/     # ArchivePathResolver / LibArchiveReader / ArchiveIndexCache (§14.28)
+│   │   ├── git/         # LibGit2Repository / LibGit2StatusProvider (§14.31)
 │   │   └── logging/     # Logging (spdlog wrapper: rotating file + console sinks, §14.22)
 │   ├── ui/
 │   │   ├── widgets/     # Qt Widgets shell: MainWindow, panes, dialogs, delegates
@@ -1243,3 +1250,87 @@ filesystem-related).
   section (layout reserves room for one); non-Windows implementations (a future Linux backend
   implements `driveSpaceInfo` behind the same Port, matching every other Windows-specific adapter
   call); any change to `StatusBarWidget` or `onStatusMessage`'s transient-message behavior.
+
+### 14.31 Git Status Integration (Details View)
+
+Per-file/folder git working-tree status badges in the Details-view file list, computed via
+**libgit2** (the plain C library — not libqgit2, which isn't in vcpkg's registry; libgit2 is
+wrapped by our own adapter, same posture as libarchive/libvips/FFmpeg/tree-sitter, so "use a
+wrapper, never the library directly" is satisfied the same way it already is for those). One status
+per file: `??` Untracked, `M` staged/unstaged (Modified), `A` staged (Added), `D` staged/unstaged
+(Deleted), `!!` Ignored — seven `GitFileStatus` values total, each mapped to a small colored badge
+icon (purple/blue/yellow/green/red/orange/grey respectively) rendered in a new column appended
+after Date Modified.
+
+* **New Port**, `IGitStatusProvider` (`src/application`) — kept separate from
+  `IFileSystemRepository` (Interface Segregation, same reasoning that already keeps
+  `IContextMenuProvider`/`IMediaDecoder` as their own Ports): `statusForDirectory(directory) ->
+  Result<GitDirectoryStatus>`, where `GitDirectoryStatus` (`src/application/GitDirectoryStatus.h`,
+  a plain Port-adjacent data type, same posture as `DriveSpaceInfo`) holds an optional repository
+  root plus a `path -> GitFileStatus` map for `directory`'s immediate children only. `directory` not
+  inside any repository is `Ok({nullopt, {}})`, not an error — same "tolerate by blanking" posture
+  §14.30 established for `driveSpaceInfo`. **`GitStatusUseCase`** (new, stateless, depends only on
+  `IGitStatusProvider&`) is a thin passthrough, same single-Port-dependency shape as
+  `FilePreviewUseCase`.
+* **`src/adapters/git`** (new module, `explorer_adapters_git`, mirrors `adapters/archive`):
+  `LibGit2Repository` — the RAII wrapper around libgit2 itself (the only place its headers are
+  included): `open(startDirectory)` discovers a repository walking upward (`Err` if none found —
+  satisfies "in the current folder or a subfolder"), `statusForImmediateChildren(relativeDirectory)`
+  runs `git_status_list_new` scoped to that directory via `options.pathspec` (so a large repo isn't
+  fully re-walked on every navigation) with `GIT_STATUS_OPT_INCLUDE_UNTRACKED |
+  GIT_STATUS_OPT_INCLUDE_IGNORED`, `RECURSE_UNTRACKED_DIRS` left off — an entirely-untracked
+  subfolder is reported as itself (a single entry) rather than walked file-by-file, a real perf win
+  in large repos. Status-flag → `GitFileStatus` mapping has an explicit priority order for a
+  partially-staged file (worktree status wins over index status; see the plan record for the full
+  list) since req. "one status per file" rules out showing both. `LibGit2StatusProvider` implements
+  the Port on top of this, translating a "no repository found" `Err` into `Ok({nullopt, {}})` rather
+  than propagating it, and **rolls a nested entry up onto its immediate-child ancestor directory**
+  (the first path segment past `directory`) rather than dropping it — a modified file several levels
+  deep stays visible without opening every intermediate folder. A folder that rolls up more than one
+  nested change keeps its highest-priority one, via a rollup-specific priority order (its own
+  ranking, not the flag-collapsing one above): Conflicted, Untracked, DeletedUnstaged,
+  ModifiedUnstaged, DeletedStaged, AddedStaged, ModifiedStaged, Ignored last — Ignored sits at the
+  bottom here specifically so an ignored build artifact next to a genuinely modified tracked file in
+  the same folder doesn't hide the modification behind an "Ignored" badge on the folder row.
+* **Threading** — one dedicated background `QThread` (`GitStatusService` +
+  `GitStatusWorker`, `src/adapters/viewmodels`), same "one always-alive worker, not a pool" shape as
+  `FilePreviewViewModel`/`WindowsConPtyProcess`; every open tab/pane's status requests serialize
+  through it, sidestepping any libgit2 thread-safety question by construction (never touched from
+  two threads at once) the same way `SQLiteTagRepository` avoids `SQLITE_BUSY` by serializing DB
+  access (§5). Dispatch is `QMetaObject::invokeMethod` with a captured functor across both hops, not
+  real Qt signals — same reasoning `FilePreviewWorker.h` documents for avoiding meta-type
+  registration for non-default-constructible `Result<T>` payloads. `GitStatusService::requestStatus`
+  takes a `QObject* context` and guards its reply-marshaling callback with a `QPointer<QObject>`, so
+  a request outliving its requester (e.g. a closed tab) is silently dropped rather than dereferencing
+  a dangling `this`.
+* **Dispatch point is `TabViewModel`, not `FileListModel`** — `FileListModel` gains no new
+  constructor dependency, only a plain `setGitStatuses(...)` slot (storing the map, emitting
+  `dataChanged` for the new column), keeping it decoupled from git entirely, the same posture
+  `resolveDecoration()` keeps it decoupled from `FileDecorationsViewModel`'s concrete type (§14.29).
+  `TabViewModel` gains a `GitStatusService&` constructor dependency (threaded through
+  `WorkspacePaneViewModel`/`WorkspaceController` exactly like `TagManagementUseCase&`) and dispatches
+  a request on every `directoryContentsChanged` — the single funnel point `loadAndApply` already
+  provides for every navigation entry point, including the existing `refresh()` used after in-app
+  file operations, so a status refresh after e.g. a paste comes for free with no new wiring. Only the
+  tab's primary browsing `FileListModel` is wired this way — the two search-result `FileListModel`
+  instances never receive `setGitStatuses()`, which is how quick-search/advanced-search are excluded
+  (below) with no extra flag.
+* **`FileListModel`**: new `Column::GitStatusColumn`, appended after `DateModifiedColumn` (no
+  existing column index shifts). "Details view only" falls out for free from the existing
+  `QTreeView`/`QListView` split (§2.3.1) — `QListView`'s icon/list/tile modes already only read
+  column 0. `data()` returns `{}` (no badge) for any entry not present in the status map; a hit
+  returns a cached 16×16 badge icon (`Qt::DecorationRole`, one per `GitFileStatus` value, built
+  once) plus a human-readable `Qt::ToolTipRole` string. Synthetic rows are skipped, same as
+  decorations.
+* **Not built:** status in quick-search/advanced-search result views (those `FileListModel`
+  instances span arbitrary directories, which doesn't fit a per-directory status query — a
+  deliberate v1 scope cut); rollup past the immediate-child level (a folder's badge reflects
+  changes anywhere in its subtree, but a grandchild folder itself gets no separate entry unless
+  `directory` is queried directly for it); live/background refresh outside of navigation (no
+  filesystem or `.git`-index watcher — matches
+  §14.30's "event-driven only" precedent); rename detection (no "R" status in scope); any stage/
+  unstage/commit/other write action — read-only display only. No automated coverage for the
+  `FileListModel`/`TabViewModel`/`GitStatusService` glue, per the same §11 UI/ViewModel-glue
+  carve-out `FilePreviewViewModel`/`DriveSpaceInfoWorker` already fall under; `GitStatusUseCase` is
+  covered by an ordinary mock-based test and `LibGit2StatusProvider` by a real-temp-repo adapter
+  test (initialized via libgit2's own `git_repository_init`, not a `git` CLI shell-out), per §11.

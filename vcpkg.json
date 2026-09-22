@@ -32,6 +32,7 @@
       "name": "libarchive",
       "features": ["bzip2", "lz4", "lzma", "zstd"]
     },
+    "libgit2",
     {
       "name": "pkgconf",
       "host": true

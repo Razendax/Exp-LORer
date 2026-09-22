@@ -4,10 +4,12 @@ add_executable(explorer_application_tests
     MockContextMenuProvider.h
     MockTagRepository.h
     MockMediaDecoder.h
+    MockGitStatusProvider.h
     FileNavigationUseCaseTest.cpp
     TagManagementUseCaseTest.cpp
     MediaProcessingUseCaseTest.cpp
     FilePreviewUseCaseTest.cpp
+    GitStatusUseCaseTest.cpp
 )
 
 target_link_libraries(explorer_application_tests PRIVATE
