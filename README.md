@@ -9,25 +9,24 @@ external apps to browse and view your files.
 Full requirements and design live in [`Specification.md`](Specification.md) and
 [`Architecture.md`](Architecture.md) at the repo root.
 
-> **Status:** early scaffolding. Most layers under `src/` currently contain only placeholder
-> code; `CompositionRoot`, `MainWindow`, and `main.cpp` are the only real application code so far.
+> **Status:** under active development. The features below are currently supported; the rest of
+> `Specification.md` is still being implemented feature-by-feature.
 
-## Features (planned, per Specification.md)
+## Currently Supported Features
 
-- Tree/list/grid directory navigation with back/forward/up, a path bar with folder autocomplete,
-  and a "This PC" virtual location listing drives and common folders.
-- Split-window layouts (single pane, two-pane vertical/horizontal, four-pane grid), each pane with
-  its own tabs, navigation history, view mode, and sort order.
-- Standard file operations (create, open, rename, delete/trash, copy/paste), multi-selection,
-  keyboard hotkeys, and a custom right-click context menu sourced from the Windows registry.
-- Fast recursive filename/extension search plus an advanced search pane with tag criteria.
-- A SQLite-backed tagging system for organizing and filtering files independent of folder location.
-- A built-in image and video viewer (Qt Quick/QML) embedded in the Widgets shell, with syntax
-  highlighting for text/code previews.
-- Long path (> 260 chars) and full Unicode (accented/CJK/Cyrillic/emoji) support throughout
-  navigation, search, and tagging.
-- Per-file/folder appearance customization rules, a collapsible per-tab integrated terminal, and
-  session persistence (layout, tabs, window geometry) across restarts.
+- **Multi-tab browsing** — each pane owns its own tabs, with independent navigation history,
+  current path, view mode, and sort order.
+- **Split-screen layouts** — single pane, two-pane vertical/horizontal split, or a four-pane grid.
+- **Tag support** — tags are stored in a local SQLite database and never modify the tagged files
+  themselves.
+- **Content preview** — folder contents, file/text content, images, and video, plus syntax
+  highlighting for a number of common programming languages.
+- **Integrated terminal** — a collapsible terminal panel per tab.
+- **Quick select by name** — live-selects items whose name matches what you type, without needing
+  to press Enter.
+- **Color customization** — configurable, ordered rules that apply custom colors/styles to files
+  and folders based on name and extension patterns.
+- **Fast navigation** — in details view, can use arrows keys to quickly move between items.
 
 ## Architecture
 
