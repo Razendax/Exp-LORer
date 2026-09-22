@@ -292,3 +292,8 @@ Result<void> FileNavigationUseCase::showProperties(const std::filesystem::path& 
 {
     return m_fileSystemRepository.showProperties(path, ownerWindow);
 }
+
+Result<DriveSpaceInfo> FileNavigationUseCase::driveSpaceInfo(const std::filesystem::path& path) const
+{
+    return m_fileSystemRepository.driveSpaceInfo(path);
+}

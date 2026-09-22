@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "DriveSpaceInfo.h"
 #include "FileNode.h"
 #include "IContextMenuProvider.h"
 #include "IFileSystemRepository.h"
@@ -83,6 +84,8 @@ public:
     Result<FileNode> createFileFromTemplate(const std::filesystem::path& destinationFile,
                                              const std::optional<std::filesystem::path>& templateFile);
     Result<void> showProperties(const std::filesystem::path& path, NativeWindowHandle ownerWindow);
+
+    Result<DriveSpaceInfo> driveSpaceInfo(const std::filesystem::path& path) const;
 
 private:
     IFileSystemRepository& m_fileSystemRepository;

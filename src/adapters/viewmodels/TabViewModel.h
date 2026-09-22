@@ -8,6 +8,7 @@
 #include <QString>
 #include <QStringList>
 
+#include "DriveSpaceInfo.h"
 #include "FileNavigationUseCase.h"
 #include "FileNode.h"
 #include "NavigationHistory.h"
@@ -66,6 +67,10 @@ public:
     // Resolves advancedSearchCriteria().tagIds into full Tag objects (for chip display); filters
     // TagManagementUseCase::allTags(), empty vector on repository failure.
     std::vector<Tag> resolveTagCriteria() const;
+
+    // Drive/volume info for the window status bar (Architecture.md §14.30); delegates to
+    // FileNavigationUseCase::driveSpaceInfo(currentPath()).
+    Result<DriveSpaceInfo> driveSpaceInfo() const;
 
 public slots:
     // Per-tab selection state (Architecture.md §14.9), set by WorkspacePaneWidget from this tab's

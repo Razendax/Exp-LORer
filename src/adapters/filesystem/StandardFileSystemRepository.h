@@ -41,6 +41,8 @@ public:
 
     Result<std::filesystem::path> materializeForReading(const std::filesystem::path& path) const override;
 
+    Result<DriveSpaceInfo> driveSpaceInfo(const std::filesystem::path& path) const override;
+
 private:
     // Synthesizes the "This PC" listing (quick-access folders + drives) instead of touching disk.
     // Windows-only; see Architecture.md §14.15. Non-Windows returns an IoError "Not supported on

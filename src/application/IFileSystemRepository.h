@@ -6,6 +6,7 @@
 #include <optional>
 #include <vector>
 
+#include "DriveSpaceInfo.h"
 #include "FileNode.h"
 #include "NativeTypes.h"
 #include "Result.h"
@@ -76,4 +77,10 @@ public:
     // archive (Architecture.md §14.28). Used by FilePreviewUseCase before handing a path to
     // IMediaDecoder or readFilePrefix above.
     virtual Result<std::filesystem::path> materializeForReading(const std::filesystem::path& path) const = 0;
+
+    // Resolves the drive/volume containing `path` (any path on it, not necessarily its root) to a
+    // display label + free/total space, for the window status bar. Failure (virtual "This PC"
+    // sentinel, an archive-virtual path, or an unreachable/disconnected volume) is tolerated by
+    // callers by simply blanking the display — same posture as buildDriveNode()'s optional return.
+    virtual Result<DriveSpaceInfo> driveSpaceInfo(const std::filesystem::path& path) const = 0;
 };

@@ -45,6 +45,7 @@ public:
     TagListViewModel* tagListViewModel() const noexcept { return m_tagListViewModel; }
     FilePreviewViewModel* filePreviewViewModel() const noexcept { return m_filePreviewViewModel; }
     FileOperationsController* fileOperationsController() const noexcept { return m_fileOperationsController; }
+    FileNavigationUseCase& fileNavigationUseCase() const noexcept { return m_fileNavigationUseCase; }
 
     // Snapshots the current layout/focused pane and every pane's ordered tabs (path, ViewMode,
     // sort criterion/direction, active tab index) for persistence (Architecture.md §14.14).

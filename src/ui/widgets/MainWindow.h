@@ -1,9 +1,11 @@
 #pragma once
 
 #include <array>
+#include <filesystem>
 
 #include <QList>
 #include <QMainWindow>
+#include <QThread>
 
 #include "AppConfig.h"
 #include "FileListModel.h"
@@ -27,6 +29,8 @@ class TagPanelWidget;
 class RightPanelWidget;
 class PreviewPanelWidget;
 class TabViewModel;
+class MainStatusBarWidget;
+class DriveSpaceInfoWorker;
 
 // Application shell: menu bar (File/Edit/View/Favorites/Tools/Help), a small Layout toolbar, and
 // a WorkspaceLayoutWidget as central widget hosting up to 4 independent WorkspacePaneWidget
@@ -40,6 +44,7 @@ public:
     MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore, TagManagementUseCase& tagManagementUseCase,
                SyntaxHighlightEngine& syntaxHighlightEngine, HighlightThemeViewModel& highlightThemeViewModel,
                FileDecorationsViewModel& fileDecorationsViewModel, const AppConfig& initialConfig, QWidget* parent = nullptr);
+    ~MainWindow() override;
 
 protected:
     // Captures window geometry + WorkspaceController::captureConfig() and saves it via
@@ -59,6 +64,7 @@ private:
     void createLayoutToolBar();
     void createSearchBar(QToolBar* toolBar);
     void createWorkspace();
+    void createMainStatusBar();
     void showTagManagerDialog();
     void showSettingsDialog();
 
@@ -66,6 +72,8 @@ private:
     void onStatusMessage(const QString& message);
     void onFocusedTabChanged(TabViewModel* tab);
     void onSortOrderChanged(SortCriterion criterion, bool ascending);
+    void onActiveTabPathChanged(const std::filesystem::path& path);
+    void onDriveSpaceInfoReady(int generation, Result<DriveSpaceInfo> result);
     void onSearchBarReturnPressed();
     void onSearchBarTextEdited(const QString& text);
 
@@ -81,8 +89,19 @@ private:
     RightPanelWidget* m_rightPanelWidget = nullptr;
     TabViewModel* m_sortTrackedTab = nullptr;
     TabViewModel* m_searchTrackedTab = nullptr;
+    TabViewModel* m_driveInfoTrackedTab = nullptr;
     QLineEdit* m_searchBar = nullptr;
     QAction* m_advancedSearchAction = nullptr;
+    MainStatusBarWidget* m_mainStatusBarWidget = nullptr;
+
+    // Drive/volume info query (Architecture.md §14.30) runs on m_driveInfoThread rather than the
+    // Qt UI thread -- GetVolumeInformationW/GetDiskFreeSpaceExW behind it are disk/volume I/O.
+    // m_driveInfoGeneration invalidates a stale in-flight query the same way
+    // FilePreviewViewModel::m_generation does: bumped on every onActiveTabPathChanged call, so a
+    // result that arrives after a newer navigation/focus change is simply discarded.
+    QThread m_driveInfoThread;
+    DriveSpaceInfoWorker* m_driveInfoWorker = nullptr;
+    int m_driveInfoGeneration = 0;
 
     // One QAction per SplitLayout (same order as the anonymous-namespace kLayouts array in the
     // .cpp), shared verbatim between the "Layout" toolbar and the View > Layout submenu so both

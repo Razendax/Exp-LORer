@@ -8,8 +8,10 @@
 #include <QCloseEvent>
 #include <QKeyEvent>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMetaObject>
 #include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
@@ -17,7 +19,9 @@
 #include <QToolButton>
 
 #include "AppConfigStore.h"
+#include "DriveSpaceInfoWorker.h"
 #include "FileOperationsController.h"
+#include "MainStatusBarWidget.h"
 #include "SettingsDialog.h"
 #include "TabViewModel.h"
 #include "TagManagerDialog.h"
@@ -123,12 +127,24 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     createMenuBar();
     createLayoutToolBar();
     createWorkspace();
+    createMainStatusBar();
+
+    m_driveInfoWorker = new DriveSpaceInfoWorker(m_workspaceController->fileNavigationUseCase());
+    m_driveInfoWorker->moveToThread(&m_driveInfoThread);
+    m_driveInfoThread.start();
 
     connect(m_workspaceController, &WorkspaceController::layoutChanged, this, &MainWindow::onLayoutChanged);
     connect(m_workspaceController, &WorkspaceController::focusedTabChanged, this, &MainWindow::onFocusedTabChanged);
 
     onLayoutChanged(m_workspaceController->layout());
     onFocusedTabChanged(m_workspaceController->focusedTab());
+}
+
+MainWindow::~MainWindow()
+{
+    m_driveInfoThread.quit();
+    m_driveInfoThread.wait();
+    delete m_driveInfoWorker;
 }
 
 void MainWindow::createLayoutActions()
@@ -340,6 +356,12 @@ void MainWindow::createWorkspace()
             &MainWindow::onStatusMessage);
 }
 
+void MainWindow::createMainStatusBar()
+{
+    m_mainStatusBarWidget = new MainStatusBarWidget(this);
+    statusBar()->addPermanentWidget(m_mainStatusBarWidget, 1);
+}
+
 void MainWindow::showTagManagerDialog()
 {
     TagManagerViewModel viewModel(m_tagManagementUseCase);
@@ -392,10 +414,17 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     }
     m_searchTrackedTab = tab;
 
+    if (m_driveInfoTrackedTab)
+    {
+        disconnect(m_driveInfoTrackedTab, &TabViewModel::currentPathChanged, this, &MainWindow::onActiveTabPathChanged);
+    }
+    m_driveInfoTrackedTab = tab;
+
     if (!tab)
     {
         m_sortByMenu->setEnabled(false);
         m_searchBar->clear();
+        onActiveTabPathChanged({});
         return;
     }
 
@@ -405,6 +434,60 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
 
     connect(tab, &TabViewModel::searchFailed, this, &MainWindow::onStatusMessage);
     m_searchBar->setText(tab->searchActive() ? tab->searchQuery() : QString());
+
+    connect(tab, &TabViewModel::currentPathChanged, this, &MainWindow::onActiveTabPathChanged);
+    onActiveTabPathChanged(tab->currentPath());
+}
+
+void MainWindow::onActiveTabPathChanged(const std::filesystem::path& path)
+{
+    const int generation = ++m_driveInfoGeneration;
+
+    if (!m_driveInfoTrackedTab)
+    {
+        m_mainStatusBarWidget->setDriveInfoText(QString());
+        return;
+    }
+
+    // The actual GetVolumeInformationW/GetDiskFreeSpaceExW call runs on m_driveInfoThread, not
+    // here -- CLAUDE.md's threading rule forbids disk/volume I/O on the Qt UI thread. Both hops
+    // are queued functor calls (QMetaObject::invokeMethod), the same shape
+    // FilePreviewViewModel::dispatchGeneration uses, since Result<DriveSpaceInfo> isn't a
+    // registered Qt meta-type.
+    QMetaObject::invokeMethod(
+        m_driveInfoWorker,
+        [this, generation, path]() {
+            Result<DriveSpaceInfo> result = m_driveInfoWorker->query(path);
+
+            QMetaObject::invokeMethod(
+                this, [this, generation, result = std::move(result)]() mutable { onDriveSpaceInfoReady(generation, std::move(result)); },
+                Qt::QueuedConnection);
+        },
+        Qt::QueuedConnection);
+}
+
+void MainWindow::onDriveSpaceInfoReady(int generation, Result<DriveSpaceInfo> result)
+{
+    if (generation != m_driveInfoGeneration)
+    {
+        // A newer navigation/focus change has already superseded this request -- the underlying
+        // Win32 call still ran to completion, but its result is simply discarded now (mirrors
+        // FilePreviewViewModel::onWorkerFinished).
+        return;
+    }
+
+    if (!result)
+    {
+        m_mainStatusBarWidget->setDriveInfoText(QString());
+        return;
+    }
+
+    const DriveSpaceInfo& info = result.value();
+    const QString text = tr("%1 — %2 free of %3")
+                              .arg(QString::fromStdString(info.displayLabel),
+                                   QLocale().formattedDataSize(static_cast<qint64>(info.freeBytes)),
+                                   QLocale().formattedDataSize(static_cast<qint64>(info.totalBytes)));
+    m_mainStatusBarWidget->setDriveInfoText(text);
 }
 
 void MainWindow::onSearchBarReturnPressed()

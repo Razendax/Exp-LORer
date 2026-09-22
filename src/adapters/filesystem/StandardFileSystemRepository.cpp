@@ -125,11 +125,12 @@ namespace
         return buildFileNode(folderPath, fs::directory_entry(folderPath));
     }
 
-    // Resolves one drive letter to a synthetic FileNode, or nullopt if the letter has no present
-    // drive (DRIVE_NO_ROOT_DIR/DRIVE_UNKNOWN). GetVolumeInformationW failing (e.g. an empty
-    // optical drive) is tolerated and falls back to a type-based label rather than skipping the
-    // drive.
-    std::optional<FileNode> buildDriveNode(wchar_t letter)
+    // Shared by buildDriveNode/driveSpaceInfo: resolves one drive letter's display label via
+    // GetDriveTypeW + GetVolumeInformationW + DriveLabel::driveDisplayLabel ("Local Disk (C:)"-
+    // style text). Returns nullopt if the letter has no present drive (DRIVE_NO_ROOT_DIR/
+    // DRIVE_UNKNOWN). GetVolumeInformationW failing (e.g. an empty optical drive) is tolerated and
+    // falls back to a type-based label rather than failing outright.
+    std::optional<std::wstring> resolveDriveLabel(wchar_t letter)
     {
         const std::wstring rootPath = std::wstring(1, letter) + L":\\";
         const UINT driveType = GetDriveTypeW(rootPath.c_str());
@@ -143,8 +144,20 @@ namespace
                                                            static_cast<DWORD>(sizeof(volumeName) / sizeof(wchar_t)),
                                                            nullptr, nullptr, nullptr, nullptr, 0);
         const std::wstring volumeLabel = gotVolumeInfo ? std::wstring(volumeName) : std::wstring();
-        const std::wstring label = DriveLabel::driveDisplayLabel(letter, driveType, volumeLabel);
+        return DriveLabel::driveDisplayLabel(letter, driveType, volumeLabel);
+    }
 
+    // Resolves one drive letter to a synthetic FileNode, or nullopt if the letter has no present
+    // drive (see resolveDriveLabel()).
+    std::optional<FileNode> buildDriveNode(wchar_t letter)
+    {
+        auto label = resolveDriveLabel(letter);
+        if (!label)
+        {
+            return std::nullopt;
+        }
+
+        const std::wstring rootPath = std::wstring(1, letter) + L":\\";
         auto node = FileNode::create(fs::path(rootPath), 0, std::chrono::system_clock::now(),
                                       std::chrono::system_clock::now(), FileType::Directory);
         if (!node)
@@ -152,7 +165,7 @@ namespace
             return std::nullopt;
         }
 
-        return node.value().withDisplayName(utf8FromWide(label));
+        return node.value().withDisplayName(utf8FromWide(*label));
     }
 #endif
 
@@ -861,4 +874,63 @@ Result<void> StandardFileSystemRepository::extractArchive(const std::filesystem:
     }
 
     return LibArchiveReader::extractEntries(resolution->archiveFile, resolution->entryPathInArchive, destinationDirectory);
+}
+
+Result<DriveSpaceInfo> StandardFileSystemRepository::driveSpaceInfo(const std::filesystem::path& path) const
+{
+#ifdef _WIN32
+    const fs::path root = path.root_path();
+    if (root.empty())
+    {
+        return Result<DriveSpaceInfo>::failure(Error(ErrorCode::NotFound, "No drive for " + PathUtf8::toUtf8(path)));
+    }
+
+    const std::wstring rootName = path.root_name().wstring();
+    std::wstring rootWide;
+    std::wstring displayLabel;
+
+    // A lettered root -- root_name() is exactly "X:" regardless of how the caller spelled the
+    // separator or whether one was even present at all ("C:/data", a bare "C:", and "C:\" all
+    // share the same root_name()) -- mirrors buildDriveNode() via the shared resolveDriveLabel()
+    // helper for the same "Local Disk (C:)"-style text. A non-lettered root (a UNC path typed
+    // directly into the address bar, "\\server\share\") skips driveDisplayLabel -- it assumes a
+    // drive-letter suffix -- and falls back to the volume label or the raw UNC root text.
+    if (rootName.size() == 2 && rootName[1] == L':')
+    {
+        const wchar_t letter = rootName[0];
+        rootWide = std::wstring(1, letter) + L":\\";
+
+        auto label = resolveDriveLabel(letter);
+        if (!label)
+        {
+            return Result<DriveSpaceInfo>::failure(Error(ErrorCode::NotFound, "No drive for " + PathUtf8::toUtf8(path)));
+        }
+        displayLabel = std::move(*label);
+    }
+    else
+    {
+        rootWide = root.wstring();
+        wchar_t volumeName[MAX_PATH + 1] = {};
+        const BOOL gotVolumeInfo = GetVolumeInformationW(rootWide.c_str(), volumeName,
+                                                           static_cast<DWORD>(sizeof(volumeName) / sizeof(wchar_t)),
+                                                           nullptr, nullptr, nullptr, nullptr, 0);
+        displayLabel = gotVolumeInfo && volumeName[0] != L'\0' ? std::wstring(volumeName) : rootWide;
+    }
+
+    ULARGE_INTEGER freeBytes{};
+    ULARGE_INTEGER totalBytes{};
+    if (!GetDiskFreeSpaceExW(rootWide.c_str(), &freeBytes, &totalBytes, nullptr))
+    {
+        return Result<DriveSpaceInfo>::failure(Error(ErrorCode::IoError, "Failed to query free space for " + PathUtf8::toUtf8(root)));
+    }
+
+    DriveSpaceInfo info;
+    info.displayLabel = utf8FromWide(displayLabel);
+    info.freeBytes = freeBytes.QuadPart;
+    info.totalBytes = totalBytes.QuadPart;
+    return Result<DriveSpaceInfo>::success(std::move(info));
+#else
+    (void)path;
+    return Result<DriveSpaceInfo>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
+#endif
 }

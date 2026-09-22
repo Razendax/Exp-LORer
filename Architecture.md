@@ -1191,3 +1191,55 @@ adapter-layer pure logic plus Qt-facing config/ViewModel/UI, mirroring the
   `FileListModel`'s new role branches, the delegates' `FontRole` handling) beyond the existing §11
   UI/ViewModel-glue carve-out; the pure `FileNamePattern`/`FileDecorationRule`/`FileDecorationRules`
   logic and `FileDecorationRulesStore`'s round trip are GTest-covered.
+
+### 14.30 Window-Wide Status Bar
+
+A persistent, window-wide bar at the very bottom of the application — outside any pane/tab, unlike
+`StatusBarWidget` (§14.27, one instance per pane, item/selection counts + quick-select). Shows,
+left-aligned, the focused pane's active tab's drive (`"<label> — <free> free of <total>"`) and,
+centered, the machine's computer name (`QSysInfo::machineHostName()`, set once — no Port, not
+filesystem-related).
+
+* **Reuses `QMainWindow::statusBar()`** rather than a second independent bottom widget — it is
+  already bottom-of-window, full-width, and tab-agnostic. `statusBar()` was previously used only
+  for `MainWindow::onStatusMessage`'s transient, 5-second auto-hiding failure messages
+  (`showMessage()`), which is unchanged. `QStatusBar` keeps "normal" widgets (`addWidget`, hidden
+  while a transient message shows) separate from "permanent" widgets (`addPermanentWidget`, never
+  hidden) — the new content is added as a single permanent widget with stretch factor 1
+  (`statusBar()->addPermanentWidget(m_mainStatusBarWidget, 1)`), so with nothing else competing for
+  space it expands to the whole bar width in the common case, only compressing toward the right
+  during the rare seconds a transient message is showing.
+* **`MainStatusBarWidget`** (new, `src/ui/widgets`) — a plain display widget, same posture as
+  `AddressBarWidget`/`StatusBarWidget`: an internal `[driveLabel, stretch, computerNameLabel,
+  stretch]` `QHBoxLayout` (the second stretch both centers the computer name and reserves room for
+  a possible future right-hand section) and one setter, `setDriveInfoText(QString)` — empty string
+  blanks it. No `TabViewModel`/use-case dependency.
+* **`IFileSystemRepository::driveSpaceInfo(path)`** (new Port method) resolves the drive/volume
+  containing `path` (any path on it) to a `DriveSpaceInfo{ displayLabel, freeBytes, totalBytes }`
+  (new plain-data type, `src/application/DriveSpaceInfo.h`) — `displayLabel` is fully resolved
+  UTF-8 text by the adapter (reusing the same `DriveLabel::driveDisplayLabel` helper and
+  `GetDriveTypeW`/`GetVolumeInformationW` calls `StandardFileSystemRepository`'s `buildDriveNode()`
+  already makes for "This PC", §14.15), so no OS-specific type crosses the Application boundary —
+  same posture as `FileNode::displayName()`. `GetDiskFreeSpaceExW` supplies the byte counts.
+  Failure (the "This PC" sentinel, an archive-virtual path, or an unreachable volume) is tolerated
+  by simply blanking the label, same as `buildDriveNode()`'s `nullopt` case. `FileNavigationUseCase`
+  and `TabViewModel` each add a thin passthrough (`TabViewModel::driveSpaceInfo()` calling
+  `m_fileNavigationUseCase.driveSpaceInfo(currentPath())`), the same shape as existing
+  single-Port-call wrappers (e.g. `showProperties`).
+* **Refresh points:** `MainWindow` tracks the focused pane's active tab the same way it already
+  does for sort/search (`m_sortTrackedTab`/`m_searchTrackedTab`) with a new
+  `m_driveInfoTrackedTab`, connecting its `currentPathChanged` to re-fetch and reformat the drive
+  label. Updates on tab-focus change and on navigation only — same event-driven-only posture as
+  §14.27's own refresh, no timer/polling.
+* **Threading:** kept synchronous on the UI thread, same as `buildDriveNode()`'s identical Win32
+  calls during "This PC" enumeration (§14.15) and consistent with §5's accepted "most Port calls
+  are still synchronous" gap.
+* **Testing:** `driveSpaceInfo()`'s adapter implementation depends on live, per-machine drive
+  state exactly like `buildDriveNode()` — covered by the same §11 carve-out ("live drive/known-
+  folder enumeration... not covered by automated adapter tests"). The `FileNavigationUseCase`
+  passthrough is covered by an ordinary mock-based test, per §11. `DriveLabel` is unchanged/reused
+  as-is.
+* **Not built:** live/periodic refresh while idle in the same folder; a populated right-hand
+  section (layout reserves room for one); non-Windows implementations (a future Linux backend
+  implements `driveSpaceInfo` behind the same Port, matching every other Windows-specific adapter
+  call); any change to `StatusBarWidget` or `onStatusMessage`'s transient-message behavior.

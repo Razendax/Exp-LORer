@@ -567,3 +567,35 @@ TEST(FileNavigationUseCase, ShowPropertiesDelegatesToRepository)
 
     EXPECT_TRUE(result.hasValue());
 }
+
+TEST(FileNavigationUseCase, DriveSpaceInfoDelegatesToRepository)
+{
+    MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
+    DriveSpaceInfo info{ "Local Disk (C:)", 1000, 2000 };
+
+    EXPECT_CALL(repository, driveSpaceInfo(std::filesystem::path("C:/data")))
+        .WillOnce(Return(Result<DriveSpaceInfo>::success(info)));
+
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
+    auto result = useCase.driveSpaceInfo("C:/data");
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().displayLabel, "Local Disk (C:)");
+    EXPECT_EQ(result.value().freeBytes, 1000u);
+    EXPECT_EQ(result.value().totalBytes, 2000u);
+}
+
+TEST(FileNavigationUseCase, DriveSpaceInfoPropagatesError)
+{
+    MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
+
+    EXPECT_CALL(repository, driveSpaceInfo(_))
+        .WillOnce(Return(Result<DriveSpaceInfo>::failure(Error(ErrorCode::NotFound, "no drive"))));
+
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
+    auto result = useCase.driveSpaceInfo("this-pc:");
+
+    EXPECT_TRUE(result.hasError());
+}

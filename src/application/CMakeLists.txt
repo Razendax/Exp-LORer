@@ -7,6 +7,7 @@ add_library(explorer_application STATIC
     ArchiveExtensions.h
     VirtualPaths.h
     SearchCriteria.h
+    DriveSpaceInfo.h
     FileNavigationUseCase.h
     FileNavigationUseCase.cpp
     TagManagementUseCase.h

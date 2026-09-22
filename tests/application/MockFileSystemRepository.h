@@ -26,4 +26,5 @@ public:
     MOCK_METHOD(Result<void>, extractArchive,
                 (const std::filesystem::path& archiveFile, const std::filesystem::path& destinationDirectory), (override));
     MOCK_METHOD(Result<std::filesystem::path>, materializeForReading, (const std::filesystem::path& path), (const, override));
+    MOCK_METHOD(Result<DriveSpaceInfo>, driveSpaceInfo, (const std::filesystem::path& path), (const, override));
 };

@@ -379,6 +379,11 @@ std::vector<Tag> TabViewModel::resolveTagCriteria() const
     return resolved;
 }
 
+Result<DriveSpaceInfo> TabViewModel::driveSpaceInfo() const
+{
+    return m_fileNavigationUseCase.driveSpaceInfo(currentPath());
+}
+
 void TabViewModel::runAdvancedSearch(bool forceRescan)
 {
     if (forceRescan || m_advancedSearchRoot.empty())
