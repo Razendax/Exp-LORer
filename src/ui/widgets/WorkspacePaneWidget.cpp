@@ -13,6 +13,7 @@
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStyle>
@@ -162,9 +163,18 @@ WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOpera
     connect(m_pane, &WorkspacePaneViewModel::tabClosed, this, &WorkspacePaneWidget::onTabClosed);
     connect(m_pane, &WorkspacePaneViewModel::activeTabChanged, this, &WorkspacePaneWidget::onActiveTabChanged);
 
-    for (int i = 0; i < m_pane->tabCount(); ++i)
     {
-        addPageForTab(m_pane->tabAt(i), i);
+        // Blocked: QTabWidget::insertTab auto-selects the very first tab it receives, which would
+        // otherwise fire currentChanged(0) synchronously and have onTabWidgetCurrentChanged feed
+        // that back into m_pane->setActiveTab(0) -- clobbering an already-correct restored active
+        // index (e.g. from WorkspaceController::restoreFromConfig, which runs before this widget
+        // even exists) back down to 0. The explicit setCurrentIndex()/bindToolBarToTab() call below
+        // re-syncs the widget to the pane's real active tab regardless.
+        const QSignalBlocker blocker(m_tabWidget);
+        for (int i = 0; i < m_pane->tabCount(); ++i)
+        {
+            addPageForTab(m_pane->tabAt(i), i);
+        }
     }
 
     if (TabViewModel* active = m_pane->activeTab())
