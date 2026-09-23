@@ -16,8 +16,10 @@ below instead, which matches by id suffix:
     pane = find(window, AutomationID.WORKSPACE_PANE_A)
     address_bar = find(pane, AutomationID.PANE_ADDRESS_BAR)
 
-Tests import names (and `find`) from this module rather than hardcoding raw id strings, so a
-rename in the C++ code only has to be mirrored in one place.
+Most tests shouldn't need to call `find` directly -- the `framework` package (see
+`framework/app.py`) wraps every id below in a typed `Element`/page-object property, e.g.
+`app.navigation.back` or `app.right_panel.monitoring.start_monitoring`. Reach for `find` only
+when the framework doesn't yet cover a widget you need.
 
 Scoping follows the widget's actual runtime multiplicity, not a globally unique name per widget:
 
