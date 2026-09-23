@@ -6,6 +6,7 @@ from typing import Callable
 
 from .automation_id import AutomationID
 from .element import Element
+from .wait import wait_until
 
 
 class PaneNavigation:
@@ -19,6 +20,17 @@ class PaneNavigation:
         self.view_mode = Element(container, AutomationID.PANE_VIEW_MODE_BUTTON)
         self.new_tab = Element(container, AutomationID.PANE_NEW_TAB_BUTTON)
         self.address_bar = Element(container, AutomationID.PANE_ADDRESS_BAR)
+
+    def navigate_to(self, path: str, timeout: float = 5) -> None:
+        """Types `path` into the address bar and presses Enter, then waits for the address bar to
+        reflect it. TabViewModel::navigateTo dispatches its directory listing off the UI thread
+        (Architecture.md's threading rule), so the address bar -- bound to currentPathChanged --
+        doesn't update synchronously with the keypress; callers that need to know navigation has
+        actually landed before reading the file list should wait on this rather than a bare sleep.
+        """
+        self.address_bar.set_text(path)
+        self.address_bar.raw.type_keys("{ENTER}")
+        wait_until(lambda: self.address_bar.text == path, timeout=timeout)
 
 
 class PaneStatusBar:

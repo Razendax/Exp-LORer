@@ -28,7 +28,9 @@ doesn't cover yet.
 from .app import ExpLorerApp
 from .automation_id import AutomationID, find
 from .config import THIS_PC, ExpLorerConfig, SplitLayout, WorkspacePaneId
+from .details_view import DetailsRow, find_row, read_details_rows
 from .element import Element
+from .wait import wait_until
 
 __all__ = [
     "ExpLorerApp",
@@ -39,4 +41,8 @@ __all__ = [
     "THIS_PC",
     "SplitLayout",
     "WorkspacePaneId",
+    "DetailsRow",
+    "read_details_rows",
+    "find_row",
+    "wait_until",
 ]
