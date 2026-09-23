@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Any, Callable
 
 from .automation_id import AutomationID
 from .element import Element
@@ -27,7 +27,17 @@ class PaneNavigation:
         (Architecture.md's threading rule), so the address bar -- bound to currentPathChanged --
         doesn't update synchronously with the keypress; callers that need to know navigation has
         actually landed before reading the file list should wait on this rather than a bare sleep.
+
+        Clicks the address bar first to give it keyboard focus before typing, like a real user
+        would. Without it, `set_text` (UIA's ValuePattern.SetValue) writes the new path without
+        the control ever gaining focus -- leaving a window, until the Enter keypress lands, where
+        WorkspacePaneWidget's directory-watch-triggered refresh (see DirectoryWatchService) can
+        fire and overwrite the address bar back to the previous path (e.g. right after that path
+        was deleted, as happens between two ExpLorerTestCase methods sharing one instance --
+        conftest's `_cleanup_tmp_path` removes the previous test's directory, which the still-bound
+        tab is watching), permanently clobbering the navigation this call was trying to make.
         """
+        self.address_bar.click()
         self.address_bar.set_text(path)
         self.address_bar.raw.type_keys("{ENTER}")
         wait_until(lambda: self.address_bar.text == path, timeout=timeout)
@@ -53,7 +63,7 @@ class WorkspacePane:
         self.file_list_view = Element(self._container, AutomationID.FILE_LIST_VIEW)
         self.file_tree_view = Element(self._container, AutomationID.FILE_TREE_VIEW)
 
-    def _container(self):
+    def _container(self) -> Any:
         return self._pane.raw
 
 

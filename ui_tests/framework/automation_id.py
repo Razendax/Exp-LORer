@@ -41,8 +41,11 @@ Scoping follows the widget's actual runtime multiplicity, not a globally unique 
   pywinauto's text-based `menu_select(...)` (or click through the menu directly).
 """
 
+from __future__ import annotations
+
 import re
 import time
+from typing import Any
 
 
 class AutomationID:
@@ -163,7 +166,7 @@ class AutomationID:
     DECORATION_RULE_HELP_LABEL = "decorationRuleHelpLabel"
 
 
-def find(container, name, timeout=5):
+def find(container: Any, name: str, timeout: float = 5) -> Any:
     """Return the descendant of `container` whose UI Automation id ends with `name`.
 
     Works around Qt's `uia` bridge reporting each element's automation_id as the full dotted

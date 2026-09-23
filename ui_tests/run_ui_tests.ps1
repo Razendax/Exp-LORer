@@ -1,5 +1,14 @@
 # Ensures ui_tests\.venv exists (creating it if needed), then runs the pytest suite.
 # Any extra arguments are forwarded to pytest.
+#
+# Example usage:
+#   .\ui_tests\run_ui_tests.ps1
+#  
+# Run a specific test case:
+#   .\ui_tests\run_ui_tests.ps1 tests\test_configuration.py::TestConfiguration::test_some_case
+#
+# Filter by name:
+#  .\ui_tests\run_ui_tests.ps1 -k test_some_case
 
 $ErrorActionPreference = "Stop"
 

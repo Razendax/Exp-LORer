@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Any, Callable
 
 from .automation_id import AutomationID
 from .element import Element
@@ -57,7 +57,7 @@ class RightPanel:
         self._preview = PreviewPanel(self._container)
         self._monitoring = MonitoringPanel(self._container)
 
-    def _container(self):
+    def _container(self) -> Any:
         return self._panel.raw
 
     @staticmethod

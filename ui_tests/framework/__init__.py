@@ -20,9 +20,10 @@ into that state by hand, write a config.json with `ExpLorerConfig` before starti
     app = ExpLorerApp.start(data_dir=data_dir)
 
 `ExpLorerApp` is the entry point; everything else here is either a page-object group it exposes
-(`WorkspacePane`, `RightPanel`, ...), the `ExpLorerConfig` config-file builder, or a low-level
-building block (`Element`, `find`, `AutomationID`) for extending the framework to widgets it
-doesn't cover yet.
+(`WorkspacePane`, `RightPanel`, ...), the `ExpLorerConfig` config-file builder, `ExpLorerTestCase`
+(a base class for tests that want one Exp-LORer instance shared across a whole class -- see its
+own docstring), or a low-level building block (`Element`, `find`, `AutomationID`) for extending
+the framework to widgets it doesn't cover yet.
 """
 
 from .app import ExpLorerApp
@@ -30,6 +31,7 @@ from .automation_id import AutomationID, find
 from .config import THIS_PC, ExpLorerConfig, SplitLayout, WorkspacePaneId
 from .details_view import DetailsRow, find_row, read_details_rows
 from .element import Element
+from .testcase import ExpLorerTestCase
 from .wait import wait_until
 
 __all__ = [
@@ -44,5 +46,6 @@ __all__ = [
     "DetailsRow",
     "read_details_rows",
     "find_row",
+    "ExpLorerTestCase",
     "wait_until",
 ]

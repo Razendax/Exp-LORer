@@ -15,7 +15,7 @@ Design choices, and why:
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Any, Callable
 
 
 class Element:
@@ -32,7 +32,7 @@ class Element:
         self._timeout = timeout
 
     @property
-    def raw(self):
+    def raw(self) -> Any:
         """The underlying pywinauto wrapper, freshly located. Use this for anything the explicit
         methods below don't cover -- it's the same object pywinauto/UI Automation gives you
         everywhere else, so any pywinauto API works on it.

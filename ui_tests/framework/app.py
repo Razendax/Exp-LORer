@@ -14,14 +14,14 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from pywinauto import Application
 
 from .automation_id import AutomationID
 from .element import Element
 from .layout import LayoutToolbar
-from .pane import WorkspacePanes
+from .pane import PaneNavigation, WorkspacePanes
 from .right_panel import RightPanel
 from .status_bar import MainStatusBar
 
@@ -41,7 +41,7 @@ class ExpLorerApp:
     directly instead when a test needs a specific/shared/pre-populated directory.
     """
 
-    def __init__(self, application: Application, window):
+    def __init__(self, application: Application, window: Any):
         self._application = application
         self.window = window  # raw pywinauto WindowSpecification escape hatch
         self.panes = WorkspacePanes(self._container)
@@ -51,11 +51,11 @@ class ExpLorerApp:
         self.global_search_bar = Element(self._container, AutomationID.GLOBAL_SEARCH_BAR)
         self.advanced_search_button = Element(self._container, AutomationID.ADVANCED_SEARCH_BUTTON)
 
-    def _container(self):
+    def _container(self) -> Any:
         return self.window
 
     @property
-    def navigation(self):
+    def navigation(self) -> PaneNavigation:
         """Shortcut for `panes.a.navigation` -- pane A's toolbar, the one that matters in the
         default single-pane layout most tests run in. Use `panes.b/c/d.navigation` once a
         multi-pane layout (see `.layout`) is active.
