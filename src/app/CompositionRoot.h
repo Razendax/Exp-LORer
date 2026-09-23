@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <memory>
 
 #include "AppConfigStore.h"
@@ -38,7 +39,10 @@ class WorkspaceController;
 class CompositionRoot
 {
 public:
-    CompositionRoot();
+    // appDataDir: resolved once in main.cpp (the real app-data location, or a --data-dir override
+    // for test isolation, Architecture.md §9) -- explorer.db, config.json, cache/thumbnails/,
+    // highlight_theme.json, and file_decorations.json all live under it.
+    explicit CompositionRoot(const std::filesystem::path& appDataDir);
     ~CompositionRoot();
 
     std::unique_ptr<TabViewModel> createTabViewModel();

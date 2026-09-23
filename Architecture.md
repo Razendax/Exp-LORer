@@ -189,7 +189,11 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
 * **Single-instance enforcement:** a named mutex (`CreateMutexW`, Windows) / `flock`'d PID file
   (Linux) per user session. A second launch forwards its startup args to the running instance over
   local IPC (e.g. `QLocalSocket`) and exits. Exists to stop two processes writing to `explorer.db`/
-  the thumbnail cache concurrently (§5, §8).
+  the thumbnail cache concurrently (§5, §8). **Not yet implemented.** When it is, the mutex name/PID
+  file path must be derived from the resolved app-data directory (§9), not a fixed name — otherwise
+  two instances started against different `--data-dir` overrides (e.g. parallel `ui_tests/` runs, or
+  a test run alongside the developer's real running instance) would incorrectly collide with each
+  other despite writing to entirely separate data directories.
 * **vcpkg overlay ports:** a repo-local `vcpkg-overlays/ports/` directory, registered via a root
   `vcpkg-configuration.json`, holds small custom ports for third-party pieces the public vcpkg
   registry doesn't package (e.g. individual tree-sitter grammars, §14.26) — each is a normal vcpkg
@@ -254,6 +258,17 @@ CREATE TABLE FileTags (
   (Windows), via `QStandardPaths` so the Linux path (`~/.local/share`, `~/.cache`) needs no code
   change. Logs specifically live in a `logs/` subfolder there (§14.22), written via
   `Logging` (`adapters/logging`).
+* **`--data-dir <path>` startup override:** `main.cpp` resolves the effective app-data directory
+  once, before constructing `Logging` or `CompositionRoot`, checking for a `--data-dir` argument
+  before falling back to `QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)`.
+  `CompositionRoot`'s constructor takes the resolved directory and derives `explorer.db`,
+  `config.json`, `cache/thumbnails/`, `highlight_theme.json`, and `file_decorations.json` from it,
+  instead of each looking it up independently. Exists so `ui_tests/` (§11) can point each test run
+  at an isolated, disposable directory rather than the developer's real session. On Windows the
+  argument is read from the process's own wide command line (`GetCommandLineW()` +
+  `CommandLineToArgvW()`), not the narrow `argv` `main()` receives — the same ANSI-code-page
+  narrowing trap `PathUtf8`/`path::string()` guidance (§6) warns about applies here too, since the
+  override value is itself a filesystem path.
 * **Session/settings:** window geometry and the split-window session (layout, each pane's tabs —
   path/view mode/sort order — focused pane) persist to `config.json` (§14.14), written by
   `AppConfigStore`, same directory as `explorer.db`. `QSettings` remains in use only for the
@@ -312,7 +327,9 @@ Exp-LORer/
   opt-in blackbox smoke suite lives under top-level `ui_tests/` (Python + pywinauto, driving the
   compiled `.exe` through Windows UI Automation) — deliberately outside the CTest graph, with no
   CMake target and no involvement in `build.ps1`. It only proves the app launches and its main
-  window appears; it is not a substitute for the CTest-based coverage above.
+  window appears; it is not a substitute for the CTest-based coverage above. Each test launches the
+  `.exe` with `--data-dir` (§9) pointed at a fresh per-test temp directory, so runs are isolated from
+  the developer's real `%LOCALAPPDATA%` session and from each other.
 * **Carve-out — OS-shell side effects with no assertable return** (`ShellExecuteW`, the registry/COM
   context-menu building and invocation, live drive/known-folder enumeration): not covered by
   automated adapter tests, since registry contents and installed shell extensions are live,

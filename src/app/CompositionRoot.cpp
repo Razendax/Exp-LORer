@@ -1,73 +1,28 @@
 #include "CompositionRoot.h"
 
-#include <filesystem>
-
-#include <QStandardPaths>
-
 #include "TabViewModel.h"
 #include "WorkspaceController.h"
 #include "WorkspacePaneViewModel.h"
 
-namespace
-{
-    // Architecture.md §9: database lives under the app-data location (%LOCALAPPDATA%/Exp-LORer/
-    // on Windows), portable to Linux without code changes via QStandardPaths.
-    std::filesystem::path databasePath()
-    {
-        const auto appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-        return std::filesystem::path(appDataDir.toStdWString()) / "explorer.db";
-    }
-
-    // Architecture.md §9/§14.14: session config lives alongside the tagging database, under the
-    // same app-data location.
-    std::filesystem::path configFilePath()
-    {
-        const auto appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-        return std::filesystem::path(appDataDir.toStdWString()) / "config.json";
-    }
-
-    // Architecture.md §8/§9/§14.25: thumbnail cache lives under the same app-data location, in its
-    // own "cache/thumbnails" subfolder.
-    std::filesystem::path thumbnailCacheDir()
-    {
-        const auto appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-        return std::filesystem::path(appDataDir.toStdWString()) / "cache" / "thumbnails";
-    }
-
-    // Architecture.md §14.26: a persistent user *preference* (edited from Settings, saved
-    // immediately), deliberately kept in its own file alongside config.json/explorer.db rather than
-    // folded into AppConfig (session/window state, saved only on close).
-    std::filesystem::path highlightThemeFilePath()
-    {
-        const auto appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-        return std::filesystem::path(appDataDir.toStdWString()) / "highlight_theme.json";
-    }
-
-    // Architecture.md §14.29: same persistent-user-preference posture as highlightThemeFilePath()
-    // above, in its own file.
-    std::filesystem::path fileDecorationsFilePath()
-    {
-        const auto appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-        return std::filesystem::path(appDataDir.toStdWString()) / "file_decorations.json";
-    }
-}
-
-CompositionRoot::CompositionRoot()
+// Architecture.md §9: explorer.db, config.json, cache/thumbnails/, highlight_theme.json, and
+// file_decorations.json all live directly under appDataDir, resolved once by the caller (main.cpp)
+// -- the real app-data location by default, or a --data-dir override for test isolation.
+CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir)
     : m_fileNavigationUseCase(m_fileSystemRepository, m_contextMenuProvider)
-    , m_tagRepository(databasePath())
+    , m_tagRepository(appDataDir / "explorer.db")
     , m_tagManagementUseCase(m_tagRepository, m_fileSystemRepository)
-    , m_appConfigStore(configFilePath())
-    , m_thumbnailCache(thumbnailCacheDir())
+    , m_appConfigStore(appDataDir / "config.json")
+    , m_thumbnailCache(appDataDir / "cache" / "thumbnails")
     , m_cachingMediaDecoder(m_mediaDecoder, m_thumbnailCache)
     , m_filePreviewUseCase(m_fileSystemRepository, m_cachingMediaDecoder)
     , m_gitStatusUseCase(m_gitStatusProvider)
     , m_gitStatusService(m_gitStatusUseCase)
     , m_directoryWatchUseCase(m_directoryWatcher)
     , m_folderMonitorUseCase(m_folderMonitor)
-    , m_highlightThemeStore(highlightThemeFilePath())
+    , m_highlightThemeStore(appDataDir / "highlight_theme.json")
     , m_highlightTheme(m_highlightThemeStore.load())
     , m_highlightThemeViewModel(m_highlightTheme, m_highlightThemeStore)
-    , m_fileDecorationRulesStore(fileDecorationsFilePath())
+    , m_fileDecorationRulesStore(appDataDir / "file_decorations.json")
     , m_fileDecorationRules(m_fileDecorationRulesStore.load())
     , m_fileDecorationsViewModel(m_fileDecorationRules, m_fileDecorationRulesStore)
 {

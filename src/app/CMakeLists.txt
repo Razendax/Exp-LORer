@@ -24,8 +24,9 @@ target_link_libraries(Exp-LORer PRIVATE
 )
 
 # DbgHelp symbolizes the fatal-exception call stack logged by ExceptionHandler (Architecture.md §14.22).
+# Shell32 provides CommandLineToArgvW, used to parse the --data-dir startup override (Architecture.md §9).
 if(WIN32)
-    target_link_libraries(Exp-LORer PRIVATE Dbghelp)
+    target_link_libraries(Exp-LORer PRIVATE Dbghelp Shell32)
 endif()
 
 # Qt's platform plugin (qwindows.dll) is loaded dynamically at runtime from a

@@ -33,12 +33,19 @@ def _kill_stray_instances():
 
 
 @pytest.fixture
-def app(exe_path):
+def app(exe_path, tmp_path):
     _kill_stray_instances()
+
+    # --data-dir (Architecture.md §9) points the app at a fresh, disposable directory instead of
+    # the developer's real %LOCALAPPDATA%/Exp-LORer/, so tests don't read/mutate real config/tags
+    # and can run isolated from each other.
+    data_dir = tmp_path / "data"
 
     # wait_for_idle=False: WaitForInputIdle can raise ERROR_NOT_GUI_PROCESS (1471) if called before
     # the Qt process has finished initializing its message queue; we wait for the window instead.
-    application = Application(backend="uia").start(str(exe_path), wait_for_idle=False)
+    application = Application(backend="uia").start(
+        f'"{exe_path}" --data-dir "{data_dir}"', wait_for_idle=False
+    )
     try:
         window = application.window(title=WINDOW_TITLE)
         window.wait("visible", timeout=20)

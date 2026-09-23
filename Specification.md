@@ -274,7 +274,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 ### 3.2 Reliability and Data Integrity
 
 * **Database Consistency:** The SQLite database must handle concurrent reads/writes safely. Transactions should be used when bulk-tagging files.
-* **Single Instance:** Running multiple instances of the application simultaneously is not supported/allowed. Launching a second instance while one is already running must detect the existing instance and activate its window instead of starting a new process, to avoid concurrent writers to the same database and thumbnail cache.
+* **Single Instance:** Running multiple instances of the application simultaneously is not supported/allowed. Launching a second instance while one is already running must detect the existing instance and activate its window instead of starting a new process, to avoid concurrent writers to the same database and thumbnail cache. (This check is scoped per app-data directory — see the `--data-dir` override in Architecture.md §9/§6 — so instances started against different data directories, such as parallel UI test runs, are independent processes rather than "second instances" of each other.)
 * **Error Handling:** Graceful handling of permission errors, missing files, or corrupted media formats without crashing the application.
 * **Logging & Diagnostics:** Application events, warnings, and errors must be logged to a rotating on-disk log file (plus console output in debug builds) to aid troubleshooting without requiring a debugger.
 
