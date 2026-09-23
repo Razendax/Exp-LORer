@@ -225,6 +225,91 @@ TEST(AnsiTerminalBuffer, OscSequenceTerminatedBySTIsConsumedNotLeakedAsText)
     EXPECT_EQ(charAt(buffer, 0, 1), QLatin1Char('k'));
 }
 
+TEST(AnsiTerminalBuffer, DeleteCharactersShiftsRemainingCellsLeftAndBlanksTail)
+{
+    AnsiTerminalBuffer buffer;
+    buffer.resize(6, 1);
+    buffer.feed(QByteArrayView("abcdef"));
+    buffer.feed(QByteArrayView("\x1b[1;1H")); // CUP to row 1, column 1 (0-indexed column 0)
+    buffer.feed(QByteArrayView("\x1b[2P"));   // DCH 2
+
+    EXPECT_EQ(charAt(buffer, 0, 0), QLatin1Char('c'));
+    EXPECT_EQ(charAt(buffer, 0, 1), QLatin1Char('d'));
+    EXPECT_EQ(charAt(buffer, 0, 2), QLatin1Char('e'));
+    EXPECT_EQ(charAt(buffer, 0, 3), QLatin1Char('f'));
+    EXPECT_EQ(charAt(buffer, 0, 4), QLatin1Char(' '));
+    EXPECT_EQ(charAt(buffer, 0, 5), QLatin1Char(' '));
+}
+
+TEST(AnsiTerminalBuffer, DeleteCharactersRegressionAfterShorterHistoryRecall)
+{
+    // Regresses the reported bug: conhost redraws a shorter recalled line by writing only the
+    // differing prefix, then issuing CSI <n> P to remove the leftover tail of the longer previous
+    // line rather than erase-and-rewriting the whole line.
+    AnsiTerminalBuffer buffer;
+    buffer.resize(10, 1);
+    buffer.feed(QByteArrayView("aaaaaaaaaa")); // previous, longer command fills the row
+    buffer.feed(QByteArrayView("\x1b[1;1H"));  // cursor back to column 0 for the redraw
+    buffer.feed(QByteArrayView("dir"));        // shorter recalled command overwrites the prefix
+    buffer.feed(QByteArrayView("\x1b[7P"));    // delete the 7 leftover 'a's
+
+    EXPECT_EQ(charAt(buffer, 0, 0), QLatin1Char('d'));
+    EXPECT_EQ(charAt(buffer, 0, 1), QLatin1Char('i'));
+    EXPECT_EQ(charAt(buffer, 0, 2), QLatin1Char('r'));
+    for (int c = 3; c < 10; ++c)
+    {
+        EXPECT_EQ(charAt(buffer, 0, c), QLatin1Char(' '));
+    }
+}
+
+TEST(AnsiTerminalBuffer, InsertCharactersShiftsRemainingCellsRightAndDropsOverflow)
+{
+    AnsiTerminalBuffer buffer;
+    buffer.resize(6, 1);
+    buffer.feed(QByteArrayView("abcdef"));
+    buffer.feed(QByteArrayView("\x1b[1;1H")); // cursor to column 0
+    buffer.feed(QByteArrayView("\x1b[2@"));   // ICH 2
+
+    EXPECT_EQ(charAt(buffer, 0, 0), QLatin1Char(' '));
+    EXPECT_EQ(charAt(buffer, 0, 1), QLatin1Char(' '));
+    EXPECT_EQ(charAt(buffer, 0, 2), QLatin1Char('a'));
+    EXPECT_EQ(charAt(buffer, 0, 3), QLatin1Char('b'));
+    EXPECT_EQ(charAt(buffer, 0, 4), QLatin1Char('c'));
+    EXPECT_EQ(charAt(buffer, 0, 5), QLatin1Char('d'));
+}
+
+TEST(AnsiTerminalBuffer, EraseCharactersBlanksWithoutShifting)
+{
+    AnsiTerminalBuffer buffer;
+    buffer.resize(6, 1);
+    buffer.feed(QByteArrayView("abcdef"));
+    buffer.feed(QByteArrayView("\x1b[1;2H")); // cursor to column 1 (0-indexed)
+    buffer.feed(QByteArrayView("\x1b[2X"));   // ECH 2
+
+    EXPECT_EQ(charAt(buffer, 0, 0), QLatin1Char('a'));
+    EXPECT_EQ(charAt(buffer, 0, 1), QLatin1Char(' '));
+    EXPECT_EQ(charAt(buffer, 0, 2), QLatin1Char(' '));
+    EXPECT_EQ(charAt(buffer, 0, 3), QLatin1Char('d'));
+    EXPECT_EQ(charAt(buffer, 0, 4), QLatin1Char('e'));
+    EXPECT_EQ(charAt(buffer, 0, 5), QLatin1Char('f'));
+}
+
+TEST(AnsiTerminalBuffer, DeleteCharactersClampsAtRowBoundary)
+{
+    AnsiTerminalBuffer buffer;
+    buffer.resize(6, 1);
+    buffer.feed(QByteArrayView("abcdef"));
+    buffer.feed(QByteArrayView("\x1b[1;4H")); // cursor to column 3 (0-indexed)
+    buffer.feed(QByteArrayView("\x1b[99P"));  // DCH far beyond the row's remaining width
+
+    EXPECT_EQ(charAt(buffer, 0, 0), QLatin1Char('a'));
+    EXPECT_EQ(charAt(buffer, 0, 1), QLatin1Char('b'));
+    EXPECT_EQ(charAt(buffer, 0, 2), QLatin1Char('c'));
+    EXPECT_EQ(charAt(buffer, 0, 3), QLatin1Char(' '));
+    EXPECT_EQ(charAt(buffer, 0, 4), QLatin1Char(' '));
+    EXPECT_EQ(charAt(buffer, 0, 5), QLatin1Char(' '));
+}
+
 TEST(AnsiTerminalBuffer, OtherUnrecognizedEscapeSequenceIsConsumedNotLeakedAsText)
 {
     AnsiTerminalBuffer buffer;

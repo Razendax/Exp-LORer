@@ -54,10 +54,11 @@ public:
     bool cursorVisible() const noexcept { return m_cursorVisible; }
 
     // Runs the byte-oriented parser: printable text, \r/\n/\b, and a practical CSI subset (cursor
-    // motion CUU/CUD/CUF/CUB/CUP, erase EL/ED, SGR 0/1/4/7/30-37/39/40-47/49/90-97/100-107, and the
-    // DECTCEM ?25h/?25l cursor-visibility toggle) -- no 256-color/truecolor (Architecture.md
-    // §14.23). Parser state persists across calls, so a sequence split across two feed() calls (a
-    // ConPTY read boundary landing mid-escape-sequence) still parses correctly. Unrecognized escape
+    // motion CUU/CUD/CUF/CUB/CUP, erase EL/ED, insert/delete/erase character ICH/DCH/ECH, SGR
+    // 0/1/4/7/30-37/39/40-47/49/90-97/100-107, and the DECTCEM ?25h/?25l cursor-visibility toggle)
+    // -- no 256-color/truecolor (Architecture.md §14.23). Parser state persists across calls, so a
+    // sequence split across two feed() calls (a ConPTY read boundary landing mid-escape-sequence)
+    // still parses correctly. Unrecognized escape
     // sequences are consumed and ignored rather than leaking their bytes into the grid as text --
     // including OSC (ESC ]) sequences like the window-title updates cmd.exe/PowerShell send on
     // every prompt, which are consumed through to their BEL or ST terminator.
@@ -87,6 +88,9 @@ private:
     void applySgr(const std::vector<int>& params);
     void moveCursor(int deltaRow, int deltaColumn);
     void setCursorPosition(int row, int column);
+    void deleteCharacters(int n);
+    void insertCharacters(int n);
+    void eraseCharacters(int n);
     void dispatchCsi(char finalByte, const std::vector<int>& params, bool privateMarker);
     void clampCursor();
     Cell blankCell() const;

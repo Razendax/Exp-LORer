@@ -1,12 +1,15 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
 
+#include <QChar>
 #include <QFont>
 #include <QString>
 #include <QWidget>
 
-class AnsiTerminalBuffer;
+#include "AnsiTerminalBuffer.h"
+
 class WindowsConPtyProcess;
 
 // One ConPTY-backed cmd.exe session rendered as a VT/ANSI terminal (Architecture.md §14.23): owns
@@ -43,8 +46,55 @@ private:
     // No-op while the widget has no real size yet (e.g. still collapsed inside BottomPanelWidget).
     void recomputeGridSize();
 
+    // Logical row addressing shared by painting and selection: row 0 is the oldest retained
+    // scrollback line, logicalRowCount() - 1 the bottom of the live grid.
+    int logicalRowCount() const;
+    const AnsiTerminalBuffer::Cell& cellAtLogicalRow(int logicalRow, int column) const;
+
+    // On the live input row only, the column just past the first '>' on that row -- '>' can't
+    // appear in a Windows path, so it marks where the shell prompt (e.g. "C:\Users\foo>") ends and
+    // the actual command text begins. Returns 0 for every other row (no boundary).
+    int promptBoundaryColumn(int logicalRow) const;
+
+    // On the live input row only, the column of the last non-space character typed so far (or
+    // promptBoundaryColumn(logicalRow) - 1 if nothing has been typed yet) -- forward selection must
+    // not walk past this into the untyped blank cells that fill out the rest of the row. Returns
+    // columns() - 1 for every other row (no restriction).
+    int typedTextEndColumn(int logicalRow) const;
+
+    // typedTextEndColumn(), widened to also cover the selection anchor's own column when the anchor
+    // sits on logicalRow -- the anchor is planted at the cursor cell, which is one column past the
+    // last typed character, so without this a backward selection could never shrink all the way
+    // back to its own starting point via Shift+Right.
+    int forwardSelectionBoundary(int logicalRow) const;
+
+    // The last non-space column on logicalRow, or -1 if the row is entirely blank. Used to clamp
+    // multi-row selection highlighting to each row's own displayed text instead of the full grid
+    // width -- see the comment in paintEvent().
+    int lastNonSpaceColumn(int logicalRow) const;
+
+    struct SelectionPoint
+    {
+        int logicalRow = 0;
+        int column = 0;
+    };
+
+    bool hasSelection() const;
+    void clearSelection();
+    void extendSelection(int deltaLogicalRow, int deltaColumn);
+    void extendSelectionByWord(int direction);
+    void selectAll();
+    QString selectedText() const;
+    static bool isWordChar(QChar ch);
+
     AnsiTerminalBuffer* m_buffer = nullptr;
     WindowsConPtyProcess* m_process = nullptr;
+
+    // Keyboard-driven selection state (Architecture.md §14.23) -- unset anchor means no active
+    // selection. Owned here rather than in AnsiTerminalBuffer since it's interaction/rendering
+    // state, not terminal emulation state.
+    std::optional<SelectionPoint> m_selectionAnchor;
+    SelectionPoint m_selectionActive;
 
     QFont m_font;
     int m_currentColumns = 80;

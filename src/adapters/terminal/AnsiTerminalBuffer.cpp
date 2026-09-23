@@ -159,6 +159,32 @@ void AnsiTerminalBuffer::setCursorPosition(int row, int column)
     m_cursorColumn = std::clamp(column, 0, m_columns - 1);
 }
 
+void AnsiTerminalBuffer::deleteCharacters(int n)
+{
+    std::vector<Cell>& line = m_grid[static_cast<std::size_t>(m_cursorRow)];
+    const int count = std::clamp(n, 0, m_columns - m_cursorColumn);
+    const auto begin = line.begin() + m_cursorColumn;
+    std::rotate(begin, begin + count, line.end());
+    std::fill(line.end() - count, line.end(), blankCell());
+}
+
+void AnsiTerminalBuffer::insertCharacters(int n)
+{
+    std::vector<Cell>& line = m_grid[static_cast<std::size_t>(m_cursorRow)];
+    const int count = std::clamp(n, 0, m_columns - m_cursorColumn);
+    const auto begin = line.begin() + m_cursorColumn;
+    std::rotate(begin, line.end() - count, line.end());
+    std::fill(begin, begin + count, blankCell());
+}
+
+void AnsiTerminalBuffer::eraseCharacters(int n)
+{
+    std::vector<Cell>& line = m_grid[static_cast<std::size_t>(m_cursorRow)];
+    const int count = std::clamp(n, 0, m_columns - m_cursorColumn);
+    const auto begin = line.begin() + m_cursorColumn;
+    std::fill(begin, begin + count, blankCell());
+}
+
 void AnsiTerminalBuffer::eraseInLine(int mode)
 {
     std::vector<Cell>& line = m_grid[static_cast<std::size_t>(m_cursorRow)];
@@ -297,6 +323,15 @@ void AnsiTerminalBuffer::dispatchCsi(char finalByte, const std::vector<int>& par
             break;
         case 'K':
             eraseInLine(first);
+            break;
+        case 'P':
+            deleteCharacters(count);
+            break;
+        case '@':
+            insertCharacters(count);
+            break;
+        case 'X':
+            eraseCharacters(count);
             break;
         case 'm':
             applySgr(params);

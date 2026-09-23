@@ -779,8 +779,11 @@ hides/shows the still-running session). Closing the tab kills the process.
 * **`src/adapters/terminal`** (new module, `explorer_adapters_terminal`): `AnsiTerminalBuffer` — pure
   logic (no Qt Widgets, no OS calls), a resizable cell grid + cursor + capped scrollback, fed raw
   bytes via `feed()` and interpreting a practical VT/ANSI subset (cursor motion, erase-in-line/
-  display, 16-color SGR) — no 256-color/truecolor. The one piece of this feature that's pure and
-  GTest-covered (`tests/adapters/AnsiTerminalBufferTest.cpp`), same posture as `DriveLabel`/
+  display, insert/delete/erase-character (ICH/DCH/ECH — needed for e.g. `cmd.exe`'s in-place line
+  redraw during history recall, which shifts/erases characters rather than always erase-and-
+  rewriting the whole line), 16-color SGR) — no 256-color/truecolor. The one piece of this feature
+  that's pure and GTest-covered (`tests/adapters/AnsiTerminalBufferTest.cpp`), same posture as
+  `DriveLabel`/
   `WorkspaceLayoutTopology`. `WindowsConPtyProcess` (Windows-only, same "Windows first" posture as
   `ShellContextMenuProvider`) — a `QObject` wrapping ConPTY (`CreatePseudoConsole` + `CreateProcessW`
   of `%ComSpec%`); runs one background `std::thread` blocking on `ReadFile` of the output pipe,
@@ -795,6 +798,30 @@ hides/shows the still-running session). Closing the tab kills the process.
 * **`src/ui/widgets`**: `TerminalWidget` — owns one `AnsiTerminalBuffer` + one `WindowsConPtyProcess`,
   paints the grid with a monospace font, translates key events to VT byte sequences, and resizes the
   pty on `resizeEvent`. On process exit, shows an inline restart prompt rather than auto-restarting.
+  It also owns keyboard-only text selection and clipboard state — an anchor/active pair of
+  `{logicalRow, column}` (logical row spanning scrollback + live grid, the same indexing
+  `paintEvent` already uses to address either) tracked entirely in `TerminalWidget`, not
+  `AnsiTerminalBuffer`, since it's interaction/rendering state rather than terminal emulation state:
+  Shift+Left/Right extends a character selection, Ctrl+Shift+Left/Right a word selection (word
+  boundaries computed within one row only — no cross-line word semantics) while *also* forwarding
+  the word-jump VT sequence (`CSI 1;5D`/`CSI 1;5C`) so the shell's line-edit cursor moves in step
+  with the extending selection. The local word-jump mirrors the console's own two-phase word-left/
+  word-right (skip the adjacent whitespace run, then skip the word run beyond it, both within one
+  keypress) rather than stopping at the first run boundary — a single-phase skip lands half a word
+  short of where the shell's own cursor ends up, and the two silently drift apart over repeated
+  presses. On the live input row, backward selection (both Shift+Left and
+  Ctrl+Shift+Left) additionally stops at the shell prompt instead of walking into the
+  current-directory text before it — the first `>` on that row (an illegal character in a Windows
+  path, so it can only be the default `$P$G` prompt's terminator) is treated as a hard left
+  boundary. Symmetrically, forward selection (Shift+Right and Ctrl+Shift+Right) stops at the end of
+  the typed command instead of walking into the untyped blank cells that fill out the rest of the
+  row — the boundary is the last non-space column on that row, widened to the selection anchor's own
+  column when the anchor sits on that row (the anchor is planted at the cursor cell, one column past
+  the last typed character, so without the widening a backward selection could never shrink all the
+  way back to its own starting point via Shift+Right). Ctrl+A selects the whole retained buffer, Ctrl+Shift+C/V copy/paste
+  via `QGuiApplication::clipboard()`, and Ctrl+Left/Right (no Shift) forwards the same word-jump
+  sequence without touching any local selection (clearing one if active). Deliberately
+  keyboard-only — no mouse drag-to-select.
   `BottomPanelWidget` — the generic collapsible panel shell: a header strip of checkable panel-tab
   buttons over a `QStackedWidget` of panel-tab content, starting collapsed; emits `expansionChanged`
   (for the owning splitter to resize) and `panelTabFirstActivated` (for lazy terminal start), staying
@@ -802,12 +829,13 @@ hides/shows the still-running session). Closing the tab kills the process.
   browse/search/advanced-search `QStackedWidget` and a `BottomPanelWidget` in a vertical `QSplitter`
   as the actual tab page; `onViewModeChanged`/`currentColumnWidths` unwrap `splitter->widget(0)`
   instead of assuming the tab page is the `QStackedWidget` directly.
-* **Not built:** a Linux backend; text selection/copy-paste inside the terminal; multiple terminal
-  instances per tab; 256-color/truecolor; persisting panel open/closed state or size across restart
-  (no `WorkspaceConfig`/§14.14 involvement — resets every launch); the terminal's directory following
-  subsequent navigation in its tab (only the directory at first-expand time). No automated coverage
-  beyond `AnsiTerminalBuffer` — ConPTY spawning and the painting/input widget fall under the existing
-  §11 UI/OS-shell carve-out, smoke-tested manually.
+* **Not built:** a Linux backend; mouse drag-to-select (selection is keyboard-only, see above);
+  multiple terminal instances per tab; 256-color/truecolor; persisting panel open/closed state or
+  size across restart (no `WorkspaceConfig`/§14.14 involvement — resets every launch); the
+  terminal's directory following subsequent navigation in its tab (only the directory at
+  first-expand time). No automated coverage beyond `AnsiTerminalBuffer` — ConPTY spawning and the
+  painting/input/selection/clipboard widget code fall under the existing §11 UI/OS-shell carve-out,
+  smoke-tested manually.
 
 ### 14.24 Right Panel (Tabbed, Collapsible)
 

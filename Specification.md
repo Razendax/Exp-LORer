@@ -302,7 +302,8 @@ The following are explicitly out of scope for the initial release (v1), pending 
   remains excluded).
 * Internationalization/localization — UI strings are English-only for v1.
 * Integrated terminal (Architecture.md §14.23) limitations: Windows-only (`cmd.exe` via ConPTY, no
-  Linux shell backend); no text selection or copy/paste inside the terminal; only one terminal
+  Linux shell backend); keyboard-only selection (character/word via Shift/Ctrl+Shift+Left/Right,
+  select-all via Ctrl+A) and clipboard (Ctrl+Shift+C/V) — no mouse drag-to-select; only one terminal
   instance per tab; no 256-color/truecolor rendering; panel open/closed state and size are not
   persisted across restarts; the terminal's working directory is fixed at first use and does not
   follow later navigation within that tab.
