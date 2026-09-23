@@ -63,6 +63,7 @@ CompositionRoot::CompositionRoot()
     , m_gitStatusUseCase(m_gitStatusProvider)
     , m_gitStatusService(m_gitStatusUseCase)
     , m_directoryWatchUseCase(m_directoryWatcher)
+    , m_folderMonitorUseCase(m_folderMonitor)
     , m_highlightThemeStore(highlightThemeFilePath())
     , m_highlightTheme(m_highlightThemeStore.load())
     , m_highlightThemeViewModel(m_highlightTheme, m_highlightThemeStore)
@@ -77,18 +78,18 @@ CompositionRoot::~CompositionRoot() = default;
 std::unique_ptr<TabViewModel> CompositionRoot::createTabViewModel()
 {
     return std::make_unique<TabViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
-                                           m_fileDecorationsViewModel, m_gitStatusService);
+                                           m_fileDecorationsViewModel, m_gitStatusService, m_folderMonitorUseCase);
 }
 
 std::unique_ptr<WorkspacePaneViewModel> CompositionRoot::createWorkspacePaneViewModel(WorkspacePaneId id)
 {
     return std::make_unique<WorkspacePaneViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
-                                                     m_fileDecorationsViewModel, m_gitStatusService, id);
+                                                     m_fileDecorationsViewModel, m_gitStatusService, m_folderMonitorUseCase, id);
 }
 
 std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController()
 {
     return std::make_unique<WorkspaceController>(m_fileNavigationUseCase, m_tagManagementUseCase, m_filePreviewUseCase,
                                                   m_fileSystemRepository, m_fileDecorationRules, m_fileDecorationsViewModel,
-                                                  m_gitStatusService, m_directoryWatchUseCase);
+                                                  m_gitStatusService, m_directoryWatchUseCase, m_folderMonitorUseCase);
 }

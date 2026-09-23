@@ -47,6 +47,22 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   — a change inside a subfolder does not trigger a refresh. A pane hidden by the current layout, or
   a tab that isn't its pane's active one, is not live-updated; switching to it (or revealing its
   pane) catches it up once at that point.
+* **Folder monitoring (recursive, per-tab, Architecture.md §14.33):** a third right-panel tab,
+  "Monitoring" (alongside "Tags" and "Preview" — see below), watches a tab's current folder and
+  every subfolder beneath it for file/folder creation, deletion, and modification — meant primarily
+  for watching a long-running build without needing to keep that tab in view. "Start Monitoring"
+  begins recursively watching the focused tab's current directory (the button becomes "Stop
+  Monitoring"); each detected change appends a row — a file/folder icon plus the changed item's path
+  relative to the monitored root, colored green for an addition, red for a deletion, yellow for a
+  modification — to an auto-scrolling, 200-row ring-buffer list, while an uncapped "Total" counter
+  at the bottom keeps counting every change for the whole session. Navigating the monitored tab
+  deeper into the watched subtree doesn't disturb monitoring; navigating it anywhere outside that
+  subtree (Up, an unrelated address-bar path, another drive, etc.), closing the tab, or closing the
+  application prompts for confirmation first, since any of those would silently stop the watch. A
+  "pin" toggle keeps that tab's
+  monitoring session shown in the panel even after the user switches focus to a different tab to do
+  something else in the meantime; unpinned, the panel instead follows whichever tab currently has
+  focus.
 * **Git status badges (Details view, Architecture.md §14.31):** when the currently browsed folder
   is inside a git working tree, a "Git" column at the right of "Date modified" shows a small colored
   badge for any file or folder with a non-clean status — a purple "?" for untracked, blue "M" for a

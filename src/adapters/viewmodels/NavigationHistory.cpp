@@ -66,3 +66,23 @@ std::optional<std::filesystem::path> NavigationHistory::current() const
 
     return m_current->path();
 }
+
+std::optional<std::filesystem::path> NavigationHistory::peekBack() const
+{
+    if (m_backStack.empty())
+    {
+        return std::nullopt;
+    }
+
+    return m_backStack.back().path();
+}
+
+std::optional<std::filesystem::path> NavigationHistory::peekForward() const
+{
+    if (m_forwardStack.empty())
+    {
+        return std::nullopt;
+    }
+
+    return m_forwardStack.back().path();
+}

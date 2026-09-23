@@ -41,6 +41,10 @@ add_library(explorer_ui_widgets STATIC
     BottomPanelWidget.cpp
     RightPanelWidget.h
     RightPanelWidget.cpp
+    MonitoringLogModel.h
+    MonitoringLogModel.cpp
+    MonitoringPanelWidget.h
+    MonitoringPanelWidget.cpp
     PreviewPanelWidget.h
     PreviewPanelWidget.cpp
     FolderPreviewListModel.h

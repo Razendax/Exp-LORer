@@ -21,4 +21,11 @@ namespace UiColors
     // needs to read as a distinct/destructive action rather than blend with the rest of the palette.
     constexpr const char* kCloseButtonRed = "#D9534F";
     constexpr const char* kCloseButtonRedHover = "#C9302C";
+
+    // Monitoring panel log rows (Architecture.md §14.24): legible-on-white saturation, same
+    // register as kCloseButtonRed above, so Added/Removed/Modified read as distinct at a glance in
+    // a fast-scrolling build log rather than blending into the muted panel-tint palette.
+    constexpr const char* kMonitorAddedGreen = "#2E8B44";
+    constexpr const char* kMonitorRemovedRed = "#D9534F";
+    constexpr const char* kMonitorModifiedYellow = "#B8860B";
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <filesystem>
 #include <optional>
 #include <vector>
@@ -11,6 +12,7 @@
 #include "DriveSpaceInfo.h"
 #include "FileNavigationUseCase.h"
 #include "FileNode.h"
+#include "FolderMonitorUseCase.h"
 #include "NavigationHistory.h"
 #include "SearchCriteria.h"
 #include "Tag.h"
@@ -37,7 +39,7 @@ public:
     // WorkspaceController deliberately don't reference that concrete type.
     TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                  const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
-                 GitStatusService& gitStatusService, QObject* parent = nullptr);
+                 GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase, QObject* parent = nullptr);
 
     std::filesystem::path currentPath() const;
     bool backAvailable() const;
@@ -73,6 +75,20 @@ public:
     // Drive/volume info for the window status bar (Architecture.md §14.30); delegates to
     // FileNavigationUseCase::driveSpaceInfo(currentPath()).
     Result<DriveSpaceInfo> driveSpaceInfo() const;
+
+    // Recursive folder monitoring (Architecture.md §14.24, "Monitoring panel"). Multiple tabs may
+    // monitor concurrently; only one is ever *displayed* at a time by MonitoringPanelViewModel.
+    bool isMonitoringActive() const noexcept { return m_monitoringActive; }
+    std::filesystem::path monitoringRoot() const { return m_monitoringRoot; }
+    bool isMonitoringPinned() const noexcept { return m_monitoringPinned; }
+    const std::deque<FolderChangeEvent>& monitoringLog() const noexcept { return m_monitoringLog; }
+    int monitoringTotal() const noexcept { return m_monitoringTotal; }
+
+    // Navigation-guard pure queries (no I/O, no side effects) used by WorkspacePaneWidget's
+    // monitoring-scope guard.
+    std::filesystem::path upTarget() const;
+    std::optional<std::filesystem::path> peekBack() const;
+    std::optional<std::filesystem::path> peekForward() const;
 
 public slots:
     // Per-tab selection state (Architecture.md §14.9), set by WorkspacePaneWidget from this tab's
@@ -149,6 +165,18 @@ public slots:
     // otherwise or if tagId isn't present.
     void removeTagSearchCriterion(Tag::Id tagId);
 
+    // No-op if already active, or if currentPath() is VirtualPaths::ThisPC/an archive-virtual path
+    // (the Start button is also UI-disabled in that state, but this slot stays defensive). Clears
+    // any previous session's log/total, then starts a fresh recursive watch on currentPath().
+    void startMonitoring();
+
+    // No-op if not active. Log/total are deliberately left untouched (a later startMonitoring()
+    // call clears them) so the last session's results stay visible after stopping.
+    void stopMonitoring();
+
+    // No-op if unchanged, or if not currently active (nothing to pin).
+    void setMonitoringPinned(bool pinned);
+
 signals:
     void currentPathChanged(const std::filesystem::path& path);
     void directoryContentsChanged(const std::filesystem::path& path, const std::vector<FileNode>& entries);
@@ -174,6 +202,12 @@ signals:
     // box, or a right-panel tag click on a completely different widget).
     void advancedSearchCriteriaChanged(const SearchCriteria& criteria);
 
+    void monitoringActiveChanged(bool active);
+    void monitoringLogAppended(const std::vector<FolderChangeEvent>& batch);
+    void monitoringTotalChanged(int total);
+    void monitoringPinnedChanged(bool pinned);
+    void monitoringFailed(const QString& message);
+
 private:
     // Single funnel point for every navigation entry point: fetches directory contents exactly
     // once, and on success emits currentPathChanged + directoryContentsChanged, recording history
@@ -197,6 +231,7 @@ private:
     FileNavigationUseCase& m_fileNavigationUseCase;
     TagManagementUseCase& m_tagManagementUseCase;
     GitStatusService& m_gitStatusService;
+    FolderMonitorUseCase& m_folderMonitorUseCase;
     NavigationHistory m_history;
     ViewMode m_viewMode = ViewMode::Details;
     FileListModel* m_fileListModel = nullptr;
@@ -213,4 +248,11 @@ private:
     SearchCriteria m_advancedSearchCriteria;
     std::filesystem::path m_advancedSearchRoot;
     std::vector<FileNode> m_advancedSearchSnapshot;
+
+    bool m_monitoringActive = false;
+    std::filesystem::path m_monitoringRoot;
+    FolderMonitorId m_monitoringId = 0;
+    bool m_monitoringPinned = false;
+    std::deque<FolderChangeEvent> m_monitoringLog; // capped at kMonitoringLogCap, oldest dropped
+    int m_monitoringTotal = 0; // uncapped
 };

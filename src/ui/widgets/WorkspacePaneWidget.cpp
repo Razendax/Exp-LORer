@@ -29,6 +29,7 @@
 #include "FileBrowserView.h"
 #include "FileOperationsController.h"
 #include "IContextMenuProvider.h"
+#include "PathContainment.h"
 #include "SearchCriteriaPanel.h"
 #include "SearchResultsPane.h"
 #include "StatusBarWidget.h"
@@ -215,9 +216,9 @@ QToolBar* WorkspacePaneWidget::createToolBar()
     m_addressBar->setClearButtonEnabled(true);
     toolBar->addWidget(m_addressBar);
 
-    connect(m_backAction, &QAction::triggered, this, [this]() { if (m_boundTab) m_boundTab->goBack(); });
-    connect(m_forwardAction, &QAction::triggered, this, [this]() { if (m_boundTab) m_boundTab->goForward(); });
-    connect(m_upAction, &QAction::triggered, this, [this]() { if (m_boundTab) m_boundTab->goUp(); });
+    connect(m_backAction, &QAction::triggered, this, &WorkspacePaneWidget::onBackRequested);
+    connect(m_forwardAction, &QAction::triggered, this, &WorkspacePaneWidget::onForwardRequested);
+    connect(m_upAction, &QAction::triggered, this, &WorkspacePaneWidget::onUpRequested);
     connect(m_refreshAction, &QAction::triggered, this, [this]() { if (m_boundTab) m_boundTab->refresh(); });
     connect(m_addressBar, &QLineEdit::returnPressed, this, &WorkspacePaneWidget::onAddressBarEdited);
     connect(m_addressBar, &AddressBarWidget::folderSuggestionsRequested, this,
@@ -249,7 +250,7 @@ void WorkspacePaneWidget::createTabArea()
     m_tabWidget->setCornerWidget(newTabButton, Qt::TopRightCorner);
 
     connect(m_tabWidget, &QTabWidget::currentChanged, this, &WorkspacePaneWidget::onTabWidgetCurrentChanged);
-    connect(m_tabWidget, &QTabWidget::tabCloseRequested, m_pane, &WorkspacePaneViewModel::closeTab);
+    connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, &WorkspacePaneWidget::onTabCloseRequested);
 }
 
 void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
@@ -375,6 +376,10 @@ void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewM
         // here.
         if (isDirectory || ArchiveExtensions::isArchiveExtension(path))
         {
+            if (!confirmLeavingMonitoredScope(tab, path))
+            {
+                return;
+            }
             tab->navigateTo(path);
         }
         else
@@ -417,9 +422,9 @@ void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewM
     connect(browserView, &FileBrowserView::deleteRequested, tab, [this, tab](bool permanent) {
         onDeleteRequested(tab, permanent);
     });
-    connect(browserView, &FileBrowserView::navigateUpRequested, tab, [tab]() { tab->goUp(); });
-    connect(browserView, &FileBrowserView::navigateBackRequested, tab, [tab]() { tab->goBack(); });
-    connect(browserView, &FileBrowserView::navigateForwardRequested, tab, [tab]() { tab->goForward(); });
+    connect(browserView, &FileBrowserView::navigateUpRequested, this, &WorkspacePaneWidget::onUpRequested);
+    connect(browserView, &FileBrowserView::navigateBackRequested, this, &WorkspacePaneWidget::onBackRequested);
+    connect(browserView, &FileBrowserView::navigateForwardRequested, this, &WorkspacePaneWidget::onForwardRequested);
 
     connect(browserView, &FileBrowserView::renameRequested, tab,
             [this](const std::filesystem::path& source, const std::filesystem::path& destination) {
@@ -557,6 +562,105 @@ void WorkspacePaneWidget::onNewTabRequested()
     }
 }
 
+void WorkspacePaneWidget::onTabCloseRequested(int index)
+{
+    TabViewModel* tab = m_pane->tabAt(index);
+    if (tab && tab->isMonitoringActive())
+    {
+        const QMessageBox::StandardButton answer =
+            QMessageBox::question(this, tr("Close Tab"), tr("Monitoring will stop if you close this tab. Continue?"));
+        if (answer != QMessageBox::Yes)
+        {
+            return;
+        }
+    }
+
+    m_pane->closeTab(index);
+}
+
+void WorkspacePaneWidget::onUpRequested()
+{
+    if (!m_boundTab)
+    {
+        return;
+    }
+
+    const std::filesystem::path target = m_boundTab->upTarget();
+    if (target == m_boundTab->currentPath())
+    {
+        return;
+    }
+
+    if (!confirmLeavingMonitoredScope(m_boundTab, target))
+    {
+        return;
+    }
+
+    m_boundTab->goUp();
+}
+
+void WorkspacePaneWidget::onBackRequested()
+{
+    if (!m_boundTab)
+    {
+        return;
+    }
+
+    const auto target = m_boundTab->peekBack();
+    if (!target)
+    {
+        return;
+    }
+
+    if (!confirmLeavingMonitoredScope(m_boundTab, *target))
+    {
+        return;
+    }
+
+    m_boundTab->goBack();
+}
+
+void WorkspacePaneWidget::onForwardRequested()
+{
+    if (!m_boundTab)
+    {
+        return;
+    }
+
+    const auto target = m_boundTab->peekForward();
+    if (!target)
+    {
+        return;
+    }
+
+    if (!confirmLeavingMonitoredScope(m_boundTab, *target))
+    {
+        return;
+    }
+
+    m_boundTab->goForward();
+}
+
+bool WorkspacePaneWidget::confirmLeavingMonitoredScope(TabViewModel* tab, const std::filesystem::path& target)
+{
+    if (!tab->isMonitoringActive() || isPathWithinOrEqual(target, tab->monitoringRoot()))
+    {
+        return true;
+    }
+
+    const QMessageBox::StandardButton answer = QMessageBox::question(
+        this, tr("Stop Monitoring"),
+        tr("Monitoring will stop if you navigate outside %1. Continue?").arg(displayPathText(tab->monitoringRoot())));
+
+    if (answer != QMessageBox::Yes)
+    {
+        return false;
+    }
+
+    tab->stopMonitoring();
+    return true;
+}
+
 void WorkspacePaneWidget::onCurrentPathChanged(const std::filesystem::path& path)
 {
     m_addressBar->setText(displayPathText(path));
@@ -572,12 +676,24 @@ void WorkspacePaneWidget::onAddressBarEdited()
     const QString trimmed = m_addressBar->text().trimmed();
     if (trimmed.compare(QStringLiteral("this pc"), Qt::CaseInsensitive) == 0)
     {
+        if (!confirmLeavingMonitoredScope(m_boundTab, VirtualPaths::ThisPC))
+        {
+            m_addressBar->setText(displayPathText(m_boundTab->currentPath()));
+            return;
+        }
         m_boundTab->navigateTo(VirtualPaths::ThisPC);
         return;
     }
 
     std::filesystem::path newPath(trimmed.toStdWString());
     newPath.make_preferred();
+
+    if (!confirmLeavingMonitoredScope(m_boundTab, newPath))
+    {
+        m_addressBar->setText(displayPathText(m_boundTab->currentPath()));
+        return;
+    }
+
     m_boundTab->navigateTo(newPath);
 }
 
@@ -764,7 +880,7 @@ bool WorkspacePaneWidget::eventFilter(QObject* watched, QEvent* event)
             const int index = m_tabWidget->tabBar()->tabAt(mouseEvent->pos());
             if (index >= 0)
             {
-                m_pane->closeTab(index);
+                onTabCloseRequested(index);
                 return true;
             }
         }

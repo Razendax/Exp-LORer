@@ -7,6 +7,8 @@ add_library(explorer_adapters_filesystem STATIC
     DirectoryWatchRegistry.cpp
     StandardDirectoryWatcher.h
     StandardDirectoryWatcher.cpp
+    StandardFolderMonitor.h
+    StandardFolderMonitor.cpp
 )
 
 target_include_directories(explorer_adapters_filesystem PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

@@ -5,6 +5,7 @@
 #include "DirectoryWatchService.h"
 #include "FileOperationsController.h"
 #include "FilePreviewViewModel.h"
+#include "MonitoringPanelViewModel.h"
 #include "TabViewModel.h"
 #include "TagListViewModel.h"
 #include "WorkspaceLayoutTopology.h"
@@ -22,25 +23,27 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
                                            FilePreviewUseCase& filePreviewUseCase, IFileSystemRepository& fileSystemRepository,
                                            const FileDecorationRules& fileDecorationRules,
                                            QObject& fileDecorationsChangeSource, GitStatusService& gitStatusService,
-                                           DirectoryWatchUseCase& directoryWatchUseCase, QObject* parent)
+                                           DirectoryWatchUseCase& directoryWatchUseCase,
+                                           FolderMonitorUseCase& folderMonitorUseCase, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
 {
     m_panes[indexOf(WorkspacePaneId::PaneA)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
-        WorkspacePaneId::PaneA, this);
+        folderMonitorUseCase, WorkspacePaneId::PaneA, this);
     m_panes[indexOf(WorkspacePaneId::PaneB)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
-        WorkspacePaneId::PaneB, this);
+        folderMonitorUseCase, WorkspacePaneId::PaneB, this);
     m_panes[indexOf(WorkspacePaneId::PaneC)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
-        WorkspacePaneId::PaneC, this);
+        folderMonitorUseCase, WorkspacePaneId::PaneC, this);
     m_panes[indexOf(WorkspacePaneId::PaneD)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
-        WorkspacePaneId::PaneD, this);
+        folderMonitorUseCase, WorkspacePaneId::PaneD, this);
 
     m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, this);
     m_filePreviewViewModel = new FilePreviewViewModel(filePreviewUseCase, fileSystemRepository, this);
+    m_monitoringPanelViewModel = new MonitoringPanelViewModel(this);
     m_fileOperationsController = new FileOperationsController(m_fileNavigationUseCase, this);
     m_directoryWatchService = new DirectoryWatchService(directoryWatchUseCase, this);
 
@@ -151,6 +154,7 @@ void WorkspaceController::retargetFocusedTab()
 {
     m_tagListViewModel->setActiveTab(focusedTab());
     m_filePreviewViewModel->setActiveTab(focusedTab());
+    m_monitoringPanelViewModel->setFocusedTab(focusedTab());
     emit focusedTabChanged(focusedTab());
 }
 

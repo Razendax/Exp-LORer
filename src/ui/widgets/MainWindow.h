@@ -28,6 +28,7 @@ class WorkspaceLayoutWidget;
 class TagPanelWidget;
 class RightPanelWidget;
 class PreviewPanelWidget;
+class MonitoringPanelWidget;
 class TabViewModel;
 class MainStatusBarWidget;
 class DriveSpaceInfoWorker;
@@ -86,6 +87,7 @@ private:
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;
     PreviewPanelWidget* m_previewPanelWidget = nullptr;
+    MonitoringPanelWidget* m_monitoringPanelWidget = nullptr;
     RightPanelWidget* m_rightPanelWidget = nullptr;
     TabViewModel* m_sortTrackedTab = nullptr;
     TabViewModel* m_searchTrackedTab = nullptr;

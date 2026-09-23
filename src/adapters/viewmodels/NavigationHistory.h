@@ -39,6 +39,12 @@ public:
 
     std::optional<std::filesystem::path> current() const;
 
+    // Non-mutating equivalents of goBack()/goForward(): what they would return, without moving
+    // the current pointer. Used by navigation guards that need to know the *target* of a
+    // prospective Back/Forward before deciding whether to actually perform it.
+    std::optional<std::filesystem::path> peekBack() const;
+    std::optional<std::filesystem::path> peekForward() const;
+
 private:
     std::vector<NavigateToPathCommand> m_backStack;
     std::vector<NavigateToPathCommand> m_forwardStack;

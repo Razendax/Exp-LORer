@@ -8,6 +8,7 @@
 #include "FileDecorationsViewModel.h"
 #include "FileNavigationUseCase.h"
 #include "FilePreviewUseCase.h"
+#include "FolderMonitorUseCase.h"
 #include "GitStatusService.h"
 #include "GitStatusUseCase.h"
 #include "LibGit2StatusProvider.h"
@@ -16,6 +17,7 @@
 #include "ShellContextMenuProvider.h"
 #include "StandardDirectoryWatcher.h"
 #include "StandardFileSystemRepository.h"
+#include "StandardFolderMonitor.h"
 #include "TabViewModel.h"
 #include "TagManagementUseCase.h"
 #include "WorkspaceController.h"
@@ -62,9 +64,11 @@ namespace
         GitStatusService m_gitStatusService{ m_gitStatusUseCase };
         StandardDirectoryWatcher m_directoryWatcher;
         DirectoryWatchUseCase m_directoryWatchUseCase{ m_directoryWatcher };
+        StandardFolderMonitor m_folderMonitor;
+        FolderMonitorUseCase m_folderMonitorUseCase{ m_folderMonitor };
         WorkspaceController m_controller{ m_fileNavigationUseCase,  m_tagManagementUseCase,     m_filePreviewUseCase,
                                            m_fileSystemRepository, m_fileDecorationRules,      m_fileDecorationsViewModel,
-                                           m_gitStatusService,     m_directoryWatchUseCase };
+                                           m_gitStatusService,     m_directoryWatchUseCase,    m_folderMonitorUseCase };
     };
 }
 
@@ -98,7 +102,7 @@ TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsThroughRestoreFromConfig)
     TagManagementUseCase restoredTagManagementUseCase{ restoredTagRepository, m_fileSystemRepository };
     WorkspaceController restoredController{ m_fileNavigationUseCase,  restoredTagManagementUseCase, m_filePreviewUseCase,
                                              m_fileSystemRepository, m_fileDecorationRules,        m_fileDecorationsViewModel,
-                                             m_gitStatusService,     m_directoryWatchUseCase };
+                                             m_gitStatusService,     m_directoryWatchUseCase,      m_folderMonitorUseCase };
 
     const bool restored = restoredController.restoreFromConfig(captured);
     ASSERT_TRUE(restored);

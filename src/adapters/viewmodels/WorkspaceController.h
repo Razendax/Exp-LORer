@@ -22,6 +22,8 @@ class FileOperationsController;
 class GitStatusService;
 class DirectoryWatchUseCase;
 class DirectoryWatchService;
+class FolderMonitorUseCase;
+class MonitoringPanelViewModel;
 
 // Mediator owning all 4 WorkspacePaneViewModels (always instantiated, regardless of which are
 // currently visible under the active SplitLayout) plus the active SplitLayout, the focused pane,
@@ -40,7 +42,7 @@ public:
                          FilePreviewUseCase& filePreviewUseCase, IFileSystemRepository& fileSystemRepository,
                          const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                          GitStatusService& gitStatusService, DirectoryWatchUseCase& directoryWatchUseCase,
-                         QObject* parent = nullptr);
+                         FolderMonitorUseCase& folderMonitorUseCase, QObject* parent = nullptr);
 
     WorkspacePaneViewModel* pane(WorkspacePaneId id) const;
     SplitLayout layout() const noexcept { return m_layout; }
@@ -48,6 +50,7 @@ public:
     TabViewModel* focusedTab() const;
     TagListViewModel* tagListViewModel() const noexcept { return m_tagListViewModel; }
     FilePreviewViewModel* filePreviewViewModel() const noexcept { return m_filePreviewViewModel; }
+    MonitoringPanelViewModel* monitoringPanelViewModel() const noexcept { return m_monitoringPanelViewModel; }
     FileOperationsController* fileOperationsController() const noexcept { return m_fileOperationsController; }
     FileNavigationUseCase& fileNavigationUseCase() const noexcept { return m_fileNavigationUseCase; }
 
@@ -92,6 +95,7 @@ private:
     WorkspacePaneId m_focusedPane = WorkspacePaneId::PaneA;
     TagListViewModel* m_tagListViewModel = nullptr;
     FilePreviewViewModel* m_filePreviewViewModel = nullptr;
+    MonitoringPanelViewModel* m_monitoringPanelViewModel = nullptr;
     FileOperationsController* m_fileOperationsController = nullptr;
     DirectoryWatchService* m_directoryWatchService = nullptr;
 };

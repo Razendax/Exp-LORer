@@ -6,12 +6,14 @@ add_executable(explorer_application_tests
     MockMediaDecoder.h
     MockGitStatusProvider.h
     MockDirectoryWatcher.h
+    MockFolderMonitor.h
     FileNavigationUseCaseTest.cpp
     TagManagementUseCaseTest.cpp
     MediaProcessingUseCaseTest.cpp
     FilePreviewUseCaseTest.cpp
     GitStatusUseCaseTest.cpp
     DirectoryWatchUseCaseTest.cpp
+    FolderMonitorUseCaseTest.cpp
 )
 
 target_link_libraries(explorer_application_tests PRIVATE

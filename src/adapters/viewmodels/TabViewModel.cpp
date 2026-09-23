@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "ArchiveExtensions.h"
 #include "FileListModel.h"
 #include "FileNavigationUseCase.h"
 #include "GitDirectoryStatus.h"
@@ -16,15 +17,18 @@ namespace
         return criteria.nameQuery.empty() && !criteria.minSizeBytes && !criteria.maxSizeBytes && criteria.extensionList.empty() &&
                criteria.tagIds.empty();
     }
+
+    constexpr std::size_t kMonitoringLogCap = 200;
 }
 
 TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                            const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
-                           GitStatusService& gitStatusService, QObject* parent)
+                           GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagManagementUseCase(tagManagementUseCase)
     , m_gitStatusService(gitStatusService)
+    , m_folderMonitorUseCase(folderMonitorUseCase)
     , m_fileListModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_searchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_advancedSearchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
@@ -100,28 +104,49 @@ void TabViewModel::navigateTo(const std::filesystem::path& path)
     loadAndApply(path, true);
 }
 
-void TabViewModel::goUp()
+std::filesystem::path TabViewModel::upTarget() const
 {
     const auto current = m_history.current();
     if (!current)
     {
-        return;
+        return std::filesystem::path();
     }
 
     if (*current == VirtualPaths::ThisPC)
     {
-        return;
+        // No legal parent -- returning the current path itself signals "nothing to navigate to".
+        return *current;
     }
 
     const auto parent = current->parent_path();
     if (parent == *current)
     {
         // A filesystem root (local drive root or UNC share root) — This PC is its "exit" point.
-        navigateTo(VirtualPaths::ThisPC);
+        return VirtualPaths::ThisPC;
+    }
+
+    return parent;
+}
+
+std::optional<std::filesystem::path> TabViewModel::peekBack() const
+{
+    return m_history.peekBack();
+}
+
+std::optional<std::filesystem::path> TabViewModel::peekForward() const
+{
+    return m_history.peekForward();
+}
+
+void TabViewModel::goUp()
+{
+    const std::filesystem::path target = upTarget();
+    if (target == currentPath())
+    {
         return;
     }
 
-    navigateTo(parent);
+    navigateTo(target);
 }
 
 void TabViewModel::goBack()
@@ -461,4 +486,73 @@ void TabViewModel::requestGitStatus(const std::filesystem::path& path)
 
         m_fileListModel->setGitStatuses(result ? result.value().statusByPath : GitStatusByPathMap{});
     });
+}
+
+void TabViewModel::startMonitoring()
+{
+    if (m_monitoringActive)
+    {
+        return;
+    }
+
+    const std::filesystem::path root = currentPath();
+    if (root.empty() || root == VirtualPaths::ThisPC || ArchiveExtensions::archiveAncestorInPath(root))
+    {
+        return;
+    }
+
+    m_monitoringLog.clear();
+    m_monitoringTotal = 0;
+    m_monitoringRoot = root;
+
+    auto result = m_folderMonitorUseCase.startMonitoring(root, [this](const std::vector<FolderChangeEvent>& batch) {
+        for (const FolderChangeEvent& event : batch)
+        {
+            if (m_monitoringLog.size() >= kMonitoringLogCap)
+            {
+                m_monitoringLog.pop_front();
+            }
+            m_monitoringLog.push_back(event);
+        }
+        m_monitoringTotal += static_cast<int>(batch.size());
+
+        emit monitoringLogAppended(batch);
+        emit monitoringTotalChanged(m_monitoringTotal);
+    });
+
+    if (!result)
+    {
+        emit monitoringFailed(QString::fromStdString(result.error().message));
+        return;
+    }
+
+    m_monitoringId = result.value();
+    m_monitoringActive = true;
+    emit monitoringActiveChanged(true);
+}
+
+void TabViewModel::stopMonitoring()
+{
+    if (!m_monitoringActive)
+    {
+        return;
+    }
+
+    m_folderMonitorUseCase.stopMonitoring(m_monitoringId);
+    m_monitoringActive = false;
+    m_monitoringPinned = false;
+
+    emit monitoringActiveChanged(false);
+    emit monitoringPinnedChanged(false);
+}
+
+void TabViewModel::setMonitoringPinned(bool pinned)
+{
+    if (pinned == m_monitoringPinned || !m_monitoringActive)
+    {
+        return;
+    }
+
+    m_monitoringPinned = pinned;
+    emit monitoringPinnedChanged(pinned);
 }

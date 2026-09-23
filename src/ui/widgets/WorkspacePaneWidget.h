@@ -96,6 +96,7 @@ private:
     void onActiveTabChanged(int index);
     void onTabWidgetCurrentChanged(int index);
     void onNewTabRequested();
+    void onTabCloseRequested(int index);
 
     void onCurrentPathChanged(const std::filesystem::path& path);
     void onAddressBarEdited();
@@ -103,6 +104,19 @@ private:
     void onNavigationFailed(const std::filesystem::path& path, const QString& message);
     void onViewModeChanged(ViewMode mode);
     void onDeleteRequested(TabViewModel* tab, bool permanent);
+
+    // Shared by the toolbar's Back/Forward/Up QActions and FileBrowserView's corresponding
+    // navigateBackRequested/navigateForwardRequested/navigateUpRequested signals -- act on
+    // m_boundTab, guarded by confirmLeavingMonitoredScope.
+    void onUpRequested();
+    void onBackRequested();
+    void onForwardRequested();
+
+    // Returns true if the navigation should proceed (either it stays within the monitored
+    // subtree, or the user confirmed stopping monitoring). Stops monitoring itself on a confirmed
+    // "yes" before returning, so callers just need: if (!confirmLeavingMonitoredScope(tab,
+    // target)) return;
+    bool confirmLeavingMonitoredScope(TabViewModel* tab, const std::filesystem::path& target);
 
     // Status bar (Architecture.md §14.27): reads counts directly off m_boundTab rather than off a
     // signal payload, so it's correct regardless of which of the six wired signals fired.

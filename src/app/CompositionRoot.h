@@ -10,6 +10,7 @@
 #include "FileDecorationsViewModel.h"
 #include "FileNavigationUseCase.h"
 #include "FilePreviewUseCase.h"
+#include "FolderMonitorUseCase.h"
 #include "GitStatusService.h"
 #include "GitStatusUseCase.h"
 #include "HighlightTheme.h"
@@ -21,6 +22,7 @@
 #include "ShellContextMenuProvider.h"
 #include "StandardDirectoryWatcher.h"
 #include "StandardFileSystemRepository.h"
+#include "StandardFolderMonitor.h"
 #include "SyntaxHighlightEngine.h"
 #include "TagManagementUseCase.h"
 #include "ThumbnailCache.h"
@@ -72,6 +74,11 @@ private:
     // Watcher before use case (construction order matches this declaration order).
     StandardDirectoryWatcher m_directoryWatcher;
     DirectoryWatchUseCase m_directoryWatchUseCase;
+
+    // Architecture.md §14.24: recursive per-tab folder monitoring (Monitoring panel). Monitor
+    // before use case (construction order matches this declaration order).
+    StandardFolderMonitor m_folderMonitor;
+    FolderMonitorUseCase m_folderMonitorUseCase;
 
     // Architecture.md §14.26: text-preview syntax highlighting -- deliberately no Application-layer
     // Port/use-case for this, just plain adapter instances shared between PreviewPanelWidget's

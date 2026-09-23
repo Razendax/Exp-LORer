@@ -56,6 +56,14 @@ instance safely serves concurrent callers from every tab/pane (§14.2).
   own popup (§14.13).
 * `IGitStatusProvider` — resolves a directory's working-tree git status (per-immediate-child
   `GitFileStatus`, or an empty result when the directory isn't inside a repository), §14.31.
+* `IDirectoryWatcher` — non-recursive immediate-children change notification backing live directory
+  update (§14.32).
+* `IFolderMonitor` — recursive, subtree-wide change notification with per-event
+  add/remove/modify classification, backing per-tab folder monitoring (§14.33). Kept separate from
+  `IDirectoryWatcher` (Interface Segregation) since the two serve different callers with different
+  contracts: `IDirectoryWatcher` is a cheap "something changed, re-list" nudge for whatever tab is
+  currently visible, while `IFolderMonitor` is an explicit, opt-in, full-subtree event log a user
+  starts and stops themselves.
 
 ### 2.3 Interface Adapters Layer
 
@@ -1400,3 +1408,114 @@ pressing Refresh — scoped to the tabs currently **shown** (the active tab of e
   (pure bookkeeping) and `DirectoryWatchUseCase` (mocked-Port passthrough) — `WorkspaceController`/
   `DirectoryWatchService`/`StandardDirectoryWatcher` fall under the existing §11 UI/ViewModel-glue
   and OS-shell carve-outs, smoke-tested manually.
+
+### 14.33 Folder Monitoring (Recursive, Per-Tab)
+
+A third right-panel tab, "Monitoring" (§14.24's panel already supports more than one tab with no
+further plumbing), that recursively watches one tab's current directory (including every
+subdirectory) for create/delete/modify and shows a live, colored event log plus a running total —
+primarily meant for watching a long-running build (Specification.md §2.1). Deliberately a separate
+Port/adapter from `IDirectoryWatcher`/`StandardDirectoryWatcher` (§14.32) rather than an extension of
+it: that watcher is intentionally non-recursive and reports no path or change kind (just "re-list this
+folder"), whereas this feature needs full-subtree coverage plus a classified, path-carrying event per
+change — `QFileSystemWatcher` (§14.32's backend) cannot deliver either.
+
+* **`src/domain/PathContainment.h`/`.cpp`** (new, pure, no framework deps) — `isPathWithinOrEqual
+  (candidate, root)`, a lexical is-subpath check via `path::lexically_relative` (never narrows to
+  `std::string`, §6-safe for non-ASCII paths). Backs the navigation guard below; GTest-covered
+  (`tests/domain/PathContainmentTest.cpp`).
+* **New Port**, `IFolderMonitor` (`src/application`) — `startMonitoring(rootDirectory,
+  std::function<void(const std::vector<FolderChangeEvent>&)> onChanged) -> Result<FolderMonitorId>` /
+  `stopMonitoring(FolderMonitorId)`. `FolderChangeEvent` (`src/application/FolderChangeEvent.h`, plain
+  data, same posture as `DriveSpaceInfo`/`GitDirectoryStatus`) holds a root-relative path, a
+  `FolderChangeKind` (`Added`/`Removed`/`Modified`), and a best-effort `isDirectory` flag. Rejects the
+  "This PC" sentinel and archive-virtual paths as a `Result` failure, same posture as
+  `IDirectoryWatcher::watch`. **`FolderMonitorUseCase`** (new, stateless, single-Port-dependency
+  passthrough, same shape as `DirectoryWatchUseCase`).
+* **`StandardFolderMonitor`** (`src/adapters/filesystem`, new, Windows-only implementation behind the
+  cross-platform-named Port, same "Windows first" posture as `StandardDirectoryWatcher`/
+  `ShellContextMenuProvider`): one background `std::thread` per active monitor blocking on
+  `ReadDirectoryChangesW` (`bWatchSubtree = TRUE`) — the same "one background thread per resource,
+  results marshaled back via `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`" shape
+  `WindowsConPtyProcess` already established for its ConPTY reader thread. A small in-memory
+  path→isDirectory index, seeded by one initial recursive scan at `startMonitoring` and kept current
+  as Added/Modified events arrive, lets a Removed event still report `isDirectory` (an already-deleted
+  path can't be `stat()`-ed) — an accepted heuristic (falls back to "file" on a miss), same posture as
+  the file-identity hash (§8) or `ArchivePathResolver`'s nested-archive limitation. Rename events
+  (`FILE_ACTION_RENAMED_OLD_NAME`/`NEW_NAME`) fold into `Removed`/`Added` — no dedicated "renamed"
+  kind. The directory handle is opened with `FILE_FLAG_OVERLAPPED`, and each monitor also holds a
+  manual-reset stop `HANDLE`: the worker thread waits on `WaitForMultipleObjects` over the pending
+  read's `OVERLAPPED` event and the stop event, since closing the handle alone does not reliably
+  interrupt a synchronous `ReadDirectoryChangesW` from another thread (a documented Win32 hang
+  hazard). `stopMonitoring` signals the stop event, which makes the worker cancel the pending read
+  via `CancelIoEx` + a blocking `GetOverlappedResult`, then joins the thread before closing the
+  directory handle. Non-Windows builds fail every call with `ErrorCode::IoError`. Falls under the
+  existing OS-shell/live-notification carve-out (§11) — no automated adapter test, smoke-tested
+  manually, same as `StandardDirectoryWatcher`/`WindowsConPtyProcess`.
+* **Per-tab state on `TabViewModel`**, not a separate global monitor — the same "state lives on the
+  tab" posture already used for sort/search/advanced-search (§14.12/§14.18/§14.19), so two different
+  tabs can independently monitor at once. New `FolderMonitorUseCase&` constructor dependency (threaded
+  through `WorkspacePaneViewModel`/`WorkspaceController`/`CompositionRoot` exactly like
+  `GitStatusService&`); state = active flag, monitored root, a capped-200 ring-buffer log
+  (`std::deque<FolderChangeEvent>`), an uncapped running total, and a pinned flag. `startMonitoring()`/
+  `stopMonitoring()` slots; stopping also clears the pinned flag (nothing left to keep pinned) but
+  deliberately leaves the log/total as-is until the next `startMonitoring()` clears them for a fresh
+  session — so a finished build's final tally stays visible until the user starts watching again.
+  Also gains three pure navigation-guard queries: `upTarget()` (the parent-or-ThisPC-sentinel `goUp()`
+  already computes internally, now exposed so `goUp()` itself becomes `navigateTo(upTarget())`) and
+  `peekBack()`/`peekForward()` (backed by two new non-mutating peek methods on `NavigationHistory`).
+* **Navigation/close guard, entirely in `WorkspacePaneWidget`** (never a callback threaded into
+  `TabViewModel` — same "confirm in the widget, then call the ViewModel" posture
+  `onDeleteRequested`'s `QMessageBox::question` already establishes, §14.10): a shared
+  `confirmLeavingMonitoredScope(tab, targetPath)` helper, built on `isPathWithinOrEqual`, gates every
+  navigation call site that can move a tab's path — the toolbar Back/Forward/Up actions and
+  `FileBrowserView`'s equivalent keyboard signals (consolidated into three shared slots, removing
+  previously-duplicated lambdas), double-click/Enter into a folder, and the address bar — stopping
+  monitoring and proceeding on "Yes", leaving the tab exactly where it was on anything else. Note this
+  generalizes the product requirement's literal "moves to a parent directory" to "navigates outside
+  the monitored subtree" (any sibling/unrelated/drive/This-PC target), since a narrower literal
+  reading would let the same warning be trivially bypassed via the address bar or Back/Forward.
+  Closing a monitored tab (`QTabWidget::tabCloseRequested`) goes through an equivalent confirm-first
+  `onTabCloseRequested` slot instead of calling `WorkspacePaneViewModel::closeTab` directly;
+  `WorkspacePaneViewModel::closeTab` itself also calls the tab's `stopMonitoring()` right before
+  `deleteLater()` as teardown hygiene. `MainWindow::closeEvent` carries an equivalent whole-workspace
+  guard: before saving config and accepting the close, it walks every pane
+  (`WorkspacePaneId::PaneA..PaneD`, regardless of which are laid out under the current `SplitLayout`)
+  and every tab in each, and if any `TabViewModel::isMonitoringActive()`, prompts with the same
+  `QMessageBox::question` pattern before allowing the application to exit; declining calls
+  `event->ignore()` and leaves the window and all monitoring sessions untouched.
+* **`MonitoringPanelViewModel`** (new, `src/adapters/viewmodels`) — the shared ViewModel behind the
+  panel, owned by `WorkspaceController` and retargeted from `retargetFocusedTab()` alongside
+  `TagListViewModel`/`FilePreviewViewModel`, but with no Port dependency of its own (all real state
+  lives on `TabViewModel` above) — purely a retargeting/forwarding shim. Its `setFocusedTab(tab)` is a
+  no-op whenever the currently-displayed tab's monitoring is pinned, which is what makes "pin" keep
+  the panel locked onto that tab's session regardless of which pane/tab actually has focus
+  (Specification.md §2.1) — otherwise it switches and re-emits the new tab's current
+  active/log/total/pinned state, the same disconnect-old/connect-new/refresh-now shape
+  `TagListViewModel::setActiveTab` already uses.
+* **`MonitoringLogModel`** (new, `src/ui/widgets`, mirrors `FolderPreviewListModel`'s lazy-decoration
+  posture) — a `QAbstractListModel` over the displayed tab's ring buffer; a generic file-or-folder icon
+  keyed only by each event's `isDirectory` flag (never a per-row shell-icon lookup — a deleted entry
+  can't be resolved to one anyway, and a fast-scrolling build log shouldn't pay for one per row even
+  for entries that still exist) and a foreground color keyed by `FolderChangeKind` (new
+  `UiColors::kMonitorAddedGreen`/`kMonitorRemovedRed`/`kMonitorModifiedYellow` constants). Incremental
+  `beginInsertRows`/`beginRemoveRows` on append (not a full reset per event) keeps a busy monitor
+  cheap. **`MonitoringPanelWidget`** (new, `src/ui/widgets`) — Start/Stop `QPushButton` plus a
+  checkable pin `QToolButton` on the same row (enabled only while monitoring is active), a `QListView`
+  over `MonitoringLogModel` that calls `scrollToBottom()` on every append, and a `Total: <N>`
+  `QLabel` — wired to `MonitoringPanelViewModel`'s signals the same way `TagPanelWidget` wires to
+  `TagListViewModel`'s. `MainWindow::createWorkspace()` adds it as a third `RightPanelWidget` tab next
+  to "Tags"/"Preview" — no `RightPanelWidget` change needed.
+* **Not built:** a Linux `IFolderMonitor` implementation (deferred until Linux support is actually
+  built); a dedicated "renamed" event kind/color; monitoring-session persistence across app restart
+  or across a Stop→Start cycle beyond "Stop freezes the log/total, Start clears them," matching the
+  terminal/bottom-panel's existing unpersisted posture (§14.23); a global one-monitor-at-a-time cap
+  (multiple tabs may monitor concurrently by design); real per-file OS shell icons in the log rows;
+  monitoring a "This PC" or archive-virtual path
+  (rejected, same as `IDirectoryWatcher::watch`); any UI for reviewing/exporting a session's full
+  history beyond the live 200-row window plus the running Total. No automated coverage beyond
+  `PathContainment` (pure) and `FolderMonitorUseCase` (mocked-Port passthrough) — `TabViewModel`'s new
+  state, `NavigationHistory`'s two peek additions aside, `MonitoringPanelViewModel`,
+  `MonitoringLogModel`, `MonitoringPanelWidget`, `StandardFolderMonitor`, and the
+  `WorkspacePaneWidget` guard wiring fall under the existing §11 UI/ViewModel-glue and OS-shell
+  carve-outs, smoke-tested manually.

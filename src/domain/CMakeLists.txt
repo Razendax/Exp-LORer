@@ -3,6 +3,8 @@ add_library(explorer_domain STATIC
     Result.h
     PathUtf8.h
     WindowsLongPath.h
+    PathContainment.h
+    PathContainment.cpp
     FileNode.h
     FileNode.cpp
     Tag.h

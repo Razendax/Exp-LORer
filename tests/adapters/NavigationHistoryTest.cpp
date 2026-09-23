@@ -67,6 +67,51 @@ TEST(NavigationHistory, GoForwardOnEmptyForwardStackReturnsNullopt)
     EXPECT_FALSE(history.goForward().has_value());
 }
 
+TEST(NavigationHistory, PeekBackReturnsSameValueAsGoBackWithoutMoving)
+{
+    NavigationHistory history;
+    history.navigate("C:/a");
+    history.navigate("C:/b");
+
+    auto peeked = history.peekBack();
+
+    ASSERT_TRUE(peeked.has_value());
+    EXPECT_EQ(*peeked, std::filesystem::path("C:/a"));
+    EXPECT_EQ(*history.current(), std::filesystem::path("C:/b"));
+    EXPECT_TRUE(history.canGoBack());
+    EXPECT_FALSE(history.canGoForward());
+}
+
+TEST(NavigationHistory, PeekForwardReturnsSameValueAsGoForwardWithoutMoving)
+{
+    NavigationHistory history;
+    history.navigate("C:/a");
+    history.navigate("C:/b");
+    history.goBack();
+
+    auto peeked = history.peekForward();
+
+    ASSERT_TRUE(peeked.has_value());
+    EXPECT_EQ(*peeked, std::filesystem::path("C:/b"));
+    EXPECT_EQ(*history.current(), std::filesystem::path("C:/a"));
+    EXPECT_TRUE(history.canGoForward());
+}
+
+TEST(NavigationHistory, PeekBackOnEmptyHistoryReturnsNullopt)
+{
+    NavigationHistory history;
+
+    EXPECT_FALSE(history.peekBack().has_value());
+}
+
+TEST(NavigationHistory, PeekForwardOnEmptyForwardStackReturnsNullopt)
+{
+    NavigationHistory history;
+    history.navigate("C:/a");
+
+    EXPECT_FALSE(history.peekForward().has_value());
+}
+
 TEST(NavigationHistory, NavigateAfterGoBackClearsForwardStack)
 {
     NavigationHistory history;

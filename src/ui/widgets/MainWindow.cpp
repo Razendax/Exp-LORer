@@ -11,6 +11,7 @@
 #include <QLocale>
 #include <QMenu>
 #include <QMenuBar>
+#include <QMessageBox>
 #include <QMetaObject>
 #include <QSettings>
 #include <QSplitter>
@@ -22,6 +23,7 @@
 #include "DriveSpaceInfoWorker.h"
 #include "FileOperationsController.h"
 #include "MainStatusBarWidget.h"
+#include "MonitoringPanelWidget.h"
 #include "SettingsDialog.h"
 #include "TabViewModel.h"
 #include "TagManagerDialog.h"
@@ -334,6 +336,10 @@ void MainWindow::createWorkspace()
                                                    m_highlightThemeViewModel, m_rightPanelWidget);
     m_rightPanelWidget->addPanelTab(tr("Preview"), m_previewPanelWidget);
 
+    m_monitoringPanelWidget = new MonitoringPanelWidget(m_workspaceController->monitoringPanelViewModel(), m_rightPanelWidget);
+    m_rightPanelWidget->addPanelTab(tr("Monitoring"), m_monitoringPanelWidget);
+    connect(m_monitoringPanelWidget, &MonitoringPanelWidget::monitoringFailed, this, &MainWindow::onStatusMessage);
+
     auto* splitter = new QSplitter(Qt::Horizontal, this);
     splitter->addWidget(m_workspaceLayoutWidget);
     splitter->addWidget(m_rightPanelWidget);
@@ -552,6 +558,38 @@ void MainWindow::onSortOrderChanged(SortCriterion criterion, bool ascending)
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+    static constexpr std::array<WorkspacePaneId, 4> kAllPanes = {
+        WorkspacePaneId::PaneA, WorkspacePaneId::PaneB, WorkspacePaneId::PaneC, WorkspacePaneId::PaneD};
+
+    bool anyMonitoringActive = false;
+    for (const WorkspacePaneId paneId : kAllPanes)
+    {
+        WorkspacePaneViewModel* pane = m_workspaceController->pane(paneId);
+        for (int i = 0; pane && i < pane->tabCount(); ++i)
+        {
+            if (pane->tabAt(i)->isMonitoringActive())
+            {
+                anyMonitoringActive = true;
+                break;
+            }
+        }
+        if (anyMonitoringActive)
+        {
+            break;
+        }
+    }
+
+    if (anyMonitoringActive)
+    {
+        const QMessageBox::StandardButton answer = QMessageBox::question(
+            this, tr("Exit"), tr("Folder monitoring is active. Closing the application will stop it. Continue?"));
+        if (answer != QMessageBox::Yes)
+        {
+            event->ignore();
+            return;
+        }
+    }
+
     AppConfig config;
     config.windowGeometry = saveGeometry();
     config.workspace = m_workspaceController->captureConfig();
