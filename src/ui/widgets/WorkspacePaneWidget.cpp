@@ -597,13 +597,8 @@ void WorkspacePaneWidget::onTabWidgetCurrentChanged(int index)
 
 void WorkspacePaneWidget::onNewTabRequested()
 {
-    const auto seedPath = m_pane->activeTab() ? m_pane->activeTab()->currentPath() : std::filesystem::path();
-
     TabViewModel* tab = m_pane->addTab();
-    if (!seedPath.empty())
-    {
-        tab->navigateTo(seedPath);
-    }
+    tab->navigateTo(VirtualPaths::ThisPC);
 }
 
 void WorkspacePaneWidget::onTabCloseRequested(int index)
