@@ -10,8 +10,10 @@ StatusBarWidget::StatusBarWidget(QWidget* parent)
     : QWidget(parent)
 {
     m_countsLabel = new QLabel(this);
+    m_countsLabel->setObjectName(QStringLiteral("paneStatusCountsLabel"));
 
     m_quickSelectEdit = new QLineEdit(this);
+    m_quickSelectEdit->setObjectName(QStringLiteral("paneStatusQuickSelectEdit"));
     m_quickSelectEdit->setPlaceholderText(tr("Quick select..."));
     m_quickSelectEdit->setFixedWidth(160);
     m_quickSelectEdit->installEventFilter(this);

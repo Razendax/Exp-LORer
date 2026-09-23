@@ -37,10 +37,29 @@
 #include "TerminalWidget.h"
 #include "UiColors.h"
 #include "VirtualPaths.h"
+#include "WorkspacePaneId.h"
 #include "WorkspacePaneViewModel.h"
 
 namespace
 {
+    // Mirrors AppConfigStore.cpp's own (unexported) toString(WorkspacePaneId) -- not worth sharing
+    // across those two unrelated concerns (config serialization vs. UI Automation id).
+    QString paneAutomationSuffix(WorkspacePaneId id)
+    {
+        switch (id)
+        {
+            case WorkspacePaneId::PaneA:
+                return QStringLiteral("PaneA");
+            case WorkspacePaneId::PaneB:
+                return QStringLiteral("PaneB");
+            case WorkspacePaneId::PaneC:
+                return QStringLiteral("PaneC");
+            case WorkspacePaneId::PaneD:
+                return QStringLiteral("PaneD");
+        }
+        return QString();
+    }
+
     QString toQString(const std::filesystem::path& path)
     {
         return QString::fromStdWString(path.wstring());
@@ -116,11 +135,14 @@ WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOpera
     , m_fileOperationsController(fileOperationsController)
     , m_initialColumnWidths(initialColumnWidths)
 {
+    setObjectName(QStringLiteral("workspacePane_") + paneAutomationSuffix(pane->id()));
+
     createViewModeActions();
     QToolBar* toolBar = createToolBar();
     createTabArea();
 
     m_statusBar = new StatusBarWidget(this);
+    m_statusBar->setObjectName(QStringLiteral("paneStatusBar"));
     connect(m_statusBar, &StatusBarWidget::quickSelectTextChanged, this, &WorkspacePaneWidget::onQuickSelectTextChanged);
     connect(m_statusBar, &StatusBarWidget::quickSelectCancelled, this, [this]() {
         if (auto* browserView = currentBrowserView())
@@ -199,10 +221,24 @@ QToolBar* WorkspacePaneWidget::createToolBar()
     m_forwardAction->setEnabled(false);
     m_upAction->setEnabled(false);
 
+    if (auto* button = qobject_cast<QToolButton*>(toolBar->widgetForAction(m_backAction)))
+    {
+        button->setObjectName(QStringLiteral("paneBackButton"));
+    }
+    if (auto* button = qobject_cast<QToolButton*>(toolBar->widgetForAction(m_forwardAction)))
+    {
+        button->setObjectName(QStringLiteral("paneForwardButton"));
+    }
+    if (auto* button = qobject_cast<QToolButton*>(toolBar->widgetForAction(m_upAction)))
+    {
+        button->setObjectName(QStringLiteral("paneUpButton"));
+    }
+
     auto* viewModeMenu = new QMenu(this);
     viewModeMenu->addActions(m_viewModeActions);
 
     auto* viewModeButton = new QToolButton(toolBar);
+    viewModeButton->setObjectName(QStringLiteral("paneViewModeButton"));
     viewModeButton->setPopupMode(QToolButton::InstantPopup);
     viewModeButton->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
     viewModeButton->setToolTip(tr("View"));
@@ -211,8 +247,13 @@ QToolBar* WorkspacePaneWidget::createToolBar()
 
     m_refreshAction = toolBar->addAction(style()->standardIcon(QStyle::SP_BrowserReload), tr("Refresh"));
     m_refreshAction->setEnabled(false);
+    if (auto* button = qobject_cast<QToolButton*>(toolBar->widgetForAction(m_refreshAction)))
+    {
+        button->setObjectName(QStringLiteral("paneRefreshButton"));
+    }
 
     m_addressBar = new AddressBarWidget(toolBar);
+    m_addressBar->setObjectName(QStringLiteral("paneAddressBar"));
     m_addressBar->setClearButtonEnabled(true);
     toolBar->addWidget(m_addressBar);
 
@@ -244,6 +285,7 @@ void WorkspacePaneWidget::createTabArea()
     m_tabWidget->tabBar()->installEventFilter(this);
 
     auto* newTabButton = new QToolButton(m_tabWidget);
+    newTabButton->setObjectName(QStringLiteral("paneNewTabButton"));
     newTabButton->setText(QStringLiteral("+"));
     newTabButton->setToolTip(tr("New tab"));
     connect(newTabButton, &QToolButton::clicked, this, &WorkspacePaneWidget::onNewTabRequested);
@@ -264,6 +306,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     stack->addWidget(browserView); // page 0: normal browsing
 
     auto* searchResultsView = new FileBrowserView(tab->searchResultsModel(), stack);
+    searchResultsView->setObjectName(QStringLiteral("quickSearchResultsView")); // overrides the default "fileBrowserView" id
     searchResultsView->setViewMode(tab->viewMode());
     searchResultsView->setColumnWidths(m_initialColumnWidths);
     wireBrowserView(searchResultsView, tab);
@@ -331,6 +374,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     // as the actual tab page instead of inserting `stack` directly.
     auto* bottomPanel = new BottomPanelWidget(m_tabWidget);
     auto* terminalWidget = new TerminalWidget(bottomPanel);
+    terminalWidget->setObjectName(QStringLiteral("terminalWidget"));
     bottomPanel->addPanelTab(tr("Terminal"), terminalWidget);
 
     auto* splitter = new QSplitter(Qt::Vertical, m_tabWidget);

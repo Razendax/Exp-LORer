@@ -48,13 +48,20 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     , m_model(model)
     , m_displayMode(displayMode)
 {
+    // Default id; overridden by the owner for a specific per-tab role (e.g. WorkspacePaneWidget
+    // renames the quick-search-results instance to "quickSearchResultsView") -- see Architecture.md
+    // §11's UI Automation convention.
+    setObjectName(QStringLiteral("fileBrowserView"));
+
     m_listView = new QListView(this);
+    m_listView->setObjectName(QStringLiteral("fileBrowserListView"));
     m_listView->setModel(m_model);
     m_nameEditDelegate = new FileNameEditDelegate(this);
     m_tileDelegate = new FileTileDelegate(this);
     m_iconDelegate = new FileIconDelegate(this);
 
     m_treeView = new QTreeView(this);
+    m_treeView->setObjectName(QStringLiteral("fileBrowserTreeView"));
     m_treeView->setModel(m_model);
     m_treeView->setRootIsDecorated(false);
     m_treeView->header()->setSectionsClickable(true);

@@ -46,6 +46,8 @@ FileDecorationRuleDialog::FileDecorationRuleDialog(const FileDecorationRule& ini
     , m_kind(kind)
     , m_rule(initialRule)
 {
+    setObjectName(QStringLiteral("fileDecorationRuleDialog"));
+
     switch (m_kind)
     {
         case Kind::PatternRule:
@@ -67,6 +69,7 @@ FileDecorationRuleDialog::FileDecorationRuleDialog(const FileDecorationRule& ini
     auto* mainLayout = new QVBoxLayout(this);
 
     auto* helpLabel = new QLabel(patternHelpText(), this);
+    helpLabel->setObjectName(QStringLiteral("decorationRuleHelpLabel"));
     helpLabel->setWordWrap(true);
     helpLabel->setVisible(m_kind == Kind::PatternRule);
     mainLayout->addWidget(helpLabel);
@@ -83,13 +86,16 @@ FileDecorationRuleDialog::FileDecorationRuleDialog(const FileDecorationRule& ini
             new QLineEdit(m_kind == Kind::HiddenFiles ? tr("(all hidden files)") : tr("(all hidden folders)"), this);
         m_patternsEdit->setEnabled(false);
     }
+    m_patternsEdit->setObjectName(QStringLiteral("decorationRulePatternsEdit"));
     form->addRow(tr("Patterns:"), m_patternsEdit);
 
     auto* colorLayout = new QHBoxLayout();
     m_colorButton = new QPushButton(this);
+    m_colorButton->setObjectName(QStringLiteral("decorationRuleColorButton"));
     m_colorButton->setFixedWidth(100);
     m_colorButton->setToolTip(tr("Click to choose a color"));
     auto* resetColorButton = new QPushButton(tr("Reset"), this);
+    resetColorButton->setObjectName(QStringLiteral("decorationRuleResetColorButton"));
     colorLayout->addWidget(m_colorButton);
     colorLayout->addWidget(resetColorButton);
     colorLayout->addStretch();
@@ -102,9 +108,11 @@ FileDecorationRuleDialog::FileDecorationRuleDialog(const FileDecorationRule& ini
 
     auto* familyLayout = new QVBoxLayout();
     m_fontFamilyEdit = new QLineEdit(fontGroup);
+    m_fontFamilyEdit->setObjectName(QStringLiteral("decorationRuleFontFamilyEdit"));
     m_fontFamilyEdit->setPlaceholderText(tr("Type to search fonts..."));
     familyLayout->addWidget(m_fontFamilyEdit);
     m_fontFamilyList = new QListWidget(fontGroup);
+    m_fontFamilyList->setObjectName(QStringLiteral("decorationRuleFontFamilyList"));
     const QStringList families = QFontDatabase::families();
     for (const QString& family : families)
     {
@@ -114,6 +122,7 @@ FileDecorationRuleDialog::FileDecorationRuleDialog(const FileDecorationRule& ini
     fontGrid->addLayout(familyLayout, 0, 0, 2, 1);
 
     m_fontSizeList = new QListWidget(fontGroup);
+    m_fontSizeList->setObjectName(QStringLiteral("decorationRuleFontSizeList"));
     std::vector<int> sizes;
     for (int size : QFontDatabase::standardSizes())
     {
@@ -133,9 +142,13 @@ FileDecorationRuleDialog::FileDecorationRuleDialog(const FileDecorationRule& ini
 
     auto* effectsLayout = new QVBoxLayout();
     m_boldCheckBox = new QCheckBox(tr("Bold"), fontGroup);
+    m_boldCheckBox->setObjectName(QStringLiteral("decorationRuleBoldCheckBox"));
     m_italicCheckBox = new QCheckBox(tr("Italic"), fontGroup);
+    m_italicCheckBox->setObjectName(QStringLiteral("decorationRuleItalicCheckBox"));
     m_underlineCheckBox = new QCheckBox(tr("Underline"), fontGroup);
+    m_underlineCheckBox->setObjectName(QStringLiteral("decorationRuleUnderlineCheckBox"));
     m_strikeoutCheckBox = new QCheckBox(tr("Strikeout"), fontGroup);
+    m_strikeoutCheckBox->setObjectName(QStringLiteral("decorationRuleStrikeoutCheckBox"));
     m_boldCheckBox->setChecked(initialRule.bold());
     m_italicCheckBox->setChecked(initialRule.italic());
     m_underlineCheckBox->setChecked(initialRule.underline());
@@ -148,6 +161,7 @@ FileDecorationRuleDialog::FileDecorationRuleDialog(const FileDecorationRule& ini
     fontGrid->addLayout(effectsLayout, 2, 0);
 
     m_previewLabel = new QLabel(tr("AaBbYyZz"), fontGroup);
+    m_previewLabel->setObjectName(QStringLiteral("decorationRulePreviewLabel"));
     m_previewLabel->setAlignment(Qt::AlignCenter);
     m_previewLabel->setFrameShape(QFrame::Panel);
     m_previewLabel->setFrameShadow(QFrame::Sunken);
@@ -160,6 +174,7 @@ FileDecorationRuleDialog::FileDecorationRuleDialog(const FileDecorationRule& ini
     mainLayout->addWidget(fontGroup, 1);
 
     auto* buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    buttonBox->setObjectName(QStringLiteral("decorationRuleButtonBox"));
     mainLayout->addWidget(buttonBox);
 
     connect(m_colorButton, &QPushButton::clicked, this, &FileDecorationRuleDialog::chooseColor);

@@ -18,11 +18,13 @@ TagManagerDialog::TagManagerDialog(TagManagerViewModel* viewModel, QWidget* pare
     : QDialog(parent)
     , m_viewModel(viewModel)
 {
+    setObjectName(QStringLiteral("tagManagerDialog"));
     setWindowTitle(tr("Tag Manager"));
 
     auto* mainLayout = new QVBoxLayout(this);
 
     m_searchEdit = new QLineEdit(this);
+    m_searchEdit->setObjectName(QStringLiteral("tagManagerSearchEdit"));
     m_searchEdit->setPlaceholderText(tr("Search tags..."));
     mainLayout->addWidget(m_searchEdit);
 
@@ -37,9 +39,13 @@ TagManagerDialog::TagManagerDialog(TagManagerViewModel* viewModel, QWidget* pare
 
     auto* buttonLayout = new QHBoxLayout();
     m_renameButton = new QPushButton(tr("Rename"), this);
+    m_renameButton->setObjectName(QStringLiteral("tagManagerRenameButton"));
     m_addButton = new QPushButton(tr("Add"), this);
+    m_addButton->setObjectName(QStringLiteral("tagManagerAddButton"));
     m_deleteButton = new QPushButton(tr("Delete"), this);
+    m_deleteButton->setObjectName(QStringLiteral("tagManagerDeleteButton"));
     auto* closeButton = new QPushButton(tr("Close"), this);
+    closeButton->setObjectName(QStringLiteral("tagManagerCloseButton"));
     m_renameButton->setEnabled(false);
     m_deleteButton->setEnabled(false);
     buttonLayout->addWidget(m_renameButton);

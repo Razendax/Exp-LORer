@@ -11,6 +11,8 @@
 BottomPanelWidget::BottomPanelWidget(QWidget* parent)
     : QWidget(parent)
 {
+    setObjectName(QStringLiteral("bottomPanelWidget"));
+
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -35,6 +37,9 @@ int BottomPanelWidget::addPanelTab(const QString& label, QWidget* content)
     const int index = m_stack->addWidget(content);
 
     auto* button = new QToolButton(m_headerStrip);
+    // Only ever called once today, for the "Terminal" tab (WorkspacePaneWidget::addPageForTab) --
+    // this id would need to become index-dependent if a second bottom-panel tab is ever added.
+    button->setObjectName(QStringLiteral("bottomPanelTerminalButton"));
     button->setText(label);
     button->setCheckable(true);
 

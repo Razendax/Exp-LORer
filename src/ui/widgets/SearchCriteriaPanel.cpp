@@ -22,23 +22,30 @@ namespace
 SearchCriteriaPanel::SearchCriteriaPanel(QWidget* parent)
     : QWidget(parent)
 {
+    setObjectName(QStringLiteral("searchCriteriaPanel"));
+
     m_nameEdit = new QLineEdit(this);
+    m_nameEdit->setObjectName(QStringLiteral("searchNameEdit"));
     m_nameEdit->setPlaceholderText(tr("Name contains..."));
 
     m_minSizeKbSpin = new QSpinBox(this);
+    m_minSizeKbSpin->setObjectName(QStringLiteral("searchMinSizeSpin"));
     m_minSizeKbSpin->setRange(0, kMaxSizeKb);
     m_minSizeKbSpin->setSpecialValueText(tr("Any"));
     m_minSizeKbSpin->setSuffix(tr(" KB"));
 
     m_maxSizeKbSpin = new QSpinBox(this);
+    m_maxSizeKbSpin->setObjectName(QStringLiteral("searchMaxSizeSpin"));
     m_maxSizeKbSpin->setRange(0, kMaxSizeKb);
     m_maxSizeKbSpin->setSpecialValueText(tr("Any"));
     m_maxSizeKbSpin->setSuffix(tr(" KB"));
 
     m_extensionEdit = new QLineEdit(this);
+    m_extensionEdit->setObjectName(QStringLiteral("searchExtensionEdit"));
     m_extensionEdit->setPlaceholderText(tr("jpg, png..."));
 
     m_searchButton = new QPushButton(tr("Search"), this);
+    m_searchButton->setObjectName(QStringLiteral("searchSubmitButton"));
 
     m_closeButton = new QToolButton(this);
     m_closeButton->setText(QStringLiteral("×"));
@@ -62,6 +69,7 @@ SearchCriteriaPanel::SearchCriteriaPanel(QWidget* parent)
     fieldsRow->addWidget(m_closeButton);
 
     m_tagSearchEdit = new QLineEdit(this);
+    m_tagSearchEdit->setObjectName(QStringLiteral("searchTagEdit"));
     m_tagSearchEdit->setPlaceholderText(tr("Search tags..."));
     m_tagMatchesLayout = new FlowLayout();
 

@@ -1,5 +1,7 @@
 #include "RightPanelWidget.h"
 
+#include <array>
+
 #include <QHBoxLayout>
 #include <QResizeEvent>
 #include <QStackedWidget>
@@ -11,6 +13,8 @@
 RightPanelWidget::RightPanelWidget(QWidget* parent)
     : QWidget(parent)
 {
+    setObjectName(QStringLiteral("rightPanelWidget"));
+
     auto* layout = new QHBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
@@ -24,6 +28,7 @@ RightPanelWidget::RightPanelWidget(QWidget* parent)
     headerLayout->addStretch(1); // buttons are inserted before this, keeping them top-aligned
 
     m_stack = new QStackedWidget(this);
+    m_stack->setObjectName(QStringLiteral("rightPanelStack"));
     m_stack->hide();
 
     layout->addWidget(m_headerStrip);
@@ -35,6 +40,17 @@ int RightPanelWidget::addPanelTab(const QString& label, QWidget* content)
     const int index = m_stack->addWidget(content);
 
     auto* button = new QToolButton(m_headerStrip);
+    // Order shared with MainWindow::createWorkspace()'s addPanelTab calls: Tags (0), Preview (1),
+    // Monitoring (2) -- the only caller today.
+    static constexpr std::array<const char*, 3> kPanelTabButtonIds = {
+        "rightPanelTagsButton",
+        "rightPanelPreviewButton",
+        "rightPanelMonitoringButton",
+    };
+    if (index >= 0 && static_cast<size_t>(index) < kPanelTabButtonIds.size())
+    {
+        button->setObjectName(QLatin1String(kPanelTabButtonIds[static_cast<size_t>(index)]));
+    }
     button->setText(label);
     button->setCheckable(true);
 

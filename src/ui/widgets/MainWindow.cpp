@@ -111,6 +111,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_fileDecorationsViewModel(fileDecorationsViewModel)
     , m_columnWidths(initialConfig.detailsColumnWidths)
 {
+    setObjectName(QStringLiteral("mainWindow"));
     setWindowTitle(tr("Exp-LORer"));
 
     if (!initialConfig.windowGeometry.isEmpty())
@@ -284,9 +285,25 @@ void MainWindow::createMenuBar()
 void MainWindow::createLayoutToolBar()
 {
     QToolBar* toolBar = addToolBar(tr("Layout"));
+    toolBar->setObjectName(QStringLiteral("layoutToolBar"));
     toolBar->setMovable(false);
     toolBar->setToolButtonStyle(Qt::ToolButtonTextOnly);
     toolBar->addActions(m_layoutActions);
+
+    // Order shared with kLayouts: element i of m_layoutActions is the action for element i here.
+    static constexpr std::array<const char*, 4> kLayoutButtonIds = {
+        "layoutSingleButton",
+        "layoutTwoVerticalButton",
+        "layoutTwoHorizontalButton",
+        "layoutFourGridButton",
+    };
+    for (int i = 0; i < m_layoutActions.size(); ++i)
+    {
+        if (auto* button = qobject_cast<QToolButton*>(toolBar->widgetForAction(m_layoutActions[i])))
+        {
+            button->setObjectName(QLatin1String(kLayoutButtonIds[static_cast<size_t>(i)]));
+        }
+    }
 
     createSearchBar(toolBar);
 }
@@ -294,6 +311,7 @@ void MainWindow::createLayoutToolBar()
 void MainWindow::createSearchBar(QToolBar* toolBar)
 {
     m_searchBar = new QLineEdit(toolBar);
+    m_searchBar->setObjectName(QStringLiteral("globalSearchBar"));
     m_searchBar->setClearButtonEnabled(true);
     m_searchBar->setPlaceholderText(tr("Search this folder..."));
     m_searchBar->installEventFilter(this);
@@ -324,23 +342,29 @@ void MainWindow::createSearchBar(QToolBar* toolBar)
 void MainWindow::createWorkspace()
 {
     m_workspaceLayoutWidget = new WorkspaceLayoutWidget(m_workspaceController, m_columnWidths, this);
+    m_workspaceLayoutWidget->setObjectName(QStringLiteral("workspaceLayoutWidget"));
 
     // Right panel (Architecture.md §14.23): the side-panel counterpart of BottomPanelWidget, a
     // collapsible tab strip with a single "Tags" tab, wrapping the existing tag UI instead of
     // placing it directly in the splitter.
     m_rightPanelWidget = new RightPanelWidget(this);
+    m_rightPanelWidget->setObjectName(QStringLiteral("rightPanelWidget"));
     m_tagPanelWidget = new TagPanelWidget(m_workspaceController->tagListViewModel(), m_rightPanelWidget);
+    m_tagPanelWidget->setObjectName(QStringLiteral("tagPanelWidget"));
     m_rightPanelWidget->addPanelTab(tr("Tags"), m_tagPanelWidget);
 
     m_previewPanelWidget = new PreviewPanelWidget(m_workspaceController->filePreviewViewModel(), m_syntaxHighlightEngine,
                                                    m_highlightThemeViewModel, m_rightPanelWidget);
+    m_previewPanelWidget->setObjectName(QStringLiteral("previewPanelWidget"));
     m_rightPanelWidget->addPanelTab(tr("Preview"), m_previewPanelWidget);
 
     m_monitoringPanelWidget = new MonitoringPanelWidget(m_workspaceController->monitoringPanelViewModel(), m_rightPanelWidget);
+    m_monitoringPanelWidget->setObjectName(QStringLiteral("monitoringPanelWidget"));
     m_rightPanelWidget->addPanelTab(tr("Monitoring"), m_monitoringPanelWidget);
     connect(m_monitoringPanelWidget, &MonitoringPanelWidget::monitoringFailed, this, &MainWindow::onStatusMessage);
 
     auto* splitter = new QSplitter(Qt::Horizontal, this);
+    splitter->setObjectName(QStringLiteral("mainSplitter"));
     splitter->addWidget(m_workspaceLayoutWidget);
     splitter->addWidget(m_rightPanelWidget);
     splitter->setCollapsible(0, false);
@@ -365,6 +389,7 @@ void MainWindow::createWorkspace()
 void MainWindow::createMainStatusBar()
 {
     m_mainStatusBarWidget = new MainStatusBarWidget(this);
+    m_mainStatusBarWidget->setObjectName(QStringLiteral("mainStatusBarWidget"));
     statusBar()->addPermanentWidget(m_mainStatusBarWidget, 1);
 }
 

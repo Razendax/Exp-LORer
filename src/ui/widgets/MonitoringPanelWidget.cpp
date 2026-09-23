@@ -28,10 +28,12 @@ MonitoringPanelWidget::MonitoringPanelWidget(MonitoringPanelViewModel* viewModel
 
     auto* headerLayout = new QHBoxLayout();
     m_startStopButton = new QPushButton(tr("Start Monitoring"), this);
+    m_startStopButton->setObjectName(QStringLiteral("monitoringStartStopButton"));
     headerLayout->addWidget(m_startStopButton);
     headerLayout->addStretch(1);
 
     m_pinButton = new QToolButton(this);
+    m_pinButton->setObjectName(QStringLiteral("monitoringPinButton"));
     m_pinButton->setCheckable(true);
     m_pinButton->setText(tr("Pin"));
     m_pinButton->setEnabled(false);
@@ -39,10 +41,12 @@ MonitoringPanelWidget::MonitoringPanelWidget(MonitoringPanelViewModel* viewModel
     mainLayout->addLayout(headerLayout);
 
     m_logView = new QListView(this);
+    m_logView->setObjectName(QStringLiteral("monitoringLogView"));
     m_logView->setModel(m_logModel);
     mainLayout->addWidget(m_logView, 1);
 
     m_totalLabel = new QLabel(tr("Total: 0"), this);
+    m_totalLabel->setObjectName(QStringLiteral("monitoringTotalLabel"));
     mainLayout->addWidget(m_totalLabel);
 
     connect(m_startStopButton, &QPushButton::clicked, m_viewModel, &MonitoringPanelViewModel::toggleStartStop);

@@ -330,6 +330,40 @@ Exp-LORer/
   window appears; it is not a substitute for the CTest-based coverage above. Each test launches the
   `.exe` with `--data-dir` (§9) pointed at a fresh per-test temp directory, so runs are isolated from
   the developer's real `%LOCALAPPDATA%` session and from each other.
+* **UI element lookup — `objectName()` as UI Automation `AutomationId`:** widgets `ui_tests/` needs
+  to find get a stable `setObjectName("...")` call right after construction. Confirmed live against
+  a built `.exe`: Qt's `uia` accessibility bridge does **not** expose a bare `objectName()` as the
+  element's `AutomationId` — it reports the full dotted path of every ancestor's `objectName()`
+  (falling back to the Qt class name for an unnamed ancestor), e.g. the pane A address bar's real
+  id is `QApplication.mainWindow.mainSplitter.workspaceLayoutWidget.workspacePane_PaneA.paneToolBar.paneAddressBar`,
+  not just `"paneAddressBar"`. pywinauto's `child_window(auto_id=...)` only does exact-string
+  matching, so tests must use `ui_tests/AutomationID.py`'s `find(container, name)` helper (suffix
+  match over `container.descendants()`) instead of passing an `AutomationID` constant straight to
+  `auto_id=`. `AutomationID` is still the single registry of `UPPER_SNAKE_CASE` Python names → those
+  id strings — tests import names (and `find`) from it rather than hardcoding raw id strings or
+  full ancestor paths. Scoping follows the widget's actual runtime multiplicity rather than giving
+  every widget a globally-unique name:
+  * **App-wide singletons** (`MainWindow`, `WorkspaceLayoutWidget`, `RightPanelWidget`,
+    `TagPanelWidget`, `PreviewPanelWidget`, `MonitoringPanelWidget`, `MainStatusBarWidget`, and
+    on-demand-but-never-concurrent modal dialogs) get one fixed id.
+  * **The 4 `WorkspacePaneWidget` instances** (PaneA–PaneD, §14.1/§14.2 — all 4 constructed up
+    front and never destroyed, up to 4 simultaneously visible in `FourGrid`) each get a
+    per-instance id on the pane container itself, derived from `WorkspacePaneViewModel::id()`;
+    everything a pane owns directly (toolbar, tab widget, address bar, status bar, nav buttons)
+    keeps ONE fixed id shared across all 4 panes — tests disambiguate by scoping the lookup through
+    the pane container first, not by suffixing every inner widget.
+  * **Per-tab content** (file browser views, search panels, bottom panel, terminal — unbounded, N
+    tabs × 4 panes) also keeps fixed, reusable ids: `QTabWidget`/`QStackedWidget` only ever expose
+    the *current* page, so a hidden tab's or hidden stack page's subtree isn't part of the visible
+    UI Automation tree and the shared id is never actually ambiguous. Tests switch to the specific
+    tab they need first (by title/index), then locate content inside it.
+  * **Fully dynamic, data-driven widgets** (tag chips, per-row buttons in dynamically rebuilt
+    tables/lists) are out of scope for static ids — locate them via their (now-stable) parent
+    container's id plus text/index matching instead.
+  * **QAction-only menu entries with no persistent backing widget** are out of scope — use
+    pywinauto's text-based `menu_select(...)`; only actions realized as a persistent toolbar
+    `QToolButton` (e.g. the Layout buttons, Advanced Search) get an id, via
+    `toolBar->widgetForAction(action)->setObjectName(...)`.
 * **Carve-out — OS-shell side effects with no assertable return** (`ShellExecuteW`, the registry/COM
   context-menu building and invocation, live drive/known-folder enumeration): not covered by
   automated adapter tests, since registry contents and installed shell extensions are live,

@@ -27,8 +27,10 @@ public:
 private:
     // Appends a titled, scrollable chip-flow section to `mainLayout` and returns the (empty)
     // layout chips get added to. backgroundHex tints the section so the three sections read as
-    // visually distinct (UiColors.h).
-    FlowLayout* addChipSection(QVBoxLayout* mainLayout, const QString& title, const char* backgroundHex);
+    // visually distinct (UiColors.h). sectionObjectName is the UI Automation id for the section's
+    // container widget (Architecture.md §11).
+    FlowLayout* addChipSection(QVBoxLayout* mainLayout, const QString& title, const char* backgroundHex,
+                                const QString& sectionObjectName);
 
     void rebuildFolderTags(const std::vector<Tag>& tags);
     void rebuildSearchResults(const std::vector<Tag>& tags);

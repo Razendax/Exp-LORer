@@ -8,6 +8,8 @@
 SearchResultsPane::SearchResultsPane(FileListModel* resultsModel, QWidget* parent)
     : QWidget(parent)
 {
+    setObjectName(QStringLiteral("advancedSearchResultsPane"));
+
     m_criteriaPanel = new SearchCriteriaPanel(this);
     m_browserView = new FileBrowserView(resultsModel, this, FileBrowserView::DisplayMode::AdvancedSearchResults);
 

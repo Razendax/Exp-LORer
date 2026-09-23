@@ -21,6 +21,7 @@ AddressBarWidget::AddressBarWidget(QWidget* parent)
     : QLineEdit(parent)
 {
     m_popup = new QListWidget(this);
+    m_popup->setObjectName(QStringLiteral("paneAddressBarPopup"));
     m_popup->setWindowFlags(Qt::ToolTip | Qt::FramelessWindowHint);
     m_popup->setAttribute(Qt::WA_ShowWithoutActivating);
     m_popup->setFocusPolicy(Qt::NoFocus);

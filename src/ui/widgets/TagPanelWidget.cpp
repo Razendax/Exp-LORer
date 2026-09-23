@@ -17,19 +17,24 @@ TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, QWidget* parent)
 {
     auto* mainLayout = new QVBoxLayout(this);
 
-    m_folderTagsLayout = addChipSection(mainLayout, tr("Folder tags"), UiColors::kFolderTagsBackground);
+    m_folderTagsLayout = addChipSection(mainLayout, tr("Folder tags"), UiColors::kFolderTagsBackground,
+                                         QStringLiteral("tagPanelFolderTagsSection"));
 
     m_searchEdit = new QLineEdit(this);
+    m_searchEdit->setObjectName(QStringLiteral("tagPanelSearchEdit"));
     m_searchEdit->setPlaceholderText(tr("Search tags..."));
     mainLayout->addWidget(m_searchEdit);
 
-    m_searchResultsLayout = addChipSection(mainLayout, tr("Matching tags"), UiColors::kMatchingTagsBackground);
+    m_searchResultsLayout = addChipSection(mainLayout, tr("Matching tags"), UiColors::kMatchingTagsBackground,
+                                            QStringLiteral("tagPanelSearchMatchesSection"));
 
     m_createTagButton = new QPushButton(this);
+    m_createTagButton->setObjectName(QStringLiteral("tagPanelCreateTagButton"));
     m_createTagButton->hide();
     mainLayout->addWidget(m_createTagButton);
 
-    m_selectedItemTagsLayout = addChipSection(mainLayout, tr("Tags on selection"), UiColors::kSelectedItemTagsBackground);
+    m_selectedItemTagsLayout = addChipSection(mainLayout, tr("Tags on selection"), UiColors::kSelectedItemTagsBackground,
+                                               QStringLiteral("tagPanelSelectedItemTagsSection"));
 
     connect(m_searchEdit, &QLineEdit::textChanged, m_viewModel, &TagListViewModel::setSearchQuery);
     connect(m_createTagButton, &QPushButton::clicked, m_viewModel, &TagListViewModel::createAndAddTagFromQuery);
@@ -45,11 +50,13 @@ TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, QWidget* parent)
     updateCreateTagAffordance(m_viewModel->canCreateTagFromQuery());
 }
 
-FlowLayout* TagPanelWidget::addChipSection(QVBoxLayout* mainLayout, const QString& title, const char* backgroundHex)
+FlowLayout* TagPanelWidget::addChipSection(QVBoxLayout* mainLayout, const QString& title, const char* backgroundHex,
+                                            const QString& sectionObjectName)
 {
     mainLayout->addWidget(new QLabel(title, this));
 
     auto* content = new QWidget;
+    content->setObjectName(sectionObjectName);
     content->setAttribute(Qt::WA_StyledBackground, true);
     content->setStyleSheet(QString("background-color: %1;").arg(QLatin1String(backgroundHex)));
     auto* contentLayout = new FlowLayout(content);

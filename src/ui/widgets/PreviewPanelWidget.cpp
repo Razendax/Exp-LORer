@@ -29,10 +29,12 @@ PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHi
     layout->addWidget(m_stack);
 
     m_imageLabel = new QLabel(m_stack);
+    m_imageLabel->setObjectName(QStringLiteral("previewImageLabel"));
     m_imageLabel->setAlignment(Qt::AlignCenter);
     m_stack->addWidget(m_imageLabel);
 
     m_textView = new QPlainTextEdit(m_stack);
+    m_textView->setObjectName(QStringLiteral("previewTextView"));
     m_textView->setReadOnly(true);
     QFont monospaceFont("Consolas");
     monospaceFont.setStyleHint(QFont::Monospace);
@@ -42,21 +44,25 @@ PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHi
     m_syntaxHighlighter = new SyntaxHighlighter(m_textView->document(), syntaxHighlightEngine, highlightThemeViewModel);
 
     m_folderList = new QListView(m_stack);
+    m_folderList->setObjectName(QStringLiteral("previewFolderList"));
     m_folderList->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_folderModel = new FolderPreviewListModel(this);
     m_folderList->setModel(m_folderModel);
     m_stack->addWidget(m_folderList);
 
     m_loadingLabel = new QLabel(tr("Loading..."), m_stack);
+    m_loadingLabel->setObjectName(QStringLiteral("previewLoadingLabel"));
     m_loadingLabel->setAlignment(Qt::AlignCenter);
     m_stack->addWidget(m_loadingLabel);
 
     m_unsupportedLabel = new QLabel(tr("No preview available."), m_stack);
+    m_unsupportedLabel->setObjectName(QStringLiteral("previewUnsupportedLabel"));
     m_unsupportedLabel->setAlignment(Qt::AlignCenter);
     m_unsupportedLabel->setWordWrap(true);
     m_stack->addWidget(m_unsupportedLabel);
 
     m_errorLabel = new QLabel(m_stack);
+    m_errorLabel->setObjectName(QStringLiteral("previewErrorLabel"));
     m_errorLabel->setAlignment(Qt::AlignCenter);
     m_errorLabel->setWordWrap(true);
     m_stack->addWidget(m_errorLabel);

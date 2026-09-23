@@ -73,6 +73,7 @@ SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeView
     , m_hiddenFilesRule(fileDecorationsViewModel.hiddenFilesRule())
     , m_hiddenFoldersRule(fileDecorationsViewModel.hiddenFoldersRule())
 {
+    setObjectName(QStringLiteral("settingsDialog"));
     setWindowTitle(tr("Settings"));
     resize(700, 500);
 
@@ -81,6 +82,7 @@ SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeView
     auto* splitter = new QSplitter(Qt::Horizontal, this);
 
     m_categoryTree = new QTreeWidget(splitter);
+    m_categoryTree->setObjectName(QStringLiteral("settingsCategoryTree"));
     m_categoryTree->setHeaderHidden(true);
     m_categoryTree->setMaximumWidth(220);
 
@@ -90,6 +92,7 @@ SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeView
     languagesRoot->setData(0, kLanguageIndexRole, -1);
 
     m_pageStack = new QStackedWidget(splitter);
+    m_pageStack->setObjectName(QStringLiteral("settingsPageStack"));
     m_languagePages.assign(kAllLanguages.size(), nullptr);
 
     for (std::size_t i = 0; i < kAllLanguages.size(); ++i)
@@ -127,6 +130,7 @@ SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeView
     auto* buttonLayout = new QHBoxLayout();
     buttonLayout->addStretch();
     auto* closeButton = new QPushButton(tr("Close"), this);
+    closeButton->setObjectName(QStringLiteral("settingsCloseButton"));
     buttonLayout->addWidget(closeButton);
     mainLayout->addLayout(buttonLayout);
 
@@ -190,6 +194,7 @@ QWidget* SettingsDialog::buildGeneralUiPage()
     auto* layout = new QVBoxLayout(page);
 
     m_showTabCloseButtonsCheckBox = new QCheckBox(tr("Show close button on tabs"), page);
+    m_showTabCloseButtonsCheckBox->setObjectName(QStringLiteral("settingsShowTabCloseButtonsCheckBox"));
     m_showTabCloseButtonsCheckBox->setChecked(WorkspacePaneWidget::tabCloseButtonsEnabled());
     layout->addWidget(m_showTabCloseButtonsCheckBox);
     layout->addStretch(1);
@@ -268,6 +273,7 @@ QWidget* SettingsDialog::buildFileDecorationsPage()
     auto* layout = new QVBoxLayout(page);
 
     m_decorationsTable = new QTableWidget(0, 5, page);
+    m_decorationsTable->setObjectName(QStringLiteral("settingsDecorationsTable"));
     m_decorationsTable->setHorizontalHeaderLabels({ tr("Patterns"), tr("Sample"), QString(), QString(), QString() });
     m_decorationsTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Interactive);
     m_decorationsTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Interactive);
@@ -300,6 +306,7 @@ QWidget* SettingsDialog::buildFileDecorationsPage()
             });
 
     auto* addButton = new QPushButton(tr("Add Rule"), page);
+    addButton->setObjectName(QStringLiteral("settingsAddDecorationRuleButton"));
     connect(addButton, &QPushButton::clicked, this, &SettingsDialog::addDecorationRule);
     layout->addWidget(addButton);
 

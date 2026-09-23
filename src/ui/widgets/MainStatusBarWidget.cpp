@@ -8,7 +8,9 @@ MainStatusBarWidget::MainStatusBarWidget(QWidget* parent)
     : QWidget(parent)
 {
     m_driveLabel = new QLabel(this);
+    m_driveLabel->setObjectName(QStringLiteral("mainStatusDriveLabel"));
     m_computerNameLabel = new QLabel(QSysInfo::machineHostName(), this);
+    m_computerNameLabel->setObjectName(QStringLiteral("mainStatusComputerNameLabel"));
 
     auto* layout = new QHBoxLayout(this);
     layout->setContentsMargins(6, 2, 6, 2);
