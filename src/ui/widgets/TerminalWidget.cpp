@@ -541,8 +541,38 @@ void TerminalWidget::keyPressEvent(QKeyEvent* event)
             m_process->writeInput(QByteArrayLiteral("\x08"));
             break;
         case Qt::Key_Tab:
+        {
+            // cmd.exe's own Tab completion only recognizes '\' as a path separator and silently
+            // does nothing for a token containing '/' (e.g. "resources/tree"). Rewrite the token
+            // being completed to use '\' first so cmd's native completion can actually match it.
+            // Skip tokens where '/' is the very first character (e.g. "dir /w") -- those are almost
+            // certainly a command switch, not a path, and rewriting them could change what Tab does.
+            const int liveRow = m_buffer->scrollbackLineCount() + m_buffer->cursorRow();
+            const int cursorColumn = m_buffer->cursorColumn();
+            const int tokenStart = promptBoundaryColumn(liveRow);
+
+            int start = cursorColumn;
+            while (start > tokenStart && cellAtLogicalRow(liveRow, start - 1).character != QLatin1Char(' '))
+            {
+                --start;
+            }
+
+            QString token;
+            for (int c = start; c < cursorColumn; ++c)
+            {
+                token.append(cellAtLogicalRow(liveRow, c).character);
+            }
+
+            if (token.contains(QLatin1Char('/')) && !token.startsWith(QLatin1Char('/')))
+            {
+                token.replace(QLatin1Char('/'), QLatin1Char('\\'));
+                m_process->writeInput(QByteArray(cursorColumn - start, '\x08'));
+                m_process->writeInput(token.toUtf8());
+            }
+
             m_process->writeInput(QByteArrayLiteral("\t"));
             break;
+        }
         case Qt::Key_Escape:
             m_process->writeInput(QByteArrayLiteral("\x1b"));
             break;
@@ -588,6 +618,11 @@ void TerminalWidget::keyPressEvent(QKeyEvent* event)
     }
 
     event->accept();
+}
+
+bool TerminalWidget::focusNextPrevChild(bool)
+{
+    return false;
 }
 
 void TerminalWidget::wheelEvent(QWheelEvent* event)

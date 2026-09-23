@@ -40,6 +40,13 @@ protected:
     void wheelEvent(QWheelEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
 
+    // Without this override, QWidget::event() consumes Tab/Shift+Tab itself (to move keyboard
+    // focus to the next/previous widget) before keyPressEvent() ever runs, so the Key_Tab case
+    // below would never fire and cmd.exe's own file/folder tab completion could never be reached.
+    // Returning false here declines the focus-chain move so the Tab keystroke falls through to
+    // keyPressEvent() and gets forwarded to the shell instead, matching how a real terminal behaves.
+    bool focusNextPrevChild(bool next) override;
+
 private:
     // Recomputes the cell grid (columns x rows) from the widget's current pixel size and the
     // monospace font metrics; resizes both the buffer and (if running) the pty when it changes.
