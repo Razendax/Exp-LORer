@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from typing import Any, Callable, List
 
 from .automation_id import AutomationID
 from .element import Element
@@ -43,6 +43,34 @@ class PaneNavigation:
         wait_until(lambda: self.address_bar.text == path, timeout=timeout)
 
 
+class PaneTabs:
+    """The tab strip owned by one WorkspacePaneWidget (PANE_TAB_WIDGET id) -- lets a test read
+    which tabs are open and switch between them. Qt's `uia` accessibility bridge surfaces each
+    QTabBar tab as its own `TabItem` element somewhere under the QTabWidget (nested under an
+    internal QTabBar, not necessarily a direct child) -- `descendants()` rather than `children()`
+    finds them regardless of that nesting, in tab order.
+    """
+
+    def __init__(self, container: Callable[[], object]):
+        self._tab_widget = Element(container, AutomationID.PANE_TAB_WIDGET)
+
+    def _tab_items(self) -> List[Any]:
+        return [
+            item for item in self._tab_widget.raw.descendants() if item.element_info.control_type == "TabItem"
+        ]
+
+    def titles(self) -> List[str]:
+        """Every open tab's title, in tab order -- the folder name
+        WorkspacePaneWidget::tabLabelFor() derives from each tab's current path ("This PC" for the
+        virtual root).
+        """
+        return [item.window_text() for item in self._tab_items()]
+
+    def select(self, index: int) -> None:
+        """Clicks the tab at `index` (0-based, tab order), making it the pane's active tab."""
+        self._tab_items()[index].click_input()
+
+
 class PaneStatusBar:
     def __init__(self, container: Callable[[], object]):
         self.counts_label = Element(container, AutomationID.PANE_STATUS_COUNTS_LABEL)
@@ -58,6 +86,7 @@ class WorkspacePane:
     def __init__(self, window_container: Callable[[], object], pane_automation_id: str):
         self._pane = Element(window_container, pane_automation_id)
         self.navigation = PaneNavigation(self._container)
+        self.tabs = PaneTabs(self._container)
         self.status_bar = PaneStatusBar(self._container)
         self.file_browser = Element(self._container, AutomationID.FILE_BROWSER_VIEW)
         self.file_list_view = Element(self._container, AutomationID.FILE_LIST_VIEW)

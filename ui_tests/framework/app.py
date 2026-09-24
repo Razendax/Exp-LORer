@@ -67,7 +67,7 @@ class ExpLorerApp:
         cls,
         data_dir: Union[str, Path],
         exe_path: Optional[Union[str, Path]] = None,
-        timeout: float = 20,
+        timeout: float = 10,
     ) -> "ExpLorerApp":
         """Launch a fresh Exp-LORer instance pointed at `data_dir`.
 
