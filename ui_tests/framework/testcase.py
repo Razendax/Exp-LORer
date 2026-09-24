@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import shutil
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -77,3 +78,29 @@ class ExpLorerTestCase:
         """
         cls.app.close()
         shutil.rmtree(cls._tmp_dir, ignore_errors=True)
+
+
+class ExpLorerFreshAppTestCase:
+    """Base for a test class that needs its own fresh Exp-LORer instance per test method rather
+    than one shared across the class (see `ExpLorerTestCase`'s docstring for when a shared
+    instance is fine) -- most useful when a test's assertions depend on exact *global* state (e.g.
+    TagManagerDialog's tag list, which isn't scoped to any one folder/tmp_path) that a shared
+    instance would carry over from a previous test method in the same class.
+
+    Starting a fresh instance needs `tmp_path` (for a private data directory), which
+    `setup_method`/`teardown_method` can't receive -- only an autouse fixture can -- so this uses
+    one instead of `ExpLorerTestCase`'s classmethod hooks.
+
+        class TestSomething(ExpLorerFreshAppTestCase):
+            def test_something(self) -> None:
+                assert self.app.panes.a.file_browser.exists()
+    """
+
+    app: ExpLorerApp
+
+    @pytest.fixture(autouse=True)
+    def _fresh_app(self, tmp_path: Path) -> Iterator[None]:
+        ExpLorerApp.kill_stray_instances()
+        with ExpLorerApp.start(data_dir=tmp_path / "data") as app:
+            self.app = app
+            yield

@@ -29,9 +29,12 @@ the framework to widgets it doesn't cover yet.
 from .app import ExpLorerApp
 from .automation_id import AutomationID, find
 from .config import THIS_PC, ExpLorerConfig, SplitLayout, WorkspacePaneId
-from .details_view import DetailsRow, find_row, read_details_rows
+from .details_view import DetailsRow, find_row, read_details_rows, select_row
 from .element import Element
-from .testcase import ExpLorerTestCase
+from .modal_dialog import connect_by_handle, find_control
+from .tag_chip import TagChip, chip_names, find_chip, find_chip_label
+from .tag_manager_dialog import TagManagerDialog, open_tag_manager_dialog
+from .testcase import ExpLorerFreshAppTestCase, ExpLorerTestCase
 from .wait import wait_until
 
 __all__ = [
@@ -46,6 +49,16 @@ __all__ = [
     "DetailsRow",
     "read_details_rows",
     "find_row",
+    "select_row",
+    "connect_by_handle",
+    "find_control",
+    "TagChip",
+    "find_chip",
+    "find_chip_label",
+    "chip_names",
+    "TagManagerDialog",
+    "open_tag_manager_dialog",
     "ExpLorerTestCase",
+    "ExpLorerFreshAppTestCase",
     "wait_until",
 ]

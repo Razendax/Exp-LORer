@@ -6,6 +6,8 @@ from typing import Any, Callable
 
 from .automation_id import AutomationID
 from .element import Element
+from .tag_chip import chip_names
+from .wait import wait_until
 
 
 class TagPanel:
@@ -15,6 +17,36 @@ class TagPanel:
         self.folder_tags_section = Element(container, AutomationID.TAG_PANEL_FOLDER_TAGS_SECTION)
         self.search_matches_section = Element(container, AutomationID.TAG_PANEL_SEARCH_MATCHES_SECTION)
         self.selected_item_tags_section = Element(container, AutomationID.TAG_PANEL_SELECTED_ITEM_TAGS_SECTION)
+
+    def folder_tags(self) -> list:
+        """Chip names under "Folder tags" -- the browsed folder's own tags plus its tagged
+        ancestors' (TagListViewModel::tagsForPathWithAncestors), outermost-first.
+        """
+        return chip_names(self.folder_tags_section.raw)
+
+    def selected_item_tags(self) -> list:
+        """Chip names under "Tags on selection" -- the resolved tagging target's own tags
+        (TagListViewModel::resolveTarget); empty when nothing resolves (multi-select, or This PC
+        root with nothing selected).
+        """
+        return chip_names(self.selected_item_tags_section.raw)
+
+    def search_matches(self) -> list:
+        """Chip names under "Matching tags" for whatever query is currently in `search_edit`."""
+        return chip_names(self.search_matches_section.raw)
+
+    def search_for(self, query: str) -> None:
+        self.search_edit.click()
+        self.search_edit.set_text(query)
+
+    def create_and_apply_tag(self, name: str) -> None:
+        """Types `name` into the search box and clicks the inline "Create tag" affordance --
+        creates a brand-new tag and immediately assigns it to the resolved target
+        (TagListViewModel::createAndAddTagFromQuery).
+        """
+        self.search_for(name)
+        wait_until(lambda: self.create_tag_button.exists())
+        self.create_tag_button.click()
 
 
 class PreviewPanel:
