@@ -75,6 +75,15 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   conflicted) elsewhere in the same subfolder. Badges appear only in Details view, only while
   normally browsing (not in quick-search/advanced-search results), and refresh only on navigation,
   not live.
+* **Git branch indicator and checkout (per-pane status bar, Architecture.md §14.34):** when the
+  focused tab's current folder is inside a git working tree, the pane's status bar (see "Status bar"
+  below) shows the current branch name — or a short commit id when `HEAD` is detached — centered in
+  the bar, immediately followed by a plain number of changed files in the repository. Clicking the
+  branch name opens a menu listing the repository's local branches; choosing one checks that branch
+  out. A checkout that would overwrite uncommitted changes is refused (with an error message) rather
+  than discarding anything, the same safety plain `git checkout` gives by default. Both the branch
+  name and the changed-file count are hidden when the current folder isn't inside a git repository,
+  and refresh on navigation, not live.
 * **Integrated terminal (Architecture.md §14.23):** Each tab has its own collapsible panel at the
   bottom, collapsed by default, showing a strip of panel tabs (only "Terminal" in v1). Clicking
   "Terminal" the first time expands the panel and opens a `cmd.exe` session already in that tab's

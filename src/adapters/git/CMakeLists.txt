@@ -3,6 +3,8 @@ add_library(explorer_adapters_git STATIC
     LibGit2Repository.cpp
     LibGit2StatusProvider.h
     LibGit2StatusProvider.cpp
+    LibGit2BranchProvider.h
+    LibGit2BranchProvider.cpp
 )
 
 target_include_directories(explorer_adapters_git PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

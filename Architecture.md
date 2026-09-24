@@ -1598,3 +1598,100 @@ change — `QFileSystemWatcher` (§14.32's backend) cannot deliver either.
   `MonitoringLogModel`, `MonitoringPanelWidget`, `StandardFolderMonitor`, and the
   `WorkspacePaneWidget` guard wiring fall under the existing §11 UI/ViewModel-glue and OS-shell
   carve-outs, smoke-tested manually.
+
+### 14.34 Git Branch Status and Checkout (Per-Pane Status Bar)
+
+Extends the per-pane status bar (§14.27) with a repository-level git indicator, distinct from
+§14.31's per-file Details-view badges: whenever the focused tab's current folder is inside a git
+working tree, the status bar's center shows the current branch name (or a short commit id when
+`HEAD` is detached) next to a plain count of the repository's changed files; clicking the branch
+name opens a menu of local branches and checks out the one the user picks.
+
+* **New Port**, `IGitBranchProvider` (`src/application`) — kept separate from `IGitStatusProvider`
+  (Interface Segregation, same split reasoning as `IFolderMonitor`/`IDirectoryWatcher`): that Port's
+  callers are all read-only per-file badge consumers, and have no business depending on a Port that
+  also exposes a write operation (`checkoutBranch`). Three methods: `repositorySummary(directory) ->
+  Result<GitRepositorySummary>` (tolerate-by-blanking when `directory` isn't inside a repository,
+  same posture as `IGitStatusProvider::statusForDirectory`), `listLocalBranches(directory) ->
+  Result<vector<string>>` (local branches only, no remotes), and `checkoutBranch(directory,
+  branchName) -> Result<void>` (a **safe**, non-forced checkout — fails rather than discarding
+  changes if it would overwrite a modified tracked file, matching plain `git checkout`'s default
+  safety; no `--force` path exists). `GitRepositorySummary` (`src/application/
+  GitRepositorySummary.h`, plain Port-adjacent data, same posture as `GitDirectoryStatus`) holds an
+  optional `repositoryRoot`, a `headDisplayName` (branch short name, or a short commit id when
+  detached, or the would-be branch name pre-first-commit on an unborn branch), an `isDetached` flag,
+  and a repo-wide `changedFileCount`. **`GitBranchUseCase`** (new, stateless, single-Port-dependency
+  passthrough, same shape as `GitStatusUseCase`).
+* **`LibGit2Repository` gains four methods** (`src/adapters/git`, the same RAII wrapper §14.31
+  introduced): `headDisplayName(bool& isDetachedOut)` (`git_repository_head` for the normal case;
+  `GIT_EUNBORNBRANCH` falls back to reading raw `HEAD`'s symbolic target via `git_reference_lookup
+  (..., "HEAD")` so a freshly-`git init`'d repo with no commits still shows its would-be branch
+  name, matching plain `git status`'s pre-first-commit wording); `changedFileCount()` (reuses
+  `statusForImmediateChildren("")` at the workdir root — already generically "whole repo" when given
+  an empty pathspec — filtering out `Ignored` and counting the rest, so an entirely-untracked
+  directory still costs one entry rather than a per-file walk, the same trade-off that method's
+  existing doc comment already accepts); `listLocalBranches()` (`git_branch_iterator_new
+  (GIT_BRANCH_LOCAL)`); `checkoutBranch(branchName)` (`git_branch_lookup` + `git_reference_peel` to
+  the target commit + `git_checkout_tree` with `GIT_CHECKOUT_SAFE` — never `FORCE` — + `git_
+  repository_set_head` to `refs/heads/<branchName>`; any libgit2 failure, including a safe-checkout
+  conflict, is surfaced as `Result::failure` with HEAD/the working tree left untouched).
+  **`LibGit2BranchProvider`** (new, implements `IGitBranchProvider`) opens a fresh `LibGit2Repository`
+  per call exactly like `LibGit2StatusProvider`, no repository/connection cache.
+* **Reuses the existing single-worker-thread posture, not a second thread** — `GitStatusService`/
+  `GitStatusWorker` (§14.31) gain a `GitBranchUseCase&` dependency alongside their existing
+  `GitStatusUseCase&` and three new request methods (`requestRepositorySummary`,
+  `requestLocalBranches`, `requestCheckout`, same `QObject* context` + `QPointer`-guarded-callback
+  shape as `requestStatus`), all dispatched onto the *same* `m_workerThread` `requestStatus` already
+  uses — deliberately not a second dedicated thread, since the entire point of serializing through
+  one worker was "sidestepping any libgit2 thread-safety question by construction" (§14.31), and
+  that guarantee is strongest when every libgit2 call in the process, badges or branch/checkout,
+  funnels through the one thread.
+* **Dispatch and caching on `TabViewModel`, not `FileListModel`** — same funnel point §14.31
+  established: the `directoryContentsChanged` handler that already calls `requestGitStatus(path)`
+  now also calls a new `requestGitRepositorySummary(path)`, so a repo-wide summary refresh comes for
+  free on every navigation and on `refresh()` (including the refresh a completed checkout below
+  triggers) with no new wiring. The latest summary is cached on the tab
+  (`lastGitRepositorySummary()`) so switching tabs shows the right branch/count immediately from
+  cache, the same "read the cached value immediately, let the async refresh correct it later" shape
+  `refreshStatusCounts()` already uses for object counts. New signals: `gitRepositorySummaryChanged
+  (const GitRepositorySummary&)` and `gitOperationFailed(const QString&)`. Two new public methods:
+  `requestLocalBranches(callback)` (a thin forward to `GitStatusService::requestLocalBranches` scoped
+  to the cached `repositoryRoot`, no-op returning an empty list when the tab isn't in a repository)
+  and `checkoutBranch(branchName)` (forwards to `GitStatusService::requestCheckout`; a no-op if
+  `branchName` is already the current, non-detached `HEAD`; on success calls the tab's own
+  `refresh()`, which re-navigates the current folder and — via the funnel above — re-fetches both the
+  file list and the git status/summary for the new `HEAD`; on failure emits `gitOperationFailed`
+  with the `Result`'s error message, following the same `QString::fromStdString(result.error()
+  .message)` convention every other ViewModel failure signal already uses).
+* **`StatusBarWidget`** (`src/ui/widgets`, §14.27) gains a small `QToolButton` (branch name, hidden
+  when the tab isn't in a repository) immediately followed by a plain, non-clickable `QLabel`
+  showing only `changedFileCount`, inserted between the existing left-aligned counts label and the
+  stretch before the quick-select field so the pair renders centered in the bar. New members: slot
+  `setGitInfo(bool inRepository, const QString& headDisplayName, int changedFileCount)`; signal
+  `branchButtonClicked()` (emitted on click, no menu attached yet — same "plain display widget,
+  no ViewModel dependency, `WorkspacePaneWidget` mediates" posture as `AddressBarWidget`'s
+  `folderSuggestionsRequested`, §14.20); method `showBranchMenu(const QStringList& branchNames,
+  const QString& currentBranchName)` (builds and pops up a `QMenu` at the button's position, one
+  checkable `QAction` per branch — checked for `currentBranchName` — and re-emits the chosen one via
+  signal `branchSelected(const QString&)`). `WorkspacePaneWidget::bindToolBarToTab` additionally
+  (dis)connects the newly-bound tab's `gitRepositorySummaryChanged` to a `updateGitStatusBar(const
+  GitRepositorySummary&)` slot (which calls `m_statusBar->setGitInfo(...)`, applying the cached
+  value immediately on bind, same as the counts refresh) and `gitOperationFailed` to a new
+  `WorkspacePaneWidget::gitOperationFailed(const QString&)` signal, wired in `MainWindow` alongside
+  the existing per-pane `navigationFailed` → `onStatusMessage` connections (§14.14's error-surfacing
+  convention). `WorkspacePaneWidget` itself wires `m_statusBar`'s `branchButtonClicked` to call
+  `m_boundTab->requestLocalBranches(...)` and, on the async result, `m_statusBar->showBranchMenu
+  (...)`; and `branchSelected` to `m_boundTab->checkoutBranch(branchName)`.
+* **Not built:** remote branches in the menu (local only, matching the product ask); creating a new
+  branch or any other write action besides checkout; a confirmation dialog before checkout (the menu
+  click itself is the deliberate action, and a conflicting checkout already fails safely without
+  touching the working tree); force-checkout/discard-changes recovery UI when a checkout is refused;
+  live/background refresh of the branch indicator outside of navigation (matches §14.31/§14.30's
+  "event-driven only" precedent — a checkout performed outside the app, e.g. from a terminal, isn't
+  picked up until the next navigation or manual refresh); remembering which branch was checked out
+  across restarts; any UI for an unborn/headless repository beyond showing its would-be branch name.
+  No automated coverage for the `TabViewModel`/`StatusBarWidget`/`WorkspacePaneWidget` glue (§11's
+  existing UI/ViewModel-glue carve-out); `GitBranchUseCase` gets an ordinary mocked-Port test and
+  `LibGit2Repository`'s four new methods / `LibGit2BranchProvider` get a real-temp-repo adapter test
+  (via libgit2's own `git_repository_init`/`git_branch_create`, not a `git` CLI shell-out), per §11,
+  including a checkout-refused-by-conflicting-changes case.

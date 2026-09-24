@@ -5,6 +5,7 @@ add_executable(explorer_application_tests
     MockTagRepository.h
     MockMediaDecoder.h
     MockGitStatusProvider.h
+    MockGitBranchProvider.h
     MockDirectoryWatcher.h
     MockFolderMonitor.h
     FileNavigationUseCaseTest.cpp
@@ -12,6 +13,7 @@ add_executable(explorer_application_tests
     MediaProcessingUseCaseTest.cpp
     FilePreviewUseCaseTest.cpp
     GitStatusUseCaseTest.cpp
+    GitBranchUseCaseTest.cpp
     DirectoryWatchUseCaseTest.cpp
     FolderMonitorUseCaseTest.cpp
 )

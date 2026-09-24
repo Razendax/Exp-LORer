@@ -4,6 +4,7 @@ add_library(explorer_application STATIC
     ITagRepository.h
     IMediaDecoder.h
     IGitStatusProvider.h
+    IGitBranchProvider.h
     IDirectoryWatcher.h
     IFolderMonitor.h
     FolderChangeEvent.h
@@ -14,6 +15,7 @@ add_library(explorer_application STATIC
     DriveSpaceInfo.h
     GitFileStatus.h
     GitDirectoryStatus.h
+    GitRepositorySummary.h
     FileNavigationUseCase.h
     FileNavigationUseCase.cpp
     TagManagementUseCase.h
@@ -24,6 +26,8 @@ add_library(explorer_application STATIC
     FilePreviewUseCase.cpp
     GitStatusUseCase.h
     GitStatusUseCase.cpp
+    GitBranchUseCase.h
+    GitBranchUseCase.cpp
     DirectoryWatchUseCase.h
     DirectoryWatchUseCase.cpp
     FolderMonitorUseCase.h

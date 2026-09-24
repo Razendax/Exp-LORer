@@ -46,6 +46,22 @@ public:
     // left off, libgit2's default) rather than walked file by file.
     Result<std::vector<StatusEntry>> statusForImmediateChildren(const std::string& relativeDirectoryUtf8) const;
 
+    // Branch short name if HEAD points at one; a short commit id if detached (isDetachedOut set to
+    // true); the would-be branch name (HEAD's own symbolic target, "refs/heads/" prefix stripped)
+    // if the repository has zero commits yet (unborn HEAD) -- never an error for that last case.
+    Result<std::string> headDisplayName(bool& isDetachedOut) const;
+
+    // Repo-wide count of status entries excluding GitFileStatus::Ignored (staged + unstaged +
+    // untracked changes) -- backs the status-bar change count (Architecture.md §14.x).
+    Result<int> changedFileCount() const;
+
+    // Local branch short names only, no remotes.
+    Result<std::vector<std::string>> listLocalBranches() const;
+
+    // Safe checkout (GIT_CHECKOUT_SAFE, never GIT_CHECKOUT_FORCE) -- fails rather than overwriting a
+    // modified tracked file. Leaves HEAD/the working tree untouched on failure.
+    Result<void> checkoutBranch(const std::string& branchName) const;
+
 private:
     explicit LibGit2Repository(git_repository* handle);
 

@@ -24,6 +24,8 @@ add_executable(explorer_adapters_tests
     FileDecorationRulesTest.cpp
     FileDecorationRulesStoreTest.cpp
     LibGit2StatusProviderTest.cpp
+    LibGit2RepositoryTest.cpp
+    LibGit2BranchProviderTest.cpp
 )
 
 target_link_libraries(explorer_adapters_tests PRIVATE

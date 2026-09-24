@@ -7,10 +7,10 @@
 
 #include "GitStatusWorker.h"
 
-GitStatusService::GitStatusService(GitStatusUseCase& gitStatusUseCase, QObject* parent)
+GitStatusService::GitStatusService(GitStatusUseCase& gitStatusUseCase, GitBranchUseCase& gitBranchUseCase, QObject* parent)
     : QObject(parent)
 {
-    m_worker = new GitStatusWorker(gitStatusUseCase);
+    m_worker = new GitStatusWorker(gitStatusUseCase, gitBranchUseCase);
     m_worker->moveToThread(&m_workerThread);
     m_workerThread.start();
 }
@@ -34,6 +34,78 @@ void GitStatusService::requestStatus(QObject* context, const std::filesystem::pa
         m_worker,
         [this, guard, directory, callback = std::move(callback)]() {
             Result<GitDirectoryStatus> result = m_worker->compute(directory);
+
+            QMetaObject::invokeMethod(
+                this,
+                [guard, callback, result = std::move(result)]() mutable {
+                    if (!guard)
+                    {
+                        return;
+                    }
+                    callback(std::move(result));
+                },
+                Qt::QueuedConnection);
+        },
+        Qt::QueuedConnection);
+}
+
+void GitStatusService::requestRepositorySummary(QObject* context, const std::filesystem::path& directory,
+                                                  std::function<void(Result<GitRepositorySummary>)> callback)
+{
+    QPointer<QObject> guard(context);
+
+    QMetaObject::invokeMethod(
+        m_worker,
+        [this, guard, directory, callback = std::move(callback)]() {
+            Result<GitRepositorySummary> result = m_worker->computeRepositorySummary(directory);
+
+            QMetaObject::invokeMethod(
+                this,
+                [guard, callback, result = std::move(result)]() mutable {
+                    if (!guard)
+                    {
+                        return;
+                    }
+                    callback(std::move(result));
+                },
+                Qt::QueuedConnection);
+        },
+        Qt::QueuedConnection);
+}
+
+void GitStatusService::requestLocalBranches(QObject* context, const std::filesystem::path& directory,
+                                             std::function<void(Result<std::vector<std::string>>)> callback)
+{
+    QPointer<QObject> guard(context);
+
+    QMetaObject::invokeMethod(
+        m_worker,
+        [this, guard, directory, callback = std::move(callback)]() {
+            Result<std::vector<std::string>> result = m_worker->computeLocalBranches(directory);
+
+            QMetaObject::invokeMethod(
+                this,
+                [guard, callback, result = std::move(result)]() mutable {
+                    if (!guard)
+                    {
+                        return;
+                    }
+                    callback(std::move(result));
+                },
+                Qt::QueuedConnection);
+        },
+        Qt::QueuedConnection);
+}
+
+void GitStatusService::requestCheckout(QObject* context, const std::filesystem::path& directory, const std::string& branchName,
+                                        std::function<void(Result<void>)> callback)
+{
+    QPointer<QObject> guard(context);
+
+    QMetaObject::invokeMethod(
+        m_worker,
+        [this, guard, directory, branchName, callback = std::move(callback)]() {
+            Result<void> result = m_worker->computeCheckout(directory, branchName);
 
             QMetaObject::invokeMethod(
                 this,

@@ -380,6 +380,7 @@ void MainWindow::createWorkspace()
     for (WorkspacePaneId id : kAllPanes)
     {
         connect(m_workspaceLayoutWidget->paneWidget(id), &WorkspacePaneWidget::navigationFailed, this, &MainWindow::onStatusMessage);
+        connect(m_workspaceLayoutWidget->paneWidget(id), &WorkspacePaneWidget::gitOperationFailed, this, &MainWindow::onStatusMessage);
     }
 
     connect(m_workspaceController->fileOperationsController(), &FileOperationsController::operationFailed, this,

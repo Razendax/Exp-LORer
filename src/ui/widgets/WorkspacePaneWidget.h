@@ -10,6 +10,7 @@
 #include <QWidget>
 
 #include "FileListModel.h"
+#include "GitRepositorySummary.h"
 #include "ViewMode.h"
 
 class QTabWidget;
@@ -75,6 +76,10 @@ signals:
     // always-visible StatusBarWidget, Architecture.md §14.27) can report it.
     void navigationFailed(const QString& message);
 
+    // Same bubble-up posture as navigationFailed, for git checkout failures (Architecture.md
+    // §14.34).
+    void gitOperationFailed(const QString& message);
+
 private:
     void createViewModeActions();
     QToolBar* createToolBar();
@@ -122,6 +127,11 @@ private:
     // signal payload, so it's correct regardless of which of the six wired signals fired.
     void refreshStatusCounts();
     void onQuickSelectTextChanged(const QString& text);
+
+    // Git branch indicator/checkout (Architecture.md §14.34).
+    void updateGitStatusBar(const GitRepositorySummary& summary);
+    void onBranchButtonClicked();
+    void onBranchSelected(const QString& branchName);
 
     void showItemContextMenu(TabViewModel* tab, FileBrowserView* browserView, const std::vector<std::filesystem::path>& paths,
                               const QPoint& globalPos);

@@ -2,6 +2,7 @@
 
 #include <git2.h>
 
+#include <string_view>
 #include <utility>
 
 #include "PathUtf8.h"
@@ -98,6 +99,24 @@ namespace
     {
         git_status_list* list;
         ~StatusListGuard() { git_status_list_free(list); }
+    };
+
+    struct ReferenceGuard
+    {
+        git_reference* ref;
+        ~ReferenceGuard() { git_reference_free(ref); }
+    };
+
+    struct ObjectGuard
+    {
+        git_object* object;
+        ~ObjectGuard() { git_object_free(object); }
+    };
+
+    struct BranchIteratorGuard
+    {
+        git_branch_iterator* iterator;
+        ~BranchIteratorGuard() { git_branch_iterator_free(iterator); }
     };
 }
 
@@ -204,4 +223,162 @@ Result<std::vector<LibGit2Repository::StatusEntry>> LibGit2Repository::statusFor
     }
 
     return Result<std::vector<StatusEntry>>::success(std::move(entries));
+}
+
+Result<std::string> LibGit2Repository::headDisplayName(bool& isDetachedOut) const
+{
+    isDetachedOut = false;
+
+    git_reference* head = nullptr;
+    const int headRc = git_repository_head(&head, m_handle);
+
+    if (headRc == GIT_EUNBORNBRANCH)
+    {
+        // Zero commits yet -- HEAD is a symbolic reference to the would-be branch, which
+        // git_repository_head() refuses to resolve (there's no commit for it to point at). Read the
+        // symbolic target directly instead.
+        git_reference* symbolic = nullptr;
+        const int lookupRc = git_reference_lookup(&symbolic, m_handle, "HEAD");
+        if (lookupRc != 0)
+        {
+            return Result<std::string>::failure(libgit2Error("Failed to resolve unborn HEAD"));
+        }
+        ReferenceGuard symbolicGuard{ symbolic };
+
+        const char* target = git_reference_symbolic_target(symbolic);
+        std::string name = target ? target : std::string();
+
+        constexpr std::string_view prefix = "refs/heads/";
+        if (name.rfind(prefix, 0) == 0)
+        {
+            name = name.substr(prefix.size());
+        }
+
+        return Result<std::string>::success(std::move(name));
+    }
+
+    if (headRc != 0)
+    {
+        return Result<std::string>::failure(libgit2Error("Failed to resolve HEAD"));
+    }
+    ReferenceGuard headGuard{ head };
+
+    const int detachedRc = git_repository_head_detached(m_handle);
+    if (detachedRc < 0)
+    {
+        return Result<std::string>::failure(libgit2Error("Failed to determine HEAD state"));
+    }
+    isDetachedOut = detachedRc == 1;
+
+    if (isDetachedOut)
+    {
+        const git_oid* oid = git_reference_target(head);
+        if (!oid)
+        {
+            return Result<std::string>::failure(libgit2Error("Detached HEAD has no target"));
+        }
+        char shortId[16] = {};
+        git_oid_tostr(shortId, sizeof(shortId), oid);
+        return Result<std::string>::success(std::string(shortId));
+    }
+
+    const char* branchName = nullptr;
+    const int nameRc = git_branch_name(&branchName, head);
+    if (nameRc != 0 || !branchName)
+    {
+        return Result<std::string>::failure(libgit2Error("Failed to resolve branch name"));
+    }
+
+    return Result<std::string>::success(std::string(branchName));
+}
+
+Result<int> LibGit2Repository::changedFileCount() const
+{
+    // Empty pathspec is already whole-repo, per statusForImmediateChildren's own contract.
+    auto statusResult = statusForImmediateChildren("");
+    if (!statusResult)
+    {
+        return Result<int>::failure(std::move(statusResult).error());
+    }
+
+    int count = 0;
+    for (const StatusEntry& entry : statusResult.value())
+    {
+        if (entry.status != GitFileStatus::Ignored)
+        {
+            ++count;
+        }
+    }
+
+    return Result<int>::success(count);
+}
+
+Result<std::vector<std::string>> LibGit2Repository::listLocalBranches() const
+{
+    git_branch_iterator* rawIterator = nullptr;
+    const int newRc = git_branch_iterator_new(&rawIterator, m_handle, GIT_BRANCH_LOCAL);
+    if (newRc != 0)
+    {
+        return Result<std::vector<std::string>>::failure(libgit2Error("Failed to list branches"));
+    }
+    BranchIteratorGuard iteratorGuard{ rawIterator };
+
+    std::vector<std::string> names;
+    git_reference* branchRef = nullptr;
+    git_branch_t branchType = GIT_BRANCH_LOCAL;
+    int nextRc = 0;
+    while ((nextRc = git_branch_next(&branchRef, &branchType, rawIterator)) == 0)
+    {
+        const char* name = nullptr;
+        if (git_branch_name(&name, branchRef) == 0 && name)
+        {
+            names.emplace_back(name);
+        }
+        git_reference_free(branchRef);
+    }
+
+    if (nextRc != GIT_ITEROVER)
+    {
+        return Result<std::vector<std::string>>::failure(libgit2Error("Failed while iterating branches"));
+    }
+
+    return Result<std::vector<std::string>>::success(std::move(names));
+}
+
+Result<void> LibGit2Repository::checkoutBranch(const std::string& branchName) const
+{
+    git_reference* branchRef = nullptr;
+    const int lookupRc = git_branch_lookup(&branchRef, m_handle, branchName.c_str(), GIT_BRANCH_LOCAL);
+    if (lookupRc != 0)
+    {
+        return Result<void>::failure(libgit2Error("Branch not found: " + branchName));
+    }
+    ReferenceGuard branchGuard{ branchRef };
+
+    git_object* target = nullptr;
+    const int peelRc = git_reference_peel(&target, branchRef, GIT_OBJECT_COMMIT);
+    if (peelRc != 0)
+    {
+        return Result<void>::failure(libgit2Error("Failed to resolve commit for branch " + branchName));
+    }
+    ObjectGuard targetGuard{ target };
+
+    git_checkout_options options = GIT_CHECKOUT_OPTIONS_INIT;
+    // Never GIT_CHECKOUT_FORCE -- a checkout that would overwrite a modified tracked file fails
+    // instead of discarding it (Architecture.md §14.x's "checkout is never forced").
+    options.checkout_strategy = GIT_CHECKOUT_SAFE;
+    const int checkoutRc = git_checkout_tree(m_handle, target, &options);
+    if (checkoutRc != 0)
+    {
+        return Result<void>::failure(libgit2Error("Checkout failed (local changes would be overwritten?)"));
+    }
+
+    const std::string fullRefName = "refs/heads/" + branchName;
+    const int setHeadRc = git_repository_set_head(m_handle, fullRefName.c_str());
+    if (setHeadRc != 0)
+    {
+        return Result<void>::failure(libgit2Error("Checkout succeeded but failed to update HEAD"));
+    }
+
+    return Result<void>::success();
 }

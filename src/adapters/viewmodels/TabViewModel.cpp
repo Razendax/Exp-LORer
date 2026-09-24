@@ -40,7 +40,10 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     // results fire their own searchResultsChanged/advancedSearchResultsChanged signals instead,
     // which this deliberately does not connect to.
     connect(this, &TabViewModel::directoryContentsChanged, this,
-            [this](const std::filesystem::path& path, const std::vector<FileNode>&) { requestGitStatus(path); });
+            [this](const std::filesystem::path& path, const std::vector<FileNode>&) {
+                requestGitStatus(path);
+                requestGitRepositorySummary(path);
+            });
 }
 
 std::filesystem::path TabViewModel::currentPath() const
@@ -486,6 +489,56 @@ void TabViewModel::requestGitStatus(const std::filesystem::path& path)
 
         m_fileListModel->setGitStatuses(result ? result.value().statusByPath : GitStatusByPathMap{});
     });
+}
+
+void TabViewModel::requestGitRepositorySummary(const std::filesystem::path& path)
+{
+    m_gitStatusService.requestRepositorySummary(this, path, [this, path](Result<GitRepositorySummary> result) {
+        if (path != currentPath())
+        {
+            // A newer navigation has since happened; this reply is stale.
+            return;
+        }
+
+        m_lastGitRepositorySummary = result ? result.value() : GitRepositorySummary{};
+        emit gitRepositorySummaryChanged(m_lastGitRepositorySummary);
+    });
+}
+
+void TabViewModel::requestLocalBranches(std::function<void(Result<std::vector<std::string>>)> callback)
+{
+    if (!m_lastGitRepositorySummary.repositoryRoot)
+    {
+        callback(Result<std::vector<std::string>>::success({}));
+        return;
+    }
+
+    m_gitStatusService.requestLocalBranches(this, *m_lastGitRepositorySummary.repositoryRoot, std::move(callback));
+}
+
+void TabViewModel::checkoutBranch(const QString& branchName)
+{
+    if (!m_lastGitRepositorySummary.repositoryRoot)
+    {
+        return;
+    }
+
+    if (!m_lastGitRepositorySummary.isDetached &&
+        branchName.toStdString() == m_lastGitRepositorySummary.headDisplayName)
+    {
+        return;
+    }
+
+    m_gitStatusService.requestCheckout(this, *m_lastGitRepositorySummary.repositoryRoot, branchName.toStdString(),
+                                        [this](Result<void> result) {
+                                            if (!result)
+                                            {
+                                                emit gitOperationFailed(QString::fromStdString(result.error().message));
+                                                return;
+                                            }
+
+                                            refresh();
+                                        });
 }
 
 void TabViewModel::startMonitoring()

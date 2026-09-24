@@ -2,7 +2,9 @@
 
 #include <deque>
 #include <filesystem>
+#include <functional>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include <QObject>
@@ -13,6 +15,7 @@
 #include "FileNavigationUseCase.h"
 #include "FileNode.h"
 #include "FolderMonitorUseCase.h"
+#include "GitRepositorySummary.h"
 #include "NavigationHistory.h"
 #include "SearchCriteria.h"
 #include "Tag.h"
@@ -75,6 +78,23 @@ public:
     // Drive/volume info for the window status bar (Architecture.md §14.30); delegates to
     // FileNavigationUseCase::driveSpaceInfo(currentPath()).
     Result<DriveSpaceInfo> driveSpaceInfo() const;
+
+    // Cached-read git branch/change summary for the status bar (Architecture.md §14.34), kept in
+    // sync with currentPath() by requestGitRepositorySummary -- same immediate-sync-on-tab-switch
+    // role driveSpaceInfo() fills for drive info, but cached rather than a live call since the
+    // underlying data comes back asynchronously off GitStatusService's worker thread.
+    GitRepositorySummary lastGitRepositorySummary() const noexcept { return m_lastGitRepositorySummary; }
+
+    // Fetches the current repository's local branch names on demand (not kept live) for the
+    // branch-picker menu. No-op success-with-empty-list if the current directory isn't inside a
+    // repository; otherwise forwards to GitStatusService.
+    void requestLocalBranches(std::function<void(Result<std::vector<std::string>>)> callback);
+
+    // Checks out `branchName` in the current repository. No-op if it already equals the cached,
+    // non-detached headDisplayName(). On success, refresh()es the tab (re-triggers the
+    // directoryContentsChanged funnel, refreshing the file list, git-status badges, and the branch
+    // summary together). On failure, emits gitOperationFailed instead.
+    void checkoutBranch(const QString& branchName);
 
     // Recursive folder monitoring (Architecture.md §14.24, "Monitoring panel"). Multiple tabs may
     // monitor concurrently; only one is ever *displayed* at a time by MonitoringPanelViewModel.
@@ -208,6 +228,10 @@ signals:
     void monitoringPinnedChanged(bool pinned);
     void monitoringFailed(const QString& message);
 
+    // Git branch indicator/checkout (Architecture.md §14.34).
+    void gitRepositorySummaryChanged(const GitRepositorySummary& summary);
+    void gitOperationFailed(const QString& message);
+
 private:
     // Single funnel point for every navigation entry point: fetches directory contents exactly
     // once, and on success emits currentPathChanged + directoryContentsChanged, recording history
@@ -221,6 +245,12 @@ private:
     // applies the result to m_fileListModel once it comes back, dropping stale replies for a path
     // that's no longer current (Architecture.md §14.x).
     void requestGitStatus(const std::filesystem::path& path);
+
+    // Wired into the same directoryContentsChanged funnel as requestGitStatus -- dispatches a
+    // background repository-summary fetch for `path` and emits gitRepositorySummaryChanged once it
+    // comes back, dropping stale replies for a path that's no longer current (Architecture.md
+    // §14.34).
+    void requestGitRepositorySummary(const std::filesystem::path& path);
 
     // Shared implementation of startAdvancedSearch/updateAdvancedSearchCriteria/
     // addTagSearchCriterion/removeTagSearchCriterion: re-scans only when forceRescan or this is
@@ -255,4 +285,6 @@ private:
     bool m_monitoringPinned = false;
     std::deque<FolderChangeEvent> m_monitoringLog; // capped at kMonitoringLogCap, oldest dropped
     int m_monitoringTotal = 0; // uncapped
+
+    GitRepositorySummary m_lastGitRepositorySummary;
 };

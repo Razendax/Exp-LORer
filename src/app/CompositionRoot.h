@@ -12,11 +12,13 @@
 #include "FileNavigationUseCase.h"
 #include "FilePreviewUseCase.h"
 #include "FolderMonitorUseCase.h"
+#include "GitBranchUseCase.h"
 #include "GitStatusService.h"
 #include "GitStatusUseCase.h"
 #include "HighlightTheme.h"
 #include "HighlightThemeStore.h"
 #include "HighlightThemeViewModel.h"
+#include "LibGit2BranchProvider.h"
 #include "LibGit2StatusProvider.h"
 #include "MediaDecoder.h"
 #include "SQLiteTagRepository.h"
@@ -72,6 +74,12 @@ private:
     // service (construction order matches this declaration order).
     LibGit2StatusProvider m_gitStatusProvider;
     GitStatusUseCase m_gitStatusUseCase;
+
+    // Architecture.md §14.34: git branch indicator/checkout, sharing GitStatusService's one
+    // background thread with the status badges above rather than getting a thread of its own.
+    LibGit2BranchProvider m_gitBranchProvider;
+    GitBranchUseCase m_gitBranchUseCase;
+
     GitStatusService m_gitStatusService;
 
     // Architecture.md §14.x: live directory-update watching for the visible+active tab set.

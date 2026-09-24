@@ -9,8 +9,10 @@
 #include "FileNavigationUseCase.h"
 #include "FilePreviewUseCase.h"
 #include "FolderMonitorUseCase.h"
+#include "GitBranchUseCase.h"
 #include "GitStatusService.h"
 #include "GitStatusUseCase.h"
+#include "LibGit2BranchProvider.h"
 #include "LibGit2StatusProvider.h"
 #include "MediaDecoder.h"
 #include "SQLiteTagRepository.h"
@@ -61,7 +63,9 @@ namespace
         FileDecorationsViewModel m_fileDecorationsViewModel{ m_fileDecorationRules, m_fileDecorationRulesStore };
         LibGit2StatusProvider m_gitStatusProvider;
         GitStatusUseCase m_gitStatusUseCase{ m_gitStatusProvider };
-        GitStatusService m_gitStatusService{ m_gitStatusUseCase };
+        LibGit2BranchProvider m_gitBranchProvider;
+        GitBranchUseCase m_gitBranchUseCase{ m_gitBranchProvider };
+        GitStatusService m_gitStatusService{ m_gitStatusUseCase, m_gitBranchUseCase };
         StandardDirectoryWatcher m_directoryWatcher;
         DirectoryWatchUseCase m_directoryWatchUseCase{ m_directoryWatcher };
         StandardFolderMonitor m_folderMonitor;

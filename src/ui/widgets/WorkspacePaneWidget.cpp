@@ -151,6 +151,8 @@ WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOpera
             browserView->focusView();
         }
     });
+    connect(m_statusBar, &StatusBarWidget::branchButtonClicked, this, &WorkspacePaneWidget::onBranchButtonClicked);
+    connect(m_statusBar, &StatusBarWidget::branchSelected, this, &WorkspacePaneWidget::onBranchSelected);
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -515,6 +517,9 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
         disconnect(m_boundTab, &TabViewModel::currentPathChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
         disconnect(m_boundTab, &TabViewModel::searchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
         disconnect(m_boundTab, &TabViewModel::advancedSearchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
+
+        disconnect(m_boundTab, &TabViewModel::gitRepositorySummaryChanged, this, &WorkspacePaneWidget::updateGitStatusBar);
+        disconnect(m_boundTab, &TabViewModel::gitOperationFailed, this, &WorkspacePaneWidget::gitOperationFailed);
     }
 
     m_boundTab = tab;
@@ -528,6 +533,7 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
         m_addressBar->clear();
         m_statusBar->setCounts(0, 0);
         m_statusBar->clearQuickSelect();
+        m_statusBar->setGitInfo(false, QString(), 0);
         return;
     }
 
@@ -549,6 +555,9 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
     connect(m_boundTab, &TabViewModel::searchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
     connect(m_boundTab, &TabViewModel::advancedSearchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
 
+    connect(m_boundTab, &TabViewModel::gitRepositorySummaryChanged, this, &WorkspacePaneWidget::updateGitStatusBar);
+    connect(m_boundTab, &TabViewModel::gitOperationFailed, this, &WorkspacePaneWidget::gitOperationFailed);
+
     // Sync against a tab that already navigated before this binding existed (e.g. tabs restored
     // from the saved workspace config navigate before MainWindow/WorkspacePaneWidget are
     // constructed) -- the *Changed signals above only fire on future navigation, not retroactively.
@@ -561,6 +570,7 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
     m_statusBar->clearQuickSelect();
     onViewModeChanged(m_boundTab->viewMode());
     refreshStatusCounts();
+    updateGitStatusBar(m_boundTab->lastGitRepositorySummary());
 }
 
 int WorkspacePaneWidget::indexOfTab(TabViewModel* tab) const
@@ -884,6 +894,49 @@ void WorkspacePaneWidget::refreshStatusCounts()
                                                             : m_boundTab->fileListModel()->rowCount();
     const int selected = static_cast<int>(m_boundTab->selectedEntries().size());
     m_statusBar->setCounts(total, selected);
+}
+
+void WorkspacePaneWidget::updateGitStatusBar(const GitRepositorySummary& summary)
+{
+    m_statusBar->setGitInfo(summary.repositoryRoot.has_value(), QString::fromStdString(summary.headDisplayName),
+                             summary.changedFileCount);
+}
+
+void WorkspacePaneWidget::onBranchButtonClicked()
+{
+    if (!m_boundTab)
+    {
+        return;
+    }
+
+    m_boundTab->requestLocalBranches([this](Result<std::vector<std::string>> result) {
+        if (!m_boundTab)
+        {
+            // The bound tab changed (or the pane closed) while the fetch was in flight.
+            return;
+        }
+
+        QStringList branchNames;
+        if (result)
+        {
+            for (const std::string& branchName : result.value())
+            {
+                branchNames.append(QString::fromStdString(branchName));
+            }
+        }
+
+        m_statusBar->showBranchMenu(branchNames, QString::fromStdString(m_boundTab->lastGitRepositorySummary().headDisplayName));
+    });
+}
+
+void WorkspacePaneWidget::onBranchSelected(const QString& branchName)
+{
+    if (!m_boundTab)
+    {
+        return;
+    }
+
+    m_boundTab->checkoutBranch(branchName);
 }
 
 void WorkspacePaneWidget::onQuickSelectTextChanged(const QString& text)
