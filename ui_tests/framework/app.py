@@ -20,6 +20,7 @@ from pywinauto import Application
 
 from .automation_id import AutomationID
 from .element import Element
+from .favorites_menu import FavoritesMenu
 from .layout import LayoutToolbar
 from .pane import PaneNavigation, WorkspacePanes
 from .right_panel import RightPanel
@@ -48,6 +49,7 @@ class ExpLorerApp:
         self.right_panel = RightPanel(self._container)
         self.layout = LayoutToolbar(self._container)
         self.status_bar = MainStatusBar(self._container)
+        self.favorites = FavoritesMenu(self)
         self.global_search_bar = Element(self._container, AutomationID.GLOBAL_SEARCH_BAR)
         self.advanced_search_button = Element(self._container, AutomationID.ADVANCED_SEARCH_BUTTON)
 

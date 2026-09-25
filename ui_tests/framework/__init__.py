@@ -31,6 +31,8 @@ from .automation_id import AutomationID, find
 from .config import THIS_PC, ExpLorerConfig, SplitLayout, WorkspacePaneId
 from .details_view import DetailsRow, find_row, read_details_rows, select_row
 from .element import Element
+from .favorites_menu import FavoritesMenu
+from .manage_favorites_dialog import ManageFavoritesDialog
 from .modal_dialog import connect_by_handle, find_control
 from .tag_chip import TagChip, chip_names, find_chip, find_chip_label
 from .tag_manager_dialog import TagManagerDialog, open_tag_manager_dialog
@@ -58,6 +60,8 @@ __all__ = [
     "chip_names",
     "TagManagerDialog",
     "open_tag_manager_dialog",
+    "FavoritesMenu",
+    "ManageFavoritesDialog",
     "ExpLorerTestCase",
     "ExpLorerFreshAppTestCase",
     "wait_until",

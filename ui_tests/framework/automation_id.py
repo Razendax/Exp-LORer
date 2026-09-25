@@ -149,6 +149,19 @@ class AutomationID:
     TAG_MANAGER_DELETE_BUTTON = "tagManagerDeleteButton"
     TAG_MANAGER_CLOSE_BUTTON = "tagManagerCloseButton"
 
+    # --- Manage Favorites Dialog (ManageFavoritesDialog.cpp, modal, single instance at a time) ---
+    MANAGE_FAVORITES_DIALOG = "manageFavoritesDialog"
+    MANAGE_FAVORITES_TREE = "manageFavoritesTree"
+    MANAGE_FAVORITES_ADD_FILE_BUTTON = "manageFavoritesAddFileButton"
+    MANAGE_FAVORITES_ADD_FOLDER_BUTTON = "manageFavoritesAddFolderButton"
+    MANAGE_FAVORITES_ADD_CATEGORY_BUTTON = "manageFavoritesAddCategoryButton"
+    MANAGE_FAVORITES_RENAME_BUTTON = "manageFavoritesRenameButton"
+    MANAGE_FAVORITES_MOVE_TO_CATEGORY_BUTTON = "manageFavoritesMoveToCategoryButton"
+    MANAGE_FAVORITES_MOVE_UP_BUTTON = "manageFavoritesMoveUpButton"
+    MANAGE_FAVORITES_MOVE_DOWN_BUTTON = "manageFavoritesMoveDownButton"
+    MANAGE_FAVORITES_REMOVE_BUTTON = "manageFavoritesRemoveButton"
+    MANAGE_FAVORITES_CLOSE_BUTTON = "manageFavoritesCloseButton"
+
     # --- File Decoration Rule Dialog (FileDecorationRuleDialog.cpp, modal, single instance at a time) ---
     DECORATION_RULE_DIALOG = "fileDecorationRuleDialog"
     DECORATION_RULE_PATTERNS_EDIT = "decorationRulePatternsEdit"
