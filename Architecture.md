@@ -262,8 +262,9 @@ CREATE TABLE FileTags (
   once, before constructing `Logging` or `CompositionRoot`, checking for a `--data-dir` argument
   before falling back to `QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)`.
   `CompositionRoot`'s constructor takes the resolved directory and derives `explorer.db`,
-  `config.json`, `cache/thumbnails/`, `highlight_theme.json`, and `file_decorations.json` from it,
-  instead of each looking it up independently. Exists so `ui_tests/` (§11) can point each test run
+  `config.json`, `cache/thumbnails/`, `highlight_theme.json`, `file_decorations.json`, and
+  `favorites.json` from it, instead of each looking it up independently. Exists so `ui_tests/` (§11)
+  can point each test run
   at an isolated, disposable directory rather than the developer's real session. On Windows the
   argument is read from the process's own wide command line (`GetCommandLineW()` +
   `CommandLineToArgvW()`), not the narrow `argv` `main()` receives — the same ANSI-code-page
@@ -272,8 +273,10 @@ CREATE TABLE FileTags (
 * **Session/settings:** window geometry and the split-window session (layout, each pane's tabs —
   path/view mode/sort order — focused pane) persist to `config.json` (§14.14), written by
   `AppConfigStore`, same directory as `explorer.db`. `QSettings` remains in use only for the
-  context-menu shell-extensions toggle (§14.13), not yet migrated; bookmarks and thumbnail cache
-  size limit are unimplemented in either mechanism.
+  context-menu shell-extensions toggle (§14.13), not yet migrated; the thumbnail cache size limit is
+  unimplemented in either mechanism. Favorites persist separately to their own `favorites.json`
+  (§14.35), same directory, same tolerant-load/atomic-save shape as `highlight_theme.json`/
+  `file_decorations.json`.
 * **Recycle Bin / Trash:** "Delete" routes through `IFileSystemRepository` to the native OS trash
   (`SHFileOperation`/`FOF_ALLOWUNDO` on Windows; deferred to the freedesktop.org spec on Linux). A
   separate "Delete Permanently" action bypasses trash. Both go through the same Port so the
@@ -295,6 +298,7 @@ Exp-LORer/
 │   │   ├── filesystem/  # StandardFileSystemRepository
 │   │   ├── shell/       # ShellContextMenuProvider
 │   │   ├── config/      # AppConfigStore (JSON session persistence)
+│   │   ├── favorites/   # FavoriteItem / FavoriteCategory / Favorites (§14.35)
 │   │   ├── media/       # QtMediaDecoder / FFmpegMediaDecoder (not yet implemented)
 │   │   ├── archive/     # ArchivePathResolver / LibArchiveReader / ArchiveIndexCache (§14.28)
 │   │   ├── git/         # LibGit2Repository / LibGit2StatusProvider (§14.31)
@@ -1695,3 +1699,70 @@ name opens a menu of local branches and checks out the one the user picks.
   `LibGit2Repository`'s four new methods / `LibGit2BranchProvider` get a real-temp-repo adapter test
   (via libgit2's own `git_repository_init`/`git_branch_create`, not a `git` CLI shell-out), per §11,
   including a checkout-refused-by-conflicting-changes case.
+
+### 14.35 Favorites
+
+User-curated shortcuts to files/folders, organized into optional categories, managed from a new
+`Favorites` top-level menu (Specification.md §2.1). Like §14.29's per-file/folder color rules or
+§14.26's highlight theme, this is a persisted UI preference — **no Domain or Application layer
+change**, same posture as every other entry in this section.
+
+* **`src/adapters/favorites`** (new module, `explorer_adapters_favorites`, mirrors
+  `adapters/decoration`, links only `explorer_domain`): `FavoriteItem` (`Id` = `std::int64_t`, mirrors
+  `Tag::Id`; `path`, display text derived from `path.filename()` at render time, no stored display
+  name) and `FavoriteCategory` (`Id`, `name`, an ordered `std::vector<FavoriteItem>`). `Favorites`
+  owns one ordered top-level `std::vector<std::variant<FavoriteItem, FavoriteCategory>>` plus an
+  internal monotonic id counter, with a pure mutation API (add/remove/rename/reorder/move-between-
+  categories) — no Qt, no I/O. Deleting a category flattens its items back to top-level rather than
+  deleting them (non-destructive by default, matching this app's no-undo-in-v1 posture,
+  Specification.md §5). Adding an already-favorited path is a no-op (dedup by path).
+* **`src/adapters/config`** gains `FavoritesStore` (tolerant `load()`/atomic `save()` via the
+  existing `JsonFileStore` helpers, own `favorites.json`, §9), `FavoritesSaveWorker`, and
+  `FavoritesViewModel` — the same three-piece shape §14.29 established for
+  `FileDecorationRulesStore`/`FileDecorationRulesSaveWorker`/`FileDecorationsViewModel`, including why
+  these live in `adapters/config` rather than `adapters/viewmodels`: `adapters/config` already depends
+  on `adapters/viewmodels`, so the reverse edge would be a build-graph cycle. A mutation applies to
+  the live `Favorites` synchronously, emits `favoritesChanged()`, and queues the actual disk save onto
+  the worker thread (Architecture.md §5). `CompositionRoot` owns the usual store→model→viewmodel
+  triple and exposes `favoritesViewModel()`.
+* **Selecting an entry after navigation (new capability)** — nothing previously let a caller navigate
+  a tab *and* select a specific resulting row; the only prior use of
+  `FileBrowserView::selectEntryByPath` (now made public) was Details-view arrow-key navigation, called
+  synchronously right after its triggering signal since navigation is still synchronous on the UI
+  thread (§5). New `WorkspacePaneWidget::navigateAndSelect(directory, optional entryToSelect)` routes
+  through the same `confirmLeavingMonitoredScope` guard every other navigation entry point already
+  uses, navigates, then selects if requested and the navigation landed.
+* **Menu wiring, `MainWindow`** — fleshes out the previously-empty `Favorites` menu stub: "Add to
+  Favorites" (targets the focused tab's selection, or its current browsed folder if nothing is
+  selected — same fallback §14.9's tag panel already established; disabled with no focused tab or on
+  the `VirtualPaths::ThisPC` sentinel), "Manage Favorites..." (opens `ManageFavoritesDialog`, same
+  `exec()`-a-modal shape as `TagManagerDialog`), a separator, then the live entries — rebuilt lazily
+  on the menu's `aboutToShow` (a plain `QAction` per uncategorized item, a `QMenu` submenu per
+  category populated the same way) rather than kept continuously in sync, so no extra
+  `favoritesChanged()` wiring is needed in `MainWindow` itself. Clicking a leaf resolves file-vs-folder
+  via the existing `FileNavigationUseCase::stat()` passthrough: a folder navigates the focused pane's
+  active tab into it; a file navigates to `path.parent_path()` and selects the file there (product
+  decision — folder favorites behave like Explorer Quick Access, not "reveal in parent").
+* **`ManageFavoritesDialog`** (new, `src/ui/widgets`) — a `QTreeWidget`-based dialog wired directly to
+  `FavoritesViewModel` (no separate dialog-specific ViewModel needed), mirroring `TagManagerDialog`'s
+  thin-dialog-over-a-ViewModel shape but using a two-level tree (category → items, native
+  expand/collapse covering the "collapsible sections" requirement) instead of `TagManagerDialog`'s
+  flat `FlowLayout` of chips. Toolbar: Add File.../Add Folder... (`QFileDialog`, since Qt has no
+  single native picker for "either a file or a folder"), Add Category, Rename (category rows),
+  Move to Category... (item rows), Move Up/Move Down (enabled by sibling position at the row's own
+  level, same boundary-check shape `SettingsDialog::refreshDecorationRows()` already uses for its
+  decoration-rule up/down buttons), Remove, Close. Reordering is button-based, not drag-and-drop —
+  matching this codebase's existing ordered-list-editing precedent (§14.29) rather than introducing a
+  new interaction pattern. Rebuilds the whole tree on `favoritesChanged()`, same "re-render on any
+  change" posture `TagManagerDialog::rebuildTagChips` already uses.
+* **Not built:** drag-and-drop add (from the file browser onto the Favorites menu) or a right-click
+  "Add to Favorites" context-menu entry — menu-only entry point in this pass; drag-and-drop reordering
+  in the Manage dialog; a keyboard shortcut for "Add to Favorites"; broken-favorite detection/
+  indicator or any periodic re-check of a favorited path's existence; import/export of the favorites
+  list; nested categories (one flat level, matching the "collapsible sections" requirement, not a
+  category tree). No automated coverage for `FavoritesViewModel`/`ManageFavoritesDialog`/the
+  `MainWindow`/`WorkspacePaneWidget` menu and navigate-and-select glue, per the existing §11
+  UI/ViewModel-glue carve-out (same as `FileDecorationsViewModel`/`TagManagerViewModel`/
+  `TagManagerDialog`) — smoke-tested manually instead. `Favorites`' pure mutation logic and
+  `FavoritesStore`'s JSON round-trip/tolerant-load behavior each get an ordinary GTest suite under
+  `tests/adapters`, mirroring `FileDecorationRulesTest.cpp`/`FileDecorationRulesStoreTest.cpp`.

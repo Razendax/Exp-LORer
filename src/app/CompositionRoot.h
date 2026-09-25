@@ -6,6 +6,9 @@
 #include "AppConfigStore.h"
 #include "CachingMediaDecoder.h"
 #include "DirectoryWatchUseCase.h"
+#include "Favorites.h"
+#include "FavoritesStore.h"
+#include "FavoritesViewModel.h"
 #include "FileDecorationRules.h"
 #include "FileDecorationRulesStore.h"
 #include "FileDecorationsViewModel.h"
@@ -56,6 +59,7 @@ public:
     SyntaxHighlightEngine& syntaxHighlightEngine() noexcept { return m_syntaxHighlightEngine; }
     HighlightThemeViewModel& highlightThemeViewModel() noexcept { return m_highlightThemeViewModel; }
     FileDecorationsViewModel& fileDecorationsViewModel() noexcept { return m_fileDecorationsViewModel; }
+    FavoritesViewModel& favoritesViewModel() noexcept { return m_favoritesViewModel; }
 
 private:
     StandardFileSystemRepository m_fileSystemRepository;
@@ -105,4 +109,11 @@ private:
     FileDecorationRulesStore m_fileDecorationRulesStore;
     FileDecorationRules m_fileDecorationRules;
     FileDecorationsViewModel m_fileDecorationsViewModel;
+
+    // Architecture.md §14.35: user-curated favorites (files/folders, optionally grouped into
+    // categories), edited from the Favorites menu / Manage Favorites dialog -- presentation-only,
+    // same posture as the file-decoration block above.
+    FavoritesStore m_favoritesStore;
+    Favorites m_favorites;
+    FavoritesViewModel m_favoritesViewModel;
 };

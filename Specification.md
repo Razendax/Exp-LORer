@@ -30,7 +30,13 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   hierarchy "exits" onto the drive listing — or by typing "This PC" into the address bar. This is
   also the default landing location for a fresh install (see below) and for any newly-revealed
   empty pane.
-* Ability to bookmark or pin frequently used folders.
+* **Favorites** (Architecture.md §14.35): users bookmark files and folders via a `Favorites` top-level
+  menu — "Add to Favorites" (the active tab's current selection, or its browsed folder if nothing is
+  selected) and "Manage Favorites..." (remove, reorder, add manually, and organize into categories
+  shown as collapsible sections). The menu itself lists every favorite below "Manage Favorites...",
+  in the order set in that dialog — a categorized favorite nests under a submenu named after its
+  category, an uncategorized one appears directly. Clicking a favorited folder navigates the active
+  tab into it; clicking a favorited file navigates to its parent folder with the file selected.
 * Support for long paths (beyond the traditional 260-character Windows limit) and Unicode file/folder names throughout navigation, search, and tagging.
 * **Split-window layouts:** The window arranges into one of four fixed layouts — single pane, two-pane vertical split, two-pane horizontal split, or a four-pane grid — chosen from the View menu/toolbar. No arbitrary or recursive nesting.
 * **Multi-tab browsing, per pane:** Each pane independently owns its own tabs (add/close/switch), each retaining its own navigation history (back/forward stack), current path, view mode, and sort order; a pane's tabs are unaffected by other panes or by switching layouts (a pane's tabs persist even while hidden by a layout that shows fewer panes). The tag filter panel and media preview are single shared instances that follow whichever pane/tab currently has focus, rather than existing per-pane. **Session persistence:** the active layout, each pane's tabs (path, view mode, sort order), the focused pane, and the main window's geometry are saved to a local JSON config file when the app closes and restored the next time it starts (Architecture.md §14.14); a fresh install with no saved config falls back to a single pane opened at the "This PC" virtual location (Architecture.md §14.15), rather than the user's home directory.

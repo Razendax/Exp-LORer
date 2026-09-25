@@ -2,6 +2,7 @@
 
 #include <array>
 #include <filesystem>
+#include <optional>
 #include <vector>
 
 #include <QList>
@@ -43,6 +44,13 @@ public:
                                   QWidget* parent = nullptr);
 
     WorkspacePaneViewModel* pane() const noexcept { return m_pane; }
+
+    // Navigates the bound tab to `directory` (through the same confirmLeavingMonitoredScope guard
+    // every other navigation entry point uses), then -- if navigation landed there and
+    // entryToSelect is set -- selects that entry in the resulting listing. Backs the Favorites menu
+    // (Architecture.md §14.35): a folder favorite passes std::nullopt, a file favorite passes its
+    // own path with directory = its parent.
+    void navigateAndSelect(const std::filesystem::path& directory, const std::optional<std::filesystem::path>& entryToSelect);
 
     // Catches middle-click on the tab bar to close a tab even when the close button is hidden
     // (setTabCloseButtonsVisible(false)) -- QTabBar has no built-in middle-click-to-close signal.

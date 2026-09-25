@@ -23,6 +23,8 @@ add_executable(explorer_adapters_tests
     FileDecorationRuleTest.cpp
     FileDecorationRulesTest.cpp
     FileDecorationRulesStoreTest.cpp
+    FavoritesTest.cpp
+    FavoritesStoreTest.cpp
     LibGit2StatusProviderTest.cpp
     LibGit2RepositoryTest.cpp
     LibGit2BranchProviderTest.cpp
@@ -40,6 +42,7 @@ target_link_libraries(explorer_adapters_tests PRIVATE
     explorer_adapters_highlighting
     explorer_adapters_archive
     explorer_adapters_git
+    explorer_adapters_favorites
     Qt6::Core
     GTest::gtest
     GTest::gmock

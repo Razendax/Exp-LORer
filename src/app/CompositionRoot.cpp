@@ -26,6 +26,9 @@ CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir)
     , m_fileDecorationRulesStore(appDataDir / "file_decorations.json")
     , m_fileDecorationRules(m_fileDecorationRulesStore.load())
     , m_fileDecorationsViewModel(m_fileDecorationRules, m_fileDecorationRulesStore)
+    , m_favoritesStore(appDataDir / "favorites.json")
+    , m_favorites(m_favoritesStore.load())
+    , m_favoritesViewModel(m_favorites, m_favoritesStore)
 {
 }
 

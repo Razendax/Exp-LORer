@@ -55,6 +55,8 @@ add_library(explorer_ui_widgets STATIC
     SettingsDialog.cpp
     FileDecorationRuleDialog.h
     FileDecorationRuleDialog.cpp
+    ManageFavoritesDialog.h
+    ManageFavoritesDialog.cpp
     UiColors.h
 )
 

@@ -2,14 +2,17 @@
 
 #include <array>
 #include <filesystem>
+#include <vector>
 
 #include <QList>
 #include <QMainWindow>
 #include <QThread>
 
 #include "AppConfig.h"
+#include "Favorites.h"
 #include "FileListModel.h"
 #include "FileNavigationUseCase.h"
+#include "FileNode.h"
 #include "SplitLayout.h"
 
 class QAction;
@@ -21,6 +24,7 @@ class QToolBar;
 class AppConfigStore;
 class HighlightThemeViewModel;
 class FileDecorationsViewModel;
+class FavoritesViewModel;
 class SyntaxHighlightEngine;
 class TagManagementUseCase;
 class WorkspaceController;
@@ -44,7 +48,8 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore, TagManagementUseCase& tagManagementUseCase,
                SyntaxHighlightEngine& syntaxHighlightEngine, HighlightThemeViewModel& highlightThemeViewModel,
-               FileDecorationsViewModel& fileDecorationsViewModel, const AppConfig& initialConfig, QWidget* parent = nullptr);
+               FileDecorationsViewModel& fileDecorationsViewModel, FavoritesViewModel& favoritesViewModel,
+               const AppConfig& initialConfig, QWidget* parent = nullptr);
     ~MainWindow() override;
 
 protected:
@@ -62,12 +67,14 @@ private:
     void createContextMenuModeAction();
     void createShowHiddenFilesAction();
     void createMenuBar();
+    void createFavoritesMenu();
     void createLayoutToolBar();
     void createSearchBar(QToolBar* toolBar);
     void createWorkspace();
     void createMainStatusBar();
     void showTagManagerDialog();
     void showSettingsDialog();
+    void showManageFavoritesDialog();
 
     void onLayoutChanged(SplitLayout layout);
     void onStatusMessage(const QString& message);
@@ -78,12 +85,21 @@ private:
     void onSearchBarReturnPressed();
     void onSearchBarTextEdited(const QString& text);
 
+    // Favorites menu (Architecture.md §14.35).
+    void onAddToFavoritesTriggered();
+    void onFavoriteItemTriggered(Favorites::Id id);
+    void rebuildFavoritesMenuItems();
+    void updateFavoritesActionEnabled();
+    void onFavoritesTrackedSelectionChanged(const std::vector<FileNode>& entries);
+    void onFavoritesTrackedPathChanged(const std::filesystem::path& path);
+
     WorkspaceController* m_workspaceController = nullptr;
     AppConfigStore& m_configStore;
     TagManagementUseCase& m_tagManagementUseCase;
     SyntaxHighlightEngine& m_syntaxHighlightEngine;
     HighlightThemeViewModel& m_highlightThemeViewModel;
     FileDecorationsViewModel& m_fileDecorationsViewModel;
+    FavoritesViewModel& m_favoritesViewModel;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;
     PreviewPanelWidget* m_previewPanelWidget = nullptr;
@@ -95,6 +111,12 @@ private:
     QLineEdit* m_searchBar = nullptr;
     QAction* m_advancedSearchAction = nullptr;
     MainStatusBarWidget* m_mainStatusBarWidget = nullptr;
+
+    // Favorites menu (Architecture.md §14.35): rebuilt lazily on QMenu::aboutToShow rather than
+    // kept live-synced, so no direct favoritesChanged() wiring is needed here.
+    QMenu* m_favoritesMenu = nullptr;
+    QAction* m_addToFavoritesAction = nullptr;
+    TabViewModel* m_favoritesTrackedTab = nullptr;
 
     // Drive/volume info query (Architecture.md §14.30) runs on m_driveInfoThread rather than the
     // Qt UI thread -- GetVolumeInformationW/GetDiskFreeSpaceExW behind it are disk/volume I/O.

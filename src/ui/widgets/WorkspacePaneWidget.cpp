@@ -720,6 +720,30 @@ bool WorkspacePaneWidget::confirmLeavingMonitoredScope(TabViewModel* tab, const 
     return true;
 }
 
+void WorkspacePaneWidget::navigateAndSelect(const std::filesystem::path& directory,
+                                             const std::optional<std::filesystem::path>& entryToSelect)
+{
+    if (!m_boundTab)
+    {
+        return;
+    }
+
+    if (!confirmLeavingMonitoredScope(m_boundTab, directory))
+    {
+        return;
+    }
+
+    m_boundTab->navigateTo(directory);
+
+    if (entryToSelect && m_boundTab->currentPath() == directory)
+    {
+        if (auto* browserView = currentBrowserView())
+        {
+            browserView->selectEntryByPath(*entryToSelect);
+        }
+    }
+}
+
 void WorkspacePaneWidget::onCurrentPathChanged(const std::filesystem::path& path)
 {
     m_addressBar->setText(displayPathText(path));

@@ -74,6 +74,13 @@ public:
     // after the status bar's quick-select field is dismissed via Escape.
     void focusView();
 
+    // Selects and scrolls to the row for `path`, or falls back to selectFirstEntry() if it isn't
+    // currently listed (e.g. its parent just changed out from under it). Originally private,
+    // used only for Details-view arrow-key navigation; now also driven by
+    // WorkspacePaneWidget::navigateAndSelect (Architecture.md §14.35's "select a favorite's file
+    // in its parent listing after navigating there").
+    void selectEntryByPath(const std::filesystem::path& path);
+
 signals:
     // Emitted on double-click/Enter on a row; isDirectory decides whether MainWindow forwards
     // this to TabViewModel::navigateTo (file activation is out of scope, no viewer yet).
@@ -122,7 +129,6 @@ private:
     // Restores a current/selected row after arrow-key navigation in Details view, since
     // navigating clears the previous selection (TabViewModel::loadAndApply resets it) and would
     // otherwise leave the tree view with no current index, breaking further arrow navigation.
-    void selectEntryByPath(const std::filesystem::path& path);
     void selectFirstEntry();
 
     // Linear scan for the row listing `path`, shared by selectEntryByPath and beginRename.

@@ -102,7 +102,7 @@ int main(int argc, char* argv[])
 
         MainWindow mainWindow(workspaceController.get(), compositionRoot.appConfigStore(), compositionRoot.tagManagementUseCase(),
                               compositionRoot.syntaxHighlightEngine(), compositionRoot.highlightThemeViewModel(),
-                              compositionRoot.fileDecorationsViewModel(), initialConfig);
+                              compositionRoot.fileDecorationsViewModel(), compositionRoot.favoritesViewModel(), initialConfig);
         mainWindow.show();
 
         if (!restored)
