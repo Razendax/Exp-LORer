@@ -804,7 +804,10 @@ void WorkspacePaneWidget::onNavigationFailed(const std::filesystem::path& path, 
 
 void WorkspacePaneWidget::onDeleteRequested(TabViewModel* tab, bool permanent)
 {
-    const std::vector<FileNode>& entries = tab->selectedEntries();
+    // Copied rather than referenced: each deletion below synchronously emits
+    // directoryContentsMayHaveChanged, which refreshes the tab and reassigns its selection,
+    // invalidating a reference to selectedEntries() partway through the loop.
+    const std::vector<FileNode> entries = tab->selectedEntries();
     if (entries.empty())
     {
         return;
