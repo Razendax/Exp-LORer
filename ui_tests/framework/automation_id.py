@@ -103,7 +103,6 @@ class AutomationID:
     SEARCH_NAME_EDIT = "searchNameEdit"
     SEARCH_MIN_SIZE_SPIN = "searchMinSizeSpin"
     SEARCH_MAX_SIZE_SPIN = "searchMaxSizeSpin"
-    SEARCH_EXTENSION_EDIT = "searchExtensionEdit"
     SEARCH_SUBMIT_BUTTON = "searchSubmitButton"
     ADVANCED_SEARCH_CLOSE_BUTTON = "advancedSearchCloseButton"
     SEARCH_TAG_EDIT = "searchTagEdit"

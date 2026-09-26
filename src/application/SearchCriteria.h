@@ -11,10 +11,9 @@
 // Qt — same posture as VirtualPaths.h/NativeTypes.h.
 struct SearchCriteria
 {
-    std::string nameQuery;                       // substring, case-insensitive; empty = no filter
+    std::string nameQuery;                       // substring or *?-glob; empty = no filter
     std::optional<std::uintmax_t> minSizeBytes;   // nullopt = no lower bound
     std::optional<std::uintmax_t> maxSizeBytes;   // nullopt = no upper bound
-    std::string extensionList;                    // "jpg, png"; empty = no filter
 
     // AND semantics, mirrors ITagRepository::findFilesWithAllTags; empty = no tag filter.
     std::vector<Tag::Id> tagIds;

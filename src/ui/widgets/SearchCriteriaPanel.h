@@ -13,7 +13,7 @@ class QPushButton;
 class QToolButton;
 class FlowLayout;
 
-// Name / Min size / Max size / Extension fields plus a Search button, a tag-search box with its
+// Name / Min size / Max size fields plus a Search button, a tag-search box with its
 // live matching-tag chip row, and a removable tag-criteria chip row, for the advanced (criteria)
 // search pane (Architecture.md §14.19/§14.22). Lives at the top of SearchResultsPane, one
 // instance per tab (inside WorkspacePaneWidget's per-tab stack page).
@@ -58,7 +58,6 @@ private:
     QLineEdit* m_nameEdit = nullptr;
     QSpinBox* m_minSizeKbSpin = nullptr;
     QSpinBox* m_maxSizeKbSpin = nullptr;
-    QLineEdit* m_extensionEdit = nullptr;
     QPushButton* m_searchButton = nullptr;
     QToolButton* m_closeButton = nullptr;
 
@@ -67,7 +66,7 @@ private:
     FlowLayout* m_tagCriteriaLayout = nullptr;
 
     // tagIds from the last setCriteria() call — currentCriteria() carries these through so an
-    // edit to the Name/size/extension fields (or pressing Search) doesn't clobber tag criteria
-    // that were added via chip clicks rather than through this panel's own fields.
+    // edit to the Name/size fields (or pressing Search) doesn't clobber tag criteria that were
+    // added via chip clicks rather than through this panel's own fields.
     std::vector<Tag::Id> m_lastKnownTagIds;
 };

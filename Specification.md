@@ -159,7 +159,12 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   independent of which tab or pane currently has focus.
 * **Advanced search pane** (Architecture.md §14.19), a second and separate entry point from the
   quick search box above, opened via an "Advanced Search..." toolbar action: a dedicated per-tab
-  pane with Name, Min size, Max size, and Extension fields plus a Search button. Opening the pane
+  pane with Name, Min size, and Max size fields plus a Search button. The Name field supports `*`
+  (any run of characters) and `?` (exactly one character) wildcards — the same syntax as the
+  per-file/folder appearance patterns above — e.g. `*.pdf` (all PDFs), `doc*` (`doc`,
+  `document.txt`), or `file?.txt` (`file2.txt` but not `file12.txt`); a query with no wildcard still
+  matches anywhere in the name, as before. There is no separate Extension field — a `*.ext`-style
+  Name query covers that case. Opening the pane
   shows the focused tab's current folder contents (a plain, non-recursive listing, not a search) so
   it doesn't open empty; searching recursively under the focused tab only happens once Search is
   pressed (or Enter in the Name field). Editing any field afterward live-refines the already-fetched
@@ -168,8 +173,8 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   matching part of each Name highlighted — regardless of the tab's own chosen view mode. Only one
   of normal browsing, quick search, or advanced search is shown at a time per tab; opening either
   search mode closes the other, and each remembers its own fields/results while hidden.
-  **Tag criteria** (Architecture.md §14.22) act as a fifth, ANDed criterion alongside Name/Min
-  size/Max size/Extension: a "search tags" box lists matching tags (same lookup as the Tag
+  **Tag criteria** (Architecture.md §14.22) act as a fourth, ANDed criterion alongside Name/Min
+  size/Max size: a "search tags" box lists matching tags (same lookup as the Tag
   Panel's search, but clicking a tag adds it straight to the criteria instead of showing a "+"),
   and a separate, removable chip list shows the tags currently applied to the search. A result
   must satisfy both the file-property criteria and every applied tag to appear.

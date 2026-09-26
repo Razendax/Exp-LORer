@@ -26,7 +26,7 @@ SearchCriteriaPanel::SearchCriteriaPanel(QWidget* parent)
 
     m_nameEdit = new QLineEdit(this);
     m_nameEdit->setObjectName(QStringLiteral("searchNameEdit"));
-    m_nameEdit->setPlaceholderText(tr("Name contains..."));
+    m_nameEdit->setPlaceholderText(tr("Name contains... (*, ? wildcards)"));
 
     m_minSizeKbSpin = new QSpinBox(this);
     m_minSizeKbSpin->setObjectName(QStringLiteral("searchMinSizeSpin"));
@@ -39,10 +39,6 @@ SearchCriteriaPanel::SearchCriteriaPanel(QWidget* parent)
     m_maxSizeKbSpin->setRange(0, kMaxSizeKb);
     m_maxSizeKbSpin->setSpecialValueText(tr("Any"));
     m_maxSizeKbSpin->setSuffix(tr(" KB"));
-
-    m_extensionEdit = new QLineEdit(this);
-    m_extensionEdit->setObjectName(QStringLiteral("searchExtensionEdit"));
-    m_extensionEdit->setPlaceholderText(tr("jpg, png..."));
 
     m_searchButton = new QPushButton(tr("Search"), this);
     m_searchButton->setObjectName(QStringLiteral("searchSubmitButton"));
@@ -63,8 +59,6 @@ SearchCriteriaPanel::SearchCriteriaPanel(QWidget* parent)
     fieldsRow->addWidget(m_minSizeKbSpin);
     fieldsRow->addWidget(new QLabel(tr("Max size:"), this));
     fieldsRow->addWidget(m_maxSizeKbSpin);
-    fieldsRow->addWidget(new QLabel(tr("Extension:"), this));
-    fieldsRow->addWidget(m_extensionEdit, 1);
     fieldsRow->addWidget(m_searchButton);
     fieldsRow->addWidget(m_closeButton);
 
@@ -94,7 +88,6 @@ SearchCriteriaPanel::SearchCriteriaPanel(QWidget* parent)
     connect(m_nameEdit, &QLineEdit::textEdited, this, &SearchCriteriaPanel::onAnyFieldEdited);
     connect(m_minSizeKbSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &SearchCriteriaPanel::onAnyFieldEdited);
     connect(m_maxSizeKbSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &SearchCriteriaPanel::onAnyFieldEdited);
-    connect(m_extensionEdit, &QLineEdit::textEdited, this, &SearchCriteriaPanel::onAnyFieldEdited);
 
     connect(m_tagSearchEdit, &QLineEdit::textChanged, this, &SearchCriteriaPanel::tagSearchQueryRequested);
 }
@@ -104,12 +97,10 @@ void SearchCriteriaPanel::setCriteria(const SearchCriteria& criteria, const std:
     const QSignalBlocker nameBlocker(m_nameEdit);
     const QSignalBlocker minBlocker(m_minSizeKbSpin);
     const QSignalBlocker maxBlocker(m_maxSizeKbSpin);
-    const QSignalBlocker extensionBlocker(m_extensionEdit);
 
     m_nameEdit->setText(QString::fromStdString(criteria.nameQuery));
     m_minSizeKbSpin->setValue(criteria.minSizeBytes ? static_cast<int>(*criteria.minSizeBytes / kBytesPerKb) : 0);
     m_maxSizeKbSpin->setValue(criteria.maxSizeBytes ? static_cast<int>(*criteria.maxSizeBytes / kBytesPerKb) : 0);
-    m_extensionEdit->setText(QString::fromStdString(criteria.extensionList));
     m_lastKnownTagIds = criteria.tagIds;
 
     clearLayout(m_tagCriteriaLayout);
@@ -157,7 +148,6 @@ SearchCriteria SearchCriteriaPanel::currentCriteria() const
     {
         criteria.maxSizeBytes = static_cast<std::uintmax_t>(m_maxSizeKbSpin->value()) * kBytesPerKb;
     }
-    criteria.extensionList = m_extensionEdit->text().trimmed().toStdString();
     criteria.tagIds = m_lastKnownTagIds;
     return criteria;
 }

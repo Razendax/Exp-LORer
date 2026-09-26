@@ -250,6 +250,39 @@ TEST(FileNavigationUseCase, FilterByNameReturnsEmptyWhenNoMatches)
     EXPECT_TRUE(filtered.empty());
 }
 
+TEST(FileNavigationUseCase, FilterByNameStarSuffixMatchesByExtension)
+{
+    std::vector<FileNode> files{ makeFile("C:/data/report.pdf", 1), makeFile("C:/data/report.txt", 2) };
+
+    auto filtered = FileNavigationUseCase::filterByName(files, "*.pdf");
+
+    ASSERT_EQ(filtered.size(), 1u);
+    EXPECT_EQ(filtered[0].name(), "report.pdf");
+}
+
+TEST(FileNavigationUseCase, FilterByNameStarPrefixMatchesByLeadingText)
+{
+    std::vector<FileNode> files{ makeFile("C:/data/doc1.txt", 1), makeFile("C:/data/report.txt", 2) };
+
+    auto filtered = FileNavigationUseCase::filterByName(files, "doc*");
+
+    ASSERT_EQ(filtered.size(), 1u);
+    EXPECT_EQ(filtered[0].name(), "doc1.txt");
+}
+
+TEST(FileNavigationUseCase, FilterByNameQuestionMarkMatchesExactlyOneCharacter)
+{
+    std::vector<FileNode> files{
+        makeFile("C:/data/file1.txt", 1),
+        makeFile("C:/data/file12.txt", 2),
+    };
+
+    auto filtered = FileNavigationUseCase::filterByName(files, "file?.txt");
+
+    ASSERT_EQ(filtered.size(), 1u);
+    EXPECT_EQ(filtered[0].name(), "file1.txt");
+}
+
 TEST(FileNavigationUseCase, FilterBySizeRangeNoBoundsIsPassthrough)
 {
     std::vector<FileNode> files{ makeFile("C:/data/a.txt", 1), makeFile("C:/data/folder", 0, FileType::Directory) };
@@ -283,32 +316,7 @@ TEST(FileNavigationUseCase, FilterBySizeRangeAppliesMinAndMaxBounds)
     EXPECT_EQ(filtered[0].name(), "mid.txt");
 }
 
-TEST(FileNavigationUseCase, FilterByExtensionsEmptyListIsPassthrough)
-{
-    std::vector<FileNode> files{ makeFile("C:/data/a.txt", 1), makeFile("C:/data/folder", 0, FileType::Directory) };
-
-    auto filtered = FileNavigationUseCase::filterByExtensions(files, {});
-
-    EXPECT_EQ(filtered.size(), 2u);
-}
-
-TEST(FileNavigationUseCase, FilterByExtensionsOrsTokensCaseInsensitivelyAndExcludesDirectories)
-{
-    std::vector<FileNode> files{
-        makeFile("C:/data/a.JPG", 1),
-        makeFile("C:/data/b.png", 2),
-        makeFile("C:/data/c.txt", 3),
-        makeFile("C:/data/folder.jpg", 0, FileType::Directory),
-    };
-
-    auto filtered = FileNavigationUseCase::filterByExtensions(files, { ".jpg", ".png" });
-
-    ASSERT_EQ(filtered.size(), 2u);
-    EXPECT_EQ(filtered[0].name(), "a.JPG");
-    EXPECT_EQ(filtered[1].name(), "b.png");
-}
-
-TEST(FileNavigationUseCase, FilterByCriteriaComposesAllThreeFilters)
+TEST(FileNavigationUseCase, FilterByCriteriaComposesBothFilters)
 {
     std::vector<FileNode> files{
         makeFile("C:/data/report.jpg", 50),
@@ -318,14 +326,14 @@ TEST(FileNavigationUseCase, FilterByCriteriaComposesAllThreeFilters)
     };
 
     SearchCriteria criteria;
-    criteria.nameQuery = "report";
+    criteria.nameQuery = "report.*";
     criteria.minSizeBytes = 10;
-    criteria.extensionList = "jpg, png";
 
     auto filtered = FileNavigationUseCase::filterByCriteria(files, criteria);
 
-    ASSERT_EQ(filtered.size(), 1u);
+    ASSERT_EQ(filtered.size(), 2u);
     EXPECT_EQ(filtered[0].name(), "report.jpg");
+    EXPECT_EQ(filtered[1].name(), "report.txt");
 }
 
 TEST(FileNavigationUseCase, FilterByCriteriaAllUnsetIsPassthrough)

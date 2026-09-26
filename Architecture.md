@@ -648,15 +648,22 @@ ViewModel/UI state is not (§11).
 ### 14.19 Advanced (Criteria) Search Pane
 
 A second, richer search entry point alongside §14.18 (kept unmodified) — Name / Min size / Max size
-/ Extension criteria, results always rendered in a taller, match-highlighting Details-like view
+criteria, results always rendered in a taller, match-highlighting Details-like view
 regardless of the tab's own `ViewMode`. Opening the pane shows a plain non-recursive listing of the
 current folder (not a search — no snapshot cached, no criteria applied) so it doesn't open empty;
 the first actual search (Search press, Enter, or a tag-search click) is what triggers the real
 recursive scan. Mutually exclusive with quick search on the same tab; each
 mode's state persists independently while hidden. `SearchCriteria` is a plain Application-layer
-struct; `FileNavigationUseCase::filterByCriteria` composes three new pure filters
-(`filterBySizeRange`, `filterByExtensions`, plus the existing `filterByName`), each a no-op when its
-part of the criteria is unset. `TabViewModel` gets a parallel search-state block (its own
+struct; `FileNavigationUseCase::filterByCriteria` composes two pure filters (`filterBySizeRange`,
+plus the existing `filterByName`), each a no-op when its part of the criteria is unset. The Name
+field accepts `*`/`?` wildcards (`*` = any run of characters, `?` = exactly one character) — a
+query containing neither is implicitly wrapped as `*query*` so the historical "contains" behavior
+is unchanged for plain text; a query containing either is matched as a full anchored glob against
+the whole name via **`src/domain/GlobMatch.h`/`.cpp`** (new, pure, no framework deps — same posture
+as `PathUtf8`/`PathContainment`), which extracts the codepoint-aware glob matcher §14.29's
+`FileNamePattern` already implemented, so the two features share one matching implementation
+instead of duplicating it. There is deliberately no separate Extension field — `*.ext`-style Name
+queries cover that case. `TabViewModel` gets a parallel search-state block (its own
 `FileListModel`, cached snapshot, criteria) alongside §14.18's, with each mode's entry point exiting
 the other. `SearchResultDelegate` bolds/highlights the matched substring in the Name column, the
 same manual multi-`drawText` technique `FileTileDelegate` uses. `FileBrowserView` gains an opt-in
@@ -673,7 +680,7 @@ Extends §14.9 (tag panel) and §14.19 (advanced search) so the two features int
 tag chip anywhere in `TagPanelWidget` is clickable, and clicking one opens Advanced Search on the
 *focused* tab with that tag applied as a criterion; Advanced Search itself gains its own tag
 search box so criteria can be built without visiting the tag panel at all. Search results must
-then satisfy file-property criteria (name/size/extension, §14.19) **and** tag criteria together.
+then satisfy file-property criteria (name/size, §14.19) **and** tag criteria together.
 
 * **`SearchCriteria` gains `std::vector<Tag::Id> tagIds`** (AND semantics, mirroring
   `ITagRepository::findFilesWithAllTags`; empty = no tag filter).

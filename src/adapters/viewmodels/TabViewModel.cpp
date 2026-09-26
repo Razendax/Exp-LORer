@@ -14,8 +14,7 @@ namespace
 {
     bool isCriteriaEmpty(const SearchCriteria& criteria)
     {
-        return criteria.nameQuery.empty() && !criteria.minSizeBytes && !criteria.maxSizeBytes && criteria.extensionList.empty() &&
-               criteria.tagIds.empty();
+        return criteria.nameQuery.empty() && !criteria.minSizeBytes && !criteria.maxSizeBytes && criteria.tagIds.empty();
     }
 
     constexpr std::size_t kMonitoringLogCap = 200;

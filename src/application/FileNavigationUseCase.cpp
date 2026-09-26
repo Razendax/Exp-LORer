@@ -4,6 +4,7 @@
 #include <cctype>
 #include <set>
 
+#include "GlobMatch.h"
 #include "PathUtf8.h"
 
 namespace
@@ -14,47 +15,6 @@ namespace
             return static_cast<char>(std::tolower(c));
         });
         return text;
-    }
-
-    // Splits a comma/space-separated extension list (e.g. "jpg, png") into trimmed tokens, each
-    // normalized to include a leading '.' so it compares directly against
-    // std::filesystem::path::extension(). Empty tokens are dropped.
-    std::vector<std::string> splitExtensionList(const std::string& extensionList)
-    {
-        std::vector<std::string> tokens;
-        std::string current;
-
-        auto flush = [&]() {
-            const std::size_t begin = current.find_first_not_of(" \t");
-            const std::size_t end = current.find_last_not_of(" \t");
-            if (begin == std::string::npos)
-            {
-                current.clear();
-                return;
-            }
-            std::string trimmed = current.substr(begin, end - begin + 1);
-            if (!trimmed.empty() && trimmed.front() != '.')
-            {
-                trimmed.insert(trimmed.begin(), '.');
-            }
-            tokens.push_back(std::move(trimmed));
-            current.clear();
-        };
-
-        for (char c : extensionList)
-        {
-            if (c == ',' || c == ' ' || c == '\t')
-            {
-                flush();
-            }
-            else
-            {
-                current.push_back(c);
-            }
-        }
-        flush();
-
-        return tokens;
     }
 }
 
@@ -137,11 +97,12 @@ std::vector<FileNode> FileNavigationUseCase::filterByName(std::vector<FileNode> 
         return files;
     }
 
-    const std::string wanted = toLower(query);
+    const bool hasWildcard = query.find('*') != std::string::npos || query.find('?') != std::string::npos;
+    const std::string pattern = hasWildcard ? query : "*" + query + "*";
 
     std::vector<FileNode> result;
-    std::copy_if(files.begin(), files.end(), std::back_inserter(result), [&wanted](const FileNode& file) {
-        return toLower(PathUtf8::toUtf8(file.name())).find(wanted) != std::string::npos;
+    std::copy_if(files.begin(), files.end(), std::back_inserter(result), [&pattern](const FileNode& file) {
+        return GlobMatch::matches(pattern, PathUtf8::toUtf8(file.name()));
     });
 
     return result;
@@ -176,39 +137,10 @@ std::vector<FileNode> FileNavigationUseCase::filterBySizeRange(std::vector<FileN
     return result;
 }
 
-std::vector<FileNode> FileNavigationUseCase::filterByExtensions(std::vector<FileNode> files,
-                                                                   const std::vector<std::string>& extensions)
-{
-    if (extensions.empty())
-    {
-        return files;
-    }
-
-    std::vector<std::string> wanted;
-    wanted.reserve(extensions.size());
-    for (const std::string& extension : extensions)
-    {
-        wanted.push_back(toLower(extension));
-    }
-
-    std::vector<FileNode> result;
-    std::copy_if(files.begin(), files.end(), std::back_inserter(result), [&](const FileNode& file) {
-        if (file.isDirectory())
-        {
-            return false;
-        }
-        const std::string extension = toLower(PathUtf8::toUtf8(file.path().extension()));
-        return std::find(wanted.begin(), wanted.end(), extension) != wanted.end();
-    });
-
-    return result;
-}
-
 std::vector<FileNode> FileNavigationUseCase::filterByCriteria(std::vector<FileNode> files, const SearchCriteria& criteria)
 {
     files = filterByName(std::move(files), criteria.nameQuery);
     files = filterBySizeRange(std::move(files), criteria.minSizeBytes, criteria.maxSizeBytes);
-    files = filterByExtensions(std::move(files), splitExtensionList(criteria.extensionList));
     return files;
 }
 

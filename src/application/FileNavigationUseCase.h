@@ -36,6 +36,10 @@ public:
 
     static std::vector<FileNode> sortBy(std::vector<FileNode> files, SortCriterion criterion, bool ascending = true);
     static std::vector<FileNode> filterByExtension(std::vector<FileNode> files, const std::string& extension);
+
+    // Empty query is a no-op passthrough. A query containing no '*'/'?' keeps the historical
+    // "contains" behavior (wrapped as "*query*" internally); a query containing either is matched
+    // as a full anchored glob against the whole name via GlobMatch (Architecture.md §14.19/§14.29).
     static std::vector<FileNode> filterByName(std::vector<FileNode> files, const std::string& query);
 
     // Excludes directories whenever either bound is set (a directory has no "size" in this app's
@@ -44,15 +48,8 @@ public:
                                                     std::optional<std::uintmax_t> minBytes,
                                                     std::optional<std::uintmax_t> maxBytes);
 
-    // extensions are already-split/trimmed tokens (splitting is a UI/adapter concern, not this
-    // layer's), OR'd together case-insensitively via the same toLower comparison as
-    // filterByExtension. Excludes directories when the list is non-empty; no-op passthrough on an
-    // empty vector.
-    static std::vector<FileNode> filterByExtensions(std::vector<FileNode> files, const std::vector<std::string>& extensions);
-
-    // Composes filterByName -> filterBySizeRange -> filterByExtensions, each a no-op when its part
-    // of criteria is unset. The single entry point TabViewModel calls for advanced search
-    // (Architecture.md §14.19).
+    // Composes filterByName -> filterBySizeRange, each a no-op when its part of criteria is unset.
+    // The single entry point TabViewModel calls for advanced search (Architecture.md §14.19).
     static std::vector<FileNode> filterByCriteria(std::vector<FileNode> files, const SearchCriteria& criteria);
 
     // Keeps only entries whose path() is present in allowedPaths (exact match — same path-keyed
