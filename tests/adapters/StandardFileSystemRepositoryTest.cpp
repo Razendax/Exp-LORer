@@ -4,6 +4,8 @@
 
 #ifdef _WIN32
 #include <Windows.h>
+
+#include <Aclapi.h>
 #endif
 
 #include "ArchiveFixture.h"
@@ -347,6 +349,37 @@ TEST_F(StandardFileSystemRepositoryTest, StatReportsWindowsHiddenAttribute)
 
     ASSERT_TRUE(result.hasValue());
     EXPECT_TRUE(result.value().isHidden());
+}
+
+// Regression test for a real crash: fs::directory_entry's throwing constructor calls refresh()
+// immediately, which throws "directory_entry::refresh: Access is denied" for a path that exists
+// but can't have its attributes queried (some restricted system folders/junctions hit this even
+// under directory_options::skip_permission_denied). stat() must report it as a failed Result
+// instead of letting the exception escape and crash the app.
+TEST_F(StandardFileSystemRepositoryTest, StatOnAccessDeniedFolderReturnsErrorInsteadOfThrowing)
+{
+    const fs::path restricted = m_tempDir / "restricted";
+    fs::create_directory(restricted);
+
+    // An empty (non-null) DACL denies access to everyone, including the owning process, except
+    // for the implicit owner rights to read/rewrite the DACL itself -- which is how the cleanup
+    // below is still able to reopen it afterwards.
+    ACL emptyAcl;
+    ASSERT_TRUE(InitializeAcl(&emptyAcl, sizeof(emptyAcl), ACL_REVISION));
+    ASSERT_EQ(SetNamedSecurityInfoW(const_cast<LPWSTR>(restricted.c_str()), SE_FILE_OBJECT,
+                                     DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, nullptr,
+                                     nullptr, &emptyAcl, nullptr),
+              static_cast<DWORD>(ERROR_SUCCESS));
+
+    Result<FileNode> result = Result<FileNode>::failure(Error(ErrorCode::IoError, "unset"));
+    EXPECT_NO_THROW(result = m_repository.stat(restricted));
+    EXPECT_TRUE(result.hasError());
+
+    // Restore full access (a NULL DACL grants everyone all access) so TearDown's fs::remove_all
+    // can delete the tree.
+    SetNamedSecurityInfoW(const_cast<LPWSTR>(restricted.c_str()), SE_FILE_OBJECT,
+                           DACL_SECURITY_INFORMATION | UNPROTECTED_DACL_SECURITY_INFORMATION, nullptr, nullptr,
+                           nullptr, nullptr);
 }
 #endif
 

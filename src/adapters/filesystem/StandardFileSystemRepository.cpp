@@ -45,6 +45,18 @@ namespace
     }
 #endif
 
+    // fs::directory_entry(path) is a throwing constructor -- it refresh()es the entry immediately,
+    // which throws filesystem_error ("directory_entry::refresh: Access is denied") for paths whose
+    // attributes can't be queried (e.g. certain restricted system folders/junctions), even though
+    // the path itself exists. The error_code overload never throws; buildFileNode() already
+    // tolerates an entry whose cached status is empty since all of its own entry queries go through
+    // error_code overloads too.
+    fs::directory_entry makeDirectoryEntry(const fs::path& target)
+    {
+        std::error_code ec;
+        return fs::directory_entry(target, ec);
+    }
+
     FileType toFileType(const fs::directory_entry& entry)
     {
         std::error_code ec;
@@ -122,7 +134,7 @@ namespace
         const fs::path folderPath(rawPath);
         CoTaskMemFree(rawPath);
 
-        return buildFileNode(folderPath, fs::directory_entry(folderPath));
+        return buildFileNode(folderPath, makeDirectoryEntry(folderPath));
     }
 
     // Shared by buildDriveNode/driveSpaceInfo: resolves one drive letter's display label via
@@ -300,7 +312,7 @@ Result<FileNode> StandardFileSystemRepository::stat(const std::filesystem::path&
         return Result<FileNode>::failure(Error(ErrorCode::NotFound, PathUtf8::toUtf8(path) + " does not exist"));
     }
 
-    return buildFileNode(path, fs::directory_entry(target));
+    return buildFileNode(path, makeDirectoryEntry(target));
 }
 
 namespace
@@ -335,7 +347,7 @@ Result<FileNode> StandardFileSystemRepository::move(const std::filesystem::path&
         return Result<FileNode>::failure(toError(e));
     }
 
-    return buildFileNode(destination, fs::directory_entry(withPrefix(destination)));
+    return buildFileNode(destination, makeDirectoryEntry(withPrefix(destination)));
 }
 
 Result<FileNode> StandardFileSystemRepository::copy(const std::filesystem::path& source, const std::filesystem::path& destination)
@@ -367,7 +379,7 @@ Result<FileNode> StandardFileSystemRepository::copy(const std::filesystem::path&
         return Result<FileNode>::failure(toError(e));
     }
 
-    return buildFileNode(destination, fs::directory_entry(withPrefix(destination)));
+    return buildFileNode(destination, makeDirectoryEntry(withPrefix(destination)));
 }
 
 Result<void> StandardFileSystemRepository::deletePermanently(const std::filesystem::path& path)
@@ -534,7 +546,7 @@ Result<FileNode> StandardFileSystemRepository::createFileFromTemplate(const std:
         return Result<FileNode>::failure(toError(e));
     }
 
-    return buildFileNode(destinationFile, fs::directory_entry(target));
+    return buildFileNode(destinationFile, makeDirectoryEntry(target));
 }
 
 Result<void> StandardFileSystemRepository::showProperties(const std::filesystem::path& path, NativeWindowHandle ownerWindow)
