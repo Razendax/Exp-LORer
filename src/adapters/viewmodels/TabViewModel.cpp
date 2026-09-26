@@ -304,6 +304,21 @@ void TabViewModel::showAdvancedSearchPanel()
 
     exitSearch();
 
+    // Not a real (recursive) search -- just a non-recursive listing of the current folder so the
+    // pane doesn't open empty. m_advancedSearchRoot/m_advancedSearchSnapshot stay unset, so the
+    // first real search (startAdvancedSearch/updateAdvancedSearchCriteria/addTagSearchCriterion)
+    // still performs its own recursive scan.
+    const std::filesystem::path path = currentPath();
+    auto result = m_fileNavigationUseCase.listDirectory(path);
+    if (result.hasError())
+    {
+        emit advancedSearchFailed(QString::fromStdString(result.error().message));
+        return;
+    }
+
+    auto sorted = FileNavigationUseCase::sortBy(std::move(result).value(), SortCriterion::Name, true);
+    m_advancedSearchResultsModel->setEntries(path, sorted);
+
     m_advancedSearchActive = true;
     setSelectedEntries({});
     emit advancedSearchModeChanged(true);

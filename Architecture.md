@@ -649,7 +649,10 @@ ViewModel/UI state is not (§11).
 
 A second, richer search entry point alongside §14.18 (kept unmodified) — Name / Min size / Max size
 / Extension criteria, results always rendered in a taller, match-highlighting Details-like view
-regardless of the tab's own `ViewMode`. Mutually exclusive with quick search on the same tab; each
+regardless of the tab's own `ViewMode`. Opening the pane shows a plain non-recursive listing of the
+current folder (not a search — no snapshot cached, no criteria applied) so it doesn't open empty;
+the first actual search (Search press, Enter, or a tag-search click) is what triggers the real
+recursive scan. Mutually exclusive with quick search on the same tab; each
 mode's state persists independently while hidden. `SearchCriteria` is a plain Application-layer
 struct; `FileNavigationUseCase::filterByCriteria` composes three new pure filters
 (`filterBySizeRange`, `filterByExtensions`, plus the existing `filterByName`), each a no-op when its
@@ -700,6 +703,9 @@ then satisfy file-property criteria (name/size/extension, §14.19) **and** tag c
     never yet scanned (`m_advancedSearchRoot.empty()`) — preserving §14.19's "editing before the
     first Search does not scan" contract while letting the new tag-click entry points (which have
     no Search-button press to hang a scan off of) trigger that first scan themselves.
+    `showAdvancedSearchPanel`'s own non-recursive current-folder listing (§14.19) is separate from
+    this cache and leaves `m_advancedSearchRoot` unset, so the first real search here still forces
+    a full recursive scan.
   * A new `advancedSearchCriteriaChanged(const SearchCriteria&)` signal, since criteria can now
     change from three independent places (the existing Name/size/extension fields, Advanced
     Search's own new tag search box, and a `TagPanelWidget` click on a different widget entirely)

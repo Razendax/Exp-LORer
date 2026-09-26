@@ -158,8 +158,9 @@ public slots:
     void exitSearch();
 
     // Advanced (criteria) search pane (Architecture.md §14.19), parallel to the quick-search block
-    // above. Reveals the pane without scanning yet; exits quick search first (single-active-mode
-    // invariant).
+    // above. Reveals the pane with a plain non-recursive listing of the current folder (not a real
+    // search -- no snapshot is cached, no criteria applied) so it doesn't open empty; exits quick
+    // search first (single-active-mode invariant). The first real search still scans recursively.
     void showAdvancedSearchPanel();
 
     // No-op if criteria is entirely empty (nameQuery/size bounds/extensions all unset). Otherwise
