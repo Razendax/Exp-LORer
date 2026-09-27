@@ -24,6 +24,7 @@ class DirectoryWatchUseCase;
 class DirectoryWatchService;
 class FolderMonitorUseCase;
 class MonitoringPanelViewModel;
+class NotificationCenter;
 
 // Mediator owning all 4 WorkspacePaneViewModels (always instantiated, regardless of which are
 // currently visible under the active SplitLayout) plus the active SplitLayout, the focused pane,
@@ -42,7 +43,8 @@ public:
                          FilePreviewUseCase& filePreviewUseCase, IFileSystemRepository& fileSystemRepository,
                          const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                          GitStatusService& gitStatusService, DirectoryWatchUseCase& directoryWatchUseCase,
-                         FolderMonitorUseCase& folderMonitorUseCase, QObject* parent = nullptr);
+                         FolderMonitorUseCase& folderMonitorUseCase, NotificationCenter& notificationCenter,
+                         QObject* parent = nullptr);
 
     WorkspacePaneViewModel* pane(WorkspacePaneId id) const;
     SplitLayout layout() const noexcept { return m_layout; }

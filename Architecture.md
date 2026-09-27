@@ -262,8 +262,9 @@ CREATE TABLE FileTags (
   once, before constructing `Logging` or `CompositionRoot`, checking for a `--data-dir` argument
   before falling back to `QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)`.
   `CompositionRoot`'s constructor takes the resolved directory and derives `explorer.db`,
-  `config.json`, `cache/thumbnails/`, `highlight_theme.json`, `file_decorations.json`, and
-  `favorites.json` from it, instead of each looking it up independently. Exists so `ui_tests/` (§11)
+  `config.json`, `cache/thumbnails/`, `highlight_theme.json`, `file_decorations.json`,
+  `favorites.json`, and `notification_settings.json` (§14.36) from it, instead of each looking it
+  up independently. Exists so `ui_tests/` (§11)
   can point each test run
   at an isolated, disposable directory rather than the developer's real session. On Windows the
   argument is read from the process's own wide command line (`GetCommandLineW()` +
@@ -299,6 +300,7 @@ Exp-LORer/
 │   │   ├── shell/       # ShellContextMenuProvider
 │   │   ├── config/      # AppConfigStore (JSON session persistence)
 │   │   ├── favorites/   # FavoriteItem / FavoriteCategory / Favorites (§14.35)
+│   │   ├── notifications/ # NotificationType / NotificationSettings / NotificationCenter (§14.36)
 │   │   ├── media/       # QtMediaDecoder / FFmpegMediaDecoder (not yet implemented)
 │   │   ├── archive/     # ArchivePathResolver / LibArchiveReader / ArchiveIndexCache (§14.28)
 │   │   ├── git/         # LibGit2Repository / LibGit2StatusProvider (§14.31)
@@ -1779,3 +1781,64 @@ change**, same posture as every other entry in this section.
   `TagManagerDialog`) — smoke-tested manually instead. `Favorites`' pure mutation logic and
   `FavoritesStore`'s JSON round-trip/tolerant-load behavior each get an ordinary GTest suite under
   `tests/adapters`, mirroring `FileDecorationRulesTest.cpp`/`FileDecorationRulesStoreTest.cpp`.
+
+### 14.36 Notification System
+
+App-wide toast/progress notifications, `Settings → General → Notifications` (Specification.md
+§2.1), and the first two call sites (tag applied/removed). Like §14.26/§14.29/§14.35, this is a
+pure presentation concern: **no Domain/Application change, no new Port, no `CompositionRoot`
+use-case wiring**.
+
+* **Two kinds.** *Popup* notifications (Info/blue, Warning/yellow, Error/red) auto-dismiss after a
+  per-type timeout and always have a manual close button; stack bottom-right, newest nearest the
+  corner. *Progress-bar* notifications are a factory API — `createProgressNotification(title,
+  barCount)` returns an id; client code asynchronously updates a bar's current/max/text or
+  terminates the whole notification via that id. **Not wired to any real operation yet** — copy/
+  move stay synchronous with no progress UI (§5's existing accepted gap) — only the generic
+  mechanism exists, for a future feature to call into.
+* **`src/adapters/notifications`** (new module, `explorer_adapters_notifications`, links only
+  `explorer_domain` + `Qt6::Core` — sits *below* `adapters/viewmodels`, deliberately not in
+  `adapters/config`): `NotificationType` (plain enum); `NotificationSettings` (plain C++, no Qt — a
+  fixed `{enabled, timeoutMs}` per type, not a sparse override map, since there are always exactly
+  3 rows; `timeoutMs == 0` means "never auto-dismiss, close button only"); `NotificationCenter`
+  (`QObject`) — the single shared dispatcher every feature calls into, holding a `const
+  NotificationSettings&` so `showPopup` can check enabled/timeout synchronously with zero
+  dependency on `adapters/config`. Qt's signal/slot auto-connection already queues delivery across
+  threads by the *receiver's* affinity, the same property `WindowsConPtyProcess` relies on
+  (§14.23), so `updateProgressBar`/`terminateProgressNotification` are safe to call from a future
+  background worker thread with no extra marshaling here.
+* **Why not `adapters/config`:** that module already depends on `adapters/viewmodels` (§14.29's own
+  note re: `AppConfig`/`FileListModel::ColumnCount`). `TagListViewModel` (in `adapters/viewmodels`)
+  needs to call into the notification dispatcher, so putting it in `adapters/config` would be the
+  same `viewmodels → config → viewmodels` cycle §14.29 already solved once — solved the same way
+  here: the plain data (`NotificationSettings`) lives below `adapters/viewmodels`; only the Qt
+  settings-page wrapper below lives in `adapters/config`, wired only into `MainWindow`/
+  `SettingsDialog`, never into a ViewModel.
+* **`src/adapters/config`** gains `NotificationSettingsStore` (own `notification_settings.json`,
+  §9, same tolerant-load/atomic-save shape as `HighlightThemeStore`), `NotificationSettingsSaveWorker`
+  (background-thread save), and `NotificationSettingsViewModel` (`settingsFor`/`setSettingsFor`,
+  `settingsChanged()`) — the same three-piece shape §14.26/§14.29 established, mutating the *same*
+  `NotificationSettings` instance `NotificationCenter` holds a `const&` to (both owned by
+  `CompositionRoot`), so a Settings-page edit is visible on `NotificationCenter`'s very next call
+  with no signal wiring between the two.
+* **`WorkspaceController`/`TagListViewModel`** each gain a trailing `NotificationCenter&`
+  constructor parameter (same threading style as `GitStatusService&`/`FolderMonitorUseCase&`).
+  `TagListViewModel::addTagToSelection`/`removeTagFromSelection` fire an Info popup ("Tag Applied"/
+  "Tag Removed", naming the tag and the target) after a successful assign/unassign — the first two
+  call sites; the mechanism is generic so a future feature can raise Warning/Error the same way.
+* **`src/ui/widgets`:** `ToastNotificationWidget` (one popup card: colored header icon+type name,
+  body text, close button, an auto-dismiss `QTimer` skipped when `timeoutMs == 0`);
+  `ProgressNotificationWidget` (title + N labeled `QProgressBar` rows, no manual close — ends only
+  via `terminateProgressNotification`); `NotificationOverlayWidget` (a plain child of `MainWindow`,
+  always raised, anchored bottom-right via a `resizeEvent` override, stacking the cards above in a
+  bottom-aligned layout). `SettingsDialog` gains a `General → Notifications` category: a fixed
+  3-row table (Type / Enabled checkbox / Timeout spinbox in seconds), immediate-apply like every
+  other Settings page — no Add/Remove, unlike the Colors page's editable rule list, since the rows
+  are fixed. `UiColors.h` gains `kNotificationInfoBlue`/`kNotificationWarningYellow`/
+  `kNotificationErrorRed`.
+* **Not built:** progress-bar notifications wired into a real operation; a cap on simultaneously
+  visible notifications/overflow scrolling (unbounded stacking accepted); sound; click-to-action;
+  a history/log of dismissed popups; persisting in-flight notifications across restart (only the
+  3-row settings persist). No automated coverage for `NotificationCenter` or any widget above
+  beyond the existing §11 UI/ViewModel-glue carve-out; `NotificationSettings`'s plain logic and
+  `NotificationSettingsStore`'s JSON round-trip get ordinary GTest coverage under `tests/adapters`.

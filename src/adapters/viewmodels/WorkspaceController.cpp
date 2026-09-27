@@ -24,7 +24,8 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
                                            const FileDecorationRules& fileDecorationRules,
                                            QObject& fileDecorationsChangeSource, GitStatusService& gitStatusService,
                                            DirectoryWatchUseCase& directoryWatchUseCase,
-                                           FolderMonitorUseCase& folderMonitorUseCase, QObject* parent)
+                                           FolderMonitorUseCase& folderMonitorUseCase, NotificationCenter& notificationCenter,
+                                           QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
 {
@@ -41,7 +42,7 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
         folderMonitorUseCase, WorkspacePaneId::PaneD, this);
 
-    m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, this);
+    m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, notificationCenter, this);
     m_filePreviewViewModel = new FilePreviewViewModel(filePreviewUseCase, fileSystemRepository, this);
     m_monitoringPanelViewModel = new MonitoringPanelViewModel(this);
     m_fileOperationsController = new FileOperationsController(m_fileNavigationUseCase, this);

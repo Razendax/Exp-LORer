@@ -25,6 +25,8 @@ add_executable(explorer_adapters_tests
     FileDecorationRulesStoreTest.cpp
     FavoritesTest.cpp
     FavoritesStoreTest.cpp
+    NotificationSettingsTest.cpp
+    NotificationSettingsStoreTest.cpp
     LibGit2StatusProviderTest.cpp
     LibGit2RepositoryTest.cpp
     LibGit2BranchProviderTest.cpp

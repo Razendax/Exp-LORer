@@ -22,6 +22,7 @@
 #include <QPaintEvent>
 #include <QPainter>
 #include <QPalette>
+#include <QResizeEvent>
 #include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
@@ -37,6 +38,7 @@
 #include "ManageFavoritesDialog.h"
 #include "MainStatusBarWidget.h"
 #include "MonitoringPanelWidget.h"
+#include "NotificationOverlayWidget.h"
 #include "SettingsDialog.h"
 #include "TabViewModel.h"
 #include "TagManagerDialog.h"
@@ -225,7 +227,9 @@ namespace
 MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore,
                          TagManagementUseCase& tagManagementUseCase, SyntaxHighlightEngine& syntaxHighlightEngine,
                          HighlightThemeViewModel& highlightThemeViewModel, FileDecorationsViewModel& fileDecorationsViewModel,
-                         FavoritesViewModel& favoritesViewModel, const AppConfig& initialConfig, QWidget* parent)
+                         FavoritesViewModel& favoritesViewModel, NotificationCenter& notificationCenter,
+                         NotificationSettingsViewModel& notificationSettingsViewModel, const AppConfig& initialConfig,
+                         QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceController(workspaceController)
     , m_configStore(configStore)
@@ -234,6 +238,8 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_highlightThemeViewModel(highlightThemeViewModel)
     , m_fileDecorationsViewModel(fileDecorationsViewModel)
     , m_favoritesViewModel(favoritesViewModel)
+    , m_notificationCenter(notificationCenter)
+    , m_notificationSettingsViewModel(notificationSettingsViewModel)
     , m_columnWidths(initialConfig.detailsColumnWidths)
 {
     setObjectName(QStringLiteral("mainWindow"));
@@ -256,6 +262,10 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     createLayoutToolBar();
     createWorkspace();
     createMainStatusBar();
+
+    m_notificationOverlayWidget = new NotificationOverlayWidget(m_notificationCenter, this);
+    m_notificationOverlayWidget->setObjectName(QStringLiteral("notificationOverlayWidget"));
+    m_notificationOverlayWidget->reposition(height() - statusBar()->height());
 
     m_driveInfoWorker = new DriveSpaceInfoWorker(m_workspaceController->fileNavigationUseCase());
     m_driveInfoWorker->moveToThread(&m_driveInfoThread);
@@ -550,7 +560,8 @@ void MainWindow::showManageFavoritesDialog()
 
 void MainWindow::showSettingsDialog()
 {
-    SettingsDialog dialog(m_syntaxHighlightEngine, m_highlightThemeViewModel, m_fileDecorationsViewModel, this);
+    SettingsDialog dialog(m_syntaxHighlightEngine, m_highlightThemeViewModel, m_fileDecorationsViewModel,
+                          m_notificationSettingsViewModel, this);
 
     connect(&dialog, &SettingsDialog::showTabCloseButtonsChanged, this, [this](bool visible) {
         for (WorkspacePaneId id : kAllPanes)
@@ -887,6 +898,16 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event)
         }
     }
     return QMainWindow::eventFilter(watched, event);
+}
+
+void MainWindow::resizeEvent(QResizeEvent* event)
+{
+    QMainWindow::resizeEvent(event);
+
+    if (m_notificationOverlayWidget)
+    {
+        m_notificationOverlayWidget->reposition(height() - statusBar()->height());
+    }
 }
 
 void MainWindow::onSortOrderChanged(SortCriterion criterion, bool ascending)

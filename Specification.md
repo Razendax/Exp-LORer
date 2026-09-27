@@ -97,13 +97,22 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   ends its terminal session.
 * **Settings dialog (Architecture.md §14.26):** `File > Settings...` opens a dialog with a
   hierarchical category tree on the left and that category's settings on the right; in v1 this
-  holds three categories: Highlight > Languages, listing the languages with syntax highlighting
+  holds four categories: Highlight > Languages, listing the languages with syntax highlighting
   (2.2 "Preview Panel") and, per language, each of its token types with a color swatch the user can
   change via a color picker; General > UI, holding a "Show close button on tabs" toggle
   (default on) controlling whether each pane's tabs render a close ("x") button, app-wide and
-  applied to already-open tabs immediately; and General > Colors (Architecture.md §14.29), an
-  editable, ordered list of file/folder appearance rules (see below). Changes in all three
-  categories apply and persist immediately.
+  applied to already-open tabs immediately; General > Colors (Architecture.md §14.29), an
+  editable, ordered list of file/folder appearance rules (see below); and General > Notifications
+  (Architecture.md §14.36), a fixed 3-row table (Type / Enabled / Timeout) letting the user
+  enable/disable each popup notification type and set how long it stays on screen before
+  auto-dismissing. Changes in all four categories apply and persist immediately.
+* **Notifications (Architecture.md §14.36):** two kinds of app-wide notification appear stacked in
+  the bottom-right corner of the window. Popup notifications — Info (blue), Warning (yellow), or
+  Error (red), each showing an icon/type header and a message body — auto-dismiss after a
+  configurable timeout (see Settings above) and always have a manual close button. Progress-bar
+  notifications can show one or more progress bars for a long-running operation; v1 ships the
+  underlying mechanism only, with no operation wired to it yet (copy/move remain as described
+  under "File Operations" below, without a progress display).
 * **Per-file/folder appearance customization (Architecture.md §14.29):** under Settings >
   General > Colors, the user maintains an ordered list of rules, each pairing a comma-separated set
   of name patterns with a style (custom color, custom font, and independently toggleable bold,
@@ -192,6 +201,8 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 **Tag Assignment:**
 * Ability to attach multiple tags to any file or folder.
 * Context-menu integration and drag-and-drop tagging.
+* Applying or removing a tag shows an Info popup notification confirming the change
+  (Architecture.md §14.36).
 
 **Database Backend:**
 * Local lightweight database (e.g., SQLite) to persist tag metadata, associating file paths (or unique file hashes) with tag IDs.

@@ -7,12 +7,15 @@
 
 #include "FileDecorationRule.h"
 #include "Language.h"
+#include "NotificationType.h"
 
 class HighlightThemeViewModel;
 class FileDecorationsViewModel;
+class NotificationSettingsViewModel;
 class SyntaxHighlightEngine;
 class QCheckBox;
 class QPushButton;
+class QSpinBox;
 class QStackedWidget;
 class QTableWidget;
 class QTreeWidget;
@@ -32,7 +35,8 @@ class SettingsDialog : public QDialog
 
 public:
     SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeViewModel& themeViewModel,
-                   FileDecorationsViewModel& fileDecorationsViewModel, QWidget* parent = nullptr);
+                   FileDecorationsViewModel& fileDecorationsViewModel, NotificationSettingsViewModel& notificationSettingsViewModel,
+                   QWidget* parent = nullptr);
 
 signals:
     // General > UI "Show close button on tabs" checkbox toggled -- MainWindow propagates this to
@@ -70,11 +74,18 @@ private:
     void removeDecorationRule(int row);
     void commitDecorationRules();
 
+    // General -> Notifications page: a fixed 3-row table (Type / Enabled / Timeout), one row per
+    // NotificationType, built once from NotificationSettingsViewModel::settingsFor(type) -- each
+    // control writes straight through setSettingsFor(type, enabled, timeoutMs) on change, no
+    // Add/Remove since the 3 rows never change.
+    QWidget* buildNotificationsPage();
+
     static constexpr int kHiddenRowCount = 2;
 
     SyntaxHighlightEngine& m_engine;
     HighlightThemeViewModel& m_themeViewModel;
     FileDecorationsViewModel& m_fileDecorationsViewModel;
+    NotificationSettingsViewModel& m_notificationSettingsViewModel;
     QTableWidget* m_decorationsTable = nullptr;
     std::vector<FileDecorationRule> m_decorationRules;
     FileDecorationRule m_hiddenFilesRule;

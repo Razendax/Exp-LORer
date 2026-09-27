@@ -5,6 +5,8 @@
 
 #include "ArchiveExtensions.h"
 #include "FileNavigationUseCase.h"
+#include "NotificationCenter.h"
+#include "NotificationType.h"
 #include "TabViewModel.h"
 #include "TagColorPalette.h"
 #include "TagManagementUseCase.h"
@@ -16,13 +18,20 @@ namespace
     {
         return std::any_of(tags.begin(), tags.end(), [id](const Tag& tag) { return tag.id() == id; });
     }
+
+    const Tag* findTagId(const std::vector<Tag>& tags, Tag::Id id)
+    {
+        const auto it = std::find_if(tags.begin(), tags.end(), [id](const Tag& tag) { return tag.id() == id; });
+        return it == tags.end() ? nullptr : &(*it);
+    }
 }
 
 TagListViewModel::TagListViewModel(TagManagementUseCase& tagManagementUseCase, FileNavigationUseCase& fileNavigationUseCase,
-                                    QObject* parent)
+                                    NotificationCenter& notificationCenter, QObject* parent)
     : QObject(parent)
     , m_tagManagementUseCase(tagManagementUseCase)
     , m_fileNavigationUseCase(fileNavigationUseCase)
+    , m_notificationCenter(notificationCenter)
 {
     refreshAll();
 }
@@ -78,6 +87,11 @@ void TagListViewModel::addTagToSelection(Tag::Id tagId)
         return;
     }
 
+    const QString targetName = target->displayName() ? QString::fromStdString(*target->displayName())
+                                                       : QString::fromStdWString(target->name().wstring());
+    m_notificationCenter.showPopup(NotificationType::Info, tr("Tag Applied"),
+                                    tr("\"%1\" tagged with \"%2\".").arg(targetName, resolveTagName(tagId)));
+
     refreshAll();
 }
 
@@ -90,12 +104,19 @@ void TagListViewModel::removeTagFromSelection(Tag::Id tagId)
         return;
     }
 
+    const QString tagName = resolveTagName(tagId);
+
     auto result = m_tagManagementUseCase.unassignTag(*target, tagId);
     if (!result)
     {
         emit operationFailed(QString::fromStdString(result.error().message));
         return;
     }
+
+    const QString targetName = target->displayName() ? QString::fromStdString(*target->displayName())
+                                                       : QString::fromStdWString(target->name().wstring());
+    m_notificationCenter.showPopup(NotificationType::Info, tr("Tag Removed"),
+                                    tr("\"%1\" untagged from \"%2\".").arg(targetName, tagName));
 
     refreshAll();
 }
@@ -174,6 +195,33 @@ std::optional<FileNode> TagListViewModel::resolveTarget() const
     }
 
     return target;
+}
+
+QString TagListViewModel::resolveTagName(Tag::Id tagId) const
+{
+    if (const Tag* tag = findTagId(m_searchResults, tagId))
+    {
+        return QString::fromStdString(tag->name());
+    }
+    if (const Tag* tag = findTagId(m_folderTags, tagId))
+    {
+        return QString::fromStdString(tag->name());
+    }
+    if (const Tag* tag = findTagId(m_selectedItemTags, tagId))
+    {
+        return QString::fromStdString(tag->name());
+    }
+
+    auto all = m_tagManagementUseCase.allTags();
+    if (all)
+    {
+        if (const Tag* tag = findTagId(all.value(), tagId))
+        {
+            return QString::fromStdString(tag->name());
+        }
+    }
+
+    return QString();
 }
 
 void TagListViewModel::refreshFolderTags()

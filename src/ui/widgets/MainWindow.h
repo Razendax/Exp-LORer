@@ -18,6 +18,7 @@
 class QAction;
 class QActionGroup;
 class QCloseEvent;
+class QResizeEvent;
 class QMenu;
 class QLineEdit;
 class QToolBar;
@@ -25,6 +26,8 @@ class AppConfigStore;
 class HighlightThemeViewModel;
 class FileDecorationsViewModel;
 class FavoritesViewModel;
+class NotificationCenter;
+class NotificationSettingsViewModel;
 class SyntaxHighlightEngine;
 class TagManagementUseCase;
 class WorkspaceController;
@@ -33,6 +36,7 @@ class TagPanelWidget;
 class RightPanelWidget;
 class PreviewPanelWidget;
 class MonitoringPanelWidget;
+class NotificationOverlayWidget;
 class TabViewModel;
 class MainStatusBarWidget;
 class DriveSpaceInfoWorker;
@@ -49,6 +53,7 @@ public:
     MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore, TagManagementUseCase& tagManagementUseCase,
                SyntaxHighlightEngine& syntaxHighlightEngine, HighlightThemeViewModel& highlightThemeViewModel,
                FileDecorationsViewModel& fileDecorationsViewModel, FavoritesViewModel& favoritesViewModel,
+               NotificationCenter& notificationCenter, NotificationSettingsViewModel& notificationSettingsViewModel,
                const AppConfig& initialConfig, QWidget* parent = nullptr);
     ~MainWindow() override;
 
@@ -60,6 +65,9 @@ protected:
 
     // Watches m_searchBar for Escape (clears the box and exits search on the focused tab).
     bool eventFilter(QObject* watched, QEvent* event) override;
+
+    // Repositions m_notificationOverlayWidget to the bottom-right corner on every resize.
+    void resizeEvent(QResizeEvent* event) override;
 
 private:
     void createLayoutActions();
@@ -100,10 +108,13 @@ private:
     HighlightThemeViewModel& m_highlightThemeViewModel;
     FileDecorationsViewModel& m_fileDecorationsViewModel;
     FavoritesViewModel& m_favoritesViewModel;
+    NotificationCenter& m_notificationCenter;
+    NotificationSettingsViewModel& m_notificationSettingsViewModel;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;
     PreviewPanelWidget* m_previewPanelWidget = nullptr;
     MonitoringPanelWidget* m_monitoringPanelWidget = nullptr;
+    NotificationOverlayWidget* m_notificationOverlayWidget = nullptr;
     RightPanelWidget* m_rightPanelWidget = nullptr;
     TabViewModel* m_sortTrackedTab = nullptr;
     TabViewModel* m_searchTrackedTab = nullptr;

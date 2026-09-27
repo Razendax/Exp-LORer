@@ -29,6 +29,10 @@ CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir)
     , m_favoritesStore(appDataDir / "favorites.json")
     , m_favorites(m_favoritesStore.load())
     , m_favoritesViewModel(m_favorites, m_favoritesStore)
+    , m_notificationSettingsStore(appDataDir / "notification_settings.json")
+    , m_notificationSettings(m_notificationSettingsStore.load())
+    , m_notificationSettingsViewModel(m_notificationSettings, m_notificationSettingsStore)
+    , m_notificationCenter(m_notificationSettings)
 {
 }
 
@@ -50,5 +54,6 @@ std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController(
 {
     return std::make_unique<WorkspaceController>(m_fileNavigationUseCase, m_tagManagementUseCase, m_filePreviewUseCase,
                                                   m_fileSystemRepository, m_fileDecorationRules, m_fileDecorationsViewModel,
-                                                  m_gitStatusService, m_directoryWatchUseCase, m_folderMonitorUseCase);
+                                                  m_gitStatusService, m_directoryWatchUseCase, m_folderMonitorUseCase,
+                                                  m_notificationCenter);
 }

@@ -1,6 +1,7 @@
 #include "SettingsDialog.h"
 
 #include <array>
+#include <memory>
 #include <utility>
 
 #include <QAbstractItemView>
@@ -13,6 +14,7 @@
 #include <QLabel>
 #include <QPushButton>
 #include <QSettings>
+#include <QSpinBox>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QStyle>
@@ -24,6 +26,7 @@
 #include "FileDecorationRuleDialog.h"
 #include "FileDecorationsViewModel.h"
 #include "HighlightThemeViewModel.h"
+#include "NotificationSettingsViewModel.h"
 #include "SyntaxHighlightEngine.h"
 #include "WorkspacePaneWidget.h"
 
@@ -64,11 +67,13 @@ namespace
 }
 
 SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeViewModel& themeViewModel,
-                               FileDecorationsViewModel& fileDecorationsViewModel, QWidget* parent)
+                               FileDecorationsViewModel& fileDecorationsViewModel,
+                               NotificationSettingsViewModel& notificationSettingsViewModel, QWidget* parent)
     : QDialog(parent)
     , m_engine(engine)
     , m_themeViewModel(themeViewModel)
     , m_fileDecorationsViewModel(fileDecorationsViewModel)
+    , m_notificationSettingsViewModel(notificationSettingsViewModel)
     , m_decorationRules(fileDecorationsViewModel.rules())
     , m_hiddenFilesRule(fileDecorationsViewModel.hiddenFilesRule())
     , m_hiddenFoldersRule(fileDecorationsViewModel.hiddenFoldersRule())
@@ -114,11 +119,14 @@ SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeView
     uiItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()));
     auto* colorsItem = new QTreeWidgetItem(generalRoot, QStringList{ tr("Colors") });
     colorsItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()) + 1);
+    auto* notificationsItem = new QTreeWidgetItem(generalRoot, QStringList{ tr("Notifications") });
+    notificationsItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()) + 2);
 
-    // Both built eagerly (unlike the lazily-built language pages above) since they're cheap -- no
-    // tree-sitter/query compilation involved.
+    // All three built eagerly (unlike the lazily-built language pages above) since they're cheap
+    // -- no tree-sitter/query compilation involved.
     m_pageStack->addWidget(buildGeneralUiPage());
     m_pageStack->addWidget(buildFileDecorationsPage());
+    m_pageStack->addWidget(buildNotificationsPage());
 
     m_categoryTree->expandAll();
 
@@ -489,4 +497,80 @@ void SettingsDialog::commitDecorationRules()
 {
     m_fileDecorationsViewModel.setRules(m_decorationRules);
     refreshDecorationRows();
+}
+
+namespace
+{
+    constexpr std::array<NotificationType, 3> kAllNotificationTypes = { NotificationType::Info, NotificationType::Warning,
+                                                                          NotificationType::Error };
+
+    QString notificationTypeLabel(NotificationType type)
+    {
+        switch (type)
+        {
+            case NotificationType::Info:
+                return QObject::tr("Info");
+            case NotificationType::Warning:
+                return QObject::tr("Warning");
+            case NotificationType::Error:
+                return QObject::tr("Error");
+        }
+        return QString();
+    }
+}
+
+QWidget* SettingsDialog::buildNotificationsPage()
+{
+    auto* page = new QWidget(m_pageStack);
+    auto* layout = new QVBoxLayout(page);
+
+    auto* table = new QTableWidget(static_cast<int>(kAllNotificationTypes.size()), 3, page);
+    table->setObjectName(QStringLiteral("settingsNotificationsTable"));
+    table->setHorizontalHeaderLabels({ tr("Type"), tr("Enabled"), tr("Timeout") });
+    table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    table->verticalHeader()->setVisible(false);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setSelectionMode(QAbstractItemView::NoSelection);
+    layout->addWidget(table, 1);
+
+    for (int row = 0; row < static_cast<int>(kAllNotificationTypes.size()); ++row)
+    {
+        const NotificationType type = kAllNotificationTypes[static_cast<size_t>(row)];
+        const NotificationTypeSettings typeSettings = m_notificationSettingsViewModel.settingsFor(type);
+
+        table->setItem(row, 0, new QTableWidgetItem(notificationTypeLabel(type)));
+
+        auto* enabledCheckBox = new QCheckBox(table);
+        enabledCheckBox->setObjectName(QStringLiteral("settingsNotificationEnabledCheckBox"));
+        enabledCheckBox->setChecked(typeSettings.enabled);
+        table->setCellWidget(row, 1, enabledCheckBox);
+
+        auto* timeoutSpinBox = new QSpinBox(table);
+        timeoutSpinBox->setObjectName(QStringLiteral("settingsNotificationTimeoutSpinBox"));
+        timeoutSpinBox->setRange(0, 3600);
+        timeoutSpinBox->setSuffix(tr(" s"));
+        timeoutSpinBox->setSpecialValueText(tr("Never"));
+        timeoutSpinBox->setValue(typeSettings.timeoutMs / 1000);
+        table->setCellWidget(row, 2, timeoutSpinBox);
+
+        // The spin box only offers whole-second granularity, so a sub-second remainder in
+        // typeSettings.timeoutMs (e.g. a hand-edited 1500) can't round-trip through it. Track the
+        // exact value here and only overwrite it when the timeout box itself is edited, so toggling
+        // Enabled alone never truncates a timeout the user didn't touch.
+        auto exactTimeoutMs = std::make_shared<int>(typeSettings.timeoutMs);
+
+        connect(enabledCheckBox, &QCheckBox::toggled, this,
+                [this, type, exactTimeoutMs](bool checked)
+                { m_notificationSettingsViewModel.setSettingsFor(type, checked, *exactTimeoutMs); });
+        connect(timeoutSpinBox, QOverload<int>::of(&QSpinBox::valueChanged), this,
+                [this, type, enabledCheckBox, exactTimeoutMs](int seconds)
+                {
+                    *exactTimeoutMs = seconds * 1000;
+                    m_notificationSettingsViewModel.setSettingsFor(type, enabledCheckBox->isChecked(), *exactTimeoutMs);
+                });
+    }
+
+    return page;
 }

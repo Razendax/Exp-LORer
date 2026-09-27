@@ -28,4 +28,11 @@ namespace UiColors
     constexpr const char* kMonitorAddedGreen = "#2E8B44";
     constexpr const char* kMonitorRemovedRed = "#D9534F";
     constexpr const char* kMonitorModifiedYellow = "#B8860B";
+
+    // Toast notification header strips (Info/Warning/Error) -- dedicated named constants even
+    // though close in hue to some colors above, matching the existing convention of
+    // separately-named same-hue constants for distinct semantic uses.
+    constexpr const char* kNotificationInfoBlue = "#3B7DD8";
+    constexpr const char* kNotificationWarningYellow = "#D9A441";
+    constexpr const char* kNotificationErrorRed = "#D9534F";
 }

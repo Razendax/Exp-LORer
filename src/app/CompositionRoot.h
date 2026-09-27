@@ -24,6 +24,10 @@
 #include "LibGit2BranchProvider.h"
 #include "LibGit2StatusProvider.h"
 #include "MediaDecoder.h"
+#include "NotificationCenter.h"
+#include "NotificationSettings.h"
+#include "NotificationSettingsStore.h"
+#include "NotificationSettingsViewModel.h"
 #include "SQLiteTagRepository.h"
 #include "ShellContextMenuProvider.h"
 #include "StandardDirectoryWatcher.h"
@@ -60,6 +64,8 @@ public:
     HighlightThemeViewModel& highlightThemeViewModel() noexcept { return m_highlightThemeViewModel; }
     FileDecorationsViewModel& fileDecorationsViewModel() noexcept { return m_fileDecorationsViewModel; }
     FavoritesViewModel& favoritesViewModel() noexcept { return m_favoritesViewModel; }
+    NotificationCenter& notificationCenter() noexcept { return m_notificationCenter; }
+    NotificationSettingsViewModel& notificationSettingsViewModel() noexcept { return m_notificationSettingsViewModel; }
 
 private:
     StandardFileSystemRepository m_fileSystemRepository;
@@ -116,4 +122,14 @@ private:
     FavoritesStore m_favoritesStore;
     Favorites m_favorites;
     FavoritesViewModel m_favoritesViewModel;
+
+    // Notification system: popup (toast) + progress-bar notifications, presentation-only, same
+    // posture as the file-decoration/favorites blocks above. NotificationCenter holds a const&
+    // to m_notificationSettings (not the Qt NotificationSettingsViewModel below it), so an edit
+    // made via the ViewModel is visible to the dispatcher on its very next call with no signal
+    // wiring needed between the two.
+    NotificationSettingsStore m_notificationSettingsStore;
+    NotificationSettings m_notificationSettings;
+    NotificationSettingsViewModel m_notificationSettingsViewModel;
+    NotificationCenter m_notificationCenter;
 };

@@ -15,6 +15,8 @@
 #include "LibGit2BranchProvider.h"
 #include "LibGit2StatusProvider.h"
 #include "MediaDecoder.h"
+#include "NotificationCenter.h"
+#include "NotificationSettings.h"
 #include "SQLiteTagRepository.h"
 #include "ShellContextMenuProvider.h"
 #include "StandardDirectoryWatcher.h"
@@ -70,9 +72,12 @@ namespace
         DirectoryWatchUseCase m_directoryWatchUseCase{ m_directoryWatcher };
         StandardFolderMonitor m_folderMonitor;
         FolderMonitorUseCase m_folderMonitorUseCase{ m_folderMonitor };
+        NotificationSettings m_notificationSettings;
+        NotificationCenter m_notificationCenter{ m_notificationSettings };
         WorkspaceController m_controller{ m_fileNavigationUseCase,  m_tagManagementUseCase,     m_filePreviewUseCase,
                                            m_fileSystemRepository, m_fileDecorationRules,      m_fileDecorationsViewModel,
-                                           m_gitStatusService,     m_directoryWatchUseCase,    m_folderMonitorUseCase };
+                                           m_gitStatusService,     m_directoryWatchUseCase,    m_folderMonitorUseCase,
+                                           m_notificationCenter };
     };
 }
 
@@ -106,7 +111,8 @@ TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsThroughRestoreFromConfig)
     TagManagementUseCase restoredTagManagementUseCase{ restoredTagRepository, m_fileSystemRepository };
     WorkspaceController restoredController{ m_fileNavigationUseCase,  restoredTagManagementUseCase, m_filePreviewUseCase,
                                              m_fileSystemRepository, m_fileDecorationRules,        m_fileDecorationsViewModel,
-                                             m_gitStatusService,     m_directoryWatchUseCase,      m_folderMonitorUseCase };
+                                             m_gitStatusService,     m_directoryWatchUseCase,      m_folderMonitorUseCase,
+                                             m_notificationCenter };
 
     const bool restored = restoredController.restoreFromConfig(captured);
     ASSERT_TRUE(restored);

@@ -12,6 +12,7 @@
 class TagManagementUseCase;
 class FileNavigationUseCase;
 class TabViewModel;
+class NotificationCenter;
 
 // The single shared ViewModel behind the whole tag panel (Architecture.md §14.9), retargeted by
 // WorkspaceController to whichever pane/tab currently has focus. Untested per the codebase's
@@ -22,7 +23,7 @@ class TagListViewModel : public QObject
 
 public:
     TagListViewModel(TagManagementUseCase& tagManagementUseCase, FileNavigationUseCase& fileNavigationUseCase,
-                      QObject* parent = nullptr);
+                      NotificationCenter& notificationCenter, QObject* parent = nullptr);
 
     // Requirement 1.1: tags of the active tab's current folder plus every ancestor's tags,
     // outermost ancestor first.
@@ -74,6 +75,11 @@ private:
     void onActiveTabStateChanged();
     std::optional<FileNode> resolveTarget() const;
 
+    // Resolves tagId's display name for the "Tag Applied"/"Tag Removed" notification: scans
+    // m_searchResults/m_folderTags/m_selectedItemTags first (one of those almost always already
+    // holds it from the last refresh), falling back to TagManagementUseCase::allTags() on a miss.
+    QString resolveTagName(Tag::Id tagId) const;
+
     void refreshFolderTags();
     void refreshSelectedItemTags();
     void refreshSearchSection();
@@ -81,6 +87,7 @@ private:
 
     TagManagementUseCase& m_tagManagementUseCase;
     FileNavigationUseCase& m_fileNavigationUseCase;
+    NotificationCenter& m_notificationCenter;
     TabViewModel* m_activeTab = nullptr;
 
     QString m_searchQuery;
