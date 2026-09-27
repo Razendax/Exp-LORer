@@ -5,6 +5,7 @@
 
 #include "FileNode.h"
 #include "FileTagAssociation.h"
+#include "FileTagsByPath.h"
 #include "IFileSystemRepository.h"
 #include "ITagRepository.h"
 #include "Result.h"
@@ -28,6 +29,13 @@ public:
     Result<void> assignTag(const FileNode& file, Tag::Id tagId);
     Result<void> unassignTag(const FileNode& file, Tag::Id tagId);
     Result<std::vector<Tag>> tagsForFile(const FileNode& file) const;
+
+    // Bulk variant of tagsForFile for one directory listing's worth of entries (the Tags column,
+    // Architecture.md §14.x). Skips synthetic rows (a set displayName(), e.g. "This PC"'s drives)
+    // the same way GitStatusColumn's data() already does -- they have no real on-disk path to
+    // look up.
+    Result<TagsByPathMap> tagsForFiles(const std::vector<FileNode>& files) const;
+
     Result<std::vector<FileTagAssociation>> findFilesWithAllTags(const std::vector<Tag::Id>& tagIds) const;
 
     // Tags of every ancestor directory of `path` (outermost ancestor first, down to the

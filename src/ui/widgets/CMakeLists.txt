@@ -27,8 +27,12 @@ add_library(explorer_ui_widgets STATIC
     WorkspaceLayoutWidget.cpp
     FlowLayout.h
     FlowLayout.cpp
+    TagChipColor.h
+    TagChipColor.cpp
     TagChipWidget.h
     TagChipWidget.cpp
+    TagsCellDelegate.h
+    TagsCellDelegate.cpp
     TagPanelWidget.h
     TagPanelWidget.cpp
     TagManagerDialog.h

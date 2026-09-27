@@ -22,6 +22,7 @@
 #include <QPaintEvent>
 #include <QPainter>
 #include <QPalette>
+#include <QPointer>
 #include <QResizeEvent>
 #include <QSettings>
 #include <QSplitter>
@@ -225,21 +226,25 @@ namespace
 }
 
 MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore,
-                         TagManagementUseCase& tagManagementUseCase, SyntaxHighlightEngine& syntaxHighlightEngine,
+                         TagManagementUseCase& tagManagementUseCase, TagChangeNotifier& tagChangeNotifier,
+                         SyntaxHighlightEngine& syntaxHighlightEngine,
                          HighlightThemeViewModel& highlightThemeViewModel, FileDecorationsViewModel& fileDecorationsViewModel,
                          FavoritesViewModel& favoritesViewModel, NotificationCenter& notificationCenter,
-                         NotificationSettingsViewModel& notificationSettingsViewModel, const AppConfig& initialConfig,
+                         NotificationSettingsViewModel& notificationSettingsViewModel,
+                         ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, const AppConfig& initialConfig,
                          QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceController(workspaceController)
     , m_configStore(configStore)
     , m_tagManagementUseCase(tagManagementUseCase)
+    , m_tagChangeNotifier(tagChangeNotifier)
     , m_syntaxHighlightEngine(syntaxHighlightEngine)
     , m_highlightThemeViewModel(highlightThemeViewModel)
     , m_fileDecorationsViewModel(fileDecorationsViewModel)
     , m_favoritesViewModel(favoritesViewModel)
     , m_notificationCenter(notificationCenter)
     , m_notificationSettingsViewModel(notificationSettingsViewModel)
+    , m_columnVisibilitySettingsViewModel(columnVisibilitySettingsViewModel)
     , m_columnWidths(initialConfig.detailsColumnWidths)
 {
     setObjectName(QStringLiteral("mainWindow"));
@@ -492,7 +497,8 @@ void MainWindow::createSearchBar(QToolBar* toolBar)
 
 void MainWindow::createWorkspace()
 {
-    m_workspaceLayoutWidget = new WorkspaceLayoutWidget(m_workspaceController, m_columnWidths, this);
+    m_workspaceLayoutWidget =
+        new WorkspaceLayoutWidget(m_workspaceController, m_columnVisibilitySettingsViewModel, m_columnWidths, this);
     m_workspaceLayoutWidget->setObjectName(QStringLiteral("workspaceLayoutWidget"));
 
     // Right panel (Architecture.md §14.23): the side-panel counterpart of BottomPanelWidget, a
@@ -547,7 +553,7 @@ void MainWindow::createMainStatusBar()
 
 void MainWindow::showTagManagerDialog()
 {
-    TagManagerViewModel viewModel(m_tagManagementUseCase);
+    TagManagerViewModel viewModel(m_tagManagementUseCase, m_tagChangeNotifier);
     TagManagerDialog dialog(&viewModel, this);
     dialog.exec();
 }
@@ -561,7 +567,7 @@ void MainWindow::showManageFavoritesDialog()
 void MainWindow::showSettingsDialog()
 {
     SettingsDialog dialog(m_syntaxHighlightEngine, m_highlightThemeViewModel, m_fileDecorationsViewModel,
-                          m_notificationSettingsViewModel, this);
+                          m_notificationSettingsViewModel, m_columnVisibilitySettingsViewModel, this);
 
     connect(&dialog, &SettingsDialog::showTabCloseButtonsChanged, this, [this](bool visible) {
         for (WorkspacePaneId id : kAllPanes)
@@ -785,25 +791,49 @@ void MainWindow::onFavoriteItemTriggered(Favorites::Id id)
         return;
     }
 
-    Result<FileNode> stat = m_workspaceController->fileNavigationUseCase().stat(*targetPath);
-    if (!stat)
-    {
-        // Target no longer exists on disk -- surfaces through the same status-bar path as any
-        // other bad navigation target (Architecture.md §14.35), no modal.
-        onStatusMessage(QString::fromStdString(stat.error().message));
-        return;
-    }
+    const std::filesystem::path path = *targetPath;
+    QPointer<WorkspacePaneWidget> paneGuard(paneWidget);
 
-    if (stat.value().isDirectory())
-    {
-        // Folder favorite: navigate into it (Explorer Quick-Access-style).
-        paneWidget->navigateAndSelect(*targetPath, std::nullopt);
-    }
-    else
-    {
-        // File favorite: navigate to its parent folder with the file selected.
-        paneWidget->navigateAndSelect(targetPath->parent_path(), *targetPath);
-    }
+    // FileNavigationUseCase::stat() is disk I/O and must never run on the Qt UI thread -- reuses
+    // m_driveInfoWorker/m_driveInfoThread (Architecture.md §14.30) rather than spinning up a
+    // dedicated thread just for this one call site. Both hops are queued functor calls, the same
+    // shape onActiveTabPathChanged/onDriveSpaceInfoReady already use.
+    QMetaObject::invokeMethod(
+        m_driveInfoWorker,
+        [this, paneGuard, path]() {
+            Result<FileNode> stat = m_driveInfoWorker->stat(path);
+
+            QMetaObject::invokeMethod(
+                this,
+                [this, paneGuard, path, stat = std::move(stat)]() mutable {
+                    if (!paneGuard)
+                    {
+                        // The focused pane changed/closed while the stat was in flight.
+                        return;
+                    }
+
+                    if (!stat)
+                    {
+                        // Target no longer exists on disk -- surfaces through the same status-bar
+                        // path as any other bad navigation target (Architecture.md §14.35), no modal.
+                        onStatusMessage(QString::fromStdString(stat.error().message));
+                        return;
+                    }
+
+                    if (stat.value().isDirectory())
+                    {
+                        // Folder favorite: navigate into it (Explorer Quick-Access-style).
+                        paneGuard->navigateAndSelect(path, std::nullopt);
+                    }
+                    else
+                    {
+                        // File favorite: navigate to its parent folder with the file selected.
+                        paneGuard->navigateAndSelect(path.parent_path(), path);
+                    }
+                },
+                Qt::QueuedConnection);
+        },
+        Qt::QueuedConnection);
 }
 
 void MainWindow::rebuildFavoritesMenuItems()
@@ -926,9 +956,6 @@ void MainWindow::onSortOrderChanged(SortCriterion criterion, bool ascending)
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
-    static constexpr std::array<WorkspacePaneId, 4> kAllPanes = {
-        WorkspacePaneId::PaneA, WorkspacePaneId::PaneB, WorkspacePaneId::PaneC, WorkspacePaneId::PaneD};
-
     bool anyMonitoringActive = false;
     for (const WorkspacePaneId paneId : kAllPanes)
     {

@@ -1,12 +1,14 @@
 #include "FileBrowserView.h"
 
 #include <QAbstractItemView>
+#include <QAction>
 #include <QEvent>
 #include <QHeaderView>
 #include <QItemSelection>
 #include <QItemSelectionModel>
 #include <QKeyEvent>
 #include <QListView>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QStackedWidget>
 #include <QStyledItemDelegate>
@@ -18,6 +20,7 @@
 #include "FileNameEditDelegate.h"
 #include "FileTileDelegate.h"
 #include "SearchResultDelegate.h"
+#include "TagsCellDelegate.h"
 
 namespace
 {
@@ -59,12 +62,15 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     m_nameEditDelegate = new FileNameEditDelegate(this);
     m_tileDelegate = new FileTileDelegate(this);
     m_iconDelegate = new FileIconDelegate(this);
+    m_tagsCellDelegate = new TagsCellDelegate(this);
 
     m_treeView = new QTreeView(this);
     m_treeView->setObjectName(QStringLiteral("fileBrowserTreeView"));
     m_treeView->setModel(m_model);
     m_treeView->setRootIsDecorated(false);
     m_treeView->header()->setSectionsClickable(true);
+    m_treeView->header()->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_treeView->header(), &QWidget::customContextMenuRequested, this, &FileBrowserView::showColumnMenu);
 
     if (m_displayMode == DisplayMode::AdvancedSearchResults)
     {
@@ -76,6 +82,10 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
         // Installed once here (rather than per setViewMode() call, like the QListView delegates
         // below) since Details view is the QTreeView's only mode and never swaps delegates.
         m_treeView->setItemDelegate(m_nameEditDelegate);
+
+        // Per-column override (Architecture.md §14.x): takes precedence over the whole-view
+        // delegate above for TagsColumn only, painting colored tag pills instead of plain text.
+        m_treeView->setItemDelegateForColumn(FileListModel::TagsColumn, m_tagsCellDelegate);
     }
 
     // QHeaderView defaults its sort indicator to (column 0, DescendingOrder); QTreeView's
@@ -464,6 +474,37 @@ void FileBrowserView::selectFirstEntry()
     const QModelIndex index = m_model->index(0, 0);
     m_selectionModel->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
     m_treeView->scrollTo(index);
+}
+
+bool FileBrowserView::isColumnVisible(FileListModel::Column column) const
+{
+    return !m_treeView->header()->isSectionHidden(column);
+}
+
+void FileBrowserView::setColumnVisible(FileListModel::Column column, bool visible)
+{
+    if (column == FileListModel::NameColumn || isColumnVisible(column) == visible)
+    {
+        return;
+    }
+
+    m_treeView->header()->setSectionHidden(column, !visible);
+    emit columnVisibilityChanged(column, visible);
+}
+
+void FileBrowserView::showColumnMenu(const QPoint& localPos)
+{
+    QMenu menu(this);
+    for (int column = FileListModel::NameColumn + 1; column < FileListModel::ColumnCount; ++column)
+    {
+        const auto typedColumn = static_cast<FileListModel::Column>(column);
+        QAction* action = menu.addAction(m_model->headerData(column, Qt::Horizontal).toString());
+        action->setCheckable(true);
+        action->setChecked(isColumnVisible(typedColumn));
+        connect(action, &QAction::toggled, this, [this, typedColumn](bool checked) { setColumnVisible(typedColumn, checked); });
+    }
+
+    menu.exec(m_treeView->header()->mapToGlobal(localPos));
 }
 
 void FileBrowserView::handleContextMenuRequested(QAbstractItemView* view, const QPoint& localPos)

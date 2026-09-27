@@ -13,6 +13,7 @@ class TagManagementUseCase;
 class FileNavigationUseCase;
 class TabViewModel;
 class NotificationCenter;
+class TagChangeNotifier;
 
 // The single shared ViewModel behind the whole tag panel (Architecture.md §14.9), retargeted by
 // WorkspaceController to whichever pane/tab currently has focus. Untested per the codebase's
@@ -23,7 +24,7 @@ class TagListViewModel : public QObject
 
 public:
     TagListViewModel(TagManagementUseCase& tagManagementUseCase, FileNavigationUseCase& fileNavigationUseCase,
-                      NotificationCenter& notificationCenter, QObject* parent = nullptr);
+                      NotificationCenter& notificationCenter, TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
 
     // Requirement 1.1: tags of the active tab's current folder plus every ancestor's tags,
     // outermost ancestor first.
@@ -88,6 +89,7 @@ private:
     TagManagementUseCase& m_tagManagementUseCase;
     FileNavigationUseCase& m_fileNavigationUseCase;
     NotificationCenter& m_notificationCenter;
+    TagChangeNotifier& m_tagChangeNotifier;
     TabViewModel* m_activeTab = nullptr;
 
     QString m_searchQuery;

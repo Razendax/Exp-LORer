@@ -28,8 +28,10 @@ class FileDecorationsViewModel;
 class FavoritesViewModel;
 class NotificationCenter;
 class NotificationSettingsViewModel;
+class ColumnVisibilitySettingsViewModel;
 class SyntaxHighlightEngine;
 class TagManagementUseCase;
+class TagChangeNotifier;
 class WorkspaceController;
 class WorkspaceLayoutWidget;
 class TagPanelWidget;
@@ -51,10 +53,12 @@ class MainWindow : public QMainWindow
 
 public:
     MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore, TagManagementUseCase& tagManagementUseCase,
-               SyntaxHighlightEngine& syntaxHighlightEngine, HighlightThemeViewModel& highlightThemeViewModel,
-               FileDecorationsViewModel& fileDecorationsViewModel, FavoritesViewModel& favoritesViewModel,
-               NotificationCenter& notificationCenter, NotificationSettingsViewModel& notificationSettingsViewModel,
-               const AppConfig& initialConfig, QWidget* parent = nullptr);
+               TagChangeNotifier& tagChangeNotifier, SyntaxHighlightEngine& syntaxHighlightEngine,
+               HighlightThemeViewModel& highlightThemeViewModel, FileDecorationsViewModel& fileDecorationsViewModel,
+               FavoritesViewModel& favoritesViewModel, NotificationCenter& notificationCenter,
+               NotificationSettingsViewModel& notificationSettingsViewModel,
+               ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, const AppConfig& initialConfig,
+               QWidget* parent = nullptr);
     ~MainWindow() override;
 
 protected:
@@ -104,12 +108,14 @@ private:
     WorkspaceController* m_workspaceController = nullptr;
     AppConfigStore& m_configStore;
     TagManagementUseCase& m_tagManagementUseCase;
+    TagChangeNotifier& m_tagChangeNotifier;
     SyntaxHighlightEngine& m_syntaxHighlightEngine;
     HighlightThemeViewModel& m_highlightThemeViewModel;
     FileDecorationsViewModel& m_fileDecorationsViewModel;
     FavoritesViewModel& m_favoritesViewModel;
     NotificationCenter& m_notificationCenter;
     NotificationSettingsViewModel& m_notificationSettingsViewModel;
+    ColumnVisibilitySettingsViewModel& m_columnVisibilitySettingsViewModel;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;
     PreviewPanelWidget* m_previewPanelWidget = nullptr;

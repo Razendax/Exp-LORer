@@ -6,15 +6,7 @@
 #include <QMouseEvent>
 #include <QToolButton>
 
-namespace
-{
-    // Picks readable text (black/white) against the chip's background color for contrast.
-    QString textColorFor(const QColor& background)
-    {
-        const double luminance = 0.299 * background.red() + 0.587 * background.green() + 0.114 * background.blue();
-        return luminance > 140 ? QStringLiteral("#000000") : QStringLiteral("#FFFFFF");
-    }
-}
+#include "TagChipColor.h"
 
 TagChipWidget::TagChipWidget(Tag tag, Kind kind, QWidget* parent)
     : QWidget(parent)
@@ -85,7 +77,7 @@ void TagChipWidget::mousePressEvent(QMouseEvent* event)
 void TagChipWidget::updateChipStyle()
 {
     const QColor background(QString::fromStdString(m_tag.hexColor()));
-    const QString textColor = textColorFor(background);
+    const QString textColor = tagChipTextColorFor(background);
     const QString borderColor = m_selected ? QStringLiteral("#1A73E8") : QStringLiteral("rgba(0, 0, 0, 60)");
     const QString borderWidth = m_selected ? QStringLiteral("2px") : QStringLiteral("1px");
 

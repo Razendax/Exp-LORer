@@ -20,6 +20,8 @@ add_library(explorer_adapters_viewmodels STATIC
     TagListViewModel.cpp
     TagManagerViewModel.h
     TagManagerViewModel.cpp
+    TagChangeNotifier.h
+    TagChangeNotifier.cpp
     FileOperationsController.h
     FileOperationsController.cpp
     FilePreviewWorker.h
@@ -32,6 +34,10 @@ add_library(explorer_adapters_viewmodels STATIC
     GitStatusWorker.cpp
     GitStatusService.h
     GitStatusService.cpp
+    FileTagsWorker.h
+    FileTagsWorker.cpp
+    FileTagsService.h
+    FileTagsService.cpp
     AdvancedSearchWorker.h
     AdvancedSearchWorker.cpp
     AdvancedSearchService.h

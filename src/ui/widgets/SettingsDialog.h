@@ -12,6 +12,7 @@
 class HighlightThemeViewModel;
 class FileDecorationsViewModel;
 class NotificationSettingsViewModel;
+class ColumnVisibilitySettingsViewModel;
 class SyntaxHighlightEngine;
 class QCheckBox;
 class QPushButton;
@@ -36,7 +37,7 @@ class SettingsDialog : public QDialog
 public:
     SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeViewModel& themeViewModel,
                    FileDecorationsViewModel& fileDecorationsViewModel, NotificationSettingsViewModel& notificationSettingsViewModel,
-                   QWidget* parent = nullptr);
+                   ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, QWidget* parent = nullptr);
 
 signals:
     // General > UI "Show close button on tabs" checkbox toggled -- MainWindow propagates this to
@@ -80,12 +81,19 @@ private:
     // Add/Remove since the 3 rows never change.
     QWidget* buildNotificationsPage();
 
+    // General -> Columns page (Architecture.md §14.x): a "Default visibility for new tab" group
+    // box with one row per non-Name Details-view column, each with a single checkbox writing
+    // straight through to setDefaultVisibility(column, checked) -- same wiring shape as
+    // buildNotificationsPage()'s enabled-checkbox column, minus the timeout spin box.
+    QWidget* buildColumnsPage();
+
     static constexpr int kHiddenRowCount = 2;
 
     SyntaxHighlightEngine& m_engine;
     HighlightThemeViewModel& m_themeViewModel;
     FileDecorationsViewModel& m_fileDecorationsViewModel;
     NotificationSettingsViewModel& m_notificationSettingsViewModel;
+    ColumnVisibilitySettingsViewModel& m_columnVisibilitySettingsViewModel;
     QTableWidget* m_decorationsTable = nullptr;
     std::vector<FileDecorationRule> m_decorationRules;
     FileDecorationRule m_hiddenFilesRule;

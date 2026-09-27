@@ -26,6 +26,7 @@
 #include "AddressBarWidget.h"
 #include "ArchiveExtensions.h"
 #include "BottomPanelWidget.h"
+#include "ColumnVisibilitySettingsViewModel.h"
 #include "ContextMenuBuilder.h"
 #include "FileBrowserView.h"
 #include "FileOperationsController.h"
@@ -129,11 +130,13 @@ namespace
 }
 
 WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOperationsController* fileOperationsController,
+                                          ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
                                           const std::array<int, FileListModel::ColumnCount>& initialColumnWidths,
                                           QWidget* parent)
     : QWidget(parent)
     , m_pane(pane)
     , m_fileOperationsController(fileOperationsController)
+    , m_columnVisibilitySettingsViewModel(columnVisibilitySettingsViewModel)
     , m_initialColumnWidths(initialColumnWidths)
 {
     setObjectName(QStringLiteral("workspacePane_") + paneAutomationSuffix(pane->id()));
@@ -314,6 +317,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     auto* browserView = new FileBrowserView(tab->fileListModel(), stack);
     browserView->setViewMode(tab->viewMode());
     browserView->setColumnWidths(m_initialColumnWidths);
+    applyDefaultColumnVisibility(browserView);
     wireBrowserView(browserView, tab);
     stack->addWidget(browserView); // page 0: normal browsing
 
@@ -321,14 +325,26 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     searchResultsView->setObjectName(QStringLiteral("quickSearchResultsView")); // overrides the default "fileBrowserView" id
     searchResultsView->setViewMode(tab->viewMode());
     searchResultsView->setColumnWidths(m_initialColumnWidths);
+    applyDefaultColumnVisibility(searchResultsView);
     wireBrowserView(searchResultsView, tab);
     stack->addWidget(searchResultsView); // page 1: search results
 
     auto* advancedSearchPane = new SearchResultsPane(tab->advancedSearchResultsModel(), stack);
     advancedSearchPane->setCriteria(tab->advancedSearchCriteria(), tab->resolveTagCriteria());
     advancedSearchPane->browserView()->setColumnWidths(m_initialColumnWidths);
+    applyDefaultColumnVisibility(advancedSearchPane->browserView());
     wireBrowserView(advancedSearchPane->browserView(), tab);
     stack->addWidget(advancedSearchPane); // page 2: advanced search results
+
+    // Keeps this tab's three FileBrowserView instances in sync (Architecture.md §14.x): toggling a
+    // column in one (normally the visible one, but any of the three works) hides/shows it in the
+    // other two as well, since visibility is a per-*tab* concept, not a per-view one.
+    connect(browserView, &FileBrowserView::columnVisibilityChanged, searchResultsView, &FileBrowserView::setColumnVisible);
+    connect(browserView, &FileBrowserView::columnVisibilityChanged, advancedSearchPane->browserView(), &FileBrowserView::setColumnVisible);
+    connect(searchResultsView, &FileBrowserView::columnVisibilityChanged, browserView, &FileBrowserView::setColumnVisible);
+    connect(searchResultsView, &FileBrowserView::columnVisibilityChanged, advancedSearchPane->browserView(), &FileBrowserView::setColumnVisible);
+    connect(advancedSearchPane->browserView(), &FileBrowserView::columnVisibilityChanged, browserView, &FileBrowserView::setColumnVisible);
+    connect(advancedSearchPane->browserView(), &FileBrowserView::columnVisibilityChanged, searchResultsView, &FileBrowserView::setColumnVisible);
 
     connect(tab, &TabViewModel::currentPathChanged, this, [this, tab](const std::filesystem::path& path) {
         const int idx = indexOfTab(tab);
@@ -432,6 +448,15 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     });
 
     m_tabWidget->insertTab(index, splitter, tabLabelFor(tab->currentPath()));
+}
+
+void WorkspacePaneWidget::applyDefaultColumnVisibility(FileBrowserView* browserView)
+{
+    for (int column = FileListModel::NameColumn + 1; column < FileListModel::ColumnCount; ++column)
+    {
+        const auto typedColumn = static_cast<FileListModel::Column>(column);
+        browserView->setColumnVisible(typedColumn, m_columnVisibilitySettingsViewModel.defaultVisibility(typedColumn));
+    }
 }
 
 void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewModel* tab)

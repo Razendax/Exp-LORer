@@ -16,8 +16,11 @@ class FolderMonitorUseCase
 public:
     explicit FolderMonitorUseCase(IFolderMonitor& folderMonitor);
 
-    Result<FolderMonitorId> startMonitoring(const std::filesystem::path& rootDirectory,
-                                             std::function<void(const std::vector<FolderChangeEvent>&)> onChanged);
+    // onStarted is forwarded to the Port unchanged (see IFolderMonitor::startMonitoring) -- opening
+    // the directory handle is I/O and cannot report success/failure synchronously.
+    void startMonitoring(const std::filesystem::path& rootDirectory,
+                          std::function<void(const std::vector<FolderChangeEvent>&)> onChanged,
+                          std::function<void(Result<FolderMonitorId>)> onStarted);
     void stopMonitoring(FolderMonitorId id);
 
 private:

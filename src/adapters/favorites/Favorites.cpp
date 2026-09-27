@@ -3,6 +3,44 @@
 #include <algorithm>
 #include <utility>
 
+#include "PathContainment.h"
+
+namespace
+{
+    // Shared "find the element with this id, then swap it with its neighbor" logic behind
+    // moveEntryUp/moveEntryDown and moveItemUpWithinCategory/moveItemDownWithinCategory, which were
+    // otherwise copy-pasted mirror images of each other differing only in swap direction.
+    template <typename Container, typename IdOf>
+    void moveById(Container& container, Favorites::Id id, bool up, IdOf idOf)
+    {
+        for (std::size_t i = 0; i < container.size(); ++i)
+        {
+            if (idOf(container[i]) != id)
+            {
+                continue;
+            }
+
+            if (up)
+            {
+                if (i > 0)
+                {
+                    std::swap(container[i], container[i - 1]);
+                }
+            }
+            else if (i + 1 < container.size())
+            {
+                std::swap(container[i], container[i + 1]);
+            }
+            return;
+        }
+    }
+
+    Favorites::Id entryId(const Favorites::Entry& entry)
+    {
+        return std::visit([](const auto& value) -> Favorites::Id { return value.id(); }, entry);
+    }
+}
+
 Favorites::Id Favorites::addItem(const std::filesystem::path& path)
 {
     if (const auto existing = findExistingItemId(path))
@@ -114,36 +152,12 @@ void Favorites::moveItemToCategory(Id itemId, std::optional<Id> categoryId)
 
 void Favorites::moveEntryUp(Id id)
 {
-    for (size_t i = 0; i < m_entries.size(); ++i)
-    {
-        const Id entryId = std::visit([](const auto& entry) -> Id { return entry.id(); }, m_entries[i]);
-        if (entryId != id)
-        {
-            continue;
-        }
-        if (i > 0)
-        {
-            std::swap(m_entries[i], m_entries[i - 1]);
-        }
-        return;
-    }
+    moveById(m_entries, id, /*up=*/true, entryId);
 }
 
 void Favorites::moveEntryDown(Id id)
 {
-    for (size_t i = 0; i < m_entries.size(); ++i)
-    {
-        const Id entryId = std::visit([](const auto& entry) -> Id { return entry.id(); }, m_entries[i]);
-        if (entryId != id)
-        {
-            continue;
-        }
-        if (i + 1 < m_entries.size())
-        {
-            std::swap(m_entries[i], m_entries[i + 1]);
-        }
-        return;
-    }
+    moveById(m_entries, id, /*up=*/false, entryId);
 }
 
 void Favorites::moveItemUpWithinCategory(Id categoryId, Id itemId)
@@ -156,19 +170,7 @@ void Favorites::moveItemUpWithinCategory(Id categoryId, Id itemId)
             continue;
         }
 
-        std::vector<FavoriteItem>& items = category->items();
-        for (size_t i = 0; i < items.size(); ++i)
-        {
-            if (items[i].id() != itemId)
-            {
-                continue;
-            }
-            if (i > 0)
-            {
-                std::swap(items[i], items[i - 1]);
-            }
-            return;
-        }
+        moveById(category->items(), itemId, /*up=*/true, [](const FavoriteItem& item) { return item.id(); });
         return;
     }
 }
@@ -183,19 +185,7 @@ void Favorites::moveItemDownWithinCategory(Id categoryId, Id itemId)
             continue;
         }
 
-        std::vector<FavoriteItem>& items = category->items();
-        for (size_t i = 0; i < items.size(); ++i)
-        {
-            if (items[i].id() != itemId)
-            {
-                continue;
-            }
-            if (i + 1 < items.size())
-            {
-                std::swap(items[i], items[i + 1]);
-            }
-            return;
-        }
+        moveById(category->items(), itemId, /*up=*/false, [](const FavoriteItem& item) { return item.id(); });
         return;
     }
 }
@@ -206,7 +196,7 @@ std::optional<Favorites::Id> Favorites::findExistingItemId(const std::filesystem
     {
         if (const auto* item = std::get_if<FavoriteItem>(&entry))
         {
-            if (item->path() == path)
+            if (pathsEqualCaseInsensitive(item->path(), path))
             {
                 return item->id();
             }
@@ -216,7 +206,7 @@ std::optional<Favorites::Id> Favorites::findExistingItemId(const std::filesystem
         const auto* category = std::get_if<FavoriteCategory>(&entry);
         for (const FavoriteItem& categoryItem : category->items())
         {
-            if (categoryItem.path() == path)
+            if (pathsEqualCaseInsensitive(categoryItem.path(), path))
             {
                 return categoryItem.id();
             }

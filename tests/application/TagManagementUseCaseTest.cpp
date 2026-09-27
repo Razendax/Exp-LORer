@@ -155,6 +155,29 @@ TEST(TagManagementUseCase, AssignTagPropagatesHashComputationFailure)
     EXPECT_EQ(result.error().code, ErrorCode::IoError);
 }
 
+TEST(TagManagementUseCase, TagsForFilesSkipsSyntheticRowsAndDelegatesRemainingPaths)
+{
+    MockTagRepository tagRepository;
+    MockFileSystemRepository fileSystemRepository;
+    Tag work = Tag::create(1, "Work", "#FF8800").value();
+    TagsByPathMap expected;
+    expected[std::filesystem::path("C:/data/report.pdf")] = { work };
+    EXPECT_CALL(tagRepository, tagsForFiles(std::vector<std::filesystem::path>{ "C:/data/report.pdf" }))
+        .WillOnce(Return(Result<TagsByPathMap>::success(expected)));
+
+    auto thisPc = FileNode::create("C:/", 0, std::chrono::system_clock::now(), std::chrono::system_clock::now(),
+                                    FileType::Directory)
+                      .value()
+                      .withDisplayName("This PC");
+
+    TagManagementUseCase useCase(tagRepository, fileSystemRepository);
+    auto result = useCase.tagsForFiles({ thisPc, makeFile("C:/data/report.pdf") });
+
+    ASSERT_TRUE(result.hasValue());
+    ASSERT_EQ(result.value().size(), 1u);
+    EXPECT_EQ(result.value().at("C:/data/report.pdf").size(), 1u);
+}
+
 TEST(TagManagementUseCase, UnassignTagDelegatesToRepository)
 {
     MockTagRepository tagRepository;

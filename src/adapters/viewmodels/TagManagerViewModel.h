@@ -8,6 +8,7 @@
 #include "Tag.h"
 
 class TagManagementUseCase;
+class TagChangeNotifier;
 
 // Backs the standalone Tag Manager dialog (Architecture.md §14.17), opened via Edit > "Tag
 // Edit..." to manage the global tag list (rename/add/delete) independently of any specific
@@ -18,7 +19,7 @@ class TagManagerViewModel : public QObject
     Q_OBJECT
 
 public:
-    explicit TagManagerViewModel(TagManagementUseCase& tagManagementUseCase, QObject* parent = nullptr);
+    TagManagerViewModel(TagManagementUseCase& tagManagementUseCase, TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
 
     const std::vector<Tag>& matchingTags() const noexcept { return m_matchingTags; }
 
@@ -42,6 +43,7 @@ private:
     void refreshSearch();
 
     TagManagementUseCase& m_tagManagementUseCase;
+    TagChangeNotifier& m_tagChangeNotifier;
     QString m_searchQuery;
     std::vector<Tag> m_matchingTags;
 };

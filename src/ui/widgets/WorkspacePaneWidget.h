@@ -27,6 +27,7 @@ class FileOperationsController;
 class AddressBarWidget;
 class BottomPanelWidget;
 class StatusBarWidget;
+class ColumnVisibilitySettingsViewModel;
 
 // One pane's full self-contained UI: its own toolbar (back/forward/up/refresh QActions, address
 // QLineEdit, view-mode QToolButton+menu — the per-pane counterpart of MainWindow's former
@@ -40,6 +41,7 @@ class WorkspacePaneWidget : public QWidget
 
 public:
     explicit WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOperationsController* fileOperationsController,
+                                  ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
                                   const std::array<int, FileListModel::ColumnCount>& initialColumnWidths = {},
                                   QWidget* parent = nullptr);
 
@@ -95,6 +97,10 @@ private:
 
     void addPageForTab(TabViewModel* tab, int index);
     void wireBrowserView(FileBrowserView* browserView, TabViewModel* tab);
+
+    // Applies m_columnVisibilitySettingsViewModel's current defaults (read live, not a copied
+    // snapshot) to a freshly created FileBrowserView -- called once per view from addPageForTab.
+    void applyDefaultColumnVisibility(FileBrowserView* browserView);
     void bindToolBarToTab(TabViewModel* tab);
     int indexOfTab(TabViewModel* tab) const;
 
@@ -148,6 +154,7 @@ private:
 
     WorkspacePaneViewModel* m_pane = nullptr;
     FileOperationsController* m_fileOperationsController = nullptr;
+    ColumnVisibilitySettingsViewModel& m_columnVisibilitySettingsViewModel;
     TabViewModel* m_boundTab = nullptr;
 
     QTabWidget* m_tabWidget = nullptr;

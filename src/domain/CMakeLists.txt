@@ -2,6 +2,7 @@ add_library(explorer_domain STATIC
     Error.h
     Result.h
     PathUtf8.h
+    PathHash.h
     WindowsLongPath.h
     PathContainment.h
     PathContainment.cpp

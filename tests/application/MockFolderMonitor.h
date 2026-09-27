@@ -7,8 +7,9 @@
 class MockFolderMonitor : public IFolderMonitor
 {
 public:
-    MOCK_METHOD(Result<FolderMonitorId>, startMonitoring,
-                (const std::filesystem::path& rootDirectory, std::function<void(const std::vector<FolderChangeEvent>&)> onChanged),
+    MOCK_METHOD(void, startMonitoring,
+                (const std::filesystem::path& rootDirectory, std::function<void(const std::vector<FolderChangeEvent>&)> onChanged,
+                 std::function<void(Result<FolderMonitorId>)> onStarted),
                 (override));
     MOCK_METHOD(void, stopMonitoring, (FolderMonitorId id), (override));
 };

@@ -1,5 +1,6 @@
 #include "SQLiteTagRepository.h"
 
+#include <algorithm>
 #include <filesystem>
 
 #include <QDateTime>
@@ -23,6 +24,13 @@ namespace
     {
         return QString::number(hash);
     }
+
+    // SQLite's compiled SQLITE_MAX_VARIABLE_NUMBER defaults to 999 on many builds -- tagsForFiles
+    // binds one placeholder per path, so a single query over a directory with more files than this
+    // would fail outright with "too many SQL variables" and silently blank the Tags column for the
+    // whole directory. Chunking keeps every query comfortably under that limit regardless of the
+    // actual compiled-in value.
+    constexpr int kTagsForFilesBatchSize = 500;
 
     Error toError(const QSqlError& sqlError, ErrorCode fallback = ErrorCode::IoError)
     {
@@ -356,6 +364,63 @@ Result<std::vector<Tag>> SQLiteTagRepository::tagsForFile(const std::filesystem:
     }
 
     return Result<std::vector<Tag>>::success(std::move(tags));
+}
+
+Result<TagsByPathMap> SQLiteTagRepository::tagsForFiles(const std::vector<std::filesystem::path>& filePaths) const
+{
+    if (filePaths.empty())
+    {
+        return Result<TagsByPathMap>::success({});
+    }
+
+    TagsByPathMap result;
+
+    // Batched to stay under SQLite's compiled SQLITE_MAX_VARIABLE_NUMBER (see kTagsForFilesBatchSize)
+    // -- a directory with more entries than one batch's worth issues multiple queries and merges
+    // their results rather than binding every path's placeholder into one query.
+    for (std::size_t offset = 0; offset < filePaths.size(); offset += kTagsForFilesBatchSize)
+    {
+        const std::size_t batchEnd = std::min(offset + static_cast<std::size_t>(kTagsForFilesBatchSize), filePaths.size());
+
+        QStringList placeholders;
+        for (std::size_t i = offset; i < batchEnd; ++i)
+        {
+            placeholders << QStringLiteral("?");
+        }
+
+        QSqlQuery query(m_db);
+        query.prepare(QStringLiteral(R"(
+            SELECT f.path, t.id, t.name, t.hex_color
+            FROM Tags t
+            JOIN FileTags ft ON ft.tag_id = t.id
+            JOIN Files f ON f.id = ft.file_id
+            WHERE f.path IN (%1)
+            ORDER BY f.path, t.name
+        )")
+                           .arg(placeholders.join(QStringLiteral(","))));
+        for (std::size_t i = offset; i < batchEnd; ++i)
+        {
+            query.addBindValue(toQString(filePaths[i]));
+        }
+
+        if (!query.exec())
+        {
+            return Result<TagsByPathMap>::failure(toError(query.lastError()));
+        }
+
+        while (query.next())
+        {
+            const std::filesystem::path path = toPath(query.value(0).toString());
+            auto tag = Tag::create(query.value(1).toLongLong(), query.value(2).toString().toStdString(),
+                                    query.value(3).toString().toStdString());
+            if (tag)
+            {
+                result[path].push_back(std::move(tag).value());
+            }
+        }
+    }
+
+    return Result<TagsByPathMap>::success(std::move(result));
 }
 
 Result<std::vector<FileTagAssociation>> SQLiteTagRepository::findFilesWithAllTags(const std::vector<Tag::Id>& tagIds) const

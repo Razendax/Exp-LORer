@@ -4,32 +4,31 @@ add_library(explorer_adapters_config STATIC
     JsonFileStore.cpp
     AppConfigStore.h
     AppConfigStore.cpp
+    AsyncSaveWorker.h
+    AsyncSaveDispatcher.h
     HighlightTheme.h
     HighlightTheme.cpp
     HighlightThemeStore.h
     HighlightThemeStore.cpp
-    HighlightThemeSaveWorker.h
-    HighlightThemeSaveWorker.cpp
     HighlightThemeViewModel.h
     HighlightThemeViewModel.cpp
     FileDecorationRulesStore.h
     FileDecorationRulesStore.cpp
-    FileDecorationRulesSaveWorker.h
-    FileDecorationRulesSaveWorker.cpp
     FileDecorationsViewModel.h
     FileDecorationsViewModel.cpp
     FavoritesStore.h
     FavoritesStore.cpp
-    FavoritesSaveWorker.h
-    FavoritesSaveWorker.cpp
     FavoritesViewModel.h
     FavoritesViewModel.cpp
     NotificationSettingsStore.h
     NotificationSettingsStore.cpp
-    NotificationSettingsSaveWorker.h
-    NotificationSettingsSaveWorker.cpp
     NotificationSettingsViewModel.h
     NotificationSettingsViewModel.cpp
+    ColumnVisibilitySettings.h
+    ColumnVisibilitySettingsStore.h
+    ColumnVisibilitySettingsStore.cpp
+    ColumnVisibilitySettingsViewModel.h
+    ColumnVisibilitySettingsViewModel.cpp
 )
 
 target_include_directories(explorer_adapters_config PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

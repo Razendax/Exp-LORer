@@ -14,6 +14,7 @@
 #include "DriveSpaceInfo.h"
 #include "FileNavigationUseCase.h"
 #include "FileNode.h"
+#include "FileTagsByPath.h"
 #include "FolderMonitorUseCase.h"
 #include "GitRepositorySummary.h"
 #include "NavigationHistory.h"
@@ -28,6 +29,8 @@ class FileListModel;
 class FileDecorationRules;
 class GitStatusService;
 class AdvancedSearchService;
+class FileTagsService;
+class TagChangeNotifier;
 
 // Binds address-bar/navigation-toolbar UI to FileNavigationUseCase and NavigationHistory for a
 // single tab. Owns the FileListModel that backs that tab's FileBrowserView, wiring
@@ -44,7 +47,10 @@ public:
     TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                  const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                  GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
-                 AdvancedSearchService& advancedSearchService, QObject* parent = nullptr);
+                 AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
+                 TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
+
+    ~TabViewModel() override;
 
     std::filesystem::path currentPath() const;
     bool backAvailable() const;
@@ -188,13 +194,19 @@ public slots:
     // otherwise or if tagId isn't present.
     void removeTagSearchCriterion(Tag::Id tagId);
 
-    // No-op if already active, or if currentPath() is VirtualPaths::ThisPC/an archive-virtual path
-    // (the Start button is also UI-disabled in that state, but this slot stays defensive). Clears
-    // any previous session's log/total, then starts a fresh recursive watch on currentPath().
+    // No-op if already active or already starting, or if currentPath() is VirtualPaths::ThisPC/an
+    // archive-virtual path (the Start button is also UI-disabled in that state, but this slot stays
+    // defensive). Clears any previous session's log/total, then dispatches an async watch request
+    // for currentPath() -- opening the directory handle is I/O and does not happen synchronously
+    // here (Architecture.md's no-I/O-on-UI-thread rule), so isMonitoringActive() only flips true
+    // once that open actually succeeds; monitoringFailed is emitted instead on failure.
     void startMonitoring();
 
-    // No-op if not active. Log/total are deliberately left untouched (a later startMonitoring()
-    // call clears them) so the last session's results stay visible after stopping.
+    // No-op if not active and no start is currently in flight. If a start dispatched moments ago
+    // hasn't finished opening the directory handle yet, cancels it instead (its completion callback
+    // stops the monitor immediately if the open still ends up succeeding). Log/total are
+    // deliberately left untouched otherwise (a later startMonitoring() call clears them) so the
+    // last session's results stay visible after stopping.
     void stopMonitoring();
 
     // No-op if unchanged, or if not currently active (nothing to pin).
@@ -267,6 +279,28 @@ private:
     // §14.34).
     void requestGitRepositorySummary(const std::filesystem::path& path);
 
+    // Wired into the same directoryContentsChanged funnel as requestGitStatus, plus
+    // m_tagChangeNotifier's tagsChanged() signal (Architecture.md §14.x, Tags column). Dispatches
+    // through m_fileTagsService (its own background thread + SQLite connection, same shape as
+    // requestGitStatus), dropping a reply for a path that's no longer current the same way
+    // requestGitStatus does.
+    void requestFileTags(const std::filesystem::path& path, const std::vector<FileNode>& entries);
+
+    // Fetches tags for every file in `candidates` and, once they arrive (discarded if
+    // `generation` no longer matches m_searchGeneration), caches them into m_searchSnapshotTags and
+    // applies them to m_searchResultsModel. Used whenever the search snapshot itself changes
+    // (onSearchScanReady) -- updateSearchQuery's own re-filters reuse the cached map directly
+    // instead of re-dispatching (its filtered subset is always a subset of the same snapshot).
+    void requestSearchResultTags(int generation, const std::vector<FileNode>& candidates);
+
+    // Same shape as requestSearchResultTags, for the advanced-search side: fetches tags for
+    // `candidates`, discarded if `generation` no longer matches m_advancedSearchGeneration, then
+    // caches into m_advancedSearchSnapshotTags and applies to m_advancedSearchResultsModel. Used
+    // whenever the candidate set itself changes (a new full/tag-first snapshot, a progress tick, or
+    // showAdvancedSearchPanel's initial listing) -- applyAdvancedSearchFilter's own re-filters reuse
+    // the cached map directly.
+    void requestAdvancedSearchResultTags(int generation, const std::vector<FileNode>& candidates);
+
     // Shared implementation of startAdvancedSearch/updateAdvancedSearchCriteria/
     // addTagSearchCriterion/removeTagSearchCriterion. When criteria.tagIds is non-empty, the
     // search is tag-first: queries TagManagementUseCase::findFilesWithAllTags directly (no
@@ -309,6 +343,8 @@ private:
     GitStatusService& m_gitStatusService;
     FolderMonitorUseCase& m_folderMonitorUseCase;
     AdvancedSearchService& m_advancedSearchService;
+    FileTagsService& m_fileTagsService;
+    TagChangeNotifier& m_tagChangeNotifier;
     NavigationHistory m_history;
     ViewMode m_viewMode = ViewMode::Details;
     FileListModel* m_fileListModel = nullptr;
@@ -318,6 +354,11 @@ private:
     bool m_searchActive = false;
     std::filesystem::path m_searchRoot;
     std::vector<FileNode> m_searchSnapshot;
+    // Tags for every file in m_searchSnapshot (Architecture.md §14.x, Tags column), fetched
+    // whenever the snapshot itself changes (onSearchScanReady) via requestSearchResultTags and
+    // reapplied as-is by every updateSearchQuery() re-filter -- a filtered subset never needs a
+    // fresh fetch since it's always a subset of the same snapshot.
+    TagsByPathMap m_searchSnapshotTags;
     QString m_searchQuery;
     // Bumped on every startSearch() dispatch and on exitSearch(); onSearchScanReady discards any
     // reply whose generation no longer matches, same discard-by-generation-id approach as
@@ -346,6 +387,10 @@ private:
     // updated by onAdvancedSearchProgress. Distinct from m_advancedSearchSnapshot, which is only
     // ever written once a scan has *fully* completed.
     std::vector<FileNode> m_advancedSearchPartialSnapshot;
+    // Tags for whichever candidate list (m_advancedSearchSnapshot or m_advancedSearchPartialSnapshot)
+    // was most recently fetched, fetched via requestAdvancedSearchResultTags whenever that candidate
+    // list itself changes and reapplied as-is by every applyAdvancedSearchFilter re-filter.
+    TagsByPathMap m_advancedSearchSnapshotTags;
     // The tagIds that m_advancedSearchSnapshot/m_advancedSearchFullScanDone/m_advancedSearchScanPending
     // currently pertain to when they were populated by the tag-first branch of runAdvancedSearch
     // (empty when they instead pertain to a plain recursive scan of m_advancedSearchRoot). Lets a
@@ -359,6 +404,16 @@ private:
     // FilePreviewViewModel).
     int m_advancedSearchGeneration = 0;
 
+    // True from startMonitoring() dispatching StandardFolderMonitor's async open until that open's
+    // onStarted callback runs (successfully or not) -- opening the directory handle is I/O and now
+    // happens on IFolderMonitor's own worker thread rather than inline, so there is a real gap
+    // where a monitor has been requested but m_monitoringActive is still false. Guards against a
+    // redundant second startMonitoring() dispatch during that gap.
+    bool m_monitoringStarting = false;
+    // Set by stopMonitoring() if it runs during that gap (there is no FolderMonitorId yet to stop
+    // via m_folderMonitorUseCase) -- checked by the onStarted completion callback, which stops the
+    // monitor immediately instead of activating it if this is set.
+    bool m_monitoringCancelled = false;
     bool m_monitoringActive = false;
     std::filesystem::path m_monitoringRoot;
     FolderMonitorId m_monitoringId = 0;

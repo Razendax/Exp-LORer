@@ -13,6 +13,8 @@ class FileDecorationRules;
 class GitStatusService;
 class FolderMonitorUseCase;
 class AdvancedSearchService;
+class FileTagsService;
+class TagChangeNotifier;
 
 // Per-pane tab bookkeeping: owns an ordered list of TabViewModel children and tracks which one is
 // active. One instance per WorkspacePaneId, always alive for the pane's lifetime regardless of
@@ -26,7 +28,8 @@ public:
     WorkspacePaneViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                             const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                             GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
-                            AdvancedSearchService& advancedSearchService, WorkspacePaneId id, QObject* parent = nullptr);
+                            AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
+                            TagChangeNotifier& tagChangeNotifier, WorkspacePaneId id, QObject* parent = nullptr);
 
     WorkspacePaneId id() const noexcept { return m_id; }
     int tabCount() const noexcept { return static_cast<int>(m_tabs.size()); }
@@ -59,6 +62,8 @@ private:
     GitStatusService& m_gitStatusService;
     FolderMonitorUseCase& m_folderMonitorUseCase;
     AdvancedSearchService& m_advancedSearchService;
+    FileTagsService& m_fileTagsService;
+    TagChangeNotifier& m_tagChangeNotifier;
     WorkspacePaneId m_id;
     std::vector<TabViewModel*> m_tabs;
     int m_activeIndex = -1;

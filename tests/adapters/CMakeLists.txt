@@ -27,6 +27,7 @@ add_executable(explorer_adapters_tests
     FavoritesStoreTest.cpp
     NotificationSettingsTest.cpp
     NotificationSettingsStoreTest.cpp
+    ColumnVisibilitySettingsStoreTest.cpp
     LibGit2StatusProviderTest.cpp
     LibGit2RepositoryTest.cpp
     LibGit2BranchProviderTest.cpp

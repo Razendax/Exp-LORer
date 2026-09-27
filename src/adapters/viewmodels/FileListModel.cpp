@@ -311,6 +311,18 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
         return role == Qt::DecorationRole ? QVariant(gitStatusBadgeIcon(statusIt->second)) : QVariant(gitStatusTooltip(statusIt->second));
     }
 
+    if (index.column() == TagsColumn && role == TagsRole)
+    {
+        if (entry.displayName())
+        {
+            // Synthetic rows ("This PC"'s drives, ...) have no real on-disk path to look up.
+            return QVariant::fromValue(std::vector<Tag>{});
+        }
+
+        const auto tagsIt = m_fileTagsByPath.find(entry.path());
+        return QVariant::fromValue(tagsIt == m_fileTagsByPath.end() ? std::vector<Tag>{} : tagsIt->second);
+    }
+
     if (role == Qt::ForegroundRole)
     {
         if (const auto decoration = resolveDecoration(entry); decoration && decoration->hexColor())
@@ -360,6 +372,8 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
             return fileTypeLabel(entry);
         case DateModifiedColumn:
             return formatDate(entry.modificationDate());
+        case DateCreatedColumn:
+            return formatDate(entry.creationDate());
         default:
             return {};
     }
@@ -404,6 +418,10 @@ QVariant FileListModel::headerData(int section, Qt::Orientation orientation, int
             return tr("Date modified");
         case GitStatusColumn:
             return tr("Git");
+        case TagsColumn:
+            return tr("Tags");
+        case DateCreatedColumn:
+            return tr("Date created");
         default:
             return {};
     }
@@ -434,9 +452,10 @@ void FileListModel::setEntries(const std::filesystem::path& directory, const std
     beginResetModel();
     m_directory = directory;
     m_entries = FileNavigationUseCase::sortBy(entries, m_sortCriterion, m_sortAscending);
-    // A new directory's git status hasn't been (re)computed yet -- start blank rather than
-    // momentarily showing the previous directory's badges under the new listing.
+    // A new directory's git status/tags haven't been (re)computed yet -- start blank rather than
+    // momentarily showing the previous directory's badges/pills under the new listing.
     m_gitStatusByPath.clear();
+    m_fileTagsByPath.clear();
     rebuildVisibleRows();
     endResetModel();
 }
@@ -482,6 +501,18 @@ void FileListModel::setGitStatuses(const GitStatusByPathMap& statuses)
 
     emit dataChanged(index(0, GitStatusColumn), index(static_cast<int>(m_visibleRows.size()) - 1, GitStatusColumn),
                       { Qt::DecorationRole, Qt::ToolTipRole });
+}
+
+void FileListModel::setFileTags(const TagsByPathMap& tagsByPath)
+{
+    m_fileTagsByPath = tagsByPath;
+
+    if (m_visibleRows.empty())
+    {
+        return;
+    }
+
+    emit dataChanged(index(0, TagsColumn), index(static_cast<int>(m_visibleRows.size()) - 1, TagsColumn), { TagsRole });
 }
 
 std::optional<FileDecorationRule> FileListModel::resolveDecoration(const FileNode& entry) const

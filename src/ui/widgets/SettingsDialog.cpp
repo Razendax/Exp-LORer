@@ -9,6 +9,7 @@
 #include <QColorDialog>
 #include <QFont>
 #include <QGridLayout>
+#include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -23,8 +24,10 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
+#include "ColumnVisibilitySettingsViewModel.h"
 #include "FileDecorationRuleDialog.h"
 #include "FileDecorationsViewModel.h"
+#include "FileListModel.h"
 #include "HighlightThemeViewModel.h"
 #include "NotificationSettingsViewModel.h"
 #include "SyntaxHighlightEngine.h"
@@ -64,16 +67,47 @@ namespace
     }
 
     constexpr int kLanguageIndexRole = Qt::UserRole;
+
+    // Every column except NameColumn, in the same order the Columns page's table and the header's
+    // per-tab right-click menu both present them (Architecture.md §14.x).
+    constexpr std::array<FileListModel::Column, FileListModel::ColumnCount - 1> kAllVisibilityColumns = {
+        FileListModel::SizeColumn,      FileListModel::TypeColumn,   FileListModel::DateModifiedColumn,
+        FileListModel::GitStatusColumn, FileListModel::TagsColumn,   FileListModel::DateCreatedColumn,
+    };
+
+    // Mirrors FileListModel::headerData()'s own labels for these columns.
+    QString columnDisplayName(FileListModel::Column column)
+    {
+        switch (column)
+        {
+            case FileListModel::SizeColumn:
+                return QObject::tr("Size");
+            case FileListModel::TypeColumn:
+                return QObject::tr("Type");
+            case FileListModel::DateModifiedColumn:
+                return QObject::tr("Date modified");
+            case FileListModel::GitStatusColumn:
+                return QObject::tr("Git");
+            case FileListModel::TagsColumn:
+                return QObject::tr("Tags");
+            case FileListModel::DateCreatedColumn:
+                return QObject::tr("Date created");
+            default:
+                return QString();
+        }
+    }
 }
 
 SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeViewModel& themeViewModel,
                                FileDecorationsViewModel& fileDecorationsViewModel,
-                               NotificationSettingsViewModel& notificationSettingsViewModel, QWidget* parent)
+                               NotificationSettingsViewModel& notificationSettingsViewModel,
+                               ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, QWidget* parent)
     : QDialog(parent)
     , m_engine(engine)
     , m_themeViewModel(themeViewModel)
     , m_fileDecorationsViewModel(fileDecorationsViewModel)
     , m_notificationSettingsViewModel(notificationSettingsViewModel)
+    , m_columnVisibilitySettingsViewModel(columnVisibilitySettingsViewModel)
     , m_decorationRules(fileDecorationsViewModel.rules())
     , m_hiddenFilesRule(fileDecorationsViewModel.hiddenFilesRule())
     , m_hiddenFoldersRule(fileDecorationsViewModel.hiddenFoldersRule())
@@ -121,12 +155,15 @@ SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeView
     colorsItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()) + 1);
     auto* notificationsItem = new QTreeWidgetItem(generalRoot, QStringList{ tr("Notifications") });
     notificationsItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()) + 2);
+    auto* columnsItem = new QTreeWidgetItem(generalRoot, QStringList{ tr("Columns") });
+    columnsItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()) + 3);
 
-    // All three built eagerly (unlike the lazily-built language pages above) since they're cheap
-    // -- no tree-sitter/query compilation involved.
+    // All four built eagerly (unlike the lazily-built language pages above) since they're cheap --
+    // no tree-sitter/query compilation involved.
     m_pageStack->addWidget(buildGeneralUiPage());
     m_pageStack->addWidget(buildFileDecorationsPage());
     m_pageStack->addWidget(buildNotificationsPage());
+    m_pageStack->addWidget(buildColumnsPage());
 
     m_categoryTree->expandAll();
 
@@ -571,6 +608,46 @@ QWidget* SettingsDialog::buildNotificationsPage()
                     m_notificationSettingsViewModel.setSettingsFor(type, enabledCheckBox->isChecked(), *exactTimeoutMs);
                 });
     }
+
+    return page;
+}
+
+QWidget* SettingsDialog::buildColumnsPage()
+{
+    auto* page = new QWidget(m_pageStack);
+    auto* pageLayout = new QVBoxLayout(page);
+
+    auto* groupBox = new QGroupBox(tr("Default visibility for new tab"), page);
+    auto* groupLayout = new QVBoxLayout(groupBox);
+
+    auto* table = new QTableWidget(static_cast<int>(kAllVisibilityColumns.size()), 2, groupBox);
+    table->setObjectName(QStringLiteral("settingsColumnsTable"));
+    table->setHorizontalHeaderLabels({ tr("Column"), tr("Visible") });
+    table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    table->verticalHeader()->setVisible(false);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->setSelectionMode(QAbstractItemView::NoSelection);
+    groupLayout->addWidget(table);
+
+    for (int row = 0; row < static_cast<int>(kAllVisibilityColumns.size()); ++row)
+    {
+        const FileListModel::Column column = kAllVisibilityColumns[static_cast<size_t>(row)];
+
+        table->setItem(row, 0, new QTableWidgetItem(columnDisplayName(column)));
+
+        auto* visibleCheckBox = new QCheckBox(table);
+        visibleCheckBox->setObjectName(QStringLiteral("settingsColumnVisibleCheckBox"));
+        visibleCheckBox->setChecked(m_columnVisibilitySettingsViewModel.defaultVisibility(column));
+        table->setCellWidget(row, 1, visibleCheckBox);
+
+        connect(visibleCheckBox, &QCheckBox::toggled, this, [this, column](bool checked) {
+            m_columnVisibilitySettingsViewModel.setDefaultVisibility(column, checked);
+        });
+    }
+
+    pageLayout->addWidget(groupBox);
+    pageLayout->addStretch();
 
     return page;
 }

@@ -5,22 +5,33 @@
 
 #ifdef _WIN32
 
+#include <atomic>
 #include <string_view>
 #include <thread>
 #include <utility>
+
+#include <QMetaObject>
 
 #include <Windows.h>
 
 struct StandardFolderMonitor::MonitorState
 {
     std::filesystem::path root;
-    HANDLE directoryHandle = INVALID_HANDLE_VALUE;
-    // Manual-reset event signaled by stopMonitor() to wake the worker thread out of its
-    // WaitForMultipleObjects wait. CloseHandle() alone does NOT reliably interrupt a *synchronous*
-    // ReadDirectoryChangesW call from another thread (a well-documented Win32 quirk -- it can hang
-    // indefinitely), so the directory handle is opened with FILE_FLAG_OVERLAPPED and cancellation
-    // goes through this event + CancelIoEx instead.
-    HANDLE stopEvent = nullptr;
+    // Written once by the worker thread (as soon as CreateFileW/CreateEventW succeed) and read by
+    // whichever thread later stops this monitor (stopMonitoring()'s detached cleanup thread, or
+    // stopMonitorBlocking() from the destructor) -- atomic since those are two different threads
+    // with no other synchronization between them. HANDLE is pointer-sized, so std::atomic<HANDLE>
+    // is lock-free on every platform this ships on.
+    std::atomic<HANDLE> directoryHandle{ INVALID_HANDLE_VALUE };
+    std::atomic<HANDLE> stopEvent{ nullptr };
+    // Set only by stopMonitorBlocking() (the destructor's shutdown path) if it runs while the
+    // worker thread is still inside CreateFileW/CreateEventW, i.e. before directoryHandle/stopEvent
+    // are published above -- the only caller that can race the open, since a monitor's
+    // FolderMonitorId is never handed to anyone (so stopMonitoring(id) can never be called for it)
+    // until after a successful open. Checked by the worker right after publishing the handle/event
+    // so it exits immediately instead of proceeding to watch a monitor nobody wants anymore,
+    // leaving stopMonitorBlocking to close the handle/event once its own join() unblocks.
+    std::atomic<bool> stopRequested{ false };
     std::thread workerThread;
     std::unordered_map<std::wstring, bool> pathIsDirectory;
     std::function<void(const std::vector<FolderChangeEvent>&)> onChanged;
@@ -121,60 +132,84 @@ StandardFolderMonitor::~StandardFolderMonitor()
 {
     for (auto& [id, state] : m_monitors)
     {
-        stopMonitor(*state);
+        stopMonitorBlocking(*state);
     }
 }
 
-Result<FolderMonitorId> StandardFolderMonitor::startMonitoring(const std::filesystem::path& rootDirectory,
-                                                                 std::function<void(const std::vector<FolderChangeEvent>&)> onChanged)
+void StandardFolderMonitor::startMonitoring(const std::filesystem::path& rootDirectory,
+                                             std::function<void(const std::vector<FolderChangeEvent>&)> onChanged,
+                                             std::function<void(Result<FolderMonitorId>)> onStarted)
 {
     if (rootDirectory == VirtualPaths::ThisPC)
     {
-        return Result<FolderMonitorId>::failure(Error(ErrorCode::InvalidArgument, "Cannot monitor the This PC virtual location"));
-    }
-
-    HANDLE handle = CreateFileW(rootDirectory.c_str(), FILE_LIST_DIRECTORY,
-                                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
-                                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr);
-    if (handle == INVALID_HANDLE_VALUE)
-    {
-        return Result<FolderMonitorId>::failure(Error(ErrorCode::NotFound, "Directory does not exist or cannot be monitored"));
-    }
-
-    HANDLE stopEvent = CreateEventW(nullptr, /*bManualReset=*/TRUE, /*bInitialState=*/FALSE, nullptr);
-    if (stopEvent == nullptr)
-    {
-        CloseHandle(handle);
-        return Result<FolderMonitorId>::failure(Error(ErrorCode::IoError, "Failed to create monitor stop event"));
+        onStarted(Result<FolderMonitorId>::failure(Error(ErrorCode::InvalidArgument, "Cannot monitor the This PC virtual location")));
+        return;
     }
 
     auto state = std::make_unique<MonitorState>();
     state->root = rootDirectory;
-    state->directoryHandle = handle;
-    state->stopEvent = stopEvent;
     state->onChanged = std::move(onChanged);
-    // Seeding is deferred to the worker thread below (the recursive walk can be slow on a large
-    // tree, and startMonitoring() is called from the Qt UI thread) rather than done here.
 
     const FolderMonitorId id = m_nextId++;
+    MonitorState* statePtr = state.get();
+    m_monitors.emplace(id, std::move(state));
 
-    // The worker thread captures everything it needs by value/raw pointer rather than the
-    // MonitorState* itself: pathIsDirectoryMap is only ever touched by this one thread (safe for
-    // its whole lifetime, which stopMonitor() bounds via join() before the state is ever erased),
-    // and the queued callback below captures onChangedCopy/events by value so it never dereferences
-    // the monitor's state after this thread has posted its last batch (Architecture.md §14.x
-    // "Threading" -- no shared mutable state crosses the thread hop except by value).
-    HANDLE watchedHandle = handle;
-    HANDLE watchedStopEvent = stopEvent;
-    std::function<void(const std::vector<FolderChangeEvent>&)> onChangedCopy = state->onChanged;
-    std::filesystem::path root = state->root;
-    auto* pathIsDirectoryMap = &state->pathIsDirectory;
+    // CreateFileW below is disk/volume I/O -- can block for a long time against an unresponsive
+    // network share -- and must never run on the Qt UI thread (CLAUDE.md's threading rule), so it
+    // now happens on this worker thread instead of inline in this function as before. onStarted
+    // reports the outcome once the handle either opens or fails to, marshaled back the same way
+    // onChanged's batches already are (QMetaObject::invokeMethod on `owner`, Qt::QueuedConnection).
     StandardFolderMonitor* owner = this;
+    std::filesystem::path root = rootDirectory;
 
-    state->workerThread = std::thread([watchedHandle, watchedStopEvent, onChangedCopy, root, pathIsDirectoryMap, owner]() {
-        // Seeded here rather than in startMonitoring() (see the comment there) -- this thread's
-        // pathIsDirectoryMap isn't touched by anyone else until stopMonitor() joins it.
-        seedDirectoryTypes(root, *pathIsDirectoryMap);
+    statePtr->workerThread = std::thread([owner, statePtr, id, root, onStarted = std::move(onStarted)]() {
+        HANDLE handle = CreateFileW(root.c_str(), FILE_LIST_DIRECTORY,
+                                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
+                                     FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr);
+        if (handle == INVALID_HANDLE_VALUE)
+        {
+            QMetaObject::invokeMethod(
+                owner,
+                [owner, id, onStarted]() {
+                    onStarted(Result<FolderMonitorId>::failure(Error(ErrorCode::NotFound, "Directory does not exist or cannot be monitored")));
+                    owner->discardMonitor(id);
+                },
+                Qt::QueuedConnection);
+            return;
+        }
+
+        HANDLE stopEvent = CreateEventW(nullptr, /*bManualReset=*/TRUE, /*bInitialState=*/FALSE, nullptr);
+        if (stopEvent == nullptr)
+        {
+            CloseHandle(handle);
+            QMetaObject::invokeMethod(
+                owner,
+                [owner, id, onStarted]() {
+                    onStarted(Result<FolderMonitorId>::failure(Error(ErrorCode::IoError, "Failed to create monitor stop event")));
+                    owner->discardMonitor(id);
+                },
+                Qt::QueuedConnection);
+            return;
+        }
+
+        // Published for stopMonitorBlocking()/stopMonitoring() before the stopRequested check below
+        // -- see MonitorState::stopRequested's comment for why this ordering matters.
+        statePtr->directoryHandle = handle;
+        statePtr->stopEvent = stopEvent;
+
+        if (statePtr->stopRequested)
+        {
+            // App shutdown asked us to stop while still opening -- stopMonitorBlocking already owns
+            // closing directoryHandle/stopEvent once its own join() (blocked on this thread) returns.
+            return;
+        }
+
+        QMetaObject::invokeMethod(
+            owner, [onStarted, id]() { onStarted(Result<FolderMonitorId>::success(id)); }, Qt::QueuedConnection);
+
+        // Seeded here (not in startMonitoring()) since the recursive walk can be slow on a large
+        // tree and must not run on the Qt UI thread either.
+        seedDirectoryTypes(root, statePtr->pathIsDirectory);
 
         char buffer[16384];
         OVERLAPPED overlapped{};
@@ -184,7 +219,7 @@ Result<FolderMonitorId> StandardFolderMonitor::startMonitoring(const std::filesy
         {
             ResetEvent(overlapped.hEvent);
 
-            const BOOL issued = ReadDirectoryChangesW(watchedHandle, buffer, sizeof(buffer), /*bWatchSubtree=*/TRUE,
+            const BOOL issued = ReadDirectoryChangesW(handle, buffer, sizeof(buffer), /*bWatchSubtree=*/TRUE,
                                                        FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_DIR_NAME |
                                                            FILE_NOTIFY_CHANGE_LAST_WRITE,
                                                        nullptr, &overlapped, nullptr);
@@ -193,7 +228,7 @@ Result<FolderMonitorId> StandardFolderMonitor::startMonitoring(const std::filesy
                 break;
             }
 
-            HANDLE waitHandles[2] = { overlapped.hEvent, watchedStopEvent };
+            HANDLE waitHandles[2] = { overlapped.hEvent, stopEvent };
             const DWORD waitResult = WaitForMultipleObjects(2, waitHandles, FALSE, INFINITE);
 
             if (waitResult != WAIT_OBJECT_0)
@@ -201,32 +236,38 @@ Result<FolderMonitorId> StandardFolderMonitor::startMonitoring(const std::filesy
                 // Stop requested (or a wait failure) -- cancel the pending read and wait for the
                 // cancellation itself to complete before touching the handle again.
                 DWORD discarded = 0;
-                CancelIoEx(watchedHandle, &overlapped);
-                GetOverlappedResult(watchedHandle, &overlapped, &discarded, TRUE);
+                CancelIoEx(handle, &overlapped);
+                GetOverlappedResult(handle, &overlapped, &discarded, TRUE);
                 break;
             }
 
             DWORD bytesReturned = 0;
-            if (!GetOverlappedResult(watchedHandle, &overlapped, &bytesReturned, FALSE) || bytesReturned == 0)
+            if (!GetOverlappedResult(handle, &overlapped, &bytesReturned, FALSE))
             {
                 break;
             }
 
-            std::vector<FolderChangeEvent> events = decodeBuffer(buffer, bytesReturned, root, *pathIsDirectoryMap);
+            if (bytesReturned == 0)
+            {
+                // A successful completion with zero bytes is ReadDirectoryChangesW's documented
+                // signal that the fixed-size buffer overflowed -- too many changes arrived in one
+                // cycle to fit. Some changes were lost, but the watch itself is still healthy; just
+                // re-issue the read instead of tearing the monitor down.
+                continue;
+            }
+
+            std::vector<FolderChangeEvent> events = decodeBuffer(buffer, bytesReturned, root, statePtr->pathIsDirectory);
             if (events.empty())
             {
                 continue;
             }
 
             QMetaObject::invokeMethod(
-                owner, [onChangedCopy, events = std::move(events)]() { onChangedCopy(events); }, Qt::QueuedConnection);
+                owner, [onChangedCopy = statePtr->onChanged, events = std::move(events)]() { onChangedCopy(events); }, Qt::QueuedConnection);
         }
 
         CloseHandle(overlapped.hEvent);
     });
-
-    m_monitors.emplace(id, std::move(state));
-    return Result<FolderMonitorId>::success(id);
 }
 
 void StandardFolderMonitor::stopMonitoring(FolderMonitorId id)
@@ -237,15 +278,42 @@ void StandardFolderMonitor::stopMonitoring(FolderMonitorId id)
         return;
     }
 
-    stopMonitor(*it->second);
+    std::unique_ptr<MonitorState> state = std::move(it->second);
     m_monitors.erase(it);
+
+    if (HANDLE stopEvent = state->stopEvent.load())
+    {
+        SetEvent(stopEvent);
+    }
+
+    // workerThread.join() can block for as long as CancelIoEx/GetOverlappedResult takes to resolve
+    // against an unresponsive network share's redirector -- handed off to its own throwaway,
+    // detached thread so stopMonitoring() itself never blocks the calling (UI) thread. Safe to
+    // detach: `state` (the handle, the event, the worker thread object) is moved in wholesale,
+    // touches nothing else, and reports nothing back.
+    std::thread([state = std::move(state)]() mutable {
+        if (state->workerThread.joinable())
+        {
+            state->workerThread.join();
+        }
+        if (const HANDLE handle = state->directoryHandle.load(); handle != INVALID_HANDLE_VALUE)
+        {
+            CloseHandle(handle);
+        }
+        if (const HANDLE stopEvent = state->stopEvent.load())
+        {
+            CloseHandle(stopEvent);
+        }
+    }).detach();
 }
 
-void StandardFolderMonitor::stopMonitor(MonitorState& state)
+void StandardFolderMonitor::stopMonitorBlocking(MonitorState& state)
 {
-    if (state.stopEvent != nullptr)
+    state.stopRequested = true;
+
+    if (const HANDLE stopEvent = state.stopEvent.load())
     {
-        SetEvent(state.stopEvent);
+        SetEvent(stopEvent);
     }
 
     if (state.workerThread.joinable())
@@ -253,17 +321,35 @@ void StandardFolderMonitor::stopMonitor(MonitorState& state)
         state.workerThread.join();
     }
 
-    if (state.directoryHandle != INVALID_HANDLE_VALUE)
+    if (const HANDLE handle = state.directoryHandle.load(); handle != INVALID_HANDLE_VALUE)
     {
-        CloseHandle(state.directoryHandle);
+        CloseHandle(handle);
         state.directoryHandle = INVALID_HANDLE_VALUE;
     }
 
-    if (state.stopEvent != nullptr)
+    if (const HANDLE stopEvent = state.stopEvent.load())
     {
-        CloseHandle(state.stopEvent);
+        CloseHandle(stopEvent);
         state.stopEvent = nullptr;
     }
+}
+
+void StandardFolderMonitor::discardMonitor(FolderMonitorId id)
+{
+    const auto it = m_monitors.find(id);
+    if (it == m_monitors.end())
+    {
+        return;
+    }
+
+    // The worker that posted this call is already on its way out (it never proceeds past posting
+    // this) -- join() here is a formality, never a real wait.
+    if (it->second->workerThread.joinable())
+    {
+        it->second->workerThread.join();
+    }
+
+    m_monitors.erase(it);
 }
 
 #else
@@ -279,17 +365,22 @@ StandardFolderMonitor::StandardFolderMonitor(QObject* parent)
 
 StandardFolderMonitor::~StandardFolderMonitor() = default;
 
-Result<FolderMonitorId> StandardFolderMonitor::startMonitoring(const std::filesystem::path&,
-                                                                 std::function<void(const std::vector<FolderChangeEvent>&)>)
+void StandardFolderMonitor::startMonitoring(const std::filesystem::path&,
+                                             std::function<void(const std::vector<FolderChangeEvent>&)>,
+                                             std::function<void(Result<FolderMonitorId>)> onStarted)
 {
-    return Result<FolderMonitorId>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
+    onStarted(Result<FolderMonitorId>::failure(Error(ErrorCode::IoError, "Not supported on this platform")));
 }
 
 void StandardFolderMonitor::stopMonitoring(FolderMonitorId)
 {
 }
 
-void StandardFolderMonitor::stopMonitor(MonitorState&)
+void StandardFolderMonitor::stopMonitorBlocking(MonitorState&)
+{
+}
+
+void StandardFolderMonitor::discardMonitor(FolderMonitorId)
 {
 }
 

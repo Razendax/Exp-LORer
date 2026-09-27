@@ -175,6 +175,36 @@ TEST_F(SQLiteTagRepositoryTest, AssignTagRelocatesRowByHashOnRename)
     EXPECT_TRUE(tagsAtOldPath.value().empty());
 }
 
+TEST_F(SQLiteTagRepositoryTest, TagsForFilesReturnsMapForFilesWithTagsOnly)
+{
+    Tag work = m_repository.createTag("Work", "#FF8800").value();
+    Tag urgent = m_repository.createTag("Urgent", "#FF0000").value();
+
+    ASSERT_TRUE(m_repository.assignTag(FileTagAssociation::create("C:/data/tagged.pdf", 0x1111u, work.id()).value())
+                    .hasValue());
+    ASSERT_TRUE(m_repository.assignTag(FileTagAssociation::create("C:/data/tagged.pdf", 0x1111u, urgent.id()).value())
+                    .hasValue());
+
+    auto result = m_repository.tagsForFiles({ "C:/data/tagged.pdf", "C:/data/untagged.pdf", "C:/data/missing.pdf" });
+
+    ASSERT_TRUE(result.hasValue());
+    const auto& map = result.value();
+    ASSERT_EQ(map.size(), 1u);
+    const auto tagged = map.find("C:/data/tagged.pdf");
+    ASSERT_NE(tagged, map.end());
+    EXPECT_EQ(tagged->second.size(), 2u);
+    EXPECT_EQ(map.find("C:/data/untagged.pdf"), map.end());
+    EXPECT_EQ(map.find("C:/data/missing.pdf"), map.end());
+}
+
+TEST_F(SQLiteTagRepositoryTest, TagsForFilesReturnsEmptyMapForEmptyInput)
+{
+    auto result = m_repository.tagsForFiles({});
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(result.value().empty());
+}
+
 TEST_F(SQLiteTagRepositoryTest, FindFilesWithAllTagsReturnsOnlyFilesHavingEveryTag)
 {
     Tag work = m_repository.createTag("Work", "#FF8800").value();

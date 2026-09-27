@@ -506,8 +506,13 @@ void TerminalWidget::keyPressEvent(QKeyEvent* event)
         return;
     }
 
-    if (ctrlOnly && key == Qt::Key_A)
+    if (ctrlShift && key == Qt::Key_A)
     {
+        // Deliberately Ctrl+Shift+A, not plain Ctrl+A -- Ctrl+A is SOH (0x01), universally bound by
+        // readline-based programs (bash, Python's REPL, vim/nano, an SSH session) to "move cursor to
+        // start of line", and must keep falling through to the generic Ctrl+[A-Z] forwarding below.
+        // Same collision-avoidance reasoning as Copy/Paste already living on Ctrl+Shift+C/V instead
+        // of Ctrl+C/V.
         selectAll();
         event->accept();
         return;

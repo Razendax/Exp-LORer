@@ -21,8 +21,9 @@ FolderMonitorUseCase::FolderMonitorUseCase(IFolderMonitor& folderMonitor)
 {
 }
 
-Result<FolderMonitorId> FolderMonitorUseCase::startMonitoring(const std::filesystem::path& rootDirectory,
-                                                                std::function<void(const std::vector<FolderChangeEvent>&)> onChanged)
+void FolderMonitorUseCase::startMonitoring(const std::filesystem::path& rootDirectory,
+                                            std::function<void(const std::vector<FolderChangeEvent>&)> onChanged,
+                                            std::function<void(Result<FolderMonitorId>)> onStarted)
 {
     // Debounce state is scoped to this one monitoring session (captured by the wrapping lambda
     // below), never shared across tabs/roots, so two unrelated tabs touching same-named relative
@@ -55,7 +56,7 @@ Result<FolderMonitorId> FolderMonitorUseCase::startMonitoring(const std::filesys
         }
     };
 
-    return m_folderMonitor.startMonitoring(rootDirectory, std::move(debouncedOnChanged));
+    m_folderMonitor.startMonitoring(rootDirectory, std::move(debouncedOnChanged), std::move(onStarted));
 }
 
 void FolderMonitorUseCase::stopMonitoring(FolderMonitorId id)

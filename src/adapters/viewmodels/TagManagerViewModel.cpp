@@ -3,12 +3,15 @@
 #include <algorithm>
 #include <utility>
 
+#include "TagChangeNotifier.h"
 #include "TagColorPalette.h"
 #include "TagManagementUseCase.h"
 
-TagManagerViewModel::TagManagerViewModel(TagManagementUseCase& tagManagementUseCase, QObject* parent)
+TagManagerViewModel::TagManagerViewModel(TagManagementUseCase& tagManagementUseCase, TagChangeNotifier& tagChangeNotifier,
+                                          QObject* parent)
     : QObject(parent)
     , m_tagManagementUseCase(tagManagementUseCase)
+    , m_tagChangeNotifier(tagChangeNotifier)
 {
     refreshSearch();
 }
@@ -49,6 +52,7 @@ void TagManagerViewModel::renameTag(Tag::Id id, const QString& newName)
     }
 
     refreshSearch();
+    emit m_tagChangeNotifier.tagsChanged();
 }
 
 void TagManagerViewModel::addTag(const QString& name)
@@ -68,6 +72,7 @@ void TagManagerViewModel::addTag(const QString& name)
     }
 
     refreshSearch();
+    emit m_tagChangeNotifier.tagsChanged();
 }
 
 void TagManagerViewModel::deleteTag(Tag::Id id)
@@ -80,6 +85,7 @@ void TagManagerViewModel::deleteTag(Tag::Id id)
     }
 
     refreshSearch();
+    emit m_tagChangeNotifier.tagsChanged();
 }
 
 void TagManagerViewModel::refreshSearch()

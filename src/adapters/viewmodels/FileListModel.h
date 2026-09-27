@@ -13,7 +13,15 @@
 #include "FileDecorationRules.h"
 #include "FileNavigationUseCase.h"
 #include "FileNode.h"
+#include "FileTagsByPath.h"
 #include "GitDirectoryStatus.h"
+#include "Tag.h"
+
+// Lets Tag/std::vector<Tag> travel through QVariant (FileListModel::data()'s TagsRole,
+// Architecture.md §14.x's Tags column) -- these are plain value types with no Qt dependency of
+// their own, so this is the only place that needs to know QVariant can hold them.
+Q_DECLARE_METATYPE(Tag)
+Q_DECLARE_METATYPE(std::vector<Tag>)
 
 // Qt-facing model wrapping directory-listing results (FileNode lists) supplied by
 // TabViewModel, which owns one instance per tab. Feeds both QListView (icon/list/tiles view
@@ -32,6 +40,8 @@ public:
         TypeColumn,
         DateModifiedColumn,
         GitStatusColumn,
+        TagsColumn,
+        DateCreatedColumn,
         ColumnCount,
     };
 
@@ -39,6 +49,7 @@ public:
     {
         FilePathRole = Qt::UserRole + 1,
         IsDirectoryRole,
+        TagsRole,
     };
 
     // `fileDecorationsChangeSource` is a bare QObject& (not FileDecorationsViewModel&, the concrete
@@ -70,6 +81,12 @@ public:
     // Recovers the full FileNode for a row (already held in m_entries), e.g. to resolve a
     // QItemSelectionModel's current index into a tagging target.
     std::optional<FileNode> entryAt(int row) const;
+
+    // Every entry set by the last setEntries() call, regardless of current hidden-file filtering
+    // (unlike entryAt(), which only sees m_visibleRows). Used by TabViewModel's tagsChanged handler
+    // to re-fetch tags for "whatever this tab's FileListModel currently holds" without needing its
+    // own separate cache of the same list (Architecture.md §14.x).
+    const std::vector<FileNode>& entries() const noexcept { return m_entries; }
 
     // Directory these entries were listed from (last argument passed to setEntries), so views can
     // detect whether a navigation attempt actually changed directory and locate a row by path
@@ -104,6 +121,12 @@ public slots:
     // completes; entries with no matching key show no badge (clean, or no repository present).
     void setGitStatuses(const GitStatusByPathMap& statuses);
 
+    // Sets the per-path tags shown in TagsColumn (Architecture.md §14.x), keyed by each entry's
+    // absolute path. Called by TabViewModel::requestFileTags, both right after a directory listing
+    // and whenever TagChangeNotifier::tagsChanged() fires; a path absent from the map shows no
+    // pills (untagged).
+    void setFileTags(const TagsByPathMap& tagsByPath);
+
 signals:
     void sortOrderChanged(SortCriterion criterion, bool ascending);
 
@@ -128,6 +151,7 @@ private:
     std::vector<int> m_visibleRows;
     QFileIconProvider m_iconProvider;
     GitStatusByPathMap m_gitStatusByPath;
+    TagsByPathMap m_fileTagsByPath;
 
     // Dimmed (QStyle::generatedIconPixmap) variant of a hidden entry's icon, cached per icon
     // "kind" (extension/directory/symlink, see data()) rather than rebuilt on every data() call --

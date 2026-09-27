@@ -12,3 +12,8 @@ Result<DriveSpaceInfo> DriveSpaceInfoWorker::query(const std::filesystem::path& 
 {
     return m_fileNavigationUseCase.driveSpaceInfo(path);
 }
+
+Result<FileNode> DriveSpaceInfoWorker::stat(const std::filesystem::path& path) const
+{
+    return m_fileNavigationUseCase.stat(path);
+}

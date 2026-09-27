@@ -1,12 +1,10 @@
 #pragma once
 
 #include <QObject>
-#include <QThread>
 
+#include "AsyncSaveDispatcher.h"
 #include "NotificationSettings.h"
 #include "NotificationSettingsStore.h"
-
-class NotificationSettingsSaveWorker;
 
 // Thin Qt-facing wrapper around NotificationSettings + NotificationSettingsStore, owned once by
 // CompositionRoot like HighlightThemeViewModel/FileDecorationsViewModel so SettingsDialog's
@@ -22,15 +20,13 @@ class NotificationSettingsSaveWorker;
 // dependency) -- see CompositionRoot for how the two are threaded together.
 //
 // The actual NotificationSettingsStore::save() call runs on a dedicated background thread (via
-// NotificationSettingsSaveWorker), the same shape HighlightThemeViewModel/FileDecorationsViewModel
-// use, so a Settings-page edit never blocks the Qt UI thread on disk I/O.
+// m_saveDispatcher), so a Settings-page edit never blocks the Qt UI thread on disk I/O.
 class NotificationSettingsViewModel : public QObject
 {
     Q_OBJECT
 
 public:
     NotificationSettingsViewModel(NotificationSettings& settings, NotificationSettingsStore& store, QObject* parent = nullptr);
-    ~NotificationSettingsViewModel() override;
 
     NotificationTypeSettings settingsFor(NotificationType type) const { return m_settings.settingsFor(type); }
     void setSettingsFor(NotificationType type, bool enabled, int timeoutMs);
@@ -42,6 +38,5 @@ private:
     NotificationSettings& m_settings;
     NotificationSettingsStore& m_store;
 
-    QThread m_saveThread;
-    NotificationSettingsSaveWorker* m_saveWorker = nullptr;
+    AsyncSaveDispatcher<NotificationSettings> m_saveDispatcher;
 };

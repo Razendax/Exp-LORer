@@ -5,6 +5,7 @@
 #include <vector>
 
 #include "FileTagAssociation.h"
+#include "FileTagsByPath.h"
 #include "Result.h"
 #include "Tag.h"
 
@@ -23,6 +24,11 @@ public:
     virtual Result<void> assignTag(const FileTagAssociation& association) = 0;
     virtual Result<void> unassignTag(const std::filesystem::path& filePath, Tag::Id tagId) = 0;
     virtual Result<std::vector<Tag>> tagsForFile(const std::filesystem::path& filePath) const = 0;
+
+    // Bulk variant of tagsForFile for one directory's worth of paths at once (Architecture.md
+    // §14.x, Tags column) -- one query instead of one round-trip per file. Paths with no tags are
+    // simply absent from the returned map, not present with an empty vector.
+    virtual Result<TagsByPathMap> tagsForFiles(const std::vector<std::filesystem::path>& filePaths) const = 0;
 
     // Files tagged with every id in tagIds (AND filtering, Architecture.md §7).
     virtual Result<std::vector<FileTagAssociation>> findFilesWithAllTags(const std::vector<Tag::Id>& tagIds) const = 0;

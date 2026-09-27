@@ -101,9 +101,11 @@ int main(int argc, char* argv[])
         const bool restored = workspaceController->restoreFromConfig(initialConfig.workspace);
 
         MainWindow mainWindow(workspaceController.get(), compositionRoot.appConfigStore(), compositionRoot.tagManagementUseCase(),
-                              compositionRoot.syntaxHighlightEngine(), compositionRoot.highlightThemeViewModel(),
-                              compositionRoot.fileDecorationsViewModel(), compositionRoot.favoritesViewModel(),
-                              compositionRoot.notificationCenter(), compositionRoot.notificationSettingsViewModel(), initialConfig);
+                              compositionRoot.tagChangeNotifier(), compositionRoot.syntaxHighlightEngine(),
+                              compositionRoot.highlightThemeViewModel(), compositionRoot.fileDecorationsViewModel(),
+                              compositionRoot.favoritesViewModel(), compositionRoot.notificationCenter(),
+                              compositionRoot.notificationSettingsViewModel(), compositionRoot.columnVisibilitySettingsViewModel(),
+                              initialConfig);
         mainWindow.show();
 
         if (!restored)

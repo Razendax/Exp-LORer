@@ -1,24 +1,11 @@
 #include "FavoritesViewModel.h"
 
-#include <QMetaObject>
-
-#include "FavoritesSaveWorker.h"
-
 FavoritesViewModel::FavoritesViewModel(Favorites& favorites, FavoritesStore& store, QObject* parent)
     : QObject(parent)
     , m_favorites(favorites)
     , m_store(store)
+    , m_saveDispatcher([&store](const Favorites& v) { store.save(v); })
 {
-    m_saveWorker = new FavoritesSaveWorker(m_store);
-    m_saveWorker->moveToThread(&m_saveThread);
-    m_saveThread.start();
-}
-
-FavoritesViewModel::~FavoritesViewModel()
-{
-    m_saveThread.quit();
-    m_saveThread.wait();
-    delete m_saveWorker;
 }
 
 Favorites::Id FavoritesViewModel::addItem(const std::filesystem::path& path)
@@ -86,9 +73,5 @@ void FavoritesViewModel::moveItemDownWithinCategory(Favorites::Id categoryId, Fa
 void FavoritesViewModel::afterMutation()
 {
     emit favoritesChanged();
-
-    // Save runs on m_saveThread -- Favorites is a plain copyable value type, so the worker gets
-    // its own independent snapshot rather than touching m_favorites from another thread.
-    QMetaObject::invokeMethod(
-        m_saveWorker, [worker = m_saveWorker, favorites = m_favorites]() { worker->save(favorites); }, Qt::QueuedConnection);
+    m_saveDispatcher.dispatch(m_favorites);
 }

@@ -3,12 +3,17 @@
 #include <algorithm>
 #include <utility>
 
+#include <QPointer>
+
 #include "AdvancedSearchService.h"
 #include "ArchiveExtensions.h"
 #include "FileListModel.h"
 #include "FileNavigationUseCase.h"
+#include "FileTagsByPath.h"
+#include "FileTagsService.h"
 #include "GitDirectoryStatus.h"
 #include "GitStatusService.h"
+#include "TagChangeNotifier.h"
 #include "TagManagementUseCase.h"
 #include "VirtualPaths.h"
 
@@ -25,13 +30,16 @@ namespace
 TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                            const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                            GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
-                           AdvancedSearchService& advancedSearchService, QObject* parent)
+                           AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
+                           TagChangeNotifier& tagChangeNotifier, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagManagementUseCase(tagManagementUseCase)
     , m_gitStatusService(gitStatusService)
     , m_folderMonitorUseCase(folderMonitorUseCase)
     , m_advancedSearchService(advancedSearchService)
+    , m_fileTagsService(fileTagsService)
+    , m_tagChangeNotifier(tagChangeNotifier)
     , m_fileListModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_searchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_advancedSearchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
@@ -43,10 +51,47 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     // results fire their own searchResultsChanged/advancedSearchResultsChanged signals instead,
     // which this deliberately does not connect to.
     connect(this, &TabViewModel::directoryContentsChanged, this,
-            [this](const std::filesystem::path& path, const std::vector<FileNode>&) {
+            [this](const std::filesystem::path& path, const std::vector<FileNode>& entries) {
                 requestGitStatus(path);
                 requestGitRepositorySummary(path);
+                requestFileTags(path, entries);
             });
+
+    // Architecture.md §14.x: a tag assigned/removed/renamed/deleted anywhere re-fetches this tab's
+    // currently-listed directory's tags, not just the path that actually changed -- correctness
+    // over precision, since the alternative is threading which-path-changed information through a
+    // signal meant to stay a plain broadcast. Also refreshes whichever of search/advanced search is
+    // currently active, for the same reason.
+    connect(&m_tagChangeNotifier, &TagChangeNotifier::tagsChanged, this, [this]() {
+        requestFileTags(currentPath(), m_fileListModel->entries());
+
+        if (m_searchActive)
+        {
+            requestSearchResultTags(m_searchGeneration, m_searchSnapshot);
+        }
+
+        if (m_advancedSearchActive)
+        {
+            const std::vector<FileNode>& candidates =
+                m_advancedSearchFullScanDone ? m_advancedSearchSnapshot : m_advancedSearchPartialSnapshot;
+            requestAdvancedSearchResultTags(m_advancedSearchGeneration, candidates);
+        }
+    });
+}
+
+TabViewModel::~TabViewModel()
+{
+    // A still-active monitor is normally stopped by WorkspacePaneViewModel::closeTab() before a tab
+    // is destroyed, but guard here too for any other destruction path. A monitor whose
+    // startMonitoring() open is still in flight (StandardFolderMonitor now opens the directory
+    // handle on its own worker thread, not inline) needs no equivalent handling here: its
+    // completion callback captures a QPointer guard on `this`, not `this` itself, and stops the
+    // now-ownerless monitor by that captured pointer directly if the guard is already null by the
+    // time the open finishes -- see startMonitoring()'s comment.
+    if (m_monitoringActive)
+    {
+        m_folderMonitorUseCase.stopMonitoring(m_monitoringId);
+    }
 }
 
 std::filesystem::path TabViewModel::currentPath() const
@@ -278,6 +323,7 @@ void TabViewModel::onSearchScanReady(int generation, Result<std::vector<FileNode
     auto filtered = FileNavigationUseCase::filterByName(m_searchSnapshot, m_searchQuery.toStdString());
     filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
     m_searchResultsModel->setEntries(m_searchRoot, filtered);
+    requestSearchResultTags(generation, m_searchSnapshot);
 
     setSelectedEntries({});
     emit searchModeChanged(true);
@@ -296,6 +342,10 @@ void TabViewModel::updateSearchQuery(const QString& query)
     auto filtered = FileNavigationUseCase::filterByName(m_searchSnapshot, query.toStdString());
     filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
     m_searchResultsModel->setEntries(m_searchRoot, filtered);
+    // setEntries() above clears the model's tags -- m_searchSnapshotTags already has every tag for
+    // the whole snapshot (requestSearchResultTags fetched it once when the snapshot itself was set),
+    // so re-applying it here needs no new DB round trip even though this runs on every keystroke.
+    m_searchResultsModel->setFileTags(m_searchSnapshotTags);
 
     emit searchResultsChanged(filtered);
 }
@@ -309,6 +359,7 @@ void TabViewModel::exitSearch()
 
     m_searchActive = false;
     m_searchSnapshot.clear();
+    m_searchSnapshotTags.clear();
     m_searchQuery.clear();
     m_searchRoot.clear();
     ++m_searchGeneration;
@@ -340,6 +391,7 @@ void TabViewModel::showAdvancedSearchPanel()
 
     auto sorted = FileNavigationUseCase::sortBy(std::move(result).value(), SortCriterion::Name, true);
     m_advancedSearchResultsModel->setEntries(path, sorted);
+    requestAdvancedSearchResultTags(m_advancedSearchGeneration, sorted);
 
     m_advancedSearchActive = true;
     setSelectedEntries({});
@@ -380,6 +432,7 @@ void TabViewModel::exitAdvancedSearch()
     m_advancedSearchActive = false;
     m_advancedSearchSnapshot.clear();
     m_advancedSearchPartialSnapshot.clear();
+    m_advancedSearchSnapshotTags.clear();
     m_advancedSearchCriteria = SearchCriteria();
     m_advancedSearchRoot.clear();
     m_advancedSearchCachedTagIds.clear();
@@ -503,7 +556,15 @@ void TabViewModel::runAdvancedSearch(bool forceRescan)
         return;
     }
 
-    if (forceRescan || m_advancedSearchRoot.empty() || (!m_advancedSearchFullScanDone && !m_advancedSearchScanPending))
+    // m_advancedSearchCachedTagIds non-empty here means whatever m_advancedSearchSnapshot/
+    // m_advancedSearchFullScanDone/m_advancedSearchScanPending currently hold pertains to the
+    // tag-first branch above (a tag-restricted candidate set), not a real recursive scan of
+    // m_advancedSearchRoot -- reusing it here (now that tagIds is empty) would silently omit every
+    // untagged file. Treat it the same as "no scan cached yet" so a fresh full scan is dispatched.
+    const bool cachedResultIsTagFirst = !m_advancedSearchCachedTagIds.empty();
+
+    if (forceRescan || m_advancedSearchRoot.empty() || cachedResultIsTagFirst ||
+        (!m_advancedSearchFullScanDone && !m_advancedSearchScanPending))
     {
         // No scan covering the current root is running or cached -- dispatch a fresh one. This also
         // covers forceRescan explicitly re-scanning a root that *was* already fully/partially
@@ -550,6 +611,11 @@ void TabViewModel::applyAdvancedSearchFilter(const std::vector<FileNode>& candid
     auto filtered = FileNavigationUseCase::filterByCriteria(candidates, m_advancedSearchCriteria);
     filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
     m_advancedSearchResultsModel->setEntries(m_advancedSearchRoot, filtered);
+    // setEntries() above clears the model's tags -- m_advancedSearchSnapshotTags already has every
+    // tag for the current candidate list (requestAdvancedSearchResultTags fetched it whenever that
+    // list itself last changed), so re-applying it here needs no new DB round trip even though this
+    // runs on every criteria edit.
+    m_advancedSearchResultsModel->setFileTags(m_advancedSearchSnapshotTags);
 
     if (!m_advancedSearchActive)
     {
@@ -587,6 +653,7 @@ void TabViewModel::onAdvancedSearchCandidatesReady(int generation, Result<std::v
         m_advancedSearchPartialSnapshot.clear();
         m_advancedSearchFullScanDone = true;
         applyAdvancedSearchFilter(m_advancedSearchSnapshot);
+        requestAdvancedSearchResultTags(generation, m_advancedSearchSnapshot);
     }
     else
     {
@@ -606,6 +673,7 @@ void TabViewModel::onAdvancedSearchProgress(int generation, std::vector<FileNode
 
     m_advancedSearchPartialSnapshot = std::move(partial);
     applyAdvancedSearchFilter(m_advancedSearchPartialSnapshot);
+    requestAdvancedSearchResultTags(generation, m_advancedSearchPartialSnapshot);
 }
 
 void TabViewModel::emitAvailability()
@@ -639,6 +707,50 @@ void TabViewModel::requestGitRepositorySummary(const std::filesystem::path& path
 
         m_lastGitRepositorySummary = result ? result.value() : GitRepositorySummary{};
         emit gitRepositorySummaryChanged(m_lastGitRepositorySummary);
+    });
+}
+
+void TabViewModel::requestFileTags(const std::filesystem::path& path, const std::vector<FileNode>& entries)
+{
+    m_fileTagsService.requestTags(this, entries, [this, path](Result<TagsByPathMap> result) {
+        if (path != currentPath())
+        {
+            // A newer navigation has since happened; this reply is stale (only possible for the
+            // tagsChanged() handler -- the directoryContentsChanged funnel always calls with the
+            // just-navigated-to path already current).
+            return;
+        }
+
+        m_fileListModel->setFileTags(result ? result.value() : TagsByPathMap{});
+    });
+}
+
+void TabViewModel::requestSearchResultTags(int generation, const std::vector<FileNode>& candidates)
+{
+    m_fileTagsService.requestTags(this, candidates, [this, generation](Result<TagsByPathMap> result) {
+        if (generation != m_searchGeneration)
+        {
+            // Superseded/abandoned, same discard-by-generation-id approach onSearchScanReady uses.
+            return;
+        }
+
+        m_searchSnapshotTags = result ? result.value() : TagsByPathMap{};
+        m_searchResultsModel->setFileTags(m_searchSnapshotTags);
+    });
+}
+
+void TabViewModel::requestAdvancedSearchResultTags(int generation, const std::vector<FileNode>& candidates)
+{
+    m_fileTagsService.requestTags(this, candidates, [this, generation](Result<TagsByPathMap> result) {
+        if (generation != m_advancedSearchGeneration)
+        {
+            // Superseded/abandoned, same discard-by-generation-id approach
+            // onAdvancedSearchCandidatesReady/onAdvancedSearchProgress use.
+            return;
+        }
+
+        m_advancedSearchSnapshotTags = result ? result.value() : TagsByPathMap{};
+        m_advancedSearchResultsModel->setFileTags(m_advancedSearchSnapshotTags);
     });
 }
 
@@ -691,7 +803,7 @@ void TabViewModel::checkoutBranch(const QString& branchName)
 
 void TabViewModel::startMonitoring()
 {
-    if (m_monitoringActive)
+    if (m_monitoringActive || m_monitoringStarting)
     {
         return;
     }
@@ -705,35 +817,85 @@ void TabViewModel::startMonitoring()
     m_monitoringLog.clear();
     m_monitoringTotal = 0;
     m_monitoringRoot = root;
+    m_monitoringStarting = true;
+    m_monitoringCancelled = false;
 
-    auto result = m_folderMonitorUseCase.startMonitoring(root, [this](const std::vector<FolderChangeEvent>& batch) {
-        for (const FolderChangeEvent& event : batch)
-        {
-            if (m_monitoringLog.size() >= kMonitoringLogCap)
+    // Opening the directory handle is disk I/O and now happens on IFolderMonitor's own worker
+    // thread rather than synchronously here (Architecture.md's no-I/O-on-UI-thread rule) -- onStarted
+    // reports the outcome once it's known. `guard` detects this tab being closed while the open is
+    // still in flight; `folderMonitorUseCase` is captured separately (a plain pointer to a
+    // CompositionRoot-owned, long-lived object) so the now-ownerless monitor can still be stopped
+    // via it even if `this`/`guard` is already gone by the time the callback runs.
+    QPointer<TabViewModel> guard(this);
+    FolderMonitorUseCase* const folderMonitorUseCase = &m_folderMonitorUseCase;
+
+    m_folderMonitorUseCase.startMonitoring(
+        root,
+        [this](const std::vector<FolderChangeEvent>& batch) {
+            for (const FolderChangeEvent& event : batch)
             {
-                m_monitoringLog.pop_front();
+                if (m_monitoringLog.size() >= kMonitoringLogCap)
+                {
+                    m_monitoringLog.pop_front();
+                }
+                m_monitoringLog.push_back(event);
             }
-            m_monitoringLog.push_back(event);
-        }
-        m_monitoringTotal += static_cast<int>(batch.size());
+            m_monitoringTotal += static_cast<int>(batch.size());
 
-        emit monitoringLogAppended(batch);
-        emit monitoringTotalChanged(m_monitoringTotal);
-    });
+            emit monitoringLogAppended(batch);
+            emit monitoringTotalChanged(m_monitoringTotal);
+        },
+        [this, guard, folderMonitorUseCase](Result<FolderMonitorId> result) {
+            if (!guard)
+            {
+                // This tab was closed while the open was still in flight -- stop the now-ownerless
+                // monitor immediately (if it actually succeeded) rather than leaking it for the
+                // rest of the app's lifetime.
+                if (result)
+                {
+                    folderMonitorUseCase->stopMonitoring(result.value());
+                }
+                return;
+            }
 
-    if (!result)
-    {
-        emit monitoringFailed(QString::fromStdString(result.error().message));
-        return;
-    }
+            m_monitoringStarting = false;
 
-    m_monitoringId = result.value();
-    m_monitoringActive = true;
-    emit monitoringActiveChanged(true);
+            if (m_monitoringCancelled)
+            {
+                // stopMonitoring() ran while this was still in flight (there was no FolderMonitorId
+                // yet to stop it by) -- honor that now instead of activating it.
+                m_monitoringCancelled = false;
+                if (result)
+                {
+                    folderMonitorUseCase->stopMonitoring(result.value());
+                }
+                return;
+            }
+
+            if (!result)
+            {
+                emit monitoringFailed(QString::fromStdString(result.error().message));
+                return;
+            }
+
+            m_monitoringId = result.value();
+            m_monitoringActive = true;
+            emit monitoringActiveChanged(true);
+        });
 }
 
 void TabViewModel::stopMonitoring()
 {
+    if (m_monitoringStarting)
+    {
+        // The open dispatched moments ago hasn't finished yet (Architecture.md's no-I/O-on-UI-thread
+        // rule means that can take a while against an unresponsive network share) -- there is no
+        // FolderMonitorId yet to stop it by. Flag it so startMonitoring()'s completion callback stops
+        // it immediately once it does finish, instead of activating it.
+        m_monitoringCancelled = true;
+        return;
+    }
+
     if (!m_monitoringActive)
     {
         return;

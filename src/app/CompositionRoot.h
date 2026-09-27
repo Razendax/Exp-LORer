@@ -6,6 +6,9 @@
 #include "AdvancedSearchService.h"
 #include "AppConfigStore.h"
 #include "CachingMediaDecoder.h"
+#include "ColumnVisibilitySettings.h"
+#include "ColumnVisibilitySettingsStore.h"
+#include "ColumnVisibilitySettingsViewModel.h"
 #include "DirectoryWatchUseCase.h"
 #include "Favorites.h"
 #include "FavoritesStore.h"
@@ -15,6 +18,7 @@
 #include "FileDecorationsViewModel.h"
 #include "FileNavigationUseCase.h"
 #include "FilePreviewUseCase.h"
+#include "FileTagsService.h"
 #include "FolderMonitorUseCase.h"
 #include "GitBranchUseCase.h"
 #include "GitStatusService.h"
@@ -35,6 +39,7 @@
 #include "StandardFileSystemRepository.h"
 #include "StandardFolderMonitor.h"
 #include "SyntaxHighlightEngine.h"
+#include "TagChangeNotifier.h"
 #include "TagManagementUseCase.h"
 #include "ThumbnailCache.h"
 #include "WorkspacePaneId.h"
@@ -67,6 +72,8 @@ public:
     FavoritesViewModel& favoritesViewModel() noexcept { return m_favoritesViewModel; }
     NotificationCenter& notificationCenter() noexcept { return m_notificationCenter; }
     NotificationSettingsViewModel& notificationSettingsViewModel() noexcept { return m_notificationSettingsViewModel; }
+    TagChangeNotifier& tagChangeNotifier() noexcept { return m_tagChangeNotifier; }
+    ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel() noexcept { return m_columnVisibilitySettingsViewModel; }
 
 private:
     StandardFileSystemRepository m_fileSystemRepository;
@@ -98,6 +105,11 @@ private:
     // and m_fileSystemRepository (needs both); grouped here with the other shared background-work
     // services.
     AdvancedSearchService m_advancedSearchService;
+
+    // Architecture.md §14.x: every open tab's Tags-column lookups, off the Qt UI thread -- same
+    // "own dedicated thread + own SQLite connection" shape as m_advancedSearchService, grouped here
+    // with the other shared background-work services.
+    FileTagsService m_fileTagsService;
 
     // Architecture.md §14.x: live directory-update watching for the visible+active tab set.
     // Watcher before use case (construction order matches this declaration order).
@@ -139,4 +151,16 @@ private:
     NotificationSettings m_notificationSettings;
     NotificationSettingsViewModel m_notificationSettingsViewModel;
     NotificationCenter m_notificationCenter;
+
+    // Architecture.md §14.x: decoupling point letting every open tab's Tags column refresh when a
+    // tag is assigned/removed/renamed/deleted anywhere, without TagListViewModel/TagManagerViewModel
+    // needing a direct dependency on every TabViewModel that might care.
+    TagChangeNotifier m_tagChangeNotifier;
+
+    // Architecture.md §14.x: "Default visibility for new tab" per Details-view column (Settings >
+    // General > Columns), presentation-only, same posture as the file-decoration/favorites blocks
+    // above.
+    ColumnVisibilitySettingsStore m_columnVisibilitySettingsStore;
+    ColumnVisibilitySettings m_columnVisibilitySettings;
+    ColumnVisibilitySettingsViewModel m_columnVisibilitySettingsViewModel;
 };

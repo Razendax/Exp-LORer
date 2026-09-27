@@ -27,6 +27,7 @@ class FileTileDelegate;
 class FileIconDelegate;
 class FileNameEditDelegate;
 class SearchResultDelegate;
+class TagsCellDelegate;
 
 // The tab's content widget: a QStackedWidget switching between a QListView (icon/list/tiles view
 // modes) and a QTreeView (details view mode), both bound to the same FileListModel
@@ -59,6 +60,14 @@ public:
     // after construction.
     std::array<int, FileListModel::ColumnCount> columnWidths() const;
     void setColumnWidths(const std::array<int, FileListModel::ColumnCount>& widths);
+
+    // Per-tab Details-view column visibility (Architecture.md §14.x), toggled via the header's
+    // right-click menu. Unlike columnWidths()/setColumnWidths() above, this is deliberately NOT
+    // part of any persisted config -- each tab's visibility lives only on its own QHeaderView
+    // instance for the tab's lifetime. column == NameColumn is a no-op guard (Name is always
+    // visible; the menu itself never offers it).
+    bool isColumnVisible(FileListModel::Column column) const;
+    void setColumnVisible(FileListModel::Column column, bool visible);
 
     // Starts inline in-place rename editing on the row for `path` (Architecture.md §14.13.4/
     // §14.13.6). No-op in AdvancedSearchResults mode, or if `path` isn't currently listed.
@@ -117,6 +126,11 @@ signals:
     // forwards this to FileOperationsController::renamePath.
     void renameRequested(const std::filesystem::path& source, const std::filesystem::path& destination);
 
+    // Emitted by setColumnVisible (Architecture.md §14.x), so WorkspacePaneWidget can mirror the
+    // change onto this tab's other two FileBrowserView instances (quick-search/advanced-search
+    // results share the same visibility per tab).
+    void columnVisibilityChanged(FileListModel::Column column, bool visible);
+
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
@@ -136,6 +150,11 @@ private:
 
     void onRenameCommitted(const QModelIndex& index, const QString& newName);
 
+    // Builds and shows the header's right-click column-visibility menu (Architecture.md §14.x):
+    // one checkable QAction per column except NameColumn, checked from isColumnVisible(), toggling
+    // via setColumnVisible() on click.
+    void showColumnMenu(const QPoint& localPos);
+
     FileListModel* m_model = nullptr;
     DisplayMode m_displayMode = DisplayMode::Normal;
     QStackedWidget* m_stack = nullptr;
@@ -145,5 +164,6 @@ private:
     FileTileDelegate* m_tileDelegate = nullptr;
     SearchResultDelegate* m_searchResultDelegate = nullptr;
     FileIconDelegate* m_iconDelegate = nullptr;
+    TagsCellDelegate* m_tagsCellDelegate = nullptr;
     QItemSelectionModel* m_selectionModel = nullptr;
 };

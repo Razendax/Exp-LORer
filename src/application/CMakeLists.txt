@@ -16,6 +16,7 @@ add_library(explorer_application STATIC
     GitFileStatus.h
     GitDirectoryStatus.h
     GitRepositorySummary.h
+    FileTagsByPath.h
     FileNavigationUseCase.h
     FileNavigationUseCase.cpp
     TagManagementUseCase.h

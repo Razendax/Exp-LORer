@@ -8,6 +8,7 @@
 #include "NotificationCenter.h"
 #include "NotificationType.h"
 #include "TabViewModel.h"
+#include "TagChangeNotifier.h"
 #include "TagColorPalette.h"
 #include "TagManagementUseCase.h"
 #include "VirtualPaths.h"
@@ -27,11 +28,12 @@ namespace
 }
 
 TagListViewModel::TagListViewModel(TagManagementUseCase& tagManagementUseCase, FileNavigationUseCase& fileNavigationUseCase,
-                                    NotificationCenter& notificationCenter, QObject* parent)
+                                    NotificationCenter& notificationCenter, TagChangeNotifier& tagChangeNotifier, QObject* parent)
     : QObject(parent)
     , m_tagManagementUseCase(tagManagementUseCase)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_notificationCenter(notificationCenter)
+    , m_tagChangeNotifier(tagChangeNotifier)
 {
     refreshAll();
 }
@@ -93,6 +95,7 @@ void TagListViewModel::addTagToSelection(Tag::Id tagId)
                                     tr("\"%1\" tagged with \"%2\".").arg(targetName, resolveTagName(tagId)));
 
     refreshAll();
+    emit m_tagChangeNotifier.tagsChanged();
 }
 
 void TagListViewModel::removeTagFromSelection(Tag::Id tagId)
@@ -119,6 +122,7 @@ void TagListViewModel::removeTagFromSelection(Tag::Id tagId)
                                     tr("\"%1\" untagged from \"%2\".").arg(targetName, tagName));
 
     refreshAll();
+    emit m_tagChangeNotifier.tagsChanged();
 }
 
 void TagListViewModel::createAndAddTagFromQuery()

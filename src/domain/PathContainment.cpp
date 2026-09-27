@@ -34,3 +34,8 @@ bool isPathWithinOrEqual(const std::filesystem::path& candidate, const std::file
     // climbs out of `root` before descending back in (e.g. root/../root-sibling).
     return *rel.begin() != "..";
 }
+
+bool pathsEqualCaseInsensitive(const std::filesystem::path& a, const std::filesystem::path& b)
+{
+    return caseFolded(a) == caseFolded(b);
+}

@@ -7,3 +7,8 @@
 // instead, safe for non-ASCII paths). Case-insensitive (see UnicodeCaseFold.h), matching Windows'
 // own case-insensitive filesystem semantics.
 bool isPathWithinOrEqual(const std::filesystem::path& candidate, const std::filesystem::path& root);
+
+// True if `a` and `b` refer to the same path under Windows' case-insensitive filesystem semantics
+// (see UnicodeCaseFold.h). Never touches disk and never narrows via
+// std::filesystem::path::string(), same posture as isPathWithinOrEqual.
+bool pathsEqualCaseInsensitive(const std::filesystem::path& a, const std::filesystem::path& b);

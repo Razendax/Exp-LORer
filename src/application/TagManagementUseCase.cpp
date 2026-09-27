@@ -134,6 +134,21 @@ Result<std::vector<Tag>> TagManagementUseCase::tagsForFile(const FileNode& file)
     return m_tagRepository.tagsForFile(file.path());
 }
 
+Result<TagsByPathMap> TagManagementUseCase::tagsForFiles(const std::vector<FileNode>& files) const
+{
+    std::vector<std::filesystem::path> paths;
+    paths.reserve(files.size());
+    for (const auto& file : files)
+    {
+        if (!file.displayName())
+        {
+            paths.push_back(file.path());
+        }
+    }
+
+    return m_tagRepository.tagsForFiles(paths);
+}
+
 Result<std::vector<FileTagAssociation>> TagManagementUseCase::findFilesWithAllTags(const std::vector<Tag::Id>& tagIds) const
 {
     return m_tagRepository.findFilesWithAllTags(tagIds);

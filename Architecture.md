@@ -1249,8 +1249,9 @@ adapter-layer pure logic plus Qt-facing config/ViewModel/UI, mirroring the
   `hiddenFilesRule()`/`hiddenFoldersRule()`/`setHiddenFilesRule()`/`setHiddenFoldersRule()`, each
   broadcasting `rulesChanged()` and queuing a save exactly like `setRules()`.
 * **`src/adapters/config`** gains `FileDecorationRulesStore` (own `file_decorations.json`, same
-  tolerant-load/atomic-save shape as `HighlightThemeStore`), `FileDecorationRulesSaveWorker` (same
-  background-thread-save shape as `HighlightThemeSaveWorker`), and `FileDecorationsViewModel` (the
+  tolerant-load/atomic-save shape as `HighlightThemeStore`), an `AsyncSaveDispatcher<FileDecorationRules>`
+  member (the shared background-thread-save helper every `*ViewModel` in this directory uses — see
+  the `AsyncSaveDispatcher`/`AsyncSaveWorker` note below), and `FileDecorationsViewModel` (the
   live `QObject` wrapper — `rules()`/`setRules()`, `rulesChanged()` — owned once by
   `CompositionRoot`/`MainWindow` like `HighlightThemeViewModel` so
   `SettingsDialog` and every `FileListModel` observe the same live rule set).
@@ -1549,31 +1550,45 @@ change — `QFileSystemWatcher` (§14.32's backend) cannot deliver either.
   `std::string`, §6-safe for non-ASCII paths). Backs the navigation guard below; GTest-covered
   (`tests/domain/PathContainmentTest.cpp`).
 * **New Port**, `IFolderMonitor` (`src/application`) — `startMonitoring(rootDirectory,
-  std::function<void(const std::vector<FolderChangeEvent>&)> onChanged) -> Result<FolderMonitorId>` /
-  `stopMonitoring(FolderMonitorId)`. `FolderChangeEvent` (`src/application/FolderChangeEvent.h`, plain
-  data, same posture as `DriveSpaceInfo`/`GitDirectoryStatus`) holds a root-relative path, a
-  `FolderChangeKind` (`Added`/`Removed`/`Modified`), and a best-effort `isDirectory` flag. Rejects the
-  "This PC" sentinel and archive-virtual paths as a `Result` failure, same posture as
-  `IDirectoryWatcher::watch`. **`FolderMonitorUseCase`** (new, stateless, single-Port-dependency
-  passthrough, same shape as `DirectoryWatchUseCase`).
+  std::function<void(const std::vector<FolderChangeEvent>&)> onChanged,
+  std::function<void(Result<FolderMonitorId>)> onStarted) -> void` / `stopMonitoring(FolderMonitorId)`.
+  Unlike most other Ports, `startMonitoring` cannot report success/failure via a return value: opening
+  the directory handle is disk I/O that must never run on the calling (UI) thread, so `onStarted` is
+  invoked exactly once instead, already marshaled onto the calling thread the same way `onChanged`'s
+  batches are — a "This PC" sentinel or archive-virtual root still fails the same way
+  `IDirectoryWatcher::watch` does, just reported through `onStarted` rather than a synchronous
+  `Result`. `FolderChangeEvent` (`src/application/FolderChangeEvent.h`, plain data, same posture as
+  `DriveSpaceInfo`/`GitDirectoryStatus`) holds a root-relative path, a `FolderChangeKind`
+  (`Added`/`Removed`/`Modified`), and a best-effort `isDirectory` flag. **`FolderMonitorUseCase`** (new,
+  stateless, single-Port-dependency passthrough, same shape as `DirectoryWatchUseCase`) forwards
+  `onStarted` unchanged.
 * **`StandardFolderMonitor`** (`src/adapters/filesystem`, new, Windows-only implementation behind the
   cross-platform-named Port, same "Windows first" posture as `StandardDirectoryWatcher`/
-  `ShellContextMenuProvider`): one background `std::thread` per active monitor blocking on
-  `ReadDirectoryChangesW` (`bWatchSubtree = TRUE`) — the same "one background thread per resource,
-  results marshaled back via `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`" shape
-  `WindowsConPtyProcess` already established for its ConPTY reader thread. A small in-memory
-  path→isDirectory index, seeded by one initial recursive scan at `startMonitoring` and kept current
-  as Added/Modified events arrive, lets a Removed event still report `isDirectory` (an already-deleted
-  path can't be `stat()`-ed) — an accepted heuristic (falls back to "file" on a miss), same posture as
-  the file-identity hash (§8) or `ArchivePathResolver`'s nested-archive limitation. Rename events
-  (`FILE_ACTION_RENAMED_OLD_NAME`/`NEW_NAME`) fold into `Removed`/`Added` — no dedicated "renamed"
-  kind. The directory handle is opened with `FILE_FLAG_OVERLAPPED`, and each monitor also holds a
-  manual-reset stop `HANDLE`: the worker thread waits on `WaitForMultipleObjects` over the pending
-  read's `OVERLAPPED` event and the stop event, since closing the handle alone does not reliably
-  interrupt a synchronous `ReadDirectoryChangesW` from another thread (a documented Win32 hang
-  hazard). `stopMonitoring` signals the stop event, which makes the worker cancel the pending read
-  via `CancelIoEx` + a blocking `GetOverlappedResult`, then joins the thread before closing the
-  directory handle. Non-Windows builds fail every call with `ErrorCode::IoError`. Falls under the
+  `ShellContextMenuProvider`): one background `std::thread` per active monitor, spawned from
+  `startMonitoring` itself so that `CreateFileW` (opening the directory handle) also never runs on the
+  calling thread — only the "This PC" sentinel check stays synchronous (pure logic, no I/O). The
+  thread reports the open's outcome via `onStarted` (marshaled back the same way `onChanged`'s batches
+  are) and then, on success, blocks on `ReadDirectoryChangesW` (`bWatchSubtree = TRUE`) — the same "one
+  background thread per resource, results marshaled back via
+  `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`" shape `WindowsConPtyProcess` already
+  established for its ConPTY reader thread. A successful `GetOverlappedResult` reporting zero bytes is
+  ReadDirectoryChangesW's documented buffer-overflow signal (too many changes for the fixed 16KB
+  buffer in one cycle) — treated as "some changes lost, keep watching" (re-issue the read) rather than
+  a fatal error. A small in-memory path→isDirectory index, seeded by one initial recursive scan (also
+  on the worker thread) and kept current as Added/Modified events arrive, lets a Removed event still
+  report `isDirectory` (an already-deleted path can't be `stat()`-ed) — an accepted heuristic (falls
+  back to "file" on a miss), same posture as the file-identity hash (§8) or `ArchivePathResolver`'s
+  nested-archive limitation. Rename events (`FILE_ACTION_RENAMED_OLD_NAME`/`NEW_NAME`) fold into
+  `Removed`/`Added` — no dedicated "renamed" kind. The directory handle is opened with
+  `FILE_FLAG_OVERLAPPED`, and each monitor also holds a manual-reset stop `HANDLE`: the worker thread
+  waits on `WaitForMultipleObjects` over the pending read's `OVERLAPPED` event and the stop event,
+  since closing the handle alone does not reliably interrupt a synchronous `ReadDirectoryChangesW`
+  from another thread (a documented Win32 hang hazard). `stopMonitoring` signals the stop event, then
+  hands the actual `join()` + handle/event cleanup off to its own detached throwaway thread — waiting
+  for `CancelIoEx`/`GetOverlappedResult` to resolve against an unresponsive network share's redirector
+  must not block the calling (UI) thread either. The destructor still joins synchronously (a brief
+  stall during app shutdown is acceptable, unlike during interactive use) for every monitor still
+  open. Non-Windows builds fail every call (via `onStarted`) with `ErrorCode::IoError`. Falls under the
   existing OS-shell/live-notification carve-out (§11) — no automated adapter test, smoke-tested
   manually, same as `StandardDirectoryWatcher`/`WindowsConPtyProcess`.
 * **Per-tab state on `TabViewModel`**, not a separate global monitor — the same "state lives on the
@@ -1585,6 +1600,13 @@ change — `QFileSystemWatcher` (§14.32's backend) cannot deliver either.
   `stopMonitoring()` slots; stopping also clears the pinned flag (nothing left to keep pinned) but
   deliberately leaves the log/total as-is until the next `startMonitoring()` clears them for a fresh
   session — so a finished build's final tally stays visible until the user starts watching again.
+  Since `IFolderMonitor::startMonitoring`'s open is now async (see above), `isMonitoringActive()` only
+  flips true once `onStarted` reports success — a `m_monitoringStarting` flag guards against a
+  redundant second dispatch during that gap, and `stopMonitoring()` called during that gap sets
+  `m_monitoringCancelled` so the eventual `onStarted` callback stops the monitor immediately instead of
+  activating it. That callback captures a `QPointer<TabViewModel>` guard (not `this` directly) plus a
+  raw `FolderMonitorUseCase*`, so if the tab is closed while the open is still in flight, a
+  since-orphaned successful open is stopped via the pointer rather than touching the destroyed tab.
   Also gains three pure navigation-guard queries: `upTarget()` (the parent-or-ThisPC-sentinel `goUp()`
   already computes internally, now exposed so `goUp()` itself becomes `navigateTo(upTarget())`) and
   `peekBack()`/`peekForward()` (backed by two new non-mutating peek methods on `NavigationHistory`).
@@ -1756,16 +1778,19 @@ change**, same posture as every other entry in this section.
   internal monotonic id counter, with a pure mutation API (add/remove/rename/reorder/move-between-
   categories) — no Qt, no I/O. Deleting a category flattens its items back to top-level rather than
   deleting them (non-destructive by default, matching this app's no-undo-in-v1 posture,
-  Specification.md §5). Adding an already-favorited path is a no-op (dedup by path).
+  Specification.md §5). Adding an already-favorited path is a no-op (dedup by path,
+  case-insensitively — `PathContainment::pathsEqualCaseInsensitive`, matching Windows' own
+  case-insensitive filesystem semantics).
 * **`src/adapters/config`** gains `FavoritesStore` (tolerant `load()`/atomic `save()` via the
-  existing `JsonFileStore` helpers, own `favorites.json`, §9), `FavoritesSaveWorker`, and
-  `FavoritesViewModel` — the same three-piece shape §14.29 established for
-  `FileDecorationRulesStore`/`FileDecorationRulesSaveWorker`/`FileDecorationsViewModel`, including why
+  existing `JsonFileStore` helpers, own `favorites.json`, §9) and `FavoritesViewModel` — the same
+  shape §14.29 established for `FileDecorationRulesStore`/`FileDecorationsViewModel`, including why
   these live in `adapters/config` rather than `adapters/viewmodels`: `adapters/config` already depends
   on `adapters/viewmodels`, so the reverse edge would be a build-graph cycle. A mutation applies to
   the live `Favorites` synchronously, emits `favoritesChanged()`, and queues the actual disk save onto
-  the worker thread (Architecture.md §5). `CompositionRoot` owns the usual store→model→viewmodel
-  triple and exposes `favoritesViewModel()`.
+  the worker thread via an `AsyncSaveDispatcher<Favorites>` member (Architecture.md §5; see the
+  `AsyncSaveDispatcher`/`AsyncSaveWorker` note below — the generic replacement for what used to be a
+  hand-rolled `FavoritesSaveWorker`). `CompositionRoot` owns the usual store→model→viewmodel triple
+  and exposes `favoritesViewModel()`.
 * **Selecting an entry after navigation (new capability)** — nothing previously let a caller navigate
   a tab *and* select a specific resulting row; the only prior use of
   `FileBrowserView::selectEntryByPath` (now made public) was Details-view arrow-key navigation, called
@@ -1841,8 +1866,9 @@ use-case wiring**.
   settings-page wrapper below lives in `adapters/config`, wired only into `MainWindow`/
   `SettingsDialog`, never into a ViewModel.
 * **`src/adapters/config`** gains `NotificationSettingsStore` (own `notification_settings.json`,
-  §9, same tolerant-load/atomic-save shape as `HighlightThemeStore`), `NotificationSettingsSaveWorker`
-  (background-thread save), and `NotificationSettingsViewModel` (`settingsFor`/`setSettingsFor`,
+  §9, same tolerant-load/atomic-save shape as `HighlightThemeStore`), an
+  `AsyncSaveDispatcher<NotificationSettings>` member (background-thread save), and
+  `NotificationSettingsViewModel` (`settingsFor`/`setSettingsFor`,
   `settingsChanged()`) — the same three-piece shape §14.26/§14.29 established, mutating the *same*
   `NotificationSettings` instance `NotificationCenter` holds a `const&` to (both owned by
   `CompositionRoot`), so a Settings-page edit is visible on `NotificationCenter`'s very next call
@@ -1950,3 +1976,82 @@ from a different thread.
   interruptible mid-call); progress reporting for the tag-first path (cheap enough — one DB query +
   a `stat()` loop — that it wasn't judged worth the complexity); the same async/progressive treatment
   for quick search (§14.18), which keeps its original synchronous-on-the-UI-thread posture for now.
+
+### 14.38 Customizable Details-View Columns (Per-Tab Visibility + New Tag/Date-Created Columns)
+
+Adds two new Details-view columns (Tags, Date created) and a per-tab column-visibility toggle,
+right-click-on-header, alongside a Settings page controlling the default for newly created tabs.
+Name is excluded from the toggle (always visible, matching Explorer).
+
+* **`FileListModel::Column`** gains `TagsColumn, DateCreatedColumn`, appended before `ColumnCount`
+  — no existing column index shifts (the same convention `GitStatusColumn` established). Date
+  created reads `FileNode::creationDate()`, already present on the entity — no Domain change.
+  Tags renders as colored chip pills (`TagsCellDelegate`, `src/ui/widgets`, installed only on this
+  column via `QTreeView::setItemDelegateForColumn`), not plain text, backed by a new
+  `Role::TagsRole` returning that row's `std::vector<Tag>`.
+* **Bulk tag lookup.** `ITagRepository`/`TagManagementUseCase` gain `tagsForFiles(paths)`/
+  `tagsForFiles(files)`, returning a `TagsByPathMap` (`src/application/FileTagsByPath.h`) — the
+  first bulk (as opposed to single-path) tag query, needed so listing a directory doesn't run one
+  DB query per visible row. `PathHash` (the `std::filesystem::path` hasher needed for any
+  `unordered_map<path, ...>`) moved out of `GitDirectoryStatus.h` into its own
+  `src/domain/PathHash.h` so this new map doesn't have to include git-status types to get it.
+  `SQLiteTagRepository::tagsForFiles` batches its `IN (...)` query (`kTagsForFilesBatchSize = 500`
+  paths per query, merged) to stay under SQLite's compiled `SQLITE_MAX_VARIABLE_NUMBER` (999 on many
+  builds) regardless of how many files a directory holds.
+* **`FileTagsService`/`FileTagsWorker`** (`src/adapters/viewmodels`, new) — runs `tagsForFiles` on
+  its own dedicated background `QThread`, off the Qt UI thread, the same "own thread + own lazily-
+  opened `SQLiteTagRepository` connection (thread-affine `QSqlDatabase`) + `QPointer<QObject>`-guarded
+  callback" shape `GitStatusService`/`AdvancedSearchWorker` already establish — `TabViewModel` no
+  longer calls `TagManagementUseCase::tagsForFiles` synchronously on the UI thread.
+  `TabViewModel::requestFileTags` dispatches through it from the same `directoryContentsChanged`
+  funnel `requestGitStatus` uses, discarding a stale reply for a path that's no longer current the
+  same way. `requestSearchResultTags`/`requestAdvancedSearchResultTags` do the same for the quick-
+  search and advanced-search result models (§14.18/§14.19) — previously neither ever populated Tags
+  at all — caching the fetched map (`m_searchSnapshotTags`/`m_advancedSearchSnapshotTags`) so a
+  same-snapshot re-filter (`updateSearchQuery`, every `applyAdvancedSearchFilter` call) reapplies it
+  with no new DB round trip; only a changed snapshot/candidate list (a new scan result, a progress
+  tick, the tag-first branch's result) triggers a fresh fetch. Owned long-lived by `CompositionRoot`
+  like `GitStatusService`/`AdvancedSearchService`.
+* **Live refresh via `TagChangeNotifier`** (`adapters/viewmodels`, new) — a single-signal
+  (`tagsChanged()`) broadcaster owned by `CompositionRoot`, injected into `TagListViewModel` (emits
+  after a successful assign/unassign, §14.9), `TagManagerViewModel` (emits after create/rename/
+  delete, §14.17), and `TabViewModel` (re-runs its bulk tags fetch on receipt, for whichever of
+  normal browsing/quick search/advanced search is currently active). Deliberately coarse: any tag
+  change anywhere re-fetches every open tab's Tags data for its own current directory/search results,
+  rather than diffing which paths actually changed — correctness over precision, and still cheap
+  (one local query per open tab, off the UI thread).
+* **Per-tab visibility, not session state.** Unlike column *widths* (one shared
+  `AppConfig::detailsColumnWidths` array applied to every tab), column *visibility* is genuinely
+  per-tab, so it is **not** added to `TabConfig`/`AppConfig` — it lives directly on each
+  `FileBrowserView`'s `QHeaderView` (`setSectionHidden`/`isSectionHidden`), exposed via
+  `FileBrowserView::setColumnVisible`/`isColumnVisible` and a new
+  `columnVisibilityChanged(Column, bool)` signal. A tab's three `FileBrowserView` instances (normal
+  browsing, quick-search results, advanced-search pane, §14.19/§14.18) are kept in sync by that
+  signal, the same "seed all three the same way" posture their column widths already have. Right-
+  click on `QTreeView::header()` (`Qt::CustomContextMenu`) opens a `QMenu` of checkable per-column
+  actions (Name excluded); this is purely a UI-widget-layer addition, no ViewModel/Application
+  change, and — like the rest of the UI layer — has no CTest coverage (§11).
+* **Settings > General > Columns** ("Default visibility for new tab" group box, one checkbox row
+  per non-Name column) follows the established `NotificationSettings*` shape exactly:
+  `ColumnVisibilitySettings` (plain struct) + `ColumnVisibilitySettingsStore` (JSON, tolerant load/
+  atomic save) + an `AsyncSaveDispatcher<ColumnVisibilitySettings>` member (background-thread save)
+  + `ColumnVisibilitySettingsViewModel` (Qt wrapper, owned once by `CompositionRoot`), persisted to
+  its own `column_visibility.json` (§9 gains this file alongside `notification_settings.json`).
+* **`AsyncSaveDispatcher<T>`/`AsyncSaveWorker<T>`** (`src/adapters/config`): every `*ViewModel` above
+  used to hand-roll an identical "worker `QObject` moved to a dedicated `QThread`, save dispatched via
+  a queued functor" skeleton (`FileDecorationRulesSaveWorker`, `HighlightThemeSaveWorker`,
+  `FavoritesSaveWorker`, `NotificationSettingsSaveWorker`, `ColumnVisibilitySettingsSaveWorker`),
+  differing only in the value type being saved. `AsyncSaveWorker<T>` is a template `QObject` (no
+  `Q_OBJECT` — templates can't be moc'd, and none of `QObject`'s meta-object machinery beyond thread
+  affinity is needed) wrapping a caller-supplied `std::function<void(const T&)>`; `AsyncSaveDispatcher<T>`
+  owns the `QThread` + `AsyncSaveWorker<T>` pair and exposes one `dispatch(T value)` call. Each
+  `*ViewModel` now holds one `AsyncSaveDispatcher<ValueType>` member constructed with its store's
+  `save()` call bound via a lambda, and calls `dispatch(currentValue)` from its existing
+  "mutate → emit changed signal → persist" tail — disk I/O still never runs on the Qt UI thread, with
+  no per-type worker class left to write.
+  Read live (a `ColumnVisibilityViewModel&` reference, not a value copied at startup like
+  `m_initialColumnWidths`) at the moment each new tab's `FileBrowserView`s are constructed, so a
+  Settings change takes effect for tabs opened afterward without touching already-open ones.
+* **Not built:** sorting by Tags/Date created (no new `SortCriterion`); persisting a specific tab's
+  chosen visibility across app restart (only the new-tab *default* is a persisted setting); tag
+  chips in this column being clickable/interactive (unlike the tag panel's chips, §14.9/§14.22).

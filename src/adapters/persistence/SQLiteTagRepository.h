@@ -30,6 +30,7 @@ public:
     Result<void> assignTag(const FileTagAssociation& association) override;
     Result<void> unassignTag(const std::filesystem::path& filePath, Tag::Id tagId) override;
     Result<std::vector<Tag>> tagsForFile(const std::filesystem::path& filePath) const override;
+    Result<TagsByPathMap> tagsForFiles(const std::vector<std::filesystem::path>& filePaths) const override;
 
     Result<std::vector<FileTagAssociation>> findFilesWithAllTags(const std::vector<Tag::Id>& tagIds) const override;
 

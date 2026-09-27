@@ -41,6 +41,14 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 * **Split-window layouts:** The window arranges into one of four fixed layouts — single pane, two-pane vertical split, two-pane horizontal split, or a four-pane grid — chosen from the View menu/toolbar. No arbitrary or recursive nesting.
 * **Multi-tab browsing, per pane:** Each pane independently owns its own tabs (add/close/switch), each retaining its own navigation history (back/forward stack), current path, view mode, and sort order; a pane's tabs are unaffected by other panes or by switching layouts (a pane's tabs persist even while hidden by a layout that shows fewer panes). The tag filter panel and media preview are single shared instances that follow whichever pane/tab currently has focus, rather than existing per-pane. **Session persistence:** the active layout, each pane's tabs (path, view mode, sort order), the focused pane, and the main window's geometry are saved to a local JSON config file when the app closes and restored the next time it starts (Architecture.md §14.14); a fresh install with no saved config falls back to a single pane opened at the "This PC" virtual location (Architecture.md §14.15), rather than the user's home directory.
 * **Sort order:** Directory contents can be sorted by Name, Size, Type, or Date modified, ascending or descending, via a "Sort by" submenu under the View menu (Architecture.md §14.12) or by clicking a column header in Details view. The chosen sort applies uniformly across all seven view modes and is preserved per tab across navigation within that tab; a newly opened tab starts at the default (Name, ascending) rather than inheriting another tab's choice.
+* **Customizable Details-view columns (Architecture.md §14.38):** right-clicking a Details-view
+  column header opens a menu listing every available column — Name, Size, Type, Date Modified,
+  Git Status, Tags, and Date created — each checked when currently shown; clicking one toggles its
+  visibility. This applies to the current tab only, leaving other open tabs unaffected. Name is
+  always shown and isn't offered in the menu. The Tags column shows each file/folder's tags as
+  small colored chips, live-updating as tags are assigned/removed; Date created shows the
+  filesystem creation timestamp. `Settings > General > Columns` (see below) controls which columns
+  a newly opened tab starts with; it doesn't change any tab already open.
 * **Hidden files/folders:** A "Show hidden files" toggle under the View menu (Architecture.md
   §14.21) controls visibility of OS-hidden entries app-wide and persists across restarts. When on,
   hidden files/folders appear in every view mode and in search results with grayed-out text so
@@ -97,15 +105,19 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   ends its terminal session.
 * **Settings dialog (Architecture.md §14.26):** `File > Settings...` opens a dialog with a
   hierarchical category tree on the left and that category's settings on the right; in v1 this
-  holds four categories: Highlight > Languages, listing the languages with syntax highlighting
+  holds five categories: Highlight > Languages, listing the languages with syntax highlighting
   (2.2 "Preview Panel") and, per language, each of its token types with a color swatch the user can
   change via a color picker; General > UI, holding a "Show close button on tabs" toggle
   (default on) controlling whether each pane's tabs render a close ("x") button, app-wide and
   applied to already-open tabs immediately; General > Colors (Architecture.md §14.29), an
-  editable, ordered list of file/folder appearance rules (see below); and General > Notifications
+  editable, ordered list of file/folder appearance rules (see below); General > Notifications
   (Architecture.md §14.36), a fixed 3-row table (Type / Enabled / Timeout) letting the user
   enable/disable each popup notification type and set how long it stays on screen before
-  auto-dismissing. Changes in all four categories apply and persist immediately.
+  auto-dismissing; and General > Columns (Architecture.md §14.38), a "Default visibility for new
+  tab" group box with one checkbox per available Details-view column (Name excluded — always
+  visible) controlling which columns a newly opened tab starts with. Changes in all five
+  categories apply and persist immediately, though Columns' effect is scoped to tabs opened from
+  then on, not already-open ones.
 * **Notifications (Architecture.md §14.36):** two kinds of app-wide notification appear stacked in
   the bottom-right corner of the window. Popup notifications — Info (blue), Warning (yellow), or
   Error (red), each showing an icon/type header and a message body — auto-dismiss after a

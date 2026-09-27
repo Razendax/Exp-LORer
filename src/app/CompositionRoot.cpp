@@ -19,6 +19,7 @@ CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir)
     , m_gitBranchUseCase(m_gitBranchProvider)
     , m_gitStatusService(m_gitStatusUseCase, m_gitBranchUseCase)
     , m_advancedSearchService(m_fileNavigationUseCase, m_fileSystemRepository, appDataDir / "explorer.db")
+    , m_fileTagsService(m_fileSystemRepository, appDataDir / "explorer.db")
     , m_directoryWatchUseCase(m_directoryWatcher)
     , m_folderMonitorUseCase(m_folderMonitor)
     , m_highlightThemeStore(appDataDir / "highlight_theme.json")
@@ -34,6 +35,9 @@ CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir)
     , m_notificationSettings(m_notificationSettingsStore.load())
     , m_notificationSettingsViewModel(m_notificationSettings, m_notificationSettingsStore)
     , m_notificationCenter(m_notificationSettings)
+    , m_columnVisibilitySettingsStore(appDataDir / "column_visibility.json")
+    , m_columnVisibilitySettings(m_columnVisibilitySettingsStore.load())
+    , m_columnVisibilitySettingsViewModel(m_columnVisibilitySettings, m_columnVisibilitySettingsStore)
 {
 }
 
@@ -43,14 +47,14 @@ std::unique_ptr<TabViewModel> CompositionRoot::createTabViewModel()
 {
     return std::make_unique<TabViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
                                            m_fileDecorationsViewModel, m_gitStatusService, m_folderMonitorUseCase,
-                                           m_advancedSearchService);
+                                           m_advancedSearchService, m_fileTagsService, m_tagChangeNotifier);
 }
 
 std::unique_ptr<WorkspacePaneViewModel> CompositionRoot::createWorkspacePaneViewModel(WorkspacePaneId id)
 {
     return std::make_unique<WorkspacePaneViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
                                                      m_fileDecorationsViewModel, m_gitStatusService, m_folderMonitorUseCase,
-                                                     m_advancedSearchService, id);
+                                                     m_advancedSearchService, m_fileTagsService, m_tagChangeNotifier, id);
 }
 
 std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController()
@@ -58,5 +62,6 @@ std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController(
     return std::make_unique<WorkspaceController>(m_fileNavigationUseCase, m_tagManagementUseCase, m_filePreviewUseCase,
                                                   m_fileSystemRepository, m_fileDecorationRules, m_fileDecorationsViewModel,
                                                   m_gitStatusService, m_directoryWatchUseCase, m_folderMonitorUseCase,
-                                                  m_notificationCenter, m_advancedSearchService);
+                                                  m_notificationCenter, m_advancedSearchService, m_fileTagsService,
+                                                  m_tagChangeNotifier);
 }

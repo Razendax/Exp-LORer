@@ -22,10 +22,17 @@ public:
     // Recursively watches rootDirectory (including every subdirectory) for create/delete/modify.
     // onChanged is invoked with a batch of events already marshaled onto the calling (UI) thread --
     // implementations own their own background I/O, callers never see raw OS notification threading.
-    // Fails for a non-real path (This PC sentinel, an archive-virtual path, a path that doesn't
-    // exist) -- same "Result failure, not a crash" posture as IDirectoryWatcher::watch.
-    virtual Result<FolderMonitorId> startMonitoring(const std::filesystem::path& rootDirectory,
-                                                     std::function<void(const std::vector<FolderChangeEvent>&)> onChanged) = 0;
+    //
+    // Unlike most other Ports, this cannot report success/failure via a return value: opening the
+    // directory handle is disk/volume I/O (can block for a long time against an unresponsive
+    // network share) and must never run on the calling (UI) thread. onStarted is invoked exactly
+    // once instead, already marshaled onto the calling thread the same way onChanged's batches are
+    // -- with a failure for a non-real path (This PC sentinel, an archive-virtual path, a path that
+    // doesn't exist), same "Result failure, not a crash" posture as IDirectoryWatcher::watch used to
+    // report synchronously.
+    virtual void startMonitoring(const std::filesystem::path& rootDirectory,
+                                  std::function<void(const std::vector<FolderChangeEvent>&)> onChanged,
+                                  std::function<void(Result<FolderMonitorId>)> onStarted) = 0;
 
     // No-op if id is unknown/already stopped.
     virtual void stopMonitoring(FolderMonitorId id) = 0;

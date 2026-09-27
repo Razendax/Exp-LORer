@@ -25,24 +25,26 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
                                            QObject& fileDecorationsChangeSource, GitStatusService& gitStatusService,
                                            DirectoryWatchUseCase& directoryWatchUseCase,
                                            FolderMonitorUseCase& folderMonitorUseCase, NotificationCenter& notificationCenter,
-                                           AdvancedSearchService& advancedSearchService, QObject* parent)
+                                           AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
+                                           TagChangeNotifier& tagChangeNotifier, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
+    , m_tagChangeNotifier(tagChangeNotifier)
 {
     m_panes[indexOf(WorkspacePaneId::PaneA)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
-        folderMonitorUseCase, advancedSearchService, WorkspacePaneId::PaneA, this);
+        folderMonitorUseCase, advancedSearchService, fileTagsService, tagChangeNotifier, WorkspacePaneId::PaneA, this);
     m_panes[indexOf(WorkspacePaneId::PaneB)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
-        folderMonitorUseCase, advancedSearchService, WorkspacePaneId::PaneB, this);
+        folderMonitorUseCase, advancedSearchService, fileTagsService, tagChangeNotifier, WorkspacePaneId::PaneB, this);
     m_panes[indexOf(WorkspacePaneId::PaneC)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
-        folderMonitorUseCase, advancedSearchService, WorkspacePaneId::PaneC, this);
+        folderMonitorUseCase, advancedSearchService, fileTagsService, tagChangeNotifier, WorkspacePaneId::PaneC, this);
     m_panes[indexOf(WorkspacePaneId::PaneD)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
-        folderMonitorUseCase, advancedSearchService, WorkspacePaneId::PaneD, this);
+        folderMonitorUseCase, advancedSearchService, fileTagsService, tagChangeNotifier, WorkspacePaneId::PaneD, this);
 
-    m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, notificationCenter, this);
+    m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, notificationCenter, tagChangeNotifier, this);
     m_filePreviewViewModel = new FilePreviewViewModel(filePreviewUseCase, fileSystemRepository, this);
     m_monitoringPanelViewModel = new MonitoringPanelViewModel(this);
     m_fileOperationsController = new FileOperationsController(m_fileNavigationUseCase, this);

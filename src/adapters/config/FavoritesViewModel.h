@@ -7,27 +7,23 @@
 
 #include <QObject>
 #include <QString>
-#include <QThread>
 
+#include "AsyncSaveDispatcher.h"
 #include "Favorites.h"
 #include "FavoritesStore.h"
-
-class FavoritesSaveWorker;
 
 // Thin Qt-facing wrapper around Favorites + FavoritesStore (Architecture.md §14.35), owned once by
 // CompositionRoot so the Favorites menu (MainWindow) and the Manage Favorites dialog share one
 // live instance. Every mutation persists immediately and broadcasts favoritesChanged() so both
 // stay current -- the Favorites menu rebuilds lazily on aboutToShow, ManageFavoritesDialog rebuilds
 // its tree on this signal. The actual FavoritesStore::save() call runs on a dedicated background
-// thread (via FavoritesSaveWorker), the same shape FileDecorationsViewModel uses, so no mutation
-// ever blocks the Qt UI thread on disk I/O.
+// thread (via m_saveDispatcher), so no mutation ever blocks the Qt UI thread on disk I/O.
 class FavoritesViewModel : public QObject
 {
     Q_OBJECT
 
 public:
     FavoritesViewModel(Favorites& favorites, FavoritesStore& store, QObject* parent = nullptr);
-    ~FavoritesViewModel() override;
 
     const std::vector<Favorites::Entry>& entries() const noexcept { return m_favorites.entries(); }
 
@@ -58,6 +54,5 @@ private:
     Favorites& m_favorites;
     FavoritesStore& m_store;
 
-    QThread m_saveThread;
-    FavoritesSaveWorker* m_saveWorker = nullptr;
+    AsyncSaveDispatcher<Favorites> m_saveDispatcher;
 };
