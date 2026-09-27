@@ -6,6 +6,7 @@ build/
 
 CMakeCache.txt
 ToDo.md
+vcvars.txt
 
 *.log
 
