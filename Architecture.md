@@ -686,18 +686,27 @@ then satisfy file-property criteria (name/size, §14.19) **and** tag criteria to
 
 * **`SearchCriteria` gains `std::vector<Tag::Id> tagIds`** (AND semantics, mirroring
   `ITagRepository::findFilesWithAllTags`; empty = no tag filter).
-* **`FileNavigationUseCase::filterByPaths(files, allowedPaths)`** — a new pure, static filter
-  (no Port dependency added to `FileNavigationUseCase`) that keeps only entries whose `path()`
-  exactly matches one of `allowedPaths`. `TabViewModel` is the composition point: it calls
-  `TagManagementUseCase::findFilesWithAllTags(tagIds)`, turns the returned
-  `FileTagAssociation`s into a path list, and applies this filter *after* `filterByCriteria` —
-  the two stages compose as an AND, same as the SQL-level AND `findFilesWithAllTags` already
-  does across tags themselves. Matching is path-exact (case-sensitive), not hash-based: scanned
-  `FileNode`s from `listDirectoryRecursive` never carry a populated hash (hashing is on-demand,
-  only at tag-assignment time), so joining tag associations against a live recursive scan can
-  only go through the path both sides share — the same path-first posture `ITagRepository`
-  already uses elsewhere, just without the hash fallback (unavailable here without an expensive
-  per-file recompute across the whole scan).
+* **Tag-first result building.** Whenever `tagIds` is non-empty, the tag DB query is the *source*
+  of the result set, not a post-filter over a recursive scan — a bare tag click (no Search-button
+  press, no other criteria) must answer purely from the database, with zero disk tree-walking.
+  `TabViewModel::runAdvancedSearch` composes this as:
+  1. `TagManagementUseCase::findFilesWithAllTags(tagIds)`.
+  2. Keep only associations whose `filePath()` satisfies
+     `isPathWithinOrEqual(path, m_advancedSearchRoot)` (`src/domain/PathContainment.h`) — this is
+     what confines tag results to the current tab's folder subtree, replacing the old scan-based
+     scoping now that there's no scan to intersect against.
+  3. `FileNavigationUseCase::stat(path)` per surviving path to obtain a `FileNode` (name/size/mtime
+     for display and for stage 4 below); a `stat` failure (file moved/deleted/renamed since
+     tagging — no hash-based relocation attempted) drops that entry silently. This is a bounded
+     number of single-file `stat` calls, not a tree walk, so it stays cheap even for large tagged
+     sets (Specification.md:303's "~100,000 tagged files: ~500ms" target is about this DB-driven
+     path, not a recursive scan).
+  4. `FileNavigationUseCase::filterByCriteria` (name/size) runs on this candidate list as a
+     **secondary** filter — the two stages still compose as an AND, same as before, just with the
+     tag stage now first and cheaper.
+  When `tagIds` is empty, the pre-existing path is unchanged: recursive scan (cached in
+  `m_advancedSearchSnapshot`) → `filterByCriteria`. `FileNavigationUseCase::filterByPaths` (the
+  older scan-then-intersect filter) has been removed as dead code by this change.
 * **`TabViewModel` gains a `TagManagementUseCase&` dependency** (threaded through
   `WorkspacePaneViewModel`'s and `WorkspaceController`'s constructors, which already receives one
   for the shared `TagListViewModel`), plus:
@@ -708,13 +717,17 @@ then satisfy file-property criteria (name/size, §14.19) **and** tag criteria to
     mutation), the same posture as §14.20's `suggestFolders`: the widget layer calls them
     on-demand and pushes the result back into itself, rather than a ViewModel class mediating.
   * A shared private `runAdvancedSearch(forceRescan)` now backs `startAdvancedSearch`/
-    `updateAdvancedSearchCriteria` *and* the two methods above, re-scanning only when forced or
-    never yet scanned (`m_advancedSearchRoot.empty()`) — preserving §14.19's "editing before the
-    first Search does not scan" contract while letting the new tag-click entry points (which have
-    no Search-button press to hang a scan off of) trigger that first scan themselves.
-    `showAdvancedSearchPanel`'s own non-recursive current-folder listing (§14.19) is separate from
-    this cache and leaves `m_advancedSearchRoot` unset, so the first real search here still forces
-    a full recursive scan.
+    `updateAdvancedSearchCriteria` *and* the two tag-criterion methods above. A new
+    `m_advancedSearchFullScanDone` flag (separate from `m_advancedSearchRoot.empty()`) tracks
+    whether the *current* root actually has a cached recursive-scan snapshot, as opposed to having
+    only been set by a tag-first run (which sets the root for scoping purposes but never scans) —
+    the name/size-only branch rescans when `forceRescan || m_advancedSearchRoot.empty() ||
+    !m_advancedSearchFullScanDone`, so removing the last tag criterion correctly forces the
+    recursive scan it's now relying on for the first time, rather than reusing stale/absent state.
+    This preserves §14.19's "editing before the first Search does not scan" contract while letting
+    the tag-click entry points (which have no Search-button press to hang a scan off of) trigger
+    their own DB-driven result immediately. `showAdvancedSearchPanel`'s own non-recursive
+    current-folder listing (§14.19) is unaffected — it still leaves `m_advancedSearchRoot` unset.
   * A new `advancedSearchCriteriaChanged(const SearchCriteria&)` signal, since criteria can now
     change from three independent places (the existing Name/size/extension fields, Advanced
     Search's own new tag search box, and a `TagPanelWidget` click on a different widget entirely)
@@ -733,9 +746,10 @@ then satisfy file-property criteria (name/size, §14.19) **and** tag criteria to
   click-x-to-remove), wired in `WorkspacePaneWidget::addPageForTab` the same way the existing
   Name/size/extension fields are.
 * **Not built:** persisting tag criteria across restarts (matches §14.19's existing exclusion for
-  its other fields); surfacing which specific tag caused a given result to match. No new
-  automated coverage beyond the pure `filterByPaths` filter — `TabViewModel`/widget changes stay
-  under §11/§14.19's existing "ViewModel/UI is not CTest-covered" posture.
+  its other fields); surfacing which specific tag caused a given result to match; batching/
+  parallelizing the per-path `stat()` calls in the tag-first path (accepted as a bounded,
+  synchronous cost, same UI-thread posture as §14.19's own recursive scan). `TabViewModel`/widget
+  changes stay under §11/§14.19's existing "ViewModel/UI is not CTest-covered" posture.
 
 ### 14.20 Address Bar Folder Autocomplete
 

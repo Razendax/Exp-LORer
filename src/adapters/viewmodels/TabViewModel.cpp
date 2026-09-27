@@ -5,8 +5,10 @@
 #include "ArchiveExtensions.h"
 #include "FileListModel.h"
 #include "FileNavigationUseCase.h"
+#include "FileTagAssociation.h"
 #include "GitDirectoryStatus.h"
 #include "GitStatusService.h"
+#include "PathContainment.h"
 #include "TagManagementUseCase.h"
 #include "VirtualPaths.h"
 
@@ -358,6 +360,7 @@ void TabViewModel::exitAdvancedSearch()
     m_advancedSearchSnapshot.clear();
     m_advancedSearchCriteria = SearchCriteria();
     m_advancedSearchRoot.clear();
+    m_advancedSearchFullScanDone = false;
 
     setSelectedEntries({});
     emit advancedSearchModeChanged(false);
@@ -438,22 +441,17 @@ Result<DriveSpaceInfo> TabViewModel::driveSpaceInfo() const
 
 void TabViewModel::runAdvancedSearch(bool forceRescan)
 {
-    if (forceRescan || m_advancedSearchRoot.empty())
-    {
-        m_advancedSearchRoot = currentPath();
-        auto result = m_fileNavigationUseCase.listDirectoryRecursive(m_advancedSearchRoot);
-        if (result.hasError())
-        {
-            emit advancedSearchFailed(QString::fromStdString(result.error().message));
-            return;
-        }
-        m_advancedSearchSnapshot = std::move(result).value();
-    }
-
-    auto filtered = FileNavigationUseCase::filterByCriteria(m_advancedSearchSnapshot, m_advancedSearchCriteria);
+    std::vector<FileNode> filtered;
 
     if (!m_advancedSearchCriteria.tagIds.empty())
     {
+        // Tag-first path (Architecture.md §14.22): the tag DB alone answers "which files have
+        // this tag" -- no recursive folder scan needed. m_advancedSearchRoot is still set (for
+        // scoping + setEntries's root arg), but m_advancedSearchFullScanDone is left/invalidated
+        // so a later name/size-only search forces a real scan rather than reusing stale state.
+        m_advancedSearchRoot = currentPath();
+        m_advancedSearchFullScanDone = false;
+
         auto tagResult = m_tagManagementUseCase.findFilesWithAllTags(m_advancedSearchCriteria.tagIds);
         if (tagResult.hasError())
         {
@@ -461,14 +459,45 @@ void TabViewModel::runAdvancedSearch(bool forceRescan)
             return;
         }
 
-        std::vector<std::filesystem::path> allowedPaths;
-        allowedPaths.reserve(tagResult.value().size());
+        std::vector<FileNode> candidates;
+        candidates.reserve(tagResult.value().size());
         for (const FileTagAssociation& association : tagResult.value())
         {
-            allowedPaths.push_back(association.filePath());
+            if (!isPathWithinOrEqual(association.filePath(), m_advancedSearchRoot))
+            {
+                continue;
+            }
+
+            auto statResult = m_fileNavigationUseCase.stat(association.filePath());
+            if (statResult.hasError())
+            {
+                // File moved/deleted/renamed since tagging -- no hash-based relocation
+                // (Architecture.md §14.22), so it's silently dropped rather than surfaced as an
+                // error.
+                continue;
+            }
+
+            candidates.push_back(std::move(statResult).value());
         }
 
-        filtered = FileNavigationUseCase::filterByPaths(std::move(filtered), allowedPaths);
+        filtered = FileNavigationUseCase::filterByCriteria(std::move(candidates), m_advancedSearchCriteria);
+    }
+    else
+    {
+        if (forceRescan || m_advancedSearchRoot.empty() || !m_advancedSearchFullScanDone)
+        {
+            m_advancedSearchRoot = currentPath();
+            auto result = m_fileNavigationUseCase.listDirectoryRecursive(m_advancedSearchRoot);
+            if (result.hasError())
+            {
+                emit advancedSearchFailed(QString::fromStdString(result.error().message));
+                return;
+            }
+            m_advancedSearchSnapshot = std::move(result).value();
+            m_advancedSearchFullScanDone = true;
+        }
+
+        filtered = FileNavigationUseCase::filterByCriteria(m_advancedSearchSnapshot, m_advancedSearchCriteria);
     }
 
     filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);

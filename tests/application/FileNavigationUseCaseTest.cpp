@@ -365,47 +365,6 @@ TEST(FileNavigationUseCase, FilterByCriteriaIncludesSymlinks)
     EXPECT_EQ(filtered[0].fileType(), FileType::Symlink);
 }
 
-TEST(FileNavigationUseCase, FilterByPathsMatchesByPath)
-{
-    std::vector<FileNode> files{ makeFile("C:/data/a.txt", 1), makeFile("C:/data/b.txt", 2) };
-
-    auto filtered = FileNavigationUseCase::filterByPaths(files, { std::filesystem::path("C:/data/a.txt") });
-
-    ASSERT_EQ(filtered.size(), 1u);
-    EXPECT_EQ(filtered[0].name(), "a.txt");
-}
-
-TEST(FileNavigationUseCase, FilterByPathsEmptyAllowedPathsYieldsEmptyResult)
-{
-    std::vector<FileNode> files{ makeFile("C:/data/a.txt", 1), makeFile("C:/data/b.txt", 2) };
-
-    auto filtered = FileNavigationUseCase::filterByPaths(files, {});
-
-    EXPECT_TRUE(filtered.empty());
-}
-
-TEST(FileNavigationUseCase, FilterByPathsExcludesUnrelatedPaths)
-{
-    std::vector<FileNode> files{ makeFile("C:/data/a.txt", 1), makeFile("C:/data/b.txt", 2), makeFile("C:/data/c.txt", 3) };
-
-    auto filtered = FileNavigationUseCase::filterByPaths(
-        files, { std::filesystem::path("C:/data/a.txt"), std::filesystem::path("C:/data/c.txt") });
-
-    ASSERT_EQ(filtered.size(), 2u);
-    EXPECT_EQ(filtered[0].name(), "a.txt");
-    EXPECT_EQ(filtered[1].name(), "c.txt");
-}
-
-TEST(FileNavigationUseCase, FilterByPathsMatchesDirectoriesToo)
-{
-    std::vector<FileNode> files{ makeFile("C:/data/a.txt", 1), makeFile("C:/data/folder", 0, FileType::Directory) };
-
-    auto filtered = FileNavigationUseCase::filterByPaths(files, { std::filesystem::path("C:/data/folder") });
-
-    ASSERT_EQ(filtered.size(), 1u);
-    EXPECT_EQ(filtered[0].name(), "folder");
-}
-
 TEST(FileNavigationUseCase, MoveFileDelegatesToRepository)
 {
     MockFileSystemRepository repository;

@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <set>
 
 #include "GlobMatch.h"
 #include "PathUtf8.h"
@@ -142,18 +141,6 @@ std::vector<FileNode> FileNavigationUseCase::filterByCriteria(std::vector<FileNo
     files = filterByName(std::move(files), criteria.nameQuery);
     files = filterBySizeRange(std::move(files), criteria.minSizeBytes, criteria.maxSizeBytes);
     return files;
-}
-
-std::vector<FileNode> FileNavigationUseCase::filterByPaths(std::vector<FileNode> files,
-                                                             const std::vector<std::filesystem::path>& allowedPaths)
-{
-    const std::set<std::filesystem::path> allowed(allowedPaths.begin(), allowedPaths.end());
-
-    std::vector<FileNode> result;
-    std::copy_if(files.begin(), files.end(), std::back_inserter(result),
-                 [&allowed](const FileNode& file) { return allowed.contains(file.path()); });
-
-    return result;
 }
 
 Result<FileNode> FileNavigationUseCase::moveFile(const std::filesystem::path& source, const std::filesystem::path& destination)

@@ -254,9 +254,14 @@ private:
     void requestGitRepositorySummary(const std::filesystem::path& path);
 
     // Shared implementation of startAdvancedSearch/updateAdvancedSearchCriteria/
-    // addTagSearchCriterion/removeTagSearchCriterion: re-scans only when forceRescan or this is
-    // the first-ever scan, applies filterByCriteria then (if tagIds non-empty) the tag-path
-    // intersection, and emits the result + criteria-changed signals.
+    // addTagSearchCriterion/removeTagSearchCriterion. When criteria.tagIds is non-empty, the
+    // search is tag-first: queries TagManagementUseCase::findFilesWithAllTags directly (no
+    // recursive scan), scopes the result to currentPath() via isPathWithinOrEqual, stat()s each
+    // surviving path, and applies filterByCriteria as a secondary name/size filter. Otherwise,
+    // re-scans recursively only when forceRescan or no valid cached scan exists yet
+    // (m_advancedSearchFullScanDone), then applies filterByCriteria. Both branches converge on
+    // sortBy -> advancedSearchResultsModel()->setEntries and emit the result + criteria-changed
+    // signals (Architecture.md §14.22).
     void runAdvancedSearch(bool forceRescan);
 
     FileNavigationUseCase& m_fileNavigationUseCase;
@@ -279,6 +284,11 @@ private:
     SearchCriteria m_advancedSearchCriteria;
     std::filesystem::path m_advancedSearchRoot;
     std::vector<FileNode> m_advancedSearchSnapshot;
+    // True only right after a successful listDirectoryRecursive has populated
+    // m_advancedSearchSnapshot. m_advancedSearchRoot.empty() alone can no longer signal "have we
+    // ever scanned", since the tag-first branch also sets m_advancedSearchRoot (for scoping)
+    // without ever performing a recursive scan.
+    bool m_advancedSearchFullScanDone = false;
 
     bool m_monitoringActive = false;
     std::filesystem::path m_monitoringRoot;
