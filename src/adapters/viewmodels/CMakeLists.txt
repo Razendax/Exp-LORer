@@ -32,6 +32,10 @@ add_library(explorer_adapters_viewmodels STATIC
     GitStatusWorker.cpp
     GitStatusService.h
     GitStatusService.cpp
+    AdvancedSearchWorker.h
+    AdvancedSearchWorker.cpp
+    AdvancedSearchService.h
+    AdvancedSearchService.cpp
     DirectoryWatchService.h
     DirectoryWatchService.cpp
     MonitoringPanelViewModel.h
@@ -39,4 +43,4 @@ add_library(explorer_adapters_viewmodels STATIC
 )
 
 target_include_directories(explorer_adapters_viewmodels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(explorer_adapters_viewmodels PUBLIC explorer_application explorer_adapters_decoration explorer_adapters_notifications Qt6::Core Qt6::Widgets)
+target_link_libraries(explorer_adapters_viewmodels PUBLIC explorer_application explorer_adapters_decoration explorer_adapters_notifications explorer_adapters_persistence Qt6::Core Qt6::Widgets)

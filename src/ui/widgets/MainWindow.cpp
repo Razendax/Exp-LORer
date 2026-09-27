@@ -601,6 +601,7 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     if (m_searchTrackedTab)
     {
         disconnect(m_searchTrackedTab, &TabViewModel::searchFailed, this, &MainWindow::onStatusMessage);
+        disconnect(m_searchTrackedTab, &TabViewModel::advancedSearchFailed, this, &MainWindow::onStatusMessage);
     }
     m_searchTrackedTab = tab;
 
@@ -631,6 +632,7 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     onSortOrderChanged(tab->sortCriterion(), tab->sortAscending());
 
     connect(tab, &TabViewModel::searchFailed, this, &MainWindow::onStatusMessage);
+    connect(tab, &TabViewModel::advancedSearchFailed, this, &MainWindow::onStatusMessage);
     m_searchBar->setText(tab->searchActive() ? tab->searchQuery() : QString());
 
     connect(tab, &TabViewModel::currentPathChanged, this, &MainWindow::onActiveTabPathChanged);

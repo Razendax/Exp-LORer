@@ -25,22 +25,22 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
                                            QObject& fileDecorationsChangeSource, GitStatusService& gitStatusService,
                                            DirectoryWatchUseCase& directoryWatchUseCase,
                                            FolderMonitorUseCase& folderMonitorUseCase, NotificationCenter& notificationCenter,
-                                           QObject* parent)
+                                           AdvancedSearchService& advancedSearchService, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
 {
     m_panes[indexOf(WorkspacePaneId::PaneA)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
-        folderMonitorUseCase, WorkspacePaneId::PaneA, this);
+        folderMonitorUseCase, advancedSearchService, WorkspacePaneId::PaneA, this);
     m_panes[indexOf(WorkspacePaneId::PaneB)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
-        folderMonitorUseCase, WorkspacePaneId::PaneB, this);
+        folderMonitorUseCase, advancedSearchService, WorkspacePaneId::PaneB, this);
     m_panes[indexOf(WorkspacePaneId::PaneC)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
-        folderMonitorUseCase, WorkspacePaneId::PaneC, this);
+        folderMonitorUseCase, advancedSearchService, WorkspacePaneId::PaneC, this);
     m_panes[indexOf(WorkspacePaneId::PaneD)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
-        folderMonitorUseCase, WorkspacePaneId::PaneD, this);
+        folderMonitorUseCase, advancedSearchService, WorkspacePaneId::PaneD, this);
 
     m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, notificationCenter, this);
     m_filePreviewViewModel = new FilePreviewViewModel(filePreviewUseCase, fileSystemRepository, this);

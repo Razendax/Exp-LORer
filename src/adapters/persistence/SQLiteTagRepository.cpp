@@ -50,6 +50,13 @@ SQLiteTagRepository::SQLiteTagRepository(const std::filesystem::path& databasePa
     QSqlQuery pragma(m_db);
     pragma.exec(QStringLiteral("PRAGMA foreign_keys = ON"));
 
+    // AdvancedSearchWorker (Architecture.md §14.x) opens its own connection to this same file on
+    // a background thread, so a write here (tagging a file) can now race a concurrent read there.
+    // Without a busy timeout, the loser fails immediately with SQLITE_BUSY instead of waiting
+    // briefly for the lock to clear.
+    QSqlQuery busyTimeout(m_db);
+    busyTimeout.exec(QStringLiteral("PRAGMA busy_timeout = 5000"));
+
     runMigrations();
 }
 

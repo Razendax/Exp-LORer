@@ -2,80 +2,10 @@
 
 #include <vector>
 
+#include "UnicodeCaseFold.h"
+
 namespace
 {
-    // Decodes UTF-8 bytes to Unicode codepoints. Malformed lead/continuation bytes are dropped
-    // rather than aborting the match -- a pattern failing to match a name with unusual encoding is
-    // a cosmetic miss, not something worth crashing or erroring over.
-    std::vector<char32_t> decodeUtf8(const std::string& text)
-    {
-        std::vector<char32_t> codepoints;
-        codepoints.reserve(text.size());
-
-        size_t i = 0;
-        while (i < text.size())
-        {
-            const unsigned char lead = static_cast<unsigned char>(text[i]);
-            char32_t codepoint = 0;
-            size_t extraBytes = 0;
-
-            if ((lead & 0x80) == 0)
-            {
-                codepoint = lead;
-                extraBytes = 0;
-            }
-            else if ((lead & 0xE0) == 0xC0)
-            {
-                codepoint = lead & 0x1F;
-                extraBytes = 1;
-            }
-            else if ((lead & 0xF0) == 0xE0)
-            {
-                codepoint = lead & 0x0F;
-                extraBytes = 2;
-            }
-            else if ((lead & 0xF8) == 0xF0)
-            {
-                codepoint = lead & 0x07;
-                extraBytes = 3;
-            }
-            else
-            {
-                ++i;
-                continue;
-            }
-
-            ++i;
-            bool valid = true;
-            for (size_t k = 0; k < extraBytes; ++k)
-            {
-                if (i >= text.size() || (static_cast<unsigned char>(text[i]) & 0xC0) != 0x80)
-                {
-                    valid = false;
-                    break;
-                }
-                codepoint = (codepoint << 6) | (static_cast<unsigned char>(text[i]) & 0x3F);
-                ++i;
-            }
-
-            if (valid)
-            {
-                codepoints.push_back(codepoint);
-            }
-        }
-
-        return codepoints;
-    }
-
-    char32_t asciiFold(char32_t c)
-    {
-        if (c >= U'A' && c <= U'Z')
-        {
-            return c - U'A' + U'a';
-        }
-        return c;
-    }
-
     // Standard greedy-with-backtrack `*`/`?` glob matcher (iterative, O(pattern+text) amortized),
     // operating on already-decoded codepoints so it is agnostic to UTF-8 byte widths.
     bool globMatch(const std::vector<char32_t>& pattern, const std::vector<char32_t>& text)
@@ -87,7 +17,8 @@ namespace
 
         while (t < text.size())
         {
-            if (p < pattern.size() && (pattern[p] == U'?' || asciiFold(pattern[p]) == asciiFold(text[t])))
+            if (p < pattern.size() &&
+                (pattern[p] == U'?' || UnicodeCaseFold::foldCodepoint(pattern[p]) == UnicodeCaseFold::foldCodepoint(text[t])))
             {
                 ++p;
                 ++t;
@@ -120,5 +51,5 @@ namespace
 
 bool GlobMatch::matches(const std::string& patternUtf8, const std::string& textUtf8)
 {
-    return globMatch(decodeUtf8(patternUtf8), decodeUtf8(textUtf8));
+    return globMatch(UnicodeCaseFold::decodeUtf8(patternUtf8), UnicodeCaseFold::decodeUtf8(textUtf8));
 }

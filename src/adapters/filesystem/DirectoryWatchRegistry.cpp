@@ -1,14 +1,40 @@
 #include "DirectoryWatchRegistry.h"
 
 #include <algorithm>
+#include <type_traits>
+
+#include "UnicodeCaseFold.h"
+
+namespace
+{
+    // Windows filesystems are case-insensitive, so watch refcounting keys must be too -- otherwise
+    // two watch() calls on the same directory differing only in letter case (e.g. "d:\data" vs
+    // "D:\Data") are treated as independent, un-refcounted watches. Folds each UTF-16 code unit
+    // individually: every codepoint UnicodeCaseFold::foldCodepoint covers (Architecture.md's
+    // non-ASCII hard requirement's core scripts) fits in one UTF-16 code unit, so this is equivalent
+    // to folding full codepoints without needing a UTF-8 round trip.
+    std::wstring normalizeKey(const std::wstring& pathKey)
+    {
+        std::wstring normalized = pathKey;
+        for (wchar_t& c : normalized)
+        {
+            c = static_cast<wchar_t>(UnicodeCaseFold::foldCodepoint(static_cast<char32_t>(static_cast<std::make_unsigned_t<wchar_t>>(c))));
+        }
+        return normalized;
+    }
+}
 
 DirectoryWatchRegistry::AddOutcome DirectoryWatchRegistry::addWatch(const std::wstring& pathKey, std::function<void()> callback)
 {
-    const bool isFirstForPath = std::none_of(m_entries.begin(), m_entries.end(),
-                                              [&pathKey](const Entry& entry) { return entry.pathKey == pathKey; });
+    const std::wstring normalizedKey = normalizeKey(pathKey);
+    const bool isFirstForPath = m_canonicalPathKeys.find(normalizedKey) == m_canonicalPathKeys.end();
+    if (isFirstForPath)
+    {
+        m_canonicalPathKeys[normalizedKey] = pathKey;
+    }
 
     const DirectoryWatchId id = m_nextId++;
-    m_entries.push_back(Entry{ id, pathKey, std::move(callback) });
+    m_entries.push_back(Entry{ id, pathKey, normalizedKey, std::move(callback) });
 
     return AddOutcome{ id, isFirstForPath };
 }
@@ -21,21 +47,34 @@ DirectoryWatchRegistry::RemoveOutcome DirectoryWatchRegistry::removeWatch(Direct
         return RemoveOutcome{ false, false, {} };
     }
 
-    const std::wstring pathKey = it->pathKey;
+    const std::wstring normalizedKey = it->normalizedKey;
     m_entries.erase(it);
 
     const bool anyRemainingForPath =
-        std::any_of(m_entries.begin(), m_entries.end(), [&pathKey](const Entry& entry) { return entry.pathKey == pathKey; });
+        std::any_of(m_entries.begin(), m_entries.end(), [&normalizedKey](const Entry& entry) { return entry.normalizedKey == normalizedKey; });
 
-    return RemoveOutcome{ true, !anyRemainingForPath, pathKey };
+    if (anyRemainingForPath)
+    {
+        return RemoveOutcome{ true, false, {} };
+    }
+
+    // Last watcher for this path -- report back the exact casing that was originally used to start
+    // the OS-level watch (not necessarily this entry's own casing, if it was a later, differently-
+    // cased addWatch() call for the same directory) so the caller's OS-level unwatch call matches.
+    const auto canonicalIt = m_canonicalPathKeys.find(normalizedKey);
+    const std::wstring canonicalPathKey = canonicalIt != m_canonicalPathKeys.end() ? canonicalIt->second : std::wstring{};
+    m_canonicalPathKeys.erase(normalizedKey);
+
+    return RemoveOutcome{ true, true, canonicalPathKey };
 }
 
 std::vector<std::function<void()>> DirectoryWatchRegistry::callbacksForPath(const std::wstring& pathKey) const
 {
+    const std::wstring normalizedKey = normalizeKey(pathKey);
     std::vector<std::function<void()>> callbacks;
     for (const Entry& entry : m_entries)
     {
-        if (entry.pathKey == pathKey)
+        if (entry.normalizedKey == normalizedKey)
         {
             callbacks.push_back(entry.callback);
         }

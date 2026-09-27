@@ -28,9 +28,10 @@ Result<std::vector<FileNode>> FileNavigationUseCase::listDirectory(const std::fi
     return m_fileSystemRepository.listDirectory(directory);
 }
 
-Result<std::vector<FileNode>> FileNavigationUseCase::listDirectoryRecursive(const std::filesystem::path& root) const
+Result<std::vector<FileNode>> FileNavigationUseCase::listDirectoryRecursive(
+    const std::filesystem::path& root, const std::function<void(const std::vector<FileNode>&)>& onProgress) const
 {
-    return m_fileSystemRepository.listDirectoryRecursive(root);
+    return m_fileSystemRepository.listDirectoryRecursive(root, onProgress);
 }
 
 Result<FileNode> FileNavigationUseCase::stat(const std::filesystem::path& path) const

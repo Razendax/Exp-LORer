@@ -381,6 +381,18 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
                 advancedSearchPane->setCriteria(criteria, tab->resolveTagCriteria());
             });
 
+    // Busy state around AdvancedSearchService's async recursive-scan/tag-first-candidate requests
+    // (Architecture.md §14.37). Deliberately NOT tied to advancedSearchResultsChanged above --
+    // that also fires for a long scan's intermediate progress ticks, and the busy indicator should
+    // stay up for the whole scan, not clear after the first partial result. advancedSearchLoadingFinished
+    // covers the success case, advancedSearchFailed the error case.
+    connect(tab, &TabViewModel::advancedSearchLoading, advancedSearchPane,
+            [advancedSearchPane]() { advancedSearchPane->criteriaPanel()->setSearching(true); });
+    connect(tab, &TabViewModel::advancedSearchLoadingFinished, advancedSearchPane,
+            [advancedSearchPane]() { advancedSearchPane->criteriaPanel()->setSearching(false); });
+    connect(tab, &TabViewModel::advancedSearchFailed, advancedSearchPane,
+            [advancedSearchPane](const QString&) { advancedSearchPane->criteriaPanel()->setSearching(false); });
+
     // Bottom panel (Architecture.md §14.23): a splitter over the existing browse/search/
     // advanced-search stack and a collapsible BottomPanelWidget with a single "Terminal" tab, wrapped
     // as the actual tab page instead of inserting `stack` directly.

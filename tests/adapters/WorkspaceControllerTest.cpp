@@ -2,6 +2,7 @@
 
 #include <fstream>
 
+#include "AdvancedSearchService.h"
 #include "DirectoryWatchUseCase.h"
 #include "FileDecorationRules.h"
 #include "FileDecorationRulesStore.h"
@@ -74,10 +75,11 @@ namespace
         FolderMonitorUseCase m_folderMonitorUseCase{ m_folderMonitor };
         NotificationSettings m_notificationSettings;
         NotificationCenter m_notificationCenter{ m_notificationSettings };
+        AdvancedSearchService m_advancedSearchService{ m_fileNavigationUseCase, m_fileSystemRepository, fs::path(":memory:") };
         WorkspaceController m_controller{ m_fileNavigationUseCase,  m_tagManagementUseCase,     m_filePreviewUseCase,
                                            m_fileSystemRepository, m_fileDecorationRules,      m_fileDecorationsViewModel,
                                            m_gitStatusService,     m_directoryWatchUseCase,    m_folderMonitorUseCase,
-                                           m_notificationCenter };
+                                           m_notificationCenter,   m_advancedSearchService };
     };
 }
 
@@ -112,7 +114,7 @@ TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsThroughRestoreFromConfig)
     WorkspaceController restoredController{ m_fileNavigationUseCase,  restoredTagManagementUseCase, m_filePreviewUseCase,
                                              m_fileSystemRepository, m_fileDecorationRules,        m_fileDecorationsViewModel,
                                              m_gitStatusService,     m_directoryWatchUseCase,      m_folderMonitorUseCase,
-                                             m_notificationCenter };
+                                             m_notificationCenter,   m_advancedSearchService };
 
     const bool restored = restoredController.restoreFromConfig(captured);
     ASSERT_TRUE(restored);

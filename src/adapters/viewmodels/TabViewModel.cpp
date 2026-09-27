@@ -1,14 +1,14 @@
 #include "TabViewModel.h"
 
 #include <algorithm>
+#include <utility>
 
+#include "AdvancedSearchService.h"
 #include "ArchiveExtensions.h"
 #include "FileListModel.h"
 #include "FileNavigationUseCase.h"
-#include "FileTagAssociation.h"
 #include "GitDirectoryStatus.h"
 #include "GitStatusService.h"
-#include "PathContainment.h"
 #include "TagManagementUseCase.h"
 #include "VirtualPaths.h"
 
@@ -24,12 +24,14 @@ namespace
 
 TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                            const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
-                           GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase, QObject* parent)
+                           GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
+                           AdvancedSearchService& advancedSearchService, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagManagementUseCase(tagManagementUseCase)
     , m_gitStatusService(gitStatusService)
     , m_folderMonitorUseCase(folderMonitorUseCase)
+    , m_advancedSearchService(advancedSearchService)
     , m_fileListModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_searchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_advancedSearchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
@@ -244,7 +246,26 @@ void TabViewModel::startSearch(const QString& query)
     exitAdvancedSearch();
 
     m_searchRoot = currentPath();
-    auto result = m_fileNavigationUseCase.listDirectoryRecursive(m_searchRoot);
+    m_searchQuery = query;
+
+    const int generation = ++m_searchGeneration;
+
+    // Recursive scan runs off the Qt UI thread via AdvancedSearchService's worker -- same scan
+    // FileNavigationUseCase::listDirectoryRecursive would have done synchronously here before.
+    m_advancedSearchService.requestRecursiveScan(this, m_searchRoot, [this, generation](Result<std::vector<FileNode>> result) {
+        onSearchScanReady(generation, std::move(result));
+    });
+}
+
+void TabViewModel::onSearchScanReady(int generation, Result<std::vector<FileNode>> result)
+{
+    if (generation != m_searchGeneration)
+    {
+        // Superseded by a newer startSearch() call, or the search was exited/tab closed in the
+        // meantime -- discard.
+        return;
+    }
+
     if (result.hasError())
     {
         emit searchFailed(QString::fromStdString(result.error().message));
@@ -253,9 +274,8 @@ void TabViewModel::startSearch(const QString& query)
 
     m_searchSnapshot = std::move(result).value();
     m_searchActive = true;
-    m_searchQuery = query;
 
-    auto filtered = FileNavigationUseCase::filterByName(m_searchSnapshot, query.toStdString());
+    auto filtered = FileNavigationUseCase::filterByName(m_searchSnapshot, m_searchQuery.toStdString());
     filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
     m_searchResultsModel->setEntries(m_searchRoot, filtered);
 
@@ -291,6 +311,7 @@ void TabViewModel::exitSearch()
     m_searchSnapshot.clear();
     m_searchQuery.clear();
     m_searchRoot.clear();
+    ++m_searchGeneration;
 
     setSelectedEntries({});
     emit searchModeChanged(false);
@@ -358,9 +379,16 @@ void TabViewModel::exitAdvancedSearch()
 
     m_advancedSearchActive = false;
     m_advancedSearchSnapshot.clear();
+    m_advancedSearchPartialSnapshot.clear();
     m_advancedSearchCriteria = SearchCriteria();
     m_advancedSearchRoot.clear();
+    m_advancedSearchCachedTagIds.clear();
     m_advancedSearchFullScanDone = false;
+    m_advancedSearchScanPending = false;
+    // Invalidates any scan/stat-loop still in flight -- its (now-stale) result is discarded by
+    // onAdvancedSearchCandidatesReady/onAdvancedSearchProgress's generation check when it
+    // eventually arrives.
+    ++m_advancedSearchGeneration;
 
     setSelectedEntries({});
     emit advancedSearchModeChanged(false);
@@ -441,65 +469,85 @@ Result<DriveSpaceInfo> TabViewModel::driveSpaceInfo() const
 
 void TabViewModel::runAdvancedSearch(bool forceRescan)
 {
-    std::vector<FileNode> filtered;
-
     if (!m_advancedSearchCriteria.tagIds.empty())
     {
         // Tag-first path (Architecture.md §14.22): the tag DB alone answers "which files have
         // this tag" -- no recursive folder scan needed. m_advancedSearchRoot is still set (for
-        // scoping + setEntries's root arg), but m_advancedSearchFullScanDone is left/invalidated
-        // so a later name/size-only search forces a real scan rather than reusing stale state.
-        m_advancedSearchRoot = currentPath();
-        m_advancedSearchFullScanDone = false;
+        // scoping + setEntries's root arg).
+        const std::vector<Tag::Id>& tagIds = m_advancedSearchCriteria.tagIds;
 
-        auto tagResult = m_tagManagementUseCase.findFilesWithAllTags(m_advancedSearchCriteria.tagIds);
-        if (tagResult.hasError())
+        if (!forceRescan && m_advancedSearchCachedTagIds == tagIds && (m_advancedSearchFullScanDone || m_advancedSearchScanPending))
         {
-            emit advancedSearchFailed(QString::fromStdString(tagResult.error().message));
+            // Same tag set already fetched, or a fetch for it is already in flight (the user kept
+            // typing/adjusting the name/size fields while it runs) -- don't re-dispatch a redundant
+            // DB query + per-file stat loop. Just re-filter whatever candidates are available now;
+            // an in-flight fetch's own completion callback will apply the latest criteria once it
+            // arrives, same "reuse the in-flight request" posture as the non-tag branch below.
+            applyAdvancedSearchFilter(m_advancedSearchFullScanDone ? m_advancedSearchSnapshot : m_advancedSearchPartialSnapshot);
             return;
         }
 
-        std::vector<FileNode> candidates;
-        candidates.reserve(tagResult.value().size());
-        for (const FileTagAssociation& association : tagResult.value())
-        {
-            if (!isPathWithinOrEqual(association.filePath(), m_advancedSearchRoot))
-            {
-                continue;
-            }
+        m_advancedSearchRoot = currentPath();
+        m_advancedSearchCachedTagIds = tagIds;
+        m_advancedSearchFullScanDone = false;
+        m_advancedSearchScanPending = true;
+        m_advancedSearchPartialSnapshot.clear();
 
-            auto statResult = m_fileNavigationUseCase.stat(association.filePath());
-            if (statResult.hasError())
-            {
-                // File moved/deleted/renamed since tagging -- no hash-based relocation
-                // (Architecture.md §14.22), so it's silently dropped rather than surfaced as an
-                // error.
-                continue;
-            }
+        const int generation = ++m_advancedSearchGeneration;
 
-            candidates.push_back(std::move(statResult).value());
-        }
-
-        filtered = FileNavigationUseCase::filterByCriteria(std::move(candidates), m_advancedSearchCriteria);
+        emit advancedSearchLoading();
+        m_advancedSearchService.requestTagFirstCandidates(
+            this, m_advancedSearchRoot, tagIds, [this, generation](Result<std::vector<FileNode>> result) {
+                onAdvancedSearchCandidatesReady(generation, std::move(result), /*isNewSnapshot=*/true);
+            });
+        return;
     }
-    else
+
+    if (forceRescan || m_advancedSearchRoot.empty() || (!m_advancedSearchFullScanDone && !m_advancedSearchScanPending))
     {
-        if (forceRescan || m_advancedSearchRoot.empty() || !m_advancedSearchFullScanDone)
-        {
-            m_advancedSearchRoot = currentPath();
-            auto result = m_fileNavigationUseCase.listDirectoryRecursive(m_advancedSearchRoot);
-            if (result.hasError())
-            {
-                emit advancedSearchFailed(QString::fromStdString(result.error().message));
-                return;
-            }
-            m_advancedSearchSnapshot = std::move(result).value();
-            m_advancedSearchFullScanDone = true;
-        }
+        // No scan covering the current root is running or cached -- dispatch a fresh one. This also
+        // covers forceRescan explicitly re-scanning a root that *was* already fully/partially
+        // scanned (e.g. Search clicked again, or the criteria switched away from tags and back).
+        m_advancedSearchRoot = currentPath();
+        // m_advancedSearchSnapshot/m_advancedSearchFullScanDone/m_advancedSearchScanPending are
+        // about to be overwritten with this recursive scan's own results -- invalidate the tag-first
+        // cache-key above so it can't later be mistaken for a still-valid tag-first candidate cache.
+        m_advancedSearchCachedTagIds.clear();
+        m_advancedSearchFullScanDone = false;
+        m_advancedSearchPartialSnapshot.clear();
+        m_advancedSearchScanPending = true;
 
-        filtered = FileNavigationUseCase::filterByCriteria(m_advancedSearchSnapshot, m_advancedSearchCriteria);
+        const int generation = ++m_advancedSearchGeneration;
+
+        emit advancedSearchLoading();
+        m_advancedSearchService.requestRecursiveScan(
+            this, m_advancedSearchRoot,
+            [this, generation](Result<std::vector<FileNode>> result) {
+                onAdvancedSearchCandidatesReady(generation, std::move(result), /*isNewSnapshot=*/true);
+            },
+            [this, generation](std::vector<FileNode> partial) { onAdvancedSearchProgress(generation, std::move(partial)); });
+        return;
     }
 
+    if (!m_advancedSearchFullScanDone && m_advancedSearchScanPending)
+    {
+        // A recursive scan of this same root is already running (the user kept typing/adjusting
+        // criteria while it's in flight) -- don't start a second, redundant walk of the same
+        // subtree. Just re-filter whatever the in-flight scan has reported so far; its own next
+        // progress tick (or final result) will pick up m_advancedSearchCriteria as it stands then,
+        // so the latest criteria is never lost (Architecture.md §14.37).
+        applyAdvancedSearchFilter(m_advancedSearchPartialSnapshot);
+        return;
+    }
+
+    // Cached, no rescan needed -- no disk I/O, so this stays fully synchronous (the common
+    // "user is typing in the Name field" case).
+    applyAdvancedSearchFilter(m_advancedSearchSnapshot);
+}
+
+void TabViewModel::applyAdvancedSearchFilter(const std::vector<FileNode>& candidates)
+{
+    auto filtered = FileNavigationUseCase::filterByCriteria(candidates, m_advancedSearchCriteria);
     filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
     m_advancedSearchResultsModel->setEntries(m_advancedSearchRoot, filtered);
 
@@ -512,6 +560,52 @@ void TabViewModel::runAdvancedSearch(bool forceRescan)
 
     emit advancedSearchResultsChanged(filtered);
     emit advancedSearchCriteriaChanged(m_advancedSearchCriteria);
+}
+
+void TabViewModel::onAdvancedSearchCandidatesReady(int generation, Result<std::vector<FileNode>> result, bool isNewSnapshot)
+{
+    if (generation != m_advancedSearchGeneration)
+    {
+        // Superseded by a newer request, or the search/tab was closed in the meantime -- discard.
+        return;
+    }
+
+    if (isNewSnapshot)
+    {
+        m_advancedSearchScanPending = false;
+    }
+
+    if (result.hasError())
+    {
+        emit advancedSearchFailed(QString::fromStdString(result.error().message));
+        return;
+    }
+
+    if (isNewSnapshot)
+    {
+        m_advancedSearchSnapshot = std::move(result).value();
+        m_advancedSearchPartialSnapshot.clear();
+        m_advancedSearchFullScanDone = true;
+        applyAdvancedSearchFilter(m_advancedSearchSnapshot);
+    }
+    else
+    {
+        applyAdvancedSearchFilter(result.value());
+    }
+
+    emit advancedSearchLoadingFinished();
+}
+
+void TabViewModel::onAdvancedSearchProgress(int generation, std::vector<FileNode> partial)
+{
+    if (generation != m_advancedSearchGeneration)
+    {
+        // Superseded/abandoned, same as onAdvancedSearchCandidatesReady -- discard.
+        return;
+    }
+
+    m_advancedSearchPartialSnapshot = std::move(partial);
+    applyAdvancedSearchFilter(m_advancedSearchPartialSnapshot);
 }
 
 void TabViewModel::emitAvailability()
@@ -556,7 +650,18 @@ void TabViewModel::requestLocalBranches(std::function<void(Result<std::vector<st
         return;
     }
 
-    m_gitStatusService.requestLocalBranches(this, *m_lastGitRepositorySummary.repositoryRoot, std::move(callback));
+    const std::filesystem::path repositoryRoot = *m_lastGitRepositorySummary.repositoryRoot;
+    m_gitStatusService.requestLocalBranches(this, repositoryRoot,
+                                             [this, repositoryRoot, callback = std::move(callback)](Result<std::vector<std::string>> result) {
+                                                 if (!m_lastGitRepositorySummary.repositoryRoot ||
+                                                     *m_lastGitRepositorySummary.repositoryRoot != repositoryRoot)
+                                                 {
+                                                     // A newer navigation has since changed (or cleared) the repository; this reply is stale.
+                                                     return;
+                                                 }
+
+                                                 callback(std::move(result));
+                                             });
 }
 
 void TabViewModel::checkoutBranch(const QString& branchName)

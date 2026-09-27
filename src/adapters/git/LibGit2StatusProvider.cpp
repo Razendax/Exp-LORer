@@ -62,10 +62,6 @@ namespace
         const auto existing = statusByPath.find(path);
         if (existing == statusByPath.end() || rollupPriority(status) < rollupPriority(existing->second))
         {
-            if  (status == GitFileStatus::Ignored)                 // Don't record ignored status
-            {
-                return;
-            }
             statusByPath[path] = status;
         }
     }

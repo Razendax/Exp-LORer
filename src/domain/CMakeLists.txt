@@ -5,6 +5,8 @@ add_library(explorer_domain STATIC
     WindowsLongPath.h
     PathContainment.h
     PathContainment.cpp
+    UnicodeCaseFold.h
+    UnicodeCaseFold.cpp
     GlobMatch.h
     GlobMatch.cpp
     FileNode.h

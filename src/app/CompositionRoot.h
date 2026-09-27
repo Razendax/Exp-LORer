@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <memory>
 
+#include "AdvancedSearchService.h"
 #include "AppConfigStore.h"
 #include "CachingMediaDecoder.h"
 #include "DirectoryWatchUseCase.h"
@@ -91,6 +92,12 @@ private:
     GitBranchUseCase m_gitBranchUseCase;
 
     GitStatusService m_gitStatusService;
+
+    // Architecture.md §14.x: async Advanced Search (§14.19/§14.22) recursive-scan and
+    // tag-first-candidate requests, off the Qt UI thread. Constructed after m_fileNavigationUseCase
+    // and m_fileSystemRepository (needs both); grouped here with the other shared background-work
+    // services.
+    AdvancedSearchService m_advancedSearchService;
 
     // Architecture.md §14.x: live directory-update watching for the visible+active tab set.
     // Watcher before use case (construction order matches this declaration order).

@@ -32,6 +32,13 @@ public:
     // Rebuilds the live matching-tag chip row from a tag search lookup.
     void setTagSearchResults(const std::vector<Tag>& tags);
 
+    // Swaps the Search button's text to "Searching…" while true, restoring it otherwise. The
+    // button stays enabled throughout -- clicking it (or editing a field) while a search is still
+    // running restarts it with the latest criteria. Called around TabViewModel::advancedSearchLoading
+    // and the advancedSearchLoadingFinished/advancedSearchFailed signals that follow it
+    // (Architecture.md §14.37).
+    void setSearching(bool searching);
+
 signals:
     // Search button clicked, or Enter pressed in the Name field (matches the Enter-triggers-scan
     // convention already used by the quick search box and address bar).

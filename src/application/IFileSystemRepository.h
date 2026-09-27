@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -23,7 +24,15 @@ public:
 
     // Recursively lists every descendant file/folder under root (Architecture.md §14.18). Individual
     // unreadable subtrees are skipped rather than failing the whole call, same posture as listDirectory.
-    virtual Result<std::vector<FileNode>> listDirectoryRecursive(const std::filesystem::path& root) const = 0;
+    //
+    // onProgress, when set, is invoked periodically (throttled to roughly once/second internally --
+    // callers must not add their own throttling) with the files discovered *so far*, so a caller
+    // doing a slow scan (Advanced Search, Architecture.md §14.19/§14.37) can show partial results
+    // instead of blocking the UI until the whole subtree has been walked. It is called on whatever
+    // thread is running the scan; nullptr (the default) disables progress reporting entirely.
+    virtual Result<std::vector<FileNode>> listDirectoryRecursive(
+        const std::filesystem::path& root,
+        const std::function<void(const std::vector<FileNode>&)>& onProgress = nullptr) const = 0;
 
     // Resolves a single path into a FileNode (e.g. to treat a browsed directory itself as a
     // taggable target when no child row is selected). Unlike listDirectory(), this stats the

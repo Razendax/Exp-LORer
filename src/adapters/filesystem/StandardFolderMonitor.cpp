@@ -153,7 +153,8 @@ Result<FolderMonitorId> StandardFolderMonitor::startMonitoring(const std::filesy
     state->directoryHandle = handle;
     state->stopEvent = stopEvent;
     state->onChanged = std::move(onChanged);
-    seedDirectoryTypes(rootDirectory, state->pathIsDirectory);
+    // Seeding is deferred to the worker thread below (the recursive walk can be slow on a large
+    // tree, and startMonitoring() is called from the Qt UI thread) rather than done here.
 
     const FolderMonitorId id = m_nextId++;
 
@@ -171,6 +172,10 @@ Result<FolderMonitorId> StandardFolderMonitor::startMonitoring(const std::filesy
     StandardFolderMonitor* owner = this;
 
     state->workerThread = std::thread([watchedHandle, watchedStopEvent, onChangedCopy, root, pathIsDirectoryMap, owner]() {
+        // Seeded here rather than in startMonitoring() (see the comment there) -- this thread's
+        // pathIsDirectoryMap isn't touched by anyone else until stopMonitor() joins it.
+        seedDirectoryTypes(root, *pathIsDirectoryMap);
+
         char buffer[16384];
         OVERLAPPED overlapped{};
         overlapped.hEvent = CreateEventW(nullptr, /*bManualReset=*/TRUE, /*bInitialState=*/FALSE, nullptr);

@@ -436,7 +436,14 @@ void AnsiTerminalBuffer::feed(QByteArrayView bytes)
                 }
                 else if (b >= '0' && b <= '9')
                 {
-                    m_csiCurrentValue = m_csiCurrentValue * 10 + (b - '0');
+                    // Clamped (same posture as xterm) rather than left to grow unbounded -- a
+                    // pathological digit run would otherwise overflow this signed int (UB) well
+                    // before any real CSI parameter needs a value anywhere near this large.
+                    constexpr int kMaxCsiParam = 65535;
+                    if (m_csiCurrentValue < kMaxCsiParam)
+                    {
+                        m_csiCurrentValue = std::min(kMaxCsiParam, m_csiCurrentValue * 10 + (b - '0'));
+                    }
                     m_csiCurrentValueSet = true;
                 }
                 else if (b == ';')

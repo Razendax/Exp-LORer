@@ -98,9 +98,23 @@ void SearchCriteriaPanel::setCriteria(const SearchCriteria& criteria, const std:
     const QSignalBlocker minBlocker(m_minSizeKbSpin);
     const QSignalBlocker maxBlocker(m_maxSizeKbSpin);
 
-    m_nameEdit->setText(QString::fromStdString(criteria.nameQuery));
-    m_minSizeKbSpin->setValue(criteria.minSizeBytes ? static_cast<int>(*criteria.minSizeBytes / kBytesPerKb) : 0);
-    m_maxSizeKbSpin->setValue(criteria.maxSizeBytes ? static_cast<int>(*criteria.maxSizeBytes / kBytesPerKb) : 0);
+    // Skip a field that currently has focus: this call is also reached via the round trip of the
+    // user's own edit (onAnyFieldEdited -> criteriaEdited -> TabViewModel::updateAdvancedSearchCriteria
+    // -> advancedSearchCriteriaChanged -> back here), and re-applying setText/setValue while the user
+    // is still typing in that field would reset the cursor to the end on every keystroke and, since
+    // currentCriteria() trims the name, would also erase a trailing space as soon as it's typed.
+    if (!m_nameEdit->hasFocus())
+    {
+        m_nameEdit->setText(QString::fromStdString(criteria.nameQuery));
+    }
+    if (!m_minSizeKbSpin->hasFocus())
+    {
+        m_minSizeKbSpin->setValue(criteria.minSizeBytes ? static_cast<int>(*criteria.minSizeBytes / kBytesPerKb) : 0);
+    }
+    if (!m_maxSizeKbSpin->hasFocus())
+    {
+        m_maxSizeKbSpin->setValue(criteria.maxSizeBytes ? static_cast<int>(*criteria.maxSizeBytes / kBytesPerKb) : 0);
+    }
     m_lastKnownTagIds = criteria.tagIds;
 
     clearLayout(m_tagCriteriaLayout);
@@ -121,6 +135,14 @@ void SearchCriteriaPanel::setTagSearchResults(const std::vector<Tag>& tags)
         connect(chip, &TagChipWidget::clicked, this, &SearchCriteriaPanel::tagCriterionAdded);
         m_tagMatchesLayout->addWidget(chip);
     }
+}
+
+void SearchCriteriaPanel::setSearching(bool searching)
+{
+    // Stays enabled throughout -- clicking Search (or editing a field) while a previous search is
+    // still running is exactly how the user restarts it with the latest criteria rather than
+    // waiting it out (Architecture.md §14.37).
+    m_searchButton->setText(searching ? tr("Searching…") : tr("Search"));
 }
 
 void SearchCriteriaPanel::clearLayout(FlowLayout* layout)

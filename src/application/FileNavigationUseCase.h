@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -31,7 +32,11 @@ public:
     FileNavigationUseCase(IFileSystemRepository& fileSystemRepository, IContextMenuProvider& contextMenuProvider);
 
     Result<std::vector<FileNode>> listDirectory(const std::filesystem::path& directory) const;
-    Result<std::vector<FileNode>> listDirectoryRecursive(const std::filesystem::path& root) const;
+
+    // onProgress forwards to IFileSystemRepository::listDirectoryRecursive -- see its doc comment
+    // for the ~1/second throttling guarantee.
+    Result<std::vector<FileNode>> listDirectoryRecursive(
+        const std::filesystem::path& root, const std::function<void(const std::vector<FileNode>&)>& onProgress = nullptr) const;
     Result<FileNode> stat(const std::filesystem::path& path) const;
 
     static std::vector<FileNode> sortBy(std::vector<FileNode> files, SortCriterion criterion, bool ascending = true);

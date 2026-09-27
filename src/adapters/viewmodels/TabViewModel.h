@@ -27,6 +27,7 @@ class TagManagementUseCase;
 class FileListModel;
 class FileDecorationRules;
 class GitStatusService;
+class AdvancedSearchService;
 
 // Binds address-bar/navigation-toolbar UI to FileNavigationUseCase and NavigationHistory for a
 // single tab. Owns the FileListModel that backs that tab's FileBrowserView, wiring
@@ -42,7 +43,8 @@ public:
     // WorkspaceController deliberately don't reference that concrete type.
     TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                  const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
-                 GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase, QObject* parent = nullptr);
+                 GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
+                 AdvancedSearchService& advancedSearchService, QObject* parent = nullptr);
 
     std::filesystem::path currentPath() const;
     bool backAvailable() const;
@@ -217,6 +219,18 @@ signals:
     void advancedSearchResultsChanged(const std::vector<FileNode>& entries);
     void advancedSearchFailed(const QString& message);
 
+    // Emitted right before dispatching a recursive-scan or tag-first-candidate request to
+    // AdvancedSearchService, so the UI can show a busy state (Architecture.md §14.x).
+    void advancedSearchLoading();
+
+    // Emitted once the in-flight scan/candidate fetch that most recently triggered
+    // advancedSearchLoading() actually finishes (successfully -- advancedSearchFailed covers the
+    // error case). Unlike advancedSearchResultsChanged, this does NOT fire for the intermediate
+    // progress ticks a long recursive scan reports along the way (Architecture.md §14.37), so a
+    // busy indicator wired to loading/this pair stays up for the whole scan rather than clearing
+    // after the first partial result.
+    void advancedSearchLoadingFinished();
+
     // Lets the UI re-sync its tag-criteria chip row (and, harmlessly, its Name/size/extension
     // fields, already idempotent via QSignalBlocker in SearchCriteriaPanel::setCriteria)
     // regardless of *which* entry point changed the criteria (its own fields, its own tag-search
@@ -264,10 +278,37 @@ private:
     // signals (Architecture.md §14.22).
     void runAdvancedSearch(bool forceRescan);
 
+    // Composes filterByCriteria -> sortBy -> setEntries -> activate-if-needed -> emit
+    // advancedSearchResultsChanged/advancedSearchCriteriaChanged, the tail shared by the
+    // synchronous cached-snapshot path and both async completion callbacks below.
+    void applyAdvancedSearchFilter(const std::vector<FileNode>& candidates);
+
+    // Completion callback for AdvancedSearchService::requestRecursiveScan/
+    // requestTagFirstCandidates. Discards the result if `generation` no longer matches
+    // m_advancedSearchGeneration (a newer request superseded it, or the search/tab was closed in
+    // the meantime). isNewSnapshot distinguishes a fresh recursive-scan result (cached into
+    // m_advancedSearchSnapshot) from a tag-first result (applied directly, never cached).
+    void onAdvancedSearchCandidatesReady(int generation, Result<std::vector<FileNode>> result, bool isNewSnapshot);
+
+    // Progress callback for AdvancedSearchService::requestRecursiveScan's onProgress
+    // (Architecture.md §14.37): discarded the same way as onAdvancedSearchCandidatesReady via the
+    // generation check. Caches `partial` as the best-known candidate list so far and re-filters it
+    // with whatever m_advancedSearchCriteria holds *right now* -- so a criteria edit that arrives
+    // while the scan is still running is reflected on the very next tick without needing its own
+    // rescan (see the "reuse the in-flight scan" branch of runAdvancedSearch).
+    void onAdvancedSearchProgress(int generation, std::vector<FileNode> partial);
+
+    // Completion callback for the recursive scan dispatched by startSearch() (via
+    // AdvancedSearchService::requestRecursiveScan, same off-UI-thread scan the Advanced Search pane
+    // uses). Discards the result if `generation` no longer matches m_searchGeneration (a newer
+    // startSearch() call, or exitSearch()/tab close, superseded it in the meantime).
+    void onSearchScanReady(int generation, Result<std::vector<FileNode>> result);
+
     FileNavigationUseCase& m_fileNavigationUseCase;
     TagManagementUseCase& m_tagManagementUseCase;
     GitStatusService& m_gitStatusService;
     FolderMonitorUseCase& m_folderMonitorUseCase;
+    AdvancedSearchService& m_advancedSearchService;
     NavigationHistory m_history;
     ViewMode m_viewMode = ViewMode::Details;
     FileListModel* m_fileListModel = nullptr;
@@ -278,6 +319,10 @@ private:
     std::filesystem::path m_searchRoot;
     std::vector<FileNode> m_searchSnapshot;
     QString m_searchQuery;
+    // Bumped on every startSearch() dispatch and on exitSearch(); onSearchScanReady discards any
+    // reply whose generation no longer matches, same discard-by-generation-id approach as
+    // m_advancedSearchGeneration above.
+    int m_searchGeneration = 0;
 
     FileListModel* m_advancedSearchResultsModel = nullptr;
     bool m_advancedSearchActive = false;
@@ -289,6 +334,30 @@ private:
     // ever scanned", since the tag-first branch also sets m_advancedSearchRoot (for scoping)
     // without ever performing a recursive scan.
     bool m_advancedSearchFullScanDone = false;
+    // True from the moment a recursive scan is dispatched until its completion callback runs (with
+    // a matching generation) or exitAdvancedSearch() resets it. While true, a criteria edit
+    // (updateAdvancedSearchCriteria/removeTagSearchCriterion, forceRescan=false) does NOT dispatch
+    // a second concurrent scan of the same root -- it just re-filters m_advancedSearchPartialSnapshot
+    // synchronously, since the one scan already running will itself keep reporting progress (and
+    // eventually the final result) filtered against whatever criteria is current when each tick
+    // fires (Architecture.md §14.37).
+    bool m_advancedSearchScanPending = false;
+    // Best-known candidate list from the in-flight scan's progress ticks (Architecture.md §14.37),
+    // updated by onAdvancedSearchProgress. Distinct from m_advancedSearchSnapshot, which is only
+    // ever written once a scan has *fully* completed.
+    std::vector<FileNode> m_advancedSearchPartialSnapshot;
+    // The tagIds that m_advancedSearchSnapshot/m_advancedSearchFullScanDone/m_advancedSearchScanPending
+    // currently pertain to when they were populated by the tag-first branch of runAdvancedSearch
+    // (empty when they instead pertain to a plain recursive scan of m_advancedSearchRoot). Lets a
+    // Name/size-only criteria edit with the same tag selection reuse the cached/in-flight tag-first
+    // candidates instead of re-dispatching a redundant DB query + per-file stat loop.
+    std::vector<Tag::Id> m_advancedSearchCachedTagIds;
+    // Bumped every time a recursive-scan or tag-first-candidate request is dispatched, and on
+    // exitAdvancedSearch(); onAdvancedSearchCandidatesReady/onAdvancedSearchProgress discard any
+    // reply whose generation no longer matches, so a stale result from a superseded/abandoned
+    // request can't resurrect it (Architecture.md §5's discard-by-generation-id approach, same as
+    // FilePreviewViewModel).
+    int m_advancedSearchGeneration = 0;
 
     bool m_monitoringActive = false;
     std::filesystem::path m_monitoringRoot;

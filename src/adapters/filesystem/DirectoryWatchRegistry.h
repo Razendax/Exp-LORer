@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 using DirectoryWatchId = std::uint64_t;
@@ -41,10 +42,16 @@ private:
     struct Entry
     {
         DirectoryWatchId id;
-        std::wstring pathKey;
+        std::wstring pathKey;       // original casing, as passed to addWatch()
+        std::wstring normalizedKey; // case-folded, used for all equality comparisons
         std::function<void()> callback;
     };
 
     std::vector<Entry> m_entries;
+    // normalizedKey -> the original-casing pathKey of whichever addWatch() call was first for that
+    // path (i.e. the one that actually triggered the OS-level watch) -- so removeWatch() can report
+    // back that exact casing when shouldStopOsWatch fires, even if the entry being removed is a
+    // later, differently-cased addWatch() call for the same directory.
+    std::unordered_map<std::wstring, std::wstring> m_canonicalPathKeys;
     DirectoryWatchId m_nextId = 1;
 };

@@ -144,18 +144,25 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
 * **Design intent:** Application-layer Port calls (file scanning, copying, DB queries, media
   decoding) dispatch to background threads; results marshal back to ViewModels via queued Qt
   signals/slots.
-* **Current state:** most Port calls (navigation, file ops, context menu, recursive search) are
+* **Current state:** most Port calls (navigation, file ops, context menu, quick search §14.18) are
   still synchronous on the UI thread — an accepted, tracked gap against the design intent above,
-  not a regression. Background dispatch is deferred throughout §14, with one exception:
+  not a regression. Background dispatch is deferred throughout §14, with these exceptions:
   `FilePreviewViewModel` (§14.25) dispatches `FilePreviewUseCase` calls to a dedicated worker
   thread, since preview generation (image/video decode) is the first Port-adjacent call slow
-  enough, and frequent enough, to need it. "Cancelling" an in-flight preview means discarding a
-  stale result by a generation-id check when it arrives, not aborting the decode itself — the
-  underlying libvips/FFmpeg calls aren't interruptible mid-call.
-* **Database concurrency:** `SQLiteTagRepository` runs SQLite in serialized/thread-safe mode (or a
-  single dedicated DB thread) to avoid `SQLITE_BUSY` during concurrent tag reads/writes. This
-  covers in-process concurrency only — cross-process concurrency is prevented separately by
-  single-instance enforcement (§6).
+  enough, and frequent enough, to need it; and Advanced Search (§14.19/§14.22, async since §14.37)
+  dispatches its recursive scan and tag-first candidate fetch to `AdvancedSearchService`/
+  `AdvancedSearchWorker`, the same worker-thread shape. In both cases, "cancelling" an in-flight
+  request means discarding a stale result by a generation-id check when it arrives, not aborting
+  the underlying call itself — neither the libvips/FFmpeg decode nor a `std::filesystem`
+  recursive walk/`stat()` loop is interruptible mid-call.
+* **Database concurrency:** `SQLiteTagRepository` wraps a `QSqlDatabase`/`QSQLITE` connection, which
+  Qt requires to be used only from the thread that created it — so cross-thread tag-DB access isn't
+  achieved by sharing one `TagManagementUseCase`/`SQLiteTagRepository` instance across threads, but
+  by giving each thread that needs one its **own** dedicated connection to the same `explorer.db`
+  file. `AdvancedSearchWorker` (§14.37) is the first such second connection; `SQLiteTagRepository`
+  sets `PRAGMA busy_timeout` so concurrent readers/writers across connections retry briefly instead
+  of failing immediately with `SQLITE_BUSY`. This covers in-process concurrency only —
+  cross-process concurrency is prevented separately by single-instance enforcement (§6).
 
 ## 6. Technology, Language & Build Decisions
 
@@ -670,8 +677,11 @@ queries cover that case. `TabViewModel` gets a parallel search-state block (its 
 the other. `SearchResultDelegate` bolds/highlights the matched substring in the Name column, the
 same manual multi-`drawText` technique `FileTileDelegate` uses. `FileBrowserView` gains an opt-in
 `AdvancedSearchResults` display mode rather than a new widget class, so existing
-selection/hotkey/context-menu wiring is reused as-is. Synchronous on the UI thread (§5). The pure
-filters are GTest-covered; the ViewModel/UI state is not (§11). Not built: a "Location"
+selection/hotkey/context-menu wiring is reused as-is. The recursive scan itself dispatches to a
+background worker thread (§5, §14.37) rather than running on the UI thread; re-filtering an
+already-cached scan (e.g. editing the Name field without pressing Search again) stays synchronous,
+since that step is pure in-memory filtering with no I/O. The pure filters are GTest-covered; the
+ViewModel/UI state is not (§11). Not built: a "Location"
 disambiguation column; cancellation of the recursive scan; persisting criteria across restarts
 (resets like §14.18's quick search). Tag criteria (a fifth, ANDed criterion) are covered
 separately by §14.22, layered on top of this section rather than modifying it.
@@ -747,9 +757,11 @@ then satisfy file-property criteria (name/size, §14.19) **and** tag criteria to
   Name/size/extension fields are.
 * **Not built:** persisting tag criteria across restarts (matches §14.19's existing exclusion for
   its other fields); surfacing which specific tag caused a given result to match; batching/
-  parallelizing the per-path `stat()` calls in the tag-first path (accepted as a bounded,
-  synchronous cost, same UI-thread posture as §14.19's own recursive scan). `TabViewModel`/widget
-  changes stay under §11/§14.19's existing "ViewModel/UI is not CTest-covered" posture.
+  parallelizing the per-path `stat()` calls in the tag-first path (accepted as a bounded cost — since
+  §14.37 it runs on `AdvancedSearchWorker`'s background thread rather than the UI thread, same
+  dispatch as §14.19's own recursive scan, but the per-path `stat()` loop itself is still sequential
+  within that one worker call). `TabViewModel`/widget changes stay under §11/§14.19's existing
+  "ViewModel/UI is not CTest-covered" posture.
 
 ### 14.20 Address Bar Folder Autocomplete
 
@@ -1856,3 +1868,85 @@ use-case wiring**.
   3-row settings persist). No automated coverage for `NotificationCenter` or any widget above
   beyond the existing §11 UI/ViewModel-glue carve-out; `NotificationSettings`'s plain logic and
   `NotificationSettingsStore`'s JSON round-trip get ordinary GTest coverage under `tests/adapters`.
+
+### 14.37 Async Advanced Search
+
+Moves Advanced Search's (§14.19/§14.22) two I/O-bound operations — the non-tag recursive folder scan
+and the tag-first candidate fetch (tag DB query + per-path `stat()`) — off the UI thread, so a large
+folder or a heavily-tagged result set no longer freezes the app while it runs. No Domain/Application
+change and no new Port: `AdvancedSearchWorker` calls the same `FileNavigationUseCase`/
+`TagManagementUseCase` methods `TabViewModel::runAdvancedSearch` already called synchronously, just
+from a different thread.
+
+* **`AdvancedSearchWorker`** (`adapters/viewmodels`, plain `QObject` moved to a dedicated `QThread`) —
+  same shape as `GitStatusWorker`/`FilePreviewWorker`. `scanRecursive(root, onProgress = nullptr)`
+  wraps `FileNavigationUseCase::listDirectoryRecursive`, forwarding `onProgress` straight through;
+  `fetchTagFirstCandidates(root, tagIds)` wraps `TagManagementUseCase::findFilesWithAllTags` + the
+  per-path `isPathWithinOrEqual`/`stat()` loop §14.22 already established, returning the raw
+  candidate `FileNode`s. `filterByCriteria`/`sortBy` stay on the UI thread in both cases — pure,
+  cheap, no I/O, no reason to cross threads for them.
+* **Progressive results from the recursive scan.** `IFileSystemRepository::listDirectoryRecursive`
+  takes an optional `onProgress` callback (`const std::vector<FileNode>&`), forwarded unchanged
+  through `FileNavigationUseCase`. `StandardFileSystemRepository`'s implementation calls it with the
+  files discovered so far, throttled to roughly once/second via `std::chrono::steady_clock` — a
+  caller must not add its own throttling on top. `AdvancedSearchService::requestRecursiveScan` takes
+  a matching `onProgress` parameter and bridges each tick back to the caller's thread with the same
+  `QPointer<QObject> guard(context)` + `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`
+  double-hop used for the final result, so a tick that arrives after `context` (the `TabViewModel`)
+  is destroyed is silently dropped. This is what lets a slow scan populate the results pane as it
+  goes instead of only once the whole subtree has been walked.
+* **A second `SQLiteTagRepository` connection.** `SQLiteTagRepository` wraps one `QSqlDatabase`
+  connection, and Qt requires a connection to be used only from the thread that opened it — the
+  existing single instance (owned by `CompositionRoot`, used from the UI thread) can't simply be
+  called from `AdvancedSearchWorker`'s thread too. `AdvancedSearchWorker` instead owns its **own**
+  `SQLiteTagRepository` (+ its own `TagManagementUseCase` wrapping it), pointed at the same
+  `explorer.db` file, constructed on the worker thread itself (after `moveToThread`, not in a
+  constructor that runs on the main thread) rather than injected from `CompositionRoot`.
+  `SQLiteTagRepository` now sets `PRAGMA busy_timeout` on open, since a second live connection to the
+  same file means a UI-thread tag write and a worker-thread tag read can now genuinely race; without
+  a timeout, either connection would fail immediately with `SQLITE_BUSY` instead of retrying briefly.
+  `FileNavigationUseCase`/`IFileSystemRepository`, by contrast, needed no such duplication —
+  `FilePreviewViewModel`'s worker thread already calls into the same shared instance concurrently
+  with the UI thread (§14.25), since plain `std::filesystem` calls carry no shared connection object
+  to serialize.
+* **`AdvancedSearchService`** (`adapters/viewmodels`) — owns the `QThread` + `AdvancedSearchWorker`,
+  owned long-lived by `CompositionRoot` (constructed with `appDataDir / "explorer.db"`, same lifetime
+  posture as `GitStatusService`). Exposes `requestRecursiveScan`/`requestTagFirstCandidates(QObject*
+  context, ..., callback)` — the `GitStatusService` shape (`QPointer<QObject> guard(context)` around
+  a `QMetaObject::invokeMethod` double-hop), not `FilePreviewViewModel`'s own-signals shape, because
+  the caller here (`TabViewModel`) is per-tab and can be destroyed (tab closed) while a request is
+  still in flight, unlike the single long-lived `FilePreviewViewModel`/`GitStatusService` instances.
+* **`TabViewModel`** gains an `int m_advancedSearchGeneration` counter, bumped on every
+  `runAdvancedSearch` dispatch and on `exitAdvancedSearch()`. Both the completion callback
+  (`onAdvancedSearchCandidatesReady`) and the new progress callback (`onAdvancedSearchProgress`,
+  below) check the generation they were dispatched with against the current one before applying a
+  result — a stale reply (superseded by a newer edit, or arriving after the panel was
+  closed/the tab navigated away) is silently discarded, the same pattern
+  `FilePreviewViewModel::onWorkerFinished` already uses. Re-filtering an already-cached
+  recursive-scan snapshot (no rescan needed) is unchanged and stays synchronous — it was never the
+  source of the freeze, being pure in-memory filtering. A new `advancedSearchLoading()` signal fires
+  right before each async dispatch, and a separate `advancedSearchLoadingFinished()` signal fires
+  once that dispatch's result actually arrives (as opposed to `advancedSearchResultsChanged`, which
+  also fires for every intermediate progress tick) — `SearchCriteriaPanel` uses the loading/
+  loadingFinished pair (plus `advancedSearchFailed`) to show a "Searching…" state on its Search
+  button for the whole scan, not just until the first partial result. The button stays *enabled*
+  throughout: clicking it (or editing a field) while a search is already running is how the user
+  restarts it with the latest criteria, per the reuse rule below.
+* **Reusing an in-flight scan instead of racing it.** `m_advancedSearchScanPending` tracks whether a
+  recursive scan for the current root is currently running. When a criteria edit arrives
+  (`updateAdvancedSearchCriteria`/`removeTagSearchCriterion`, `forceRescan=false`) while one is
+  pending, `runAdvancedSearch` does **not** dispatch a second concurrent walk of the same subtree —
+  it just re-filters `m_advancedSearchPartialSnapshot` (the candidate list from the most recent
+  progress tick, empty before the first tick arrives) synchronously against the latest criteria. The
+  scan that's already running keeps reporting progress — and eventually its final result — filtered
+  against whatever `m_advancedSearchCriteria` holds *at the time each tick fires*, so continuing to
+  type is never lost, and no CPU/disk work is duplicated just because the user typed again before
+  the previous walk finished. A `forceRescan=true` call (Search clicked, or the first tag added)
+  always dispatches fresh regardless, bumping the generation so any older in-flight scan's eventual
+  reply is discarded rather than clobbering the new one.
+* **Not built:** true cancellation of an in-flight scan/stat-loop — a superseded scan still runs to
+  completion in the background even though its result is discarded by generation (same posture as
+  §14.25's preview generation: neither `std::filesystem`'s recursive iterator nor a `stat()` loop is
+  interruptible mid-call); progress reporting for the tag-first path (cheap enough — one DB query +
+  a `stat()` loop — that it wasn't judged worth the complexity); the same async/progressive treatment
+  for quick search (§14.18), which keeps its original synchronous-on-the-UI-thread posture for now.

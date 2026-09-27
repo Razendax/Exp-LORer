@@ -238,7 +238,8 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectory(const 
     return Result<std::vector<FileNode>>::success(std::move(files));
 }
 
-Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursive(const std::filesystem::path& root) const
+Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursive(
+    const std::filesystem::path& root, const std::function<void(const std::vector<FileNode>&)>& onProgress) const
 {
     if (root == VirtualPaths::ThisPC)
     {
@@ -261,6 +262,9 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursi
     }
 
     std::vector<FileNode> files;
+    // Throttled to ~once/second (Architecture.md §14.37) so a caller reporting progress back to a
+    // Qt UI thread doesn't flood it with a signal/model-refresh per file discovered.
+    auto lastProgressTime = std::chrono::steady_clock::now();
     try
     {
         for (const auto& entry :
@@ -275,6 +279,16 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursi
             if (node.hasValue())
             {
                 files.push_back(std::move(node).value());
+            }
+
+            if (onProgress)
+            {
+                const auto now = std::chrono::steady_clock::now();
+                if (now - lastProgressTime >= std::chrono::seconds(1))
+                {
+                    onProgress(files);
+                    lastProgressTime = now;
+                }
             }
         }
     }
