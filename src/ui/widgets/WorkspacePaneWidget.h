@@ -19,6 +19,7 @@ class QLineEdit;
 class QAction;
 class QActionGroup;
 class QToolBar;
+class QToolButton;
 class QStackedWidget;
 class FileBrowserView;
 class WorkspacePaneViewModel;
@@ -32,9 +33,11 @@ class ColumnVisibilitySettingsViewModel;
 // One pane's full self-contained UI: its own toolbar (back/forward/up/refresh QActions, address
 // QLineEdit, view-mode QToolButton+menu — the per-pane counterpart of MainWindow's former
 // single-pane navigation toolbar, with its own QActionGroup instance) plus its own QTabWidget
-// (closable tabs, a "+" corner button to add a tab), one FileBrowserView page per TabViewModel
-// owned by the bound WorkspacePaneViewModel. Rebinds the toolbar/address bar to whichever
-// TabViewModel is the current tab whenever the tab strip's current index changes.
+// (closable tabs; the blank tab-bar space after the last tab -- always at least
+// kNewTabButtonReservedWidth wide, however many tabs are open -- is itself a borderless button
+// that adds a tab, see m_newTabButton), one FileBrowserView page per TabViewModel owned by the
+// bound WorkspacePaneViewModel. Rebinds the toolbar/address bar to whichever TabViewModel is the
+// current tab whenever the tab strip's current index changes.
 class WorkspacePaneWidget : public QWidget
 {
     Q_OBJECT
@@ -98,6 +101,13 @@ private:
     void addPageForTab(TabViewModel* tab, int index);
     void wireBrowserView(FileBrowserView* browserView, TabViewModel* tab);
 
+    // Caps the tab bar's own maximumWidth to tabWidgetWidth - kNewTabButtonReservedWidth (so its
+    // scroll buttons, not m_newTabButton's reserved strip, absorb any overflow), then repositions
+    // m_newTabButton to exactly cover the blank tab-bar space from the tab bar's new right edge to
+    // the tab widget's right edge. Called whenever either might have changed width (tabBar and
+    // tabWidget QEvent::Resize, caught in eventFilter).
+    void updateNewTabButtonGeometry();
+
     // Applies m_columnVisibilitySettingsViewModel's current defaults (read live, not a copied
     // snapshot) to a freshly created FileBrowserView -- called once per view from addPageForTab.
     void applyDefaultColumnVisibility(FileBrowserView* browserView);
@@ -158,6 +168,14 @@ private:
     TabViewModel* m_boundTab = nullptr;
 
     QTabWidget* m_tabWidget = nullptr;
+    // Blank, borderless button manually positioned (not a QTabWidget corner widget -- corner
+    // widgets don't reliably keep their reserved width once the tab bar's own scroll buttons
+    // engage, see the comment in createTabArea()) over the empty tab-bar strip after the last tab
+    // -- kNewTabButtonReservedWidth wide at minimum, guaranteed by capping the tab bar's own
+    // maximumWidth in updateNewTabButtonGeometry() -- so pressing anywhere in that "no tab here"
+    // space adds a tab. Styled to read as ordinary tab-bar space rather than a button (no
+    // hover/pressed/focus chrome).
+    QToolButton* m_newTabButton = nullptr;
     QToolBar* m_toolBar = nullptr;
     AddressBarWidget* m_addressBar = nullptr;
     StatusBarWidget* m_statusBar = nullptr;

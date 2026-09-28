@@ -106,6 +106,11 @@ namespace
         ViewMode::Tiles,
     };
 
+    // Width always left over after the tab bar for WorkspacePaneWidget::m_newTabButton to occupy
+    // -- see updateNewTabButtonGeometry(). Comparable to a single scroll-arrow-pair's width so the
+    // reserved strip doesn't look oddly large once scroll buttons are actually showing there too.
+    constexpr int kNewTabButtonReservedWidth = 32;
+
     QString viewModeLabel(ViewMode mode)
     {
         switch (mode)
@@ -298,16 +303,57 @@ void WorkspacePaneWidget::createTabArea()
     m_tabWidget->setTabsClosable(tabCloseButtonsEnabled());
     m_tabWidget->setMovable(false);
     m_tabWidget->tabBar()->installEventFilter(this);
+    m_tabWidget->installEventFilter(this);
 
-    auto* newTabButton = new QToolButton(m_tabWidget);
-    newTabButton->setObjectName(QStringLiteral("paneNewTabButton"));
-    newTabButton->setText(QStringLiteral("+"));
-    newTabButton->setToolTip(tr("New tab"));
-    connect(newTabButton, &QToolButton::clicked, this, &WorkspacePaneWidget::onNewTabRequested);
-    m_tabWidget->setCornerWidget(newTabButton, Qt::TopRightCorner);
+    // usesScrollButtons(true) (the default on most styles, forced on here since we're relying on
+    // it) makes the tab bar respond to running out of room by handing space to left/right scroll
+    // arrows instead of squeezing tabs down to nothing -- but only once IT decides it's short on
+    // room, which happens against whatever width it's actually given. A corner widget doesn't
+    // reliably shrink that given width: QTabWidget's corner-widget/tab-bar negotiation gives the
+    // tab bar priority once its scroll buttons are needed, clawing the corner widget's reserved
+    // slot back to zero right when it's needed most (the bug this fixes). Capping the tab bar's
+    // own maximumWidth in updateNewTabButtonGeometry() instead is a constraint Qt's layout never
+    // violates, so the scroll buttons end up drawn inside that reduced width and
+    // kNewTabButtonReservedWidth of pane width is always left over for m_newTabButton to occupy.
+    m_tabWidget->tabBar()->setUsesScrollButtons(true);
+
+    // Manually positioned (not a corner widget -- see the comment above and the member comment in
+    // the header) to cover the entire blank tab-bar strip after the last tab, however wide that
+    // happens to be, so pressing anywhere in it -- not just some fixed-size button -- adds a tab.
+    // Styled to be visually inert (no hover/pressed/focus chrome) so it still reads as ordinary
+    // tab-bar space.
+    m_newTabButton = new QToolButton(m_tabWidget);
+    m_newTabButton->setObjectName(QStringLiteral("paneNewTabButton"));
+    m_newTabButton->setFocusPolicy(Qt::NoFocus);
+    m_newTabButton->setStyleSheet(QStringLiteral(
+        "QToolButton#paneNewTabButton { border: none; background: transparent; }"
+        "QToolButton#paneNewTabButton:hover { border: none; background: transparent; }"
+        "QToolButton#paneNewTabButton:pressed { border: none; background: transparent; }"));
+    m_newTabButton->setToolTip(tr("New tab"));
+    connect(m_newTabButton, &QToolButton::clicked, this, &WorkspacePaneWidget::onNewTabRequested);
+    updateNewTabButtonGeometry();
+    m_newTabButton->raise();
 
     connect(m_tabWidget, &QTabWidget::currentChanged, this, &WorkspacePaneWidget::onTabWidgetCurrentChanged);
     connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, &WorkspacePaneWidget::onTabCloseRequested);
+}
+
+void WorkspacePaneWidget::updateNewTabButtonGeometry()
+{
+    QTabBar* tabBar = m_tabWidget->tabBar();
+
+    // See the comment above setUsesScrollButtons() in createTabArea(): this hard cap is what
+    // actually guarantees the reserved strip, rather than a corner widget.
+    const int maxTabBarWidth = std::max(0, m_tabWidget->width() - kNewTabButtonReservedWidth);
+    if (tabBar->maximumWidth() != maxTabBarWidth)
+    {
+        tabBar->setMaximumWidth(maxTabBarWidth);
+    }
+
+    const int height = tabBar->height() > 0 ? tabBar->height() : tabBar->sizeHint().height();
+    const int left = tabBar->geometry().right() + 1;
+    const int width = std::max(0, m_tabWidget->width() - left);
+    m_newTabButton->setGeometry(left, 0, width, height);
 }
 
 void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
@@ -1038,6 +1084,15 @@ void WorkspacePaneWidget::setActive(bool active)
 
 bool WorkspacePaneWidget::eventFilter(QObject* watched, QEvent* event)
 {
+    // The tab bar resizes whenever tabs are added/removed/relabeled or its scroll buttons
+    // appear/disappear, and the tab widget resizes whenever the pane itself does -- either can
+    // change how much blank strip is left after the last tab, so m_newTabButton's geometry needs
+    // recomputing on both.
+    if ((watched == m_tabWidget->tabBar() || watched == m_tabWidget) && event->type() == QEvent::Resize)
+    {
+        updateNewTabButtonGeometry();
+    }
+
     if (watched == m_tabWidget->tabBar() && event->type() == QEvent::MouseButtonRelease)
     {
         auto* mouseEvent = static_cast<QMouseEvent*>(event);
