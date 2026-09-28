@@ -1,5 +1,7 @@
 #include "FileListModel.h"
 
+#include <array>
+
 #include <QApplication>
 #include <QColor>
 #include <QDateTime>
@@ -47,6 +49,22 @@ namespace
     {
         const auto timeT = std::chrono::system_clock::to_time_t(timePoint);
         return QDateTime::fromSecsSinceEpoch(static_cast<qint64>(timeT)).toString(QStringLiteral("yyyy-MM-dd HH:mm"));
+    }
+
+    QString formatSize(std::uintmax_t bytes)
+    {
+        static constexpr std::array<const char*, 5> units = { "B", "KB", "MB", "GB", "TB" };
+
+        double value = static_cast<double>(bytes);
+        size_t unitIndex = 0;
+        while (value >= 1024.0 && unitIndex + 1 < units.size())
+        {
+            value /= 1024.0;
+            ++unitIndex;
+        }
+
+        const int precision = unitIndex == 0 ? 0 : 1;
+        return QStringLiteral("%1 %2").arg(value, 0, 'f', precision).arg(QLatin1String(units[unitIndex]));
     }
 
     SortCriterion criterionForColumn(int column)
@@ -248,6 +266,10 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
     {
         return entry.isDirectory();
     }
+    if (role == SizeBytesRole)
+    {
+        return entry.isDirectory() ? QVariant() : QVariant(static_cast<qulonglong>(entry.size()));
+    }
 
     if (role == Qt::DecorationRole && index.column() == NameColumn)
     {
@@ -367,7 +389,7 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
         case NameColumn:
             return entry.displayName() ? QString::fromStdString(*entry.displayName()) : toQString(entry.name());
         case SizeColumn:
-            return entry.isDirectory() ? QVariant() : QVariant(static_cast<qulonglong>(entry.size()));
+            return entry.isDirectory() ? QVariant() : QVariant(formatSize(entry.size()));
         case TypeColumn:
             return fileTypeLabel(entry);
         case DateModifiedColumn:

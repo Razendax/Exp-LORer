@@ -33,7 +33,7 @@ namespace
         const QModelIndex sizeIndex = index.sibling(index.row(), FileListModel::SizeColumn);
 
         const QString type = typeIndex.data(Qt::DisplayRole).toString();
-        const QVariant sizeValue = sizeIndex.data(Qt::DisplayRole);
+        const QVariant sizeValue = sizeIndex.data(FileListModel::SizeBytesRole);
 
         if (!sizeValue.isValid())
         {

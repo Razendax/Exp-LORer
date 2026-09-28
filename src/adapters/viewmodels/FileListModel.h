@@ -50,6 +50,10 @@ public:
         FilePathRole = Qt::UserRole + 1,
         IsDirectoryRole,
         TagsRole,
+        // Raw byte count for SizeColumn, since its DisplayRole is a human-readable "1.5 MB" string
+        // (see formatSize in FileListModel.cpp) -- consumers needing the number itself (e.g.
+        // FileTileDelegate re-formatting it via QLocale) should read this instead of parsing DisplayRole.
+        SizeBytesRole,
     };
 
     // `fileDecorationsChangeSource` is a bare QObject& (not FileDecorationsViewModel&, the concrete
