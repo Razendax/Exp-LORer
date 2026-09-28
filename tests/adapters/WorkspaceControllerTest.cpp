@@ -4,6 +4,7 @@
 
 #include "AdvancedSearchService.h"
 #include "DirectoryWatchUseCase.h"
+#include "DiskUsageService.h"
 #include "FileDecorationRules.h"
 #include "FileDecorationRulesStore.h"
 #include "FileDecorationsViewModel.h"
@@ -27,6 +28,7 @@
 #include "TabViewModel.h"
 #include "TagChangeNotifier.h"
 #include "TagManagementUseCase.h"
+#include "WindowsDiskUsageScanner.h"
 #include "WorkspaceController.h"
 #include "WorkspacePaneViewModel.h"
 
@@ -79,12 +81,14 @@ namespace
         NotificationCenter m_notificationCenter{ m_notificationSettings };
         AdvancedSearchService m_advancedSearchService{ m_fileNavigationUseCase, m_fileSystemRepository, fs::path(":memory:") };
         FileTagsService m_fileTagsService{ m_fileSystemRepository, fs::path(":memory:") };
+        WindowsDiskUsageScanner m_diskUsageScanner;
+        DiskUsageService m_diskUsageService{ m_diskUsageScanner, fs::path(":memory:") };
         TagChangeNotifier m_tagChangeNotifier;
         WorkspaceController m_controller{ m_fileNavigationUseCase,  m_tagManagementUseCase,     m_filePreviewUseCase,
                                            m_fileSystemRepository, m_fileDecorationRules,      m_fileDecorationsViewModel,
                                            m_gitStatusService,     m_directoryWatchUseCase,    m_folderMonitorUseCase,
                                            m_notificationCenter,   m_advancedSearchService,    m_fileTagsService,
-                                           m_tagChangeNotifier };
+                                           m_diskUsageService,     m_tagChangeNotifier };
     };
 }
 
@@ -120,7 +124,7 @@ TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsThroughRestoreFromConfig)
                                              m_fileSystemRepository, m_fileDecorationRules,        m_fileDecorationsViewModel,
                                              m_gitStatusService,     m_directoryWatchUseCase,      m_folderMonitorUseCase,
                                              m_notificationCenter,   m_advancedSearchService,      m_fileTagsService,
-                                             m_tagChangeNotifier };
+                                             m_diskUsageService,     m_tagChangeNotifier };
 
     const bool restored = restoredController.restoreFromConfig(captured);
     ASSERT_TRUE(restored);

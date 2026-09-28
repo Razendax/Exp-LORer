@@ -134,6 +134,8 @@ namespace
                 return QStringLiteral("ModificationDate");
             case SortCriterion::FileType:
                 return QStringLiteral("FileType");
+            case SortCriterion::Percent:
+                return QStringLiteral("Percent");
         }
         return QStringLiteral("Name");
     }
@@ -148,6 +150,8 @@ namespace
             return SortCriterion::ModificationDate;
         if (text == QStringLiteral("FileType"))
             return SortCriterion::FileType;
+        if (text == QStringLiteral("Percent"))
+            return SortCriterion::Percent;
         return fallback;
     }
 

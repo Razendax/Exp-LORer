@@ -7,10 +7,13 @@
 
 #include "AdvancedSearchService.h"
 #include "ArchiveExtensions.h"
+#include "DiskUsageNode.h"
+#include "DiskUsageService.h"
 #include "FileListModel.h"
 #include "FileNavigationUseCase.h"
 #include "FileTagsByPath.h"
 #include "FileTagsService.h"
+#include "FolderSizesByPath.h"
 #include "GitDirectoryStatus.h"
 #include "GitStatusService.h"
 #include "TagChangeNotifier.h"
@@ -31,7 +34,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
                            const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                            GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
                            AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
-                           TagChangeNotifier& tagChangeNotifier, QObject* parent)
+                           DiskUsageService& diskUsageService, TagChangeNotifier& tagChangeNotifier, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagManagementUseCase(tagManagementUseCase)
@@ -39,6 +42,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     , m_folderMonitorUseCase(folderMonitorUseCase)
     , m_advancedSearchService(advancedSearchService)
     , m_fileTagsService(fileTagsService)
+    , m_diskUsageService(diskUsageService)
     , m_tagChangeNotifier(tagChangeNotifier)
     , m_fileListModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_searchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
@@ -55,6 +59,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
                 requestGitStatus(path);
                 requestGitRepositorySummary(path);
                 requestFileTags(path, entries);
+                requestFolderSizes(path, entries);
             });
 
     // Architecture.md §14.x: a tag assigned/removed/renamed/deleted anywhere re-fetches this tab's
@@ -722,6 +727,38 @@ void TabViewModel::requestFileTags(const std::filesystem::path& path, const std:
         }
 
         m_fileListModel->setFileTags(result ? result.value() : TagsByPathMap{});
+    });
+}
+
+void TabViewModel::requestFolderSizes(const std::filesystem::path& path, const std::vector<FileNode>& entries)
+{
+    const bool hasSubdirectories =
+        std::any_of(entries.begin(), entries.end(), [](const FileNode& entry) { return entry.isDirectory(); });
+    if (!hasSubdirectories)
+    {
+        m_fileListModel->setFolderSizes({});
+        return;
+    }
+
+    m_diskUsageService.requestChildren(this, path, [this, path](Result<std::vector<DiskUsageNode>> result) {
+        if (path != currentPath())
+        {
+            // A newer navigation has since happened; this reply is stale.
+            return;
+        }
+
+        FolderSizesByPathMap sizes;
+        if (result)
+        {
+            for (const DiskUsageNode& node : result.value())
+            {
+                if (node.isDirectory)
+                {
+                    sizes.emplace(node.path, node.size);
+                }
+            }
+        }
+        m_fileListModel->setFolderSizes(sizes);
     });
 }
 

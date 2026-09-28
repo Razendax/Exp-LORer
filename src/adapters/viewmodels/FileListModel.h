@@ -14,6 +14,7 @@
 #include "FileNavigationUseCase.h"
 #include "FileNode.h"
 #include "FileTagsByPath.h"
+#include "FolderSizesByPath.h"
 #include "GitDirectoryStatus.h"
 #include "Tag.h"
 
@@ -42,6 +43,7 @@ public:
         GitStatusColumn,
         TagsColumn,
         DateCreatedColumn,
+        PercentColumn,
         ColumnCount,
     };
 
@@ -54,6 +56,10 @@ public:
         // (see formatSize in FileListModel.cpp) -- consumers needing the number itself (e.g.
         // FileTileDelegate re-formatting it via QLocale) should read this instead of parsing DisplayRole.
         SizeBytesRole,
+        // PercentColumn's raw ratio as a double in [0, 100], for PercentCellDelegate to paint the
+        // fill bar without re-parsing DisplayRole's "NN%" text. Invalid when this entry's own size
+        // is unknown (an unscanned directory) or the folder's total known size is 0.
+        PercentRole,
     };
 
     // `fileDecorationsChangeSource` is a bare QObject& (not FileDecorationsViewModel&, the concrete
@@ -131,6 +137,13 @@ public slots:
     // pills (untagged).
     void setFileTags(const TagsByPathMap& tagsByPath);
 
+    // Sets the cached recursive folder sizes shown in SizeColumn for directory rows (Architecture.md
+    // §14.39), keyed by each directory's absolute path. Called by TabViewModel::requestFolderSizes
+    // right after a directory listing, from a read-only DiskUsageService::requestChildren lookup
+    // (never triggers a scan). A directory absent from the map -- never covered by a "Scan Folder"/
+    // "Scan Drive" scan -- keeps showing a blank Size cell, same as before this existed.
+    void setFolderSizes(const FolderSizesByPathMap& sizesByPath);
+
 signals:
     void sortOrderChanged(SortCriterion criterion, bool ascending);
 
@@ -150,12 +163,25 @@ private:
     // any entry no rule matches.
     std::optional<FileDecorationRule> resolveDecoration(const FileNode& entry) const;
 
+    // Shared by SizeColumn/SizeBytesRole and PercentColumn/PercentRole: a file's own size is
+    // always known; a directory's is known only if m_folderSizesByPath already has a cached
+    // recursive size for it (i.e. covered by a prior "Scan Folder"/"Scan Drive" run,
+    // Architecture.md §14.39), otherwise std::nullopt (shown blank, never 0).
+    std::optional<std::uintmax_t> knownSizeOf(const FileNode& entry) const;
+
+    // Recomputes m_totalKnownSize from m_entries via knownSizeOf (unknown entries contribute 0) --
+    // the PercentColumn denominator, Architecture.md §14.39's "full children total" basis. Called
+    // whenever m_entries or m_folderSizesByPath changes.
+    void recomputeTotalSize();
+
     std::filesystem::path m_directory;
     std::vector<FileNode> m_entries;
     std::vector<int> m_visibleRows;
     QFileIconProvider m_iconProvider;
     GitStatusByPathMap m_gitStatusByPath;
     TagsByPathMap m_fileTagsByPath;
+    FolderSizesByPathMap m_folderSizesByPath;
+    std::uintmax_t m_totalKnownSize = 0;
 
     // Dimmed (QStyle::generatedIconPixmap) variant of a hidden entry's icon, cached per icon
     // "kind" (extension/directory/symlink, see data()) rather than rebuilt on every data() call --

@@ -20,6 +20,7 @@ add_library(explorer_domain STATIC
     FileTagAssociation.cpp
     FilePreview.h
     FilePreview.cpp
+    DiskUsageNode.h
 )
 
 target_include_directories(explorer_domain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

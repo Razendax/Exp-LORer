@@ -21,6 +21,7 @@ enum class SortCriterion
     Size,
     ModificationDate,
     FileType,
+    Percent,
 };
 
 // Fetches directory contents, sorts/filters them, and performs basic CRUD file operations
@@ -39,7 +40,13 @@ public:
         const std::filesystem::path& root, const std::function<void(const std::vector<FileNode>&)>& onProgress = nullptr) const;
     Result<FileNode> stat(const std::filesystem::path& path) const;
 
-    static std::vector<FileNode> sortBy(std::vector<FileNode> files, SortCriterion criterion, bool ascending = true);
+    // `sizeOf`, when set, overrides FileNode::size() for SortCriterion::Size/Percent comparisons --
+    // a directory's FileNode::size() is always 0 (Architecture.md: directories aren't recursively
+    // sized at listing time), so callers that know a directory's actual recursive size (e.g.
+    // FileListModel's cached "Scan Folder"/"Scan Drive" results, Architecture.md §14.39) can supply
+    // it here to sort directories by that value instead of leaving them all tied at 0.
+    static std::vector<FileNode> sortBy(std::vector<FileNode> files, SortCriterion criterion, bool ascending = true,
+                                          const std::function<std::uintmax_t(const FileNode&)>& sizeOf = {});
     static std::vector<FileNode> filterByExtension(std::vector<FileNode> files, const std::string& extension);
 
     // Empty query is a no-op passthrough. A query containing no '*'/'?' keeps the historical

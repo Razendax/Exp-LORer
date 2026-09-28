@@ -29,6 +29,7 @@ class AddressBarWidget;
 class BottomPanelWidget;
 class StatusBarWidget;
 class ColumnVisibilitySettingsViewModel;
+class DiskUsageService;
 
 // One pane's full self-contained UI: its own toolbar (back/forward/up/refresh QActions, address
 // QLineEdit, view-mode QToolButton+menu — the per-pane counterpart of MainWindow's former
@@ -45,6 +46,7 @@ class WorkspacePaneWidget : public QWidget
 public:
     explicit WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOperationsController* fileOperationsController,
                                   ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
+                                  DiskUsageService& diskUsageService,
                                   const std::array<int, FileListModel::ColumnCount>& initialColumnWidths = {},
                                   QWidget* parent = nullptr);
 
@@ -165,6 +167,7 @@ private:
     WorkspacePaneViewModel* m_pane = nullptr;
     FileOperationsController* m_fileOperationsController = nullptr;
     ColumnVisibilitySettingsViewModel& m_columnVisibilitySettingsViewModel;
+    DiskUsageService& m_diskUsageService;
     TabViewModel* m_boundTab = nullptr;
 
     QTabWidget* m_tabWidget = nullptr;

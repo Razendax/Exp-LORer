@@ -28,6 +28,7 @@ class FileIconDelegate;
 class FileNameEditDelegate;
 class SearchResultDelegate;
 class TagsCellDelegate;
+class PercentCellDelegate;
 
 // The tab's content widget: a QStackedWidget switching between a QListView (icon/list/tiles view
 // modes) and a QTreeView (details view mode), both bound to the same FileListModel
@@ -165,5 +166,6 @@ private:
     SearchResultDelegate* m_searchResultDelegate = nullptr;
     FileIconDelegate* m_iconDelegate = nullptr;
     TagsCellDelegate* m_tagsCellDelegate = nullptr;
+    PercentCellDelegate* m_percentCellDelegate = nullptr;
     QItemSelectionModel* m_selectionModel = nullptr;
 };

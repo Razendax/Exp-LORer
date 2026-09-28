@@ -33,6 +33,8 @@ add_library(explorer_ui_widgets STATIC
     TagChipWidget.cpp
     TagsCellDelegate.h
     TagsCellDelegate.cpp
+    PercentCellDelegate.h
+    PercentCellDelegate.cpp
     TagPanelWidget.h
     TagPanelWidget.cpp
     TagManagerDialog.h
@@ -49,6 +51,10 @@ add_library(explorer_ui_widgets STATIC
     MonitoringLogModel.cpp
     MonitoringPanelWidget.h
     MonitoringPanelWidget.cpp
+    PieChartWidget.h
+    PieChartWidget.cpp
+    FolderSizeWidget.h
+    FolderSizeWidget.cpp
     PreviewPanelWidget.h
     PreviewPanelWidget.cpp
     FolderPreviewListModel.h

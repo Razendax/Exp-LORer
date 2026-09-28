@@ -19,6 +19,7 @@ target_link_libraries(Exp-LORer PRIVATE
     explorer_adapters_media
     explorer_adapters_highlighting
     explorer_adapters_git
+    explorer_adapters_diskusage
     explorer_application
     Qt6::Widgets
 )

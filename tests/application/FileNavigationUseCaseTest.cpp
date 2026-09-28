@@ -113,6 +113,67 @@ TEST(FileNavigationUseCase, SortBySizeDescending)
     EXPECT_EQ(sorted[1].size(), 1u);
 }
 
+// Regression: Size (and Percent, which orders by the same byte count) must not apply the
+// "directories first" grouping -- folders and files should be interleaved purely by size.
+TEST(FileNavigationUseCase, SortBySizeDoesNotGroupFoldersBeforeFiles)
+{
+    std::vector<FileNode> files{
+        makeFile("C:/data/small_folder", 10, FileType::Directory),
+        makeFile("C:/data/big.txt", 100),
+        makeFile("C:/data/small.txt", 1),
+        makeFile("C:/data/big_folder", 50, FileType::Directory),
+    };
+
+    auto sorted = FileNavigationUseCase::sortBy(files, SortCriterion::Size, true);
+
+    ASSERT_EQ(sorted.size(), 4u);
+    EXPECT_EQ(sorted[0].name(), "small.txt");
+    EXPECT_EQ(sorted[1].name(), "small_folder");
+    EXPECT_EQ(sorted[2].name(), "big_folder");
+    EXPECT_EQ(sorted[3].name(), "big.txt");
+}
+
+// Regression: a directory's FileNode::size() is always 0 (StandardFileSystemRepository never
+// recurses into it while listing), so without an override every directory ties at 0 and
+// std::stable_sort leaves them in their prior relative order -- looking like "folders aren't
+// sorted at all". A caller that knows each directory's actual recursive size (FileListModel's
+// folder-size cache) must be able to sort by it via the `sizeOf` override.
+TEST(FileNavigationUseCase, SortBySizeUsesProvidedSizeResolverForDirectories)
+{
+    std::vector<FileNode> files{
+        makeFile("C:/data/folder_a", 0, FileType::Directory),
+        makeFile("C:/data/folder_b", 0, FileType::Directory),
+        makeFile("C:/data/folder_c", 0, FileType::Directory),
+    };
+
+    auto sorted = FileNavigationUseCase::sortBy(files, SortCriterion::Size, true, [](const FileNode& node) -> std::uintmax_t {
+        if (node.name() == "folder_a") return 300;
+        if (node.name() == "folder_b") return 100;
+        return 200;
+    });
+
+    ASSERT_EQ(sorted.size(), 3u);
+    EXPECT_EQ(sorted[0].name(), "folder_b");
+    EXPECT_EQ(sorted[1].name(), "folder_c");
+    EXPECT_EQ(sorted[2].name(), "folder_a");
+}
+
+TEST(FileNavigationUseCase, SortByPercentOrdersLikeSizeWithoutGroupingFolders)
+{
+    std::vector<FileNode> files{
+        makeFile("C:/data/folder", 100, FileType::Directory),
+        makeFile("C:/data/a.txt", 1),
+        makeFile("C:/data/b.txt", 50),
+    };
+
+    auto sorted = FileNavigationUseCase::sortBy(files, SortCriterion::Percent, false);
+
+    ASSERT_EQ(sorted.size(), 3u);
+    EXPECT_EQ(sorted[0].name(), "folder");
+    EXPECT_EQ(sorted[1].name(), "b.txt");
+    EXPECT_EQ(sorted[2].name(), "a.txt");
+}
+
 TEST(FileNavigationUseCase, SortByFileTypeOrdersByExtension)
 {
     std::vector<FileNode> files{

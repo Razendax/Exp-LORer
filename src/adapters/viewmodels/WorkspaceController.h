@@ -27,6 +27,7 @@ class MonitoringPanelViewModel;
 class NotificationCenter;
 class AdvancedSearchService;
 class FileTagsService;
+class DiskUsageService;
 class TagChangeNotifier;
 
 // Mediator owning all 4 WorkspacePaneViewModels (always instantiated, regardless of which are
@@ -48,7 +49,7 @@ public:
                          GitStatusService& gitStatusService, DirectoryWatchUseCase& directoryWatchUseCase,
                          FolderMonitorUseCase& folderMonitorUseCase, NotificationCenter& notificationCenter,
                          AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
-                         TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
+                         DiskUsageService& diskUsageService, TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
 
     WorkspacePaneViewModel* pane(WorkspacePaneId id) const;
     SplitLayout layout() const noexcept { return m_layout; }

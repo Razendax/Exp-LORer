@@ -10,6 +10,7 @@
 #include "ColumnVisibilitySettingsStore.h"
 #include "ColumnVisibilitySettingsViewModel.h"
 #include "DirectoryWatchUseCase.h"
+#include "DiskUsageService.h"
 #include "Favorites.h"
 #include "FavoritesStore.h"
 #include "FavoritesViewModel.h"
@@ -42,6 +43,7 @@
 #include "TagChangeNotifier.h"
 #include "TagManagementUseCase.h"
 #include "ThumbnailCache.h"
+#include "WindowsDiskUsageScanner.h"
 #include "WorkspacePaneId.h"
 
 class TabViewModel;
@@ -74,6 +76,7 @@ public:
     NotificationSettingsViewModel& notificationSettingsViewModel() noexcept { return m_notificationSettingsViewModel; }
     TagChangeNotifier& tagChangeNotifier() noexcept { return m_tagChangeNotifier; }
     ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel() noexcept { return m_columnVisibilitySettingsViewModel; }
+    DiskUsageService& diskUsageService() noexcept { return m_diskUsageService; }
 
 private:
     StandardFileSystemRepository m_fileSystemRepository;
@@ -163,4 +166,12 @@ private:
     ColumnVisibilitySettingsStore m_columnVisibilitySettingsStore;
     ColumnVisibilitySettings m_columnVisibilitySettings;
     ColumnVisibilitySettingsViewModel m_columnVisibilitySettingsViewModel;
+
+    // Architecture.md §14.39: the Folder Size bottom-panel tab's scan/lookup requests, off the Qt
+    // UI thread -- same "own dedicated thread + own SQLite connection" shape as
+    // m_advancedSearchService/m_fileTagsService, grouped here with the other shared
+    // background-work services. Scanner before service (construction order matches declaration
+    // order).
+    WindowsDiskUsageScanner m_diskUsageScanner;
+    DiskUsageService m_diskUsageService;
 };

@@ -1,7 +1,5 @@
 #include "FileListModel.h"
 
-#include <array>
-
 #include <QApplication>
 #include <QColor>
 #include <QDateTime>
@@ -15,6 +13,7 @@
 #include <QStyle>
 #include <QStyleOption>
 
+#include "FileSizeFormat.h"
 #include "PathUtf8.h"
 
 namespace
@@ -51,22 +50,6 @@ namespace
         return QDateTime::fromSecsSinceEpoch(static_cast<qint64>(timeT)).toString(QStringLiteral("yyyy-MM-dd HH:mm"));
     }
 
-    QString formatSize(std::uintmax_t bytes)
-    {
-        static constexpr std::array<const char*, 5> units = { "B", "KB", "MB", "GB", "TB" };
-
-        double value = static_cast<double>(bytes);
-        size_t unitIndex = 0;
-        while (value >= 1024.0 && unitIndex + 1 < units.size())
-        {
-            value /= 1024.0;
-            ++unitIndex;
-        }
-
-        const int precision = unitIndex == 0 ? 0 : 1;
-        return QStringLiteral("%1 %2").arg(value, 0, 'f', precision).arg(QLatin1String(units[unitIndex]));
-    }
-
     SortCriterion criterionForColumn(int column)
     {
         switch (column)
@@ -77,6 +60,8 @@ namespace
                 return SortCriterion::FileType;
             case FileListModel::DateModifiedColumn:
                 return SortCriterion::ModificationDate;
+            case FileListModel::PercentColumn:
+                return SortCriterion::Percent;
             case FileListModel::NameColumn:
             default:
                 return SortCriterion::Name;
@@ -93,6 +78,8 @@ namespace
                 return FileListModel::TypeColumn;
             case SortCriterion::ModificationDate:
                 return FileListModel::DateModifiedColumn;
+            case SortCriterion::Percent:
+                return FileListModel::PercentColumn;
             case SortCriterion::Name:
             default:
                 return FileListModel::NameColumn;
@@ -268,7 +255,18 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
     }
     if (role == SizeBytesRole)
     {
-        return entry.isDirectory() ? QVariant() : QVariant(static_cast<qulonglong>(entry.size()));
+        const auto size = knownSizeOf(entry);
+        return size ? QVariant(static_cast<qulonglong>(*size)) : QVariant();
+    }
+
+    if (role == PercentRole)
+    {
+        const auto size = knownSizeOf(entry);
+        if (!size || m_totalKnownSize == 0)
+        {
+            return QVariant();
+        }
+        return QVariant(100.0 * static_cast<double>(*size) / static_cast<double>(m_totalKnownSize));
     }
 
     if (role == Qt::DecorationRole && index.column() == NameColumn)
@@ -389,13 +387,30 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
         case NameColumn:
             return entry.displayName() ? QString::fromStdString(*entry.displayName()) : toQString(entry.name());
         case SizeColumn:
-            return entry.isDirectory() ? QVariant() : QVariant(formatSize(entry.size()));
+        {
+            if (!entry.isDirectory())
+            {
+                return QVariant(FileSizeFormat::format(entry.size()));
+            }
+            const auto cachedSize = m_folderSizesByPath.find(entry.path());
+            return cachedSize == m_folderSizesByPath.end() ? QVariant() : QVariant(FileSizeFormat::format(cachedSize->second));
+        }
         case TypeColumn:
             return fileTypeLabel(entry);
         case DateModifiedColumn:
             return formatDate(entry.modificationDate());
         case DateCreatedColumn:
             return formatDate(entry.creationDate());
+        case PercentColumn:
+        {
+            const auto size = knownSizeOf(entry);
+            if (!size || m_totalKnownSize == 0)
+            {
+                return QVariant();
+            }
+            const int percent = static_cast<int>(100.0 * static_cast<double>(*size) / static_cast<double>(m_totalKnownSize) + 0.5);
+            return QVariant(QStringLiteral("%1%").arg(percent));
+        }
         default:
             return {};
     }
@@ -444,6 +459,8 @@ QVariant FileListModel::headerData(int section, Qt::Orientation orientation, int
             return tr("Tags");
         case DateCreatedColumn:
             return tr("Date created");
+        case PercentColumn:
+            return tr("Percent");
         default:
             return {};
     }
@@ -473,11 +490,15 @@ void FileListModel::setEntries(const std::filesystem::path& directory, const std
 {
     beginResetModel();
     m_directory = directory;
-    m_entries = FileNavigationUseCase::sortBy(entries, m_sortCriterion, m_sortAscending);
-    // A new directory's git status/tags haven't been (re)computed yet -- start blank rather than
-    // momentarily showing the previous directory's badges/pills under the new listing.
+    m_entries = FileNavigationUseCase::sortBy(entries, m_sortCriterion, m_sortAscending,
+                                                [this](const FileNode& entry) { return knownSizeOf(entry).value_or(0); });
+    // A new directory's git status/tags/cached folder sizes haven't been (re)computed yet -- start
+    // blank rather than momentarily showing the previous directory's badges/pills/sizes under the
+    // new listing.
     m_gitStatusByPath.clear();
     m_fileTagsByPath.clear();
+    m_folderSizesByPath.clear();
+    recomputeTotalSize();
     rebuildVisibleRows();
     endResetModel();
 }
@@ -492,7 +513,8 @@ void FileListModel::setSortCriterion(SortCriterion criterion, bool ascending)
     beginResetModel();
     m_sortCriterion = criterion;
     m_sortAscending = ascending;
-    m_entries = FileNavigationUseCase::sortBy(std::move(m_entries), m_sortCriterion, m_sortAscending);
+    m_entries = FileNavigationUseCase::sortBy(std::move(m_entries), m_sortCriterion, m_sortAscending,
+                                                [this](const FileNode& entry) { return knownSizeOf(entry).value_or(0); });
     rebuildVisibleRows();
     endResetModel();
 
@@ -537,6 +559,42 @@ void FileListModel::setFileTags(const TagsByPathMap& tagsByPath)
     emit dataChanged(index(0, TagsColumn), index(static_cast<int>(m_visibleRows.size()) - 1, TagsColumn), { TagsRole });
 }
 
+void FileListModel::setFolderSizes(const FolderSizesByPathMap& sizesByPath)
+{
+    m_folderSizesByPath = sizesByPath;
+
+    // Folder sizes normally arrive asynchronously after the initial listing/sort (Architecture.md
+    // §14.39's DiskUsageService lookup runs on a worker thread) -- if rows are currently ordered by
+    // Size/Percent, that earlier sort had no known directory sizes to work with (every directory
+    // tied at 0), so it must be redone now that they're known, not just redisplayed.
+    if (!m_entries.empty() && (m_sortCriterion == SortCriterion::Size || m_sortCriterion == SortCriterion::Percent))
+    {
+        beginResetModel();
+        recomputeTotalSize();
+        m_entries = FileNavigationUseCase::sortBy(std::move(m_entries), m_sortCriterion, m_sortAscending,
+                                                    [this](const FileNode& entry) { return knownSizeOf(entry).value_or(0); });
+        rebuildVisibleRows();
+        endResetModel();
+        return;
+    }
+
+    recomputeTotalSize();
+
+    if (m_visibleRows.empty())
+    {
+        return;
+    }
+
+    emit dataChanged(index(0, SizeColumn), index(static_cast<int>(m_visibleRows.size()) - 1, SizeColumn),
+                      { Qt::DisplayRole, SizeBytesRole });
+
+    // Every row's percentage shifts when the denominator changes, not just the directory rows
+    // whose own size just became known -- so this is a separate full-column emit, not folded into
+    // the SizeColumn one above.
+    emit dataChanged(index(0, PercentColumn), index(static_cast<int>(m_visibleRows.size()) - 1, PercentColumn),
+                      { Qt::DisplayRole, PercentRole });
+}
+
 std::optional<FileDecorationRule> FileListModel::resolveDecoration(const FileNode& entry) const
 {
     if (entry.displayName())
@@ -566,6 +624,33 @@ void FileListModel::handleFileDecorationsChanged()
 
     emit dataChanged(index(0, 0), index(static_cast<int>(m_visibleRows.size()) - 1, ColumnCount - 1),
                       { Qt::ForegroundRole, Qt::FontRole });
+}
+
+std::optional<std::uintmax_t> FileListModel::knownSizeOf(const FileNode& entry) const
+{
+    if (!entry.isDirectory())
+    {
+        return entry.size();
+    }
+
+    const auto cachedSize = m_folderSizesByPath.find(entry.path());
+    if (cachedSize == m_folderSizesByPath.end())
+    {
+        return std::nullopt;
+    }
+    return cachedSize->second;
+}
+
+void FileListModel::recomputeTotalSize()
+{
+    m_totalKnownSize = 0;
+    for (const FileNode& entry : m_entries)
+    {
+        if (const auto size = knownSizeOf(entry))
+        {
+            m_totalKnownSize += *size;
+        }
+    }
 }
 
 void FileListModel::rebuildVisibleRows()

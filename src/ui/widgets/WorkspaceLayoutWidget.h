@@ -12,6 +12,7 @@ class QVBoxLayout;
 class WorkspaceController;
 class WorkspacePaneWidget;
 class ColumnVisibilitySettingsViewModel;
+class DiskUsageService;
 
 // Owns all 4 WorkspacePaneWidget instances up front, created once, never destroyed.
 // applyLayout(SplitLayout) tears down and rebuilds nested QSplitters from
@@ -27,6 +28,7 @@ class WorkspaceLayoutWidget : public QWidget
 public:
     explicit WorkspaceLayoutWidget(WorkspaceController* controller,
                                     ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
+                                    DiskUsageService& diskUsageService,
                                     const std::array<int, FileListModel::ColumnCount>& initialColumnWidths = {},
                                     QWidget* parent = nullptr);
 

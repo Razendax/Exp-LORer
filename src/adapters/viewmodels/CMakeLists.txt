@@ -6,6 +6,7 @@ add_library(explorer_adapters_viewmodels STATIC
     ViewMode.h
     FileListModel.h
     FileListModel.cpp
+    FileSizeFormat.h
     SplitLayout.h
     WorkspacePaneId.h
     WorkspaceConfig.h
@@ -46,7 +47,13 @@ add_library(explorer_adapters_viewmodels STATIC
     DirectoryWatchService.cpp
     MonitoringPanelViewModel.h
     MonitoringPanelViewModel.cpp
+    DiskUsageWorker.h
+    DiskUsageWorker.cpp
+    DiskUsageService.h
+    DiskUsageService.cpp
+    FolderSizeViewModel.h
+    FolderSizeViewModel.cpp
 )
 
 target_include_directories(explorer_adapters_viewmodels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(explorer_adapters_viewmodels PUBLIC explorer_application explorer_adapters_decoration explorer_adapters_notifications explorer_adapters_persistence Qt6::Core Qt6::Widgets)
+target_link_libraries(explorer_adapters_viewmodels PUBLIC explorer_application explorer_adapters_decoration explorer_adapters_notifications explorer_adapters_persistence explorer_adapters_diskusage Qt6::Core Qt6::Widgets)

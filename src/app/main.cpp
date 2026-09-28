@@ -105,7 +105,7 @@ int main(int argc, char* argv[])
                               compositionRoot.highlightThemeViewModel(), compositionRoot.fileDecorationsViewModel(),
                               compositionRoot.favoritesViewModel(), compositionRoot.notificationCenter(),
                               compositionRoot.notificationSettingsViewModel(), compositionRoot.columnVisibilitySettingsViewModel(),
-                              initialConfig);
+                              compositionRoot.diskUsageService(), initialConfig);
         mainWindow.show();
 
         if (!restored)

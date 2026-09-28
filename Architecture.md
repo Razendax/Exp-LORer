@@ -133,8 +133,8 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
 | Layer | Representative components |
 | --- | --- |
 | Domain | `FileNode`, `Tag`, `MediaMetadata`, `FileTagAssociation` |
-| Application | `FileNavigationUseCase`, `TagManagementUseCase`, `MediaProcessingUseCase`, and their Ports (§2.2) |
-| Adapters | `SQLiteTagRepository`, `StandardFileSystemRepository`, `ShellContextMenuProvider`, `AppConfigStore`, plus the ViewModels listed in §2.3 |
+| Application | `FileNavigationUseCase`, `TagManagementUseCase`, `MediaProcessingUseCase`, `DiskUsageUseCase` (§14.39), and their Ports (§2.2) |
+| Adapters | `SQLiteTagRepository`, `StandardFileSystemRepository`, `ShellContextMenuProvider`, `AppConfigStore`, `WindowsDiskUsageScanner`/`SQLiteDiskUsageRepository` (§14.39), plus the ViewModels listed in §2.3 |
 | UI (Widgets) | `MainWindow`, `WorkspaceLayoutWidget`, `WorkspacePaneWidget`, `FileBrowserView`, `RightPanelWidget`, `TagPanelWidget`, `ContextMenuBuilder`, dialogs |
 | UI (QML) | Media viewer (not yet implemented) |
 
@@ -236,7 +236,25 @@ CREATE TABLE FileTags (
     tag_id   INTEGER NOT NULL REFERENCES Tags(id) ON DELETE CASCADE,
     PRIMARY KEY (file_id, tag_id)
 );
+
+CREATE TABLE filesystem_index (
+    folder_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_id     INTEGER REFERENCES filesystem_index(folder_id) ON DELETE CASCADE,
+    path          TEXT NOT NULL UNIQUE,
+    name          TEXT NOT NULL,
+    size          INTEGER NOT NULL,
+    is_directory  INTEGER NOT NULL,
+    scanned_at    INTEGER NOT NULL
+);
+CREATE INDEX idx_filesystem_index_parent ON filesystem_index(parent_id);
 ```
+
+* **`filesystem_index`** backs Disk Usage / Folder Size (§14.39) — one row per scanned file/folder,
+  `size` already the recursive aggregate for a directory. Written/read by `SQLiteDiskUsageRepository`
+  over its own connection, separate from `SQLiteTagRepository`'s. **Not** gated by the
+  `PRAGMA user_version` check above — that counter belongs to the Tags/Files/FileTags schema, owned
+  by a different repository class/connection; this table's migration is a standalone
+  `CREATE TABLE IF NOT EXISTS`, sufficient since it has no evolving schema yet (§14.39).
 
 * **Path resolution:** `TagManagementUseCase` looks up by `path` first; if missing/changed, falls
   back to `file_hash` (+ `size`) to relocate the row and update `path`.
@@ -310,6 +328,7 @@ Exp-LORer/
 │   │   ├── notifications/ # NotificationType / NotificationSettings / NotificationCenter (§14.36)
 │   │   ├── media/       # QtMediaDecoder / FFmpegMediaDecoder (not yet implemented)
 │   │   ├── archive/     # ArchivePathResolver / LibArchiveReader / ArchiveIndexCache (§14.28)
+│   │   ├── diskusage/   # WindowsDiskUsageScanner / SQLiteDiskUsageRepository (§14.39)
 │   │   ├── git/         # LibGit2Repository / LibGit2StatusProvider (§14.31)
 │   │   └── logging/     # Logging (spdlog wrapper: rotating file + console sinks, §14.22)
 │   ├── ui/
@@ -2055,3 +2074,91 @@ Name is excluded from the toggle (always visible, matching Explorer).
 * **Not built:** sorting by Tags/Date created (no new `SortCriterion`); persisting a specific tab's
   chosen visibility across app restart (only the new-tab *default* is a persisted setting); tag
   chips in this column being clickable/interactive (unlike the tag panel's chips, §14.9/§14.22).
+
+### 14.39 Disk Usage / Folder Size (Bottom Panel)
+
+A second bottom-panel tab (§14.23), "Folder Size", next to "Terminal" in the same
+`BottomPanelWidget`: a pie chart of the current folder's largest immediate children (subfolders by
+recursive size, files by their own size) plus "Scan Drive"/"Scan Folder" buttons. Deliberately an
+isolated vertical slice — it does not touch `FileNode`, `FileListModel`, tagging, Preview, or any
+existing use case, aside from reusing `TabViewModel::navigateTo` for segment-click navigation.
+
+* **Domain:** `DiskUsageNode` (`path`, `name`, `size` — recursive aggregate for a directory, own
+  byte size for a file — `isDirectory`). Kept separate from `FileNode`, whose `size()` means the
+  item's own size only; overloading that meaning for directories would be a footgun for every
+  existing `FileNode` caller.
+* **Application (new Ports):** `IDiskUsageScanner::scan(root, onProgress)` — walks `root` and every
+  descendant, returning a flat `vector<DiskUsageNode>` with each directory's `size` already the
+  recursive aggregate (adapter computes it bottom-up during the walk); `onProgress` is a lightweight
+  periodic tick only (no partial data — v1 shows "Scanning..." on the button, not incremental
+  results). `IDiskUsageRepository::saveScan(scanRoot, nodes)` (batched upsert, one transaction) and
+  `::childrenOf(folder)` (cached immediate-children lookup, for redisplaying an already-scanned
+  folder after a segment-click navigation without rescanning). `DiskUsageUseCase` (new, stateless):
+  `scanAndPersist(root)`, `topChildren(children, max = 10)` (pure — sorts descending by size,
+  truncates; each shown segment's percentage is computed against the *full* children total, not the
+  sum of the shown top-N), `childrenFor(folder)` (passthrough to the repository).
+* **Adapters — `src/adapters/diskusage`** (new module): `WindowsDiskUsageScanner` (Windows-only,
+  `Result` failure elsewhere, same posture as `showProperties`) walks via `FindFirstFileW`/
+  `FindNextFileW` rather than `std::filesystem::recursive_directory_iterator` — sizes/attributes come
+  straight off `WIN32_FIND_DATAW`, no per-entry `stat()` call, which is the actual efficiency win for
+  this bulk-aggregation workload. Long paths go through the existing `WindowsLongPath::withPrefix()`
+  helper; wide `cFileName` converts straight to `std::filesystem::path`, never narrowed through
+  `.string()` (§6, non-ASCII names). Does not recurse into `FILE_ATTRIBUTE_REPARSE_POINT` directories
+  (avoids junction/symlink cycles and double-counted sizes). `SQLiteDiskUsageRepository` implements
+  `IDiskUsageRepository` against a `filesystem_index` table (schema in §7) over its **own**
+  `QSqlDatabase` connection to the same `explorer.db` file — driven from a background thread (below),
+  so it needs its own thread-affine connection, same rule as `AdvancedSearchWorker`'s dedicated
+  `SQLiteTagRepository` connection.
+* **Threading:** `DiskUsageService`/`DiskUsageWorker` (`src/adapters/viewmodels`), the same
+  "dedicated `QThread` + lazily-opened own SQLite connection" shape as `AdvancedSearchService`/
+  `AdvancedSearchWorker` and `FileTagsService`/`FileTagsWorker`. `requestScan(tabId, root)` is queued
+  to the worker thread; `scanFinished(tabId, Result<vector<DiskUsageNode>>)` marshals back to the UI
+  thread, `tabId` letting a stale result from an abandoned/replaced tab be discarded on arrival. No
+  cancellation in v1 — the `FindFirstFileW` walk isn't interruptible mid-call, same accepted posture
+  as Advanced Search's recursive scan (§5). Only one scan in flight per tab; both buttons disable for
+  the duration.
+* **ViewModel/UI:** `FolderSizeViewModel` (`adapters/viewmodels`, one per tab, same lazy-start
+  lifetime as `TerminalWidget`) tracks the tab's current path (read-only via
+  `TabViewModel::currentPathChanged`) and drives `DiskUsageService`. `PieChartWidget`
+  (`src/ui/widgets`, new, plain `QPainter` — no QtCharts/new vcpkg dependency for one chart) paints
+  up to 10 wedges with name/percentage/size labels and emits `segmentClicked(path)` on hit-test;
+  `FolderSizeWidget` hosts it plus the two buttons (text flips to "Scanning..." and both disable
+  while a scan is in flight) and wires `segmentClicked` to `TabViewModel::navigateTo`. Registered via
+  a second `bottomPanel->addPanelTab(tr("Folder Size"), folderSizeWidget)` call in
+  `WorkspacePaneWidget::addPageForTab`, right after the existing Terminal registration —
+  `BottomPanelWidget::addPanelTab`'s panel-tab button `objectName` becomes index-derived (it was
+  hardcoded for the single pre-existing Terminal caller) so each panel tab's button keeps a distinct,
+  stable id (§11's UI-Automation-id convention).
+* **Not built:** Linux scanner (Port exists; adapter returns "not supported"); a progress bar (button
+  text only); scan cancellation; auto re-scan on navigation, live directory-change events, or a
+  timer; persisting the bottom panel's expanded/collapsed state (unchanged from §14.23); any
+  integration with tagging/Preview/search.
+* **Details-view Size column integration:** `TabViewModel` reuses `DiskUsageService::requestChildren`
+  (the same cached-lookup call `FolderSizeViewModel` uses, no scan triggered) from its existing
+  `directoryContentsChanged` funnel, the same way it already enriches `FileListModel` with git
+  status/tags — dispatched alongside `requestGitStatus`/`requestFileTags`, discarding a stale reply
+  the same way (`path != currentPath()`). The result is pushed into a new
+  `FileListModel::setFolderSizes(FolderSizesByPathMap)` slot; `data()`'s `SizeColumn`/`SizeBytesRole`
+  show a directory row's cached recursive size when present, staying blank (as before) for a folder
+  never covered by a scan. Read-only and best-effort: it never triggers a scan itself, and is not
+  wired into the quick-search/advanced-search result models (`m_searchResultsModel`/
+  `m_advancedSearchResultsModel` stay untouched, matching the "not integrated with ... search" cut
+  above).
+* **Details-view Percent column:** a further `FileListModel::Column` (`PercentColumn`, appended
+  after `DateCreatedColumn` — same no-index-shift convention as every prior column addition) shows
+  each row's share of the current folder's total size as a blue-ish bar (filled left-to-right
+  proportional to the percentage) with the "NN%" label centered in the bar. Computed entirely
+  inside `FileListModel` from data it already holds — no new Port/thread — via a new
+  `knownSizeOf(FileNode)` helper (file → own size, directory → `m_folderSizesByPath` lookup or
+  unknown, replacing the duplicated logic `SizeColumn`/`SizeBytesRole` had) and a cached
+  `m_totalKnownSize` (sum of `knownSizeOf` over every entry in the folder, unknown entries
+  contributing 0, recomputed in `setEntries()` and `setFolderSizes()`), exposed to the paint code
+  via a new `PercentRole`. Denominator basis mirrors the pie chart's own rule above: the *full*
+  children total, not just the visible-after-hidden-filter subset — so, like the Size column, a
+  folder with unscanned subfolders won't have its rows' percentages sum to 100%, and an unscanned
+  subfolder's own row shows no bar. Painted by a new `PercentCellDelegate`
+  (`src/ui/widgets`, same `QStyledItemDelegate`-with-raw-`QPainter` shape as `TagsCellDelegate`,
+  installed via `setItemDelegateForColumn` the same way), which falls back to a blank cell when
+  `PercentRole` is invalid. No dedicated `SortCriterion`: clicking the header falls through to the
+  existing `default: SortCriterion::Name` branch, same as `GitStatusColumn`/`TagsColumn`/
+  `DateCreatedColumn` today.

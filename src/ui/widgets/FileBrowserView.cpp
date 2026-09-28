@@ -19,6 +19,7 @@
 #include "FileListModel.h"
 #include "FileNameEditDelegate.h"
 #include "FileTileDelegate.h"
+#include "PercentCellDelegate.h"
 #include "SearchResultDelegate.h"
 #include "TagsCellDelegate.h"
 
@@ -63,6 +64,7 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     m_tileDelegate = new FileTileDelegate(this);
     m_iconDelegate = new FileIconDelegate(this);
     m_tagsCellDelegate = new TagsCellDelegate(this);
+    m_percentCellDelegate = new PercentCellDelegate(this);
 
     m_treeView = new QTreeView(this);
     m_treeView->setObjectName(QStringLiteral("fileBrowserTreeView"));
@@ -86,6 +88,10 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
         // Per-column override (Architecture.md §14.x): takes precedence over the whole-view
         // delegate above for TagsColumn only, painting colored tag pills instead of plain text.
         m_treeView->setItemDelegateForColumn(FileListModel::TagsColumn, m_tagsCellDelegate);
+
+        // Per-column override for PercentColumn (Architecture.md §14.39): paints the blue fill bar
+        // + centered "NN%" label instead of plain text.
+        m_treeView->setItemDelegateForColumn(FileListModel::PercentColumn, m_percentCellDelegate);
     }
 
     // QHeaderView defaults its sort indicator to (column 0, DescendingOrder); QTreeView's

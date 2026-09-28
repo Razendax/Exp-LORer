@@ -220,6 +220,8 @@ namespace
                 return QObject::tr("Type");
             case SortCriterion::ModificationDate:
                 return QObject::tr("Date modified");
+            case SortCriterion::Percent:
+                return QObject::tr("Percent");
         }
         return QString();
     }
@@ -231,8 +233,8 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
                          HighlightThemeViewModel& highlightThemeViewModel, FileDecorationsViewModel& fileDecorationsViewModel,
                          FavoritesViewModel& favoritesViewModel, NotificationCenter& notificationCenter,
                          NotificationSettingsViewModel& notificationSettingsViewModel,
-                         ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, const AppConfig& initialConfig,
-                         QWidget* parent)
+                         ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, DiskUsageService& diskUsageService,
+                         const AppConfig& initialConfig, QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceController(workspaceController)
     , m_configStore(configStore)
@@ -245,6 +247,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_notificationCenter(notificationCenter)
     , m_notificationSettingsViewModel(notificationSettingsViewModel)
     , m_columnVisibilitySettingsViewModel(columnVisibilitySettingsViewModel)
+    , m_diskUsageService(diskUsageService)
     , m_columnWidths(initialConfig.detailsColumnWidths)
 {
     setObjectName(QStringLiteral("mainWindow"));
@@ -497,8 +500,8 @@ void MainWindow::createSearchBar(QToolBar* toolBar)
 
 void MainWindow::createWorkspace()
 {
-    m_workspaceLayoutWidget =
-        new WorkspaceLayoutWidget(m_workspaceController, m_columnVisibilitySettingsViewModel, m_columnWidths, this);
+    m_workspaceLayoutWidget = new WorkspaceLayoutWidget(m_workspaceController, m_columnVisibilitySettingsViewModel,
+                                                          m_diskUsageService, m_columnWidths, this);
     m_workspaceLayoutWidget->setObjectName(QStringLiteral("workspaceLayoutWidget"));
 
     // Right panel (Architecture.md §14.23): the side-panel counterpart of BottomPanelWidget, a

@@ -38,6 +38,7 @@ CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir)
     , m_columnVisibilitySettingsStore(appDataDir / "column_visibility.json")
     , m_columnVisibilitySettings(m_columnVisibilitySettingsStore.load())
     , m_columnVisibilitySettingsViewModel(m_columnVisibilitySettings, m_columnVisibilitySettingsStore)
+    , m_diskUsageService(m_diskUsageScanner, appDataDir / "explorer.db")
 {
 }
 
@@ -47,14 +48,16 @@ std::unique_ptr<TabViewModel> CompositionRoot::createTabViewModel()
 {
     return std::make_unique<TabViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
                                            m_fileDecorationsViewModel, m_gitStatusService, m_folderMonitorUseCase,
-                                           m_advancedSearchService, m_fileTagsService, m_tagChangeNotifier);
+                                           m_advancedSearchService, m_fileTagsService, m_diskUsageService,
+                                           m_tagChangeNotifier);
 }
 
 std::unique_ptr<WorkspacePaneViewModel> CompositionRoot::createWorkspacePaneViewModel(WorkspacePaneId id)
 {
     return std::make_unique<WorkspacePaneViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
                                                      m_fileDecorationsViewModel, m_gitStatusService, m_folderMonitorUseCase,
-                                                     m_advancedSearchService, m_fileTagsService, m_tagChangeNotifier, id);
+                                                     m_advancedSearchService, m_fileTagsService, m_diskUsageService,
+                                                     m_tagChangeNotifier, id);
 }
 
 std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController()
@@ -63,5 +66,5 @@ std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController(
                                                   m_fileSystemRepository, m_fileDecorationRules, m_fileDecorationsViewModel,
                                                   m_gitStatusService, m_directoryWatchUseCase, m_folderMonitorUseCase,
                                                   m_notificationCenter, m_advancedSearchService, m_fileTagsService,
-                                                  m_tagChangeNotifier);
+                                                  m_diskUsageService, m_tagChangeNotifier);
 }

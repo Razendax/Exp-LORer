@@ -30,6 +30,7 @@
 #include "ContextMenuBuilder.h"
 #include "FileBrowserView.h"
 #include "FileOperationsController.h"
+#include "FolderSizeWidget.h"
 #include "IContextMenuProvider.h"
 #include "PathContainment.h"
 #include "SearchCriteriaPanel.h"
@@ -136,12 +137,14 @@ namespace
 
 WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOperationsController* fileOperationsController,
                                           ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
+                                          DiskUsageService& diskUsageService,
                                           const std::array<int, FileListModel::ColumnCount>& initialColumnWidths,
                                           QWidget* parent)
     : QWidget(parent)
     , m_pane(pane)
     , m_fileOperationsController(fileOperationsController)
     , m_columnVisibilitySettingsViewModel(columnVisibilitySettingsViewModel)
+    , m_diskUsageService(diskUsageService)
     , m_initialColumnWidths(initialColumnWidths)
 {
     setObjectName(QStringLiteral("workspacePane_") + paneAutomationSuffix(pane->id()));
@@ -462,6 +465,10 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     auto* terminalWidget = new TerminalWidget(bottomPanel);
     terminalWidget->setObjectName(QStringLiteral("terminalWidget"));
     bottomPanel->addPanelTab(tr("Terminal"), terminalWidget);
+
+    // Second bottom-panel tab, right after Terminal (Architecture.md §14.39).
+    auto* folderSizeWidget = new FolderSizeWidget(m_diskUsageService, tab, bottomPanel);
+    bottomPanel->addPanelTab(tr("Folder Size"), folderSizeWidget);
 
     auto* splitter = new QSplitter(Qt::Vertical, m_tabWidget);
     splitter->addWidget(stack);

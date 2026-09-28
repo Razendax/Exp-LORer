@@ -243,4 +243,4 @@ TEST_P(AppConfigStoreSortCriterionRoundTripTest, RoundTripsThroughSaveAndLoad)
 
 INSTANTIATE_TEST_SUITE_P(AllValues, AppConfigStoreSortCriterionRoundTripTest,
                           ::testing::Values(SortCriterion::Name, SortCriterion::Size, SortCriterion::ModificationDate,
-                                             SortCriterion::FileType));
+                                             SortCriterion::FileType, SortCriterion::Percent));

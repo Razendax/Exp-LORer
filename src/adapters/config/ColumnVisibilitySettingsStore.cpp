@@ -20,6 +20,7 @@ namespace
     constexpr std::array<FileListModel::Column, FileListModel::ColumnCount - 1> kAllColumns = {
         FileListModel::SizeColumn,      FileListModel::TypeColumn,   FileListModel::DateModifiedColumn,
         FileListModel::GitStatusColumn, FileListModel::TagsColumn,   FileListModel::DateCreatedColumn,
+        FileListModel::PercentColumn,
     };
 
     QString toString(FileListModel::Column column)
@@ -38,6 +39,8 @@ namespace
                 return QStringLiteral("Tags");
             case FileListModel::DateCreatedColumn:
                 return QStringLiteral("DateCreated");
+            case FileListModel::PercentColumn:
+                return QStringLiteral("Percent");
             default:
                 return QString();
         }

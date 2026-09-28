@@ -7,6 +7,8 @@ add_library(explorer_application STATIC
     IGitBranchProvider.h
     IDirectoryWatcher.h
     IFolderMonitor.h
+    IDiskUsageScanner.h
+    IDiskUsageRepository.h
     FolderChangeEvent.h
     MediaExtensions.h
     ArchiveExtensions.h
@@ -17,6 +19,7 @@ add_library(explorer_application STATIC
     GitDirectoryStatus.h
     GitRepositorySummary.h
     FileTagsByPath.h
+    FolderSizesByPath.h
     FileNavigationUseCase.h
     FileNavigationUseCase.cpp
     TagManagementUseCase.h
@@ -33,6 +36,8 @@ add_library(explorer_application STATIC
     DirectoryWatchUseCase.cpp
     FolderMonitorUseCase.h
     FolderMonitorUseCase.cpp
+    DiskUsageUseCase.h
+    DiskUsageUseCase.cpp
 )
 
 target_include_directories(explorer_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

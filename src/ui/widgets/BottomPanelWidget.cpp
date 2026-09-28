@@ -37,9 +37,9 @@ int BottomPanelWidget::addPanelTab(const QString& label, QWidget* content)
     const int index = m_stack->addWidget(content);
 
     auto* button = new QToolButton(m_headerStrip);
-    // Only ever called once today, for the "Terminal" tab (WorkspacePaneWidget::addPageForTab) --
-    // this id would need to become index-dependent if a second bottom-panel tab is ever added.
-    button->setObjectName(QStringLiteral("bottomPanelTerminalButton"));
+    // Index-derived so each panel tab's button keeps a distinct, stable id (§11's UI-Automation-id
+    // convention) now that a second tab ("Folder Size", Architecture.md §14.39) has joined Terminal.
+    button->setObjectName(QStringLiteral("bottomPanelTabButton_%1").arg(index));
     button->setText(label);
     button->setCheckable(true);
 

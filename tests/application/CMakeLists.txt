@@ -8,6 +8,8 @@ add_executable(explorer_application_tests
     MockGitBranchProvider.h
     MockDirectoryWatcher.h
     MockFolderMonitor.h
+    MockDiskUsageScanner.h
+    MockDiskUsageRepository.h
     FileNavigationUseCaseTest.cpp
     TagManagementUseCaseTest.cpp
     MediaProcessingUseCaseTest.cpp
@@ -16,6 +18,7 @@ add_executable(explorer_application_tests
     GitBranchUseCaseTest.cpp
     DirectoryWatchUseCaseTest.cpp
     FolderMonitorUseCaseTest.cpp
+    DiskUsageUseCaseTest.cpp
 )
 
 target_link_libraries(explorer_application_tests PRIVATE

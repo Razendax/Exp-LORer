@@ -31,6 +31,8 @@ add_executable(explorer_adapters_tests
     LibGit2StatusProviderTest.cpp
     LibGit2RepositoryTest.cpp
     LibGit2BranchProviderTest.cpp
+    WindowsDiskUsageScannerTest.cpp
+    SQLiteDiskUsageRepositoryTest.cpp
 )
 
 target_link_libraries(explorer_adapters_tests PRIVATE
@@ -46,6 +48,7 @@ target_link_libraries(explorer_adapters_tests PRIVATE
     explorer_adapters_archive
     explorer_adapters_git
     explorer_adapters_favorites
+    explorer_adapters_diskusage
     Qt6::Core
     GTest::gtest
     GTest::gmock

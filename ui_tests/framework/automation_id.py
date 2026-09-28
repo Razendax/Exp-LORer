@@ -107,8 +107,14 @@ class AutomationID:
     ADVANCED_SEARCH_CLOSE_BUTTON = "advancedSearchCloseButton"
     SEARCH_TAG_EDIT = "searchTagEdit"
     BOTTOM_PANEL = "bottomPanelWidget"
-    BOTTOM_PANEL_TERMINAL_BUTTON = "bottomPanelTerminalButton"
+    # Index-derived (BottomPanelWidget::addPanelTab), in registration order: Terminal is tab 0,
+    # Folder Size (Architecture.md §14.39) is tab 1.
+    BOTTOM_PANEL_TERMINAL_BUTTON = "bottomPanelTabButton_0"
+    BOTTOM_PANEL_FOLDER_SIZE_BUTTON = "bottomPanelTabButton_1"
     TERMINAL_WIDGET = "terminalWidget"
+    FOLDER_SIZE_PIE_CHART = "pieChartWidget"
+    FOLDER_SIZE_SCAN_FOLDER_BUTTON = "folderSizeScanFolderButton"
+    FOLDER_SIZE_SCAN_DRIVE_BUTTON = "folderSizeScanDriveButton"
 
     # --- Preview Panel (PreviewPanelWidget.cpp, singleton) ---
     PREVIEW_IMAGE_LABEL = "previewImageLabel"

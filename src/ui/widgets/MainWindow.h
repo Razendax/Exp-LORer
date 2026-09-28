@@ -42,6 +42,7 @@ class NotificationOverlayWidget;
 class TabViewModel;
 class MainStatusBarWidget;
 class DriveSpaceInfoWorker;
+class DiskUsageService;
 
 // Application shell: menu bar (File/Edit/View/Favorites/Tools/Help), a small Layout toolbar, and
 // a WorkspaceLayoutWidget as central widget hosting up to 4 independent WorkspacePaneWidget
@@ -57,8 +58,8 @@ public:
                HighlightThemeViewModel& highlightThemeViewModel, FileDecorationsViewModel& fileDecorationsViewModel,
                FavoritesViewModel& favoritesViewModel, NotificationCenter& notificationCenter,
                NotificationSettingsViewModel& notificationSettingsViewModel,
-               ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, const AppConfig& initialConfig,
-               QWidget* parent = nullptr);
+               ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, DiskUsageService& diskUsageService,
+               const AppConfig& initialConfig, QWidget* parent = nullptr);
     ~MainWindow() override;
 
 protected:
@@ -116,6 +117,7 @@ private:
     NotificationCenter& m_notificationCenter;
     NotificationSettingsViewModel& m_notificationSettingsViewModel;
     ColumnVisibilitySettingsViewModel& m_columnVisibilitySettingsViewModel;
+    DiskUsageService& m_diskUsageService;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;
     PreviewPanelWidget* m_previewPanelWidget = nullptr;

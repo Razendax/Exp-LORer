@@ -16,6 +16,7 @@
 #include "FileNode.h"
 #include "FileTagsByPath.h"
 #include "FolderMonitorUseCase.h"
+#include "FolderSizesByPath.h"
 #include "GitRepositorySummary.h"
 #include "NavigationHistory.h"
 #include "SearchCriteria.h"
@@ -31,6 +32,7 @@ class GitStatusService;
 class AdvancedSearchService;
 class FileTagsService;
 class TagChangeNotifier;
+class DiskUsageService;
 
 // Binds address-bar/navigation-toolbar UI to FileNavigationUseCase and NavigationHistory for a
 // single tab. Owns the FileListModel that backs that tab's FileBrowserView, wiring
@@ -48,7 +50,7 @@ public:
                  const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                  GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
                  AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
-                 TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
+                 DiskUsageService& diskUsageService, TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
 
     ~TabViewModel() override;
 
@@ -286,6 +288,13 @@ private:
     // requestGitStatus does.
     void requestFileTags(const std::filesystem::path& path, const std::vector<FileNode>& entries);
 
+    // Wired into the same directoryContentsChanged funnel as requestGitStatus/requestFileTags
+    // (Architecture.md §14.39). A read-only cached lookup -- never triggers a scan -- via
+    // DiskUsageService::requestChildren (the same call FolderSizeViewModel's pie chart uses); a
+    // no-op fast path skips the round trip entirely when `entries` has no subdirectories. Dropping a
+    // reply for a path that's no longer current the same way requestGitStatus does.
+    void requestFolderSizes(const std::filesystem::path& path, const std::vector<FileNode>& entries);
+
     // Fetches tags for every file in `candidates` and, once they arrive (discarded if
     // `generation` no longer matches m_searchGeneration), caches them into m_searchSnapshotTags and
     // applies them to m_searchResultsModel. Used whenever the search snapshot itself changes
@@ -344,6 +353,7 @@ private:
     FolderMonitorUseCase& m_folderMonitorUseCase;
     AdvancedSearchService& m_advancedSearchService;
     FileTagsService& m_fileTagsService;
+    DiskUsageService& m_diskUsageService;
     TagChangeNotifier& m_tagChangeNotifier;
     NavigationHistory m_history;
     ViewMode m_viewMode = ViewMode::Details;

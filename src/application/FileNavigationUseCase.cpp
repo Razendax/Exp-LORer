@@ -39,10 +39,18 @@ Result<FileNode> FileNavigationUseCase::stat(const std::filesystem::path& path) 
     return m_fileSystemRepository.stat(path);
 }
 
-std::vector<FileNode> FileNavigationUseCase::sortBy(std::vector<FileNode> files, SortCriterion criterion, bool ascending)
+std::vector<FileNode> FileNavigationUseCase::sortBy(std::vector<FileNode> files, SortCriterion criterion, bool ascending,
+                                                      const std::function<std::uintmax_t(const FileNode&)>& sizeOf)
 {
-    auto less = [criterion](const FileNode& lhs, const FileNode& rhs) {
-        if (lhs.isDirectory() != rhs.isDirectory())
+    const auto effectiveSize = [&sizeOf](const FileNode& node) {
+        return sizeOf ? sizeOf(node) : node.size();
+    };
+
+    auto less = [criterion, &effectiveSize](const FileNode& lhs, const FileNode& rhs) {
+        // Size/Percent order files and folders together by their byte count, so the usual
+        // "directories first" grouping below would be misleading for them and is skipped.
+        const bool groupDirectoriesFirst = criterion != SortCriterion::Size && criterion != SortCriterion::Percent;
+        if (groupDirectoriesFirst && lhs.isDirectory() != rhs.isDirectory())
         {
             // Directories are grouped before files; reversing the whole comparator for
             // descending order (below) flips this alongside the criterion, so folders lead in
@@ -55,7 +63,8 @@ std::vector<FileNode> FileNavigationUseCase::sortBy(std::vector<FileNode> files,
             case SortCriterion::Name:
                 return toLower(PathUtf8::toUtf8(lhs.name())) < toLower(PathUtf8::toUtf8(rhs.name()));
             case SortCriterion::Size:
-                return lhs.size() < rhs.size();
+            case SortCriterion::Percent:
+                return effectiveSize(lhs) < effectiveSize(rhs);
             case SortCriterion::ModificationDate:
                 return lhs.modificationDate() < rhs.modificationDate();
             case SortCriterion::FileType:
