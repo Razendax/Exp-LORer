@@ -62,6 +62,10 @@ TEST_F(AppConfigStoreTest, LoadOnMissingFileReturnsDefaults)
     {
         EXPECT_EQ(width, 0);
     }
+    for (int logicalColumn : config.detailsColumnOrder)
+    {
+        EXPECT_EQ(logicalColumn, 0);
+    }
 }
 
 TEST_F(AppConfigStoreTest, SaveThenLoadRoundTripsWindowGeometryAndWorkspace)
@@ -72,6 +76,7 @@ TEST_F(AppConfigStoreTest, SaveThenLoadRoundTripsWindowGeometryAndWorkspace)
     original.windowGeometry = QByteArray("not-real-geometry-bytes");
     original.workspace = sampleWorkspaceConfig();
     original.detailsColumnWidths = { 220, 90, 130, 160 };
+    original.detailsColumnOrder = { 2, 0, 1, 3 };
 
     ASSERT_TRUE(store.save(original));
     ASSERT_TRUE(fs::exists(m_configPath));
@@ -82,6 +87,7 @@ TEST_F(AppConfigStoreTest, SaveThenLoadRoundTripsWindowGeometryAndWorkspace)
     EXPECT_EQ(loaded.workspace.layout, original.workspace.layout);
     EXPECT_EQ(loaded.workspace.focusedPane, original.workspace.focusedPane);
     EXPECT_EQ(loaded.detailsColumnWidths, original.detailsColumnWidths);
+    EXPECT_EQ(loaded.detailsColumnOrder, original.detailsColumnOrder);
 
     for (size_t i = 0; i < loaded.workspace.panes.size(); ++i)
     {
@@ -170,6 +176,11 @@ TEST_F(AppConfigStoreTest, LoadOnPartialOrMalformedFieldsFallsBackPerField)
     {
         EXPECT_EQ(width, 0);
     }
+    // Missing detailsColumnOrder falls back to all-zero ("unset").
+    for (int logicalColumn : config.detailsColumnOrder)
+    {
+        EXPECT_EQ(logicalColumn, 0);
+    }
 }
 
 TEST_F(AppConfigStoreTest, LoadOnShortDetailsColumnWidthsArrayFillsRemainingColumnsWithZero)
@@ -186,6 +197,22 @@ TEST_F(AppConfigStoreTest, LoadOnShortDetailsColumnWidthsArrayFillsRemainingColu
     EXPECT_EQ(config.detailsColumnWidths[1], 100);
     EXPECT_EQ(config.detailsColumnWidths[2], 0);
     EXPECT_EQ(config.detailsColumnWidths[3], 0);
+}
+
+TEST_F(AppConfigStoreTest, LoadOnShortDetailsColumnOrderArrayFillsRemainingColumnsWithZero)
+{
+    {
+        std::ofstream stream(m_configPath, std::ios::binary);
+        stream << R"({ "version": 1, "detailsColumnOrder": [3, 1] })";
+    }
+
+    AppConfigStore store{ m_configPath };
+    const AppConfig config = store.load();
+
+    EXPECT_EQ(config.detailsColumnOrder[0], 3);
+    EXPECT_EQ(config.detailsColumnOrder[1], 1);
+    EXPECT_EQ(config.detailsColumnOrder[2], 0);
+    EXPECT_EQ(config.detailsColumnOrder[3], 0);
 }
 
 class AppConfigStoreSplitLayoutRoundTripTest : public AppConfigStoreTest, public ::testing::WithParamInterface<SplitLayout>

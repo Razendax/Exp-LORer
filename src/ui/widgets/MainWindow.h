@@ -178,4 +178,8 @@ private:
     // WorkspaceLayoutWidget so every pane's FileBrowserView starts out sized this way, then
     // refreshed from the focused pane's live widths in closeEvent() right before saving.
     std::array<int, FileListModel::ColumnCount> m_columnWidths{};
+
+    // Details-view column order (Architecture.md §14.14), same load/refresh/save lifecycle as
+    // m_columnWidths above.
+    std::array<int, FileListModel::ColumnCount> m_columnOrder{};
 };

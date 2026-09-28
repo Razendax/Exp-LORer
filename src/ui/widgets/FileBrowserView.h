@@ -62,6 +62,14 @@ public:
     std::array<int, FileListModel::ColumnCount> columnWidths() const;
     void setColumnWidths(const std::array<int, FileListModel::ColumnCount>& widths);
 
+    // Details-view (QTreeView) column left-to-right order (Architecture.md §14.14): entry [visual
+    // position] = the FileListModel::Column logical index displayed there. setColumnOrder() is a
+    // no-op if `order` isn't a valid permutation of 0..ColumnCount-1 (the "unset, use QHeaderView's
+    // own default order" sentinel used by a fresh AppConfig -- a zero-filled array), so it's safe
+    // to call unconditionally right after construction, same posture as setColumnWidths() above.
+    std::array<int, FileListModel::ColumnCount> columnOrder() const;
+    void setColumnOrder(const std::array<int, FileListModel::ColumnCount>& order);
+
     // Per-tab Details-view column visibility (Architecture.md §14.x), toggled via the header's
     // right-click menu. Unlike columnWidths()/setColumnWidths() above, this is deliberately NOT
     // part of any persisted config -- each tab's visibility lives only on its own QHeaderView

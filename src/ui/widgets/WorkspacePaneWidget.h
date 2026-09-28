@@ -48,6 +48,7 @@ public:
                                   ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
                                   DiskUsageService& diskUsageService,
                                   const std::array<int, FileListModel::ColumnCount>& initialColumnWidths = {},
+                                  const std::array<int, FileListModel::ColumnCount>& initialColumnOrder = {},
                                   QWidget* parent = nullptr);
 
     WorkspacePaneViewModel* pane() const noexcept { return m_pane; }
@@ -67,6 +68,9 @@ public:
     // showing (Architecture.md §14.14), falling back to initialColumnWidths if the current tab's
     // stack page can't be resolved to a FileBrowserView (e.g. the pane has no tabs at all).
     std::array<int, FileListModel::ColumnCount> currentColumnWidths() const;
+
+    // Details-view column order counterpart of currentColumnWidths() above (Architecture.md §14.14).
+    std::array<int, FileListModel::ColumnCount> currentColumnOrder() const;
 
     // Shared with MainWindow's View-menu "Show shell extensions in context menu" QSettings-backed
     // toggle (Architecture.md §14.13) — read independently by each pane at build-menu time rather
@@ -195,4 +199,8 @@ private:
     // Applied to every FileBrowserView this pane creates (addPageForTab), and the fallback for
     // currentColumnWidths() when there's no current tab to read live widths from.
     std::array<int, FileListModel::ColumnCount> m_initialColumnWidths{};
+
+    // Applied to every FileBrowserView this pane creates (addPageForTab), and the fallback for
+    // currentColumnOrder() when there's no current tab to read live order from.
+    std::array<int, FileListModel::ColumnCount> m_initialColumnOrder{};
 };

@@ -21,4 +21,11 @@ struct AppConfig
     // means "unset": FileBrowserView leaves that column at QHeaderView's own default width instead
     // of forcing it, so a fresh install still gets Qt's normal initial sizing.
     std::array<int, FileListModel::ColumnCount> detailsColumnWidths{};
+
+    // Details-view column left-to-right order: entry [visual position] = FileListModel::Column
+    // logical index shown there, same cross-tab/pane sharing rationale as detailsColumnWidths
+    // above. Zero-initialized (all entries 0) is the "unset" sentinel -- that's not a valid
+    // permutation of 0..ColumnCount-1, so FileBrowserView::setColumnOrder() detects it and leaves
+    // QHeaderView's own default left-to-right order alone on a fresh install.
+    std::array<int, FileListModel::ColumnCount> detailsColumnOrder{};
 };

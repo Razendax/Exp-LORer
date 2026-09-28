@@ -30,6 +30,7 @@ public:
                                     ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
                                     DiskUsageService& diskUsageService,
                                     const std::array<int, FileListModel::ColumnCount>& initialColumnWidths = {},
+                                    const std::array<int, FileListModel::ColumnCount>& initialColumnOrder = {},
                                     QWidget* parent = nullptr);
 
     WorkspacePaneWidget* paneWidget(WorkspacePaneId id) const;

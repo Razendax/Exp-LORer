@@ -291,6 +291,14 @@ AppConfig AppConfigStore::load() const
         config.detailsColumnWidths[static_cast<size_t>(i)] = columnWidths.at(i).toInt();
     }
 
+    // Same tolerant posture as detailsColumnWidths above; FileBrowserView::setColumnOrder() further
+    // validates the result is an actual permutation before applying it.
+    const QJsonArray columnOrder = root->value(QStringLiteral("detailsColumnOrder")).toArray();
+    for (int i = 0; i < columnOrder.size() && i < static_cast<int>(config.detailsColumnOrder.size()); ++i)
+    {
+        config.detailsColumnOrder[static_cast<size_t>(i)] = columnOrder.at(i).toInt();
+    }
+
     return config;
 }
 
@@ -302,11 +310,18 @@ bool AppConfigStore::save(const AppConfig& config) const
         columnWidths.append(width);
     }
 
+    QJsonArray columnOrder;
+    for (int logicalColumn : config.detailsColumnOrder)
+    {
+        columnOrder.append(logicalColumn);
+    }
+
     QJsonObject root;
     root[QStringLiteral("version")] = kCurrentVersion;
     root[QStringLiteral("windowGeometry")] = QString::fromLatin1(config.windowGeometry.toBase64());
     root[QStringLiteral("workspace")] = workspaceConfigToJson(config.workspace);
     root[QStringLiteral("detailsColumnWidths")] = columnWidths;
+    root[QStringLiteral("detailsColumnOrder")] = columnOrder;
 
     return JsonFileStore::trySave(m_configFilePath, root, "AppConfigStore");
 }

@@ -139,6 +139,7 @@ WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOpera
                                           ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
                                           DiskUsageService& diskUsageService,
                                           const std::array<int, FileListModel::ColumnCount>& initialColumnWidths,
+                                          const std::array<int, FileListModel::ColumnCount>& initialColumnOrder,
                                           QWidget* parent)
     : QWidget(parent)
     , m_pane(pane)
@@ -146,6 +147,7 @@ WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOpera
     , m_columnVisibilitySettingsViewModel(columnVisibilitySettingsViewModel)
     , m_diskUsageService(diskUsageService)
     , m_initialColumnWidths(initialColumnWidths)
+    , m_initialColumnOrder(initialColumnOrder)
 {
     setObjectName(QStringLiteral("workspacePane_") + paneAutomationSuffix(pane->id()));
 
@@ -366,6 +368,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     auto* browserView = new FileBrowserView(tab->fileListModel(), stack);
     browserView->setViewMode(tab->viewMode());
     browserView->setColumnWidths(m_initialColumnWidths);
+    browserView->setColumnOrder(m_initialColumnOrder);
     applyDefaultColumnVisibility(browserView);
     wireBrowserView(browserView, tab);
     stack->addWidget(browserView); // page 0: normal browsing
@@ -374,6 +377,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     searchResultsView->setObjectName(QStringLiteral("quickSearchResultsView")); // overrides the default "fileBrowserView" id
     searchResultsView->setViewMode(tab->viewMode());
     searchResultsView->setColumnWidths(m_initialColumnWidths);
+    searchResultsView->setColumnOrder(m_initialColumnOrder);
     applyDefaultColumnVisibility(searchResultsView);
     wireBrowserView(searchResultsView, tab);
     stack->addWidget(searchResultsView); // page 1: search results
@@ -381,6 +385,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     auto* advancedSearchPane = new SearchResultsPane(tab->advancedSearchResultsModel(), stack);
     advancedSearchPane->setCriteria(tab->advancedSearchCriteria(), tab->resolveTagCriteria());
     advancedSearchPane->browserView()->setColumnWidths(m_initialColumnWidths);
+    advancedSearchPane->browserView()->setColumnOrder(m_initialColumnOrder);
     applyDefaultColumnVisibility(advancedSearchPane->browserView());
     wireBrowserView(advancedSearchPane->browserView(), tab);
     stack->addWidget(advancedSearchPane); // page 2: advanced search results
@@ -977,6 +982,16 @@ std::array<int, FileListModel::ColumnCount> WorkspacePaneWidget::currentColumnWi
     }
 
     return m_initialColumnWidths;
+}
+
+std::array<int, FileListModel::ColumnCount> WorkspacePaneWidget::currentColumnOrder() const
+{
+    if (auto* browserView = currentBrowserView())
+    {
+        return browserView->columnOrder();
+    }
+
+    return m_initialColumnOrder;
 }
 
 FileBrowserView* WorkspacePaneWidget::currentBrowserView() const

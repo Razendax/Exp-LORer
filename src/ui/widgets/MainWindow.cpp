@@ -249,6 +249,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_columnVisibilitySettingsViewModel(columnVisibilitySettingsViewModel)
     , m_diskUsageService(diskUsageService)
     , m_columnWidths(initialConfig.detailsColumnWidths)
+    , m_columnOrder(initialConfig.detailsColumnOrder)
 {
     setObjectName(QStringLiteral("mainWindow"));
     setWindowTitle(tr("Exp-LORer"));
@@ -501,7 +502,7 @@ void MainWindow::createSearchBar(QToolBar* toolBar)
 void MainWindow::createWorkspace()
 {
     m_workspaceLayoutWidget = new WorkspaceLayoutWidget(m_workspaceController, m_columnVisibilitySettingsViewModel,
-                                                          m_diskUsageService, m_columnWidths, this);
+                                                          m_diskUsageService, m_columnWidths, m_columnOrder, this);
     m_workspaceLayoutWidget->setObjectName(QStringLiteral("workspaceLayoutWidget"));
 
     // Right panel (Architecture.md §14.23): the side-panel counterpart of BottomPanelWidget, a
@@ -995,8 +996,10 @@ void MainWindow::closeEvent(QCloseEvent* event)
     if (WorkspacePaneWidget* focusedPaneWidget = m_workspaceLayoutWidget->paneWidget(m_workspaceController->focusedPane()))
     {
         m_columnWidths = focusedPaneWidget->currentColumnWidths();
+        m_columnOrder = focusedPaneWidget->currentColumnOrder();
     }
     config.detailsColumnWidths = m_columnWidths;
+    config.detailsColumnOrder = m_columnOrder;
 
     m_configStore.save(config);
 

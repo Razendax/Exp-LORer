@@ -340,6 +340,41 @@ void FileBrowserView::setColumnWidths(const std::array<int, FileListModel::Colum
     }
 }
 
+std::array<int, FileListModel::ColumnCount> FileBrowserView::columnOrder() const
+{
+    std::array<int, FileListModel::ColumnCount> order{};
+    QHeaderView* header = m_treeView->header();
+    for (int visualPos = 0; visualPos < FileListModel::ColumnCount; ++visualPos)
+    {
+        order[static_cast<size_t>(visualPos)] = header->logicalIndex(visualPos);
+    }
+    return order;
+}
+
+void FileBrowserView::setColumnOrder(const std::array<int, FileListModel::ColumnCount>& order)
+{
+    std::array<bool, FileListModel::ColumnCount> seen{};
+    for (int logicalColumn : order)
+    {
+        if (logicalColumn < 0 || logicalColumn >= FileListModel::ColumnCount || seen[static_cast<size_t>(logicalColumn)])
+        {
+            return; // not a valid permutation (e.g. the zero-filled "unset" sentinel) -- leave the default order alone
+        }
+        seen[static_cast<size_t>(logicalColumn)] = true;
+    }
+
+    QHeaderView* header = m_treeView->header();
+    for (int visualPos = 0; visualPos < FileListModel::ColumnCount; ++visualPos)
+    {
+        const int logicalColumn = order[static_cast<size_t>(visualPos)];
+        const int currentVisualPos = header->visualIndex(logicalColumn);
+        if (currentVisualPos != visualPos)
+        {
+            header->moveSection(currentVisualPos, visualPos);
+        }
+    }
+}
+
 void FileBrowserView::setNameHighlightQuery(const QString& query)
 {
     if (m_searchResultDelegate)
