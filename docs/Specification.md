@@ -21,7 +21,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 **Directory Navigation:**
 * Tree view and list/grid view of the local file system.
 * Standard navigation controls (Back, Forward, Up, Path Bar).
-* **Path bar folder autocomplete** (Architecture.md §14.20): as the user types, a popup lists only
+* **Path bar folder autocomplete** (Architecture.md §14.21): as the user types, a popup lists only
   the matching folders (never files) under the implied parent directory, navigable with the
   keyboard or mouse, with inline autocompletion of an unambiguous match.
 * **"This PC" virtual location** (Architecture.md §14.15): lists all local and remote drives, plus
@@ -30,7 +30,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   hierarchy "exits" onto the drive listing — or by typing "This PC" into the address bar. This is
   also the default landing location for a fresh install (see below) and for any newly-revealed
   empty pane.
-* **Favorites** (Architecture.md §14.35): users bookmark files and folders via a `Favorites` top-level
+* **Favorites** (Architecture.md §14.36): users bookmark files and folders via a `Favorites` top-level
   menu — "Add to Favorites" (the active tab's current selection, or its browsed folder if nothing is
   selected) and "Manage Favorites..." (remove, reorder, add manually, and organize into categories
   shown as collapsible sections). The menu itself lists every favorite below "Manage Favorites...",
@@ -41,7 +41,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 * **Split-window layouts:** The window arranges into one of four fixed layouts — single pane, two-pane vertical split, two-pane horizontal split, or a four-pane grid — chosen from the View menu/toolbar. No arbitrary or recursive nesting.
 * **Multi-tab browsing, per pane:** Each pane independently owns its own tabs (add/close/switch), each retaining its own navigation history (back/forward stack), current path, view mode, and sort order; a pane's tabs are unaffected by other panes or by switching layouts (a pane's tabs persist even while hidden by a layout that shows fewer panes). The tag filter panel and media preview are single shared instances that follow whichever pane/tab currently has focus, rather than existing per-pane. **Session persistence:** the active layout, each pane's tabs (path, view mode, sort order), the focused pane, and the main window's geometry are saved to a local JSON config file when the app closes and restored the next time it starts (Architecture.md §14.14); a fresh install with no saved config falls back to a single pane opened at the "This PC" virtual location (Architecture.md §14.15), rather than the user's home directory.
 * **Sort order:** Directory contents can be sorted by Name, Size, Type, or Date modified, ascending or descending, via a "Sort by" submenu under the View menu (Architecture.md §14.12) or by clicking a column header in Details view. The chosen sort applies uniformly across all seven view modes and is preserved per tab across navigation within that tab; a newly opened tab starts at the default (Name, ascending) rather than inheriting another tab's choice.
-* **Customizable Details-view columns (Architecture.md §14.38):** right-clicking a Details-view
+* **Customizable Details-view columns (Architecture.md §14.39):** right-clicking a Details-view
   column header opens a menu listing every available column — Name, Size, Type, Date Modified,
   Git Status, Tags, Date created, and Percent — each checked when currently shown; clicking one
   toggles its visibility. This applies to the current tab only, leaving other open tabs unaffected.
@@ -52,18 +52,18 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   `Settings > General > Columns` (see below) controls which columns a newly opened tab starts with;
   it doesn't change any tab already open.
 * **Hidden files/folders:** A "Show hidden files" toggle under the View menu (Architecture.md
-  §14.21) controls visibility of OS-hidden entries app-wide and persists across restarts. When on,
+  §14.22) controls visibility of OS-hidden entries app-wide and persists across restarts. When on,
   hidden files/folders appear in every view mode and in search results with grayed-out text so
   they're visually distinguishable; when off, they're excluded from directory listings, search
   results, and address-bar autocomplete entirely.
-* **Live directory update (Architecture.md §14.32):** a folder currently browsed in a *shown* tab
+* **Live directory update (Architecture.md §14.33):** a folder currently browsed in a *shown* tab
   (the active tab of each pane the current split layout makes visible — one tab in Single, two in
   a split, four in the grid) automatically reflects files being created, deleted, or modified
   directly inside it, without pressing Refresh. Only that folder's immediate contents are watched
   — a change inside a subfolder does not trigger a refresh. A pane hidden by the current layout, or
   a tab that isn't its pane's active one, is not live-updated; switching to it (or revealing its
   pane) catches it up once at that point.
-* **Folder monitoring (recursive, per-tab, Architecture.md §14.33):** a third right-panel tab,
+* **Folder monitoring (recursive, per-tab, Architecture.md §14.34):** a third right-panel tab,
   "Monitoring" (alongside "Tags" and "Preview" — see below), watches a tab's current folder and
   every subfolder beneath it for file/folder creation, deletion, and modification — meant primarily
   for watching a long-running build without needing to keep that tab in view. "Start Monitoring"
@@ -79,7 +79,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   monitoring session shown in the panel even after the user switches focus to a different tab to do
   something else in the meantime; unpinned, the panel instead follows whichever tab currently has
   focus.
-* **Git status badges (Details view, Architecture.md §14.31):** when the currently browsed folder
+* **Git status badges (Details view, Architecture.md §14.32):** when the currently browsed folder
   is inside a git working tree, a "Git" column at the right of "Date modified" shows a small colored
   badge for any file or folder with a non-clean status — a purple "?" for untracked, blue "M" for a
   staged modification, yellow "M" for an unstaged one, green "+" for a staged addition, red "-" for
@@ -91,7 +91,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   conflicted) elsewhere in the same subfolder. Badges appear only in Details view, only while
   normally browsing (not in quick-search/advanced-search results), and refresh only on navigation,
   not live.
-* **Git branch indicator and checkout (per-pane status bar, Architecture.md §14.34):** when the
+* **Git branch indicator and checkout (per-pane status bar, Architecture.md §14.35):** when the
   focused tab's current folder is inside a git working tree, the pane's status bar (see "Status bar"
   below) shows the current branch name — or a short commit id when `HEAD` is detached — centered in
   the bar, immediately followed by a plain number of changed files in the repository. Clicking the
@@ -100,12 +100,12 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   than discarding anything, the same safety plain `git checkout` gives by default. Both the branch
   name and the changed-file count are hidden when the current folder isn't inside a git repository,
   and refresh on navigation, not live.
-* **Integrated terminal (Architecture.md §14.23):** Each tab has its own collapsible panel at the
+* **Integrated terminal (Architecture.md §14.24):** Each tab has its own collapsible panel at the
   bottom, collapsed by default, showing a strip of panel tabs ("Terminal" and "Folder Size" in v1).
   Clicking "Terminal" the first time expands the panel and opens a `cmd.exe` session already in that
   tab's current folder; collapsing and re-expanding the panel leaves that session running. Closing
   the tab ends its terminal session.
-* **Disk usage / folder size (Architecture.md §14.39):** the bottom panel's "Folder Size" tab shows a
+* **Disk usage / folder size (Architecture.md §14.40):** the bottom panel's "Folder Size" tab shows a
   pie chart of the current folder's largest subfolders/files (up to 10 segments, each labeled with
   name, percentage of the folder's total size, and size, color-coded, and clickable to navigate into
   that subfolder) alongside "Scan Drive" and "Scan Folder" buttons. Scanning runs in the background
@@ -118,29 +118,29 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   view's Percent column (see above) uses the same per-folder cached sizes: each row's bar is that
   item's size divided by the sum of all its siblings' sizes in the current folder, so a subfolder
   that has never been scanned has no size to contribute and shows no bar of its own until scanned.
-* **Settings dialog (Architecture.md §14.26):** `File > Settings...` opens a dialog with a
+* **Settings dialog (Architecture.md §14.27):** `File > Settings...` opens a dialog with a
   hierarchical category tree on the left and that category's settings on the right; in v1 this
   holds five categories: Highlight > Languages, listing the languages with syntax highlighting
   (2.2 "Preview Panel") and, per language, each of its token types with a color swatch the user can
   change via a color picker; General > UI, holding a "Show close button on tabs" toggle
   (default on) controlling whether each pane's tabs render a close ("x") button, app-wide and
-  applied to already-open tabs immediately; General > Colors (Architecture.md §14.29), an
+  applied to already-open tabs immediately; General > Colors (Architecture.md §14.30), an
   editable, ordered list of file/folder appearance rules (see below); General > Notifications
-  (Architecture.md §14.36), a fixed 3-row table (Type / Enabled / Timeout) letting the user
+  (Architecture.md §14.37), a fixed 3-row table (Type / Enabled / Timeout) letting the user
   enable/disable each popup notification type and set how long it stays on screen before
-  auto-dismissing; and General > Columns (Architecture.md §14.38), a "Default visibility for new
+  auto-dismissing; and General > Columns (Architecture.md §14.39), a "Default visibility for new
   tab" group box with one checkbox per available Details-view column (Name excluded — always
   visible) controlling which columns a newly opened tab starts with. Changes in all five
   categories apply and persist immediately, though Columns' effect is scoped to tabs opened from
   then on, not already-open ones.
-* **Notifications (Architecture.md §14.36):** two kinds of app-wide notification appear stacked in
+* **Notifications (Architecture.md §14.37):** two kinds of app-wide notification appear stacked in
   the bottom-right corner of the window. Popup notifications — Info (blue), Warning (yellow), or
   Error (red), each showing an icon/type header and a message body — auto-dismiss after a
   configurable timeout (see Settings above) and always have a manual close button. Progress-bar
   notifications can show one or more progress bars for a long-running operation; v1 ships the
   underlying mechanism only, with no operation wired to it yet (copy/move remain as described
   under "File Operations" below, without a progress display).
-* **Per-file/folder appearance customization (Architecture.md §14.29):** under Settings >
+* **Per-file/folder appearance customization (Architecture.md §14.30):** under Settings >
   General > Colors, the user maintains an ordered list of rules, each pairing a comma-separated set
   of name patterns with a style (custom color, custom font, and independently toggleable bold,
   italic, underline, and strikeout). Patterns support `*` (any characters), `?` (a single
@@ -151,7 +151,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   list with a matching pattern determines its appearance everywhere it's listed (browsing, quick
   search, and advanced search, in every view mode); rules can be reordered, since order determines
   precedence when more than one would match.
-* **Status bar (Architecture.md §14.27):** each pane shows a status bar at the bottom, always
+* **Status bar (Architecture.md §14.28):** each pane shows a status bar at the bottom, always
   reflecting whichever tab in that pane currently has focus: the number of objects in the
   current listing (the browsed folder, or the active search/advanced-search results) and, once
   something is selected, the number of selected objects. It also hosts a quick-select field —
@@ -209,7 +209,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   matching part of each Name highlighted — regardless of the tab's own chosen view mode. Only one
   of normal browsing, quick search, or advanced search is shown at a time per tab; opening either
   search mode closes the other, and each remembers its own fields/results while hidden.
-  **Tag criteria** (Architecture.md §14.22) act as a fourth, ANDed criterion alongside Name/Min
+  **Tag criteria** (Architecture.md §14.20) act as a fourth, ANDed criterion alongside Name/Min
   size/Max size: a "search tags" box lists matching tags (same lookup as the Tag
   Panel's search, but clicking a tag adds it straight to the criteria instead of showing a "+"),
   and a separate, removable chip list shows the tags currently applied to the search. A result
@@ -229,7 +229,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 * Ability to attach multiple tags to any file or folder.
 * Context-menu integration and drag-and-drop tagging.
 * Applying or removing a tag shows an Info popup notification confirming the change
-  (Architecture.md §14.36).
+  (Architecture.md §14.37).
 
 **Database Backend:**
 * Local lightweight database (e.g., SQLite) to persist tag metadata, associating file paths (or unique file hashes) with tag IDs.
@@ -240,7 +240,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 * Robust handling of file path changes (handling renames/moves gracefully by tracking file hashes or updating paths in the database).
 
 **Tag Panel:**
-* Housed in a collapsible, tabbed side panel (Architecture.md §14.24) on the right edge of the
+* Housed in a collapsible, tabbed side panel (Architecture.md §14.25) on the right edge of the
   window — collapsed by default, expanding when its "Tags" tab is clicked, with room for
   additional tabs alongside it later. The panel's own tag behavior below is unchanged by this.
 * A panel sharing the window with the workspace pane area shows, for whichever pane/tab currently
@@ -253,13 +253,13 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 * When no item is selected in the active pane, the panel's add/remove sections (3 and 4) target
   the currently browsed folder itself, so a folder can be tagged without first navigating into it.
 * **Tags are clickable** everywhere they appear in this panel (folder tags, matching tags, tags
-  on selection, Architecture.md §14.22): clicking one opens the Advanced Search pane
+  on selection, Architecture.md §14.20): clicking one opens the Advanced Search pane
   (Specification.md §2.1) on the currently active tab with that tag added as a search criterion,
   giving a one-click path from "see a tag" to "find everything else with that tag."
 
 **Preview Panel:**
-* Housed as a second tab, "Preview" (Architecture.md §14.25), alongside "Tags" in the same
-  collapsible right-edge panel (Architecture.md §14.24) — collapsed by default, expanding when
+* Housed as a second tab, "Preview" (Architecture.md §14.26), alongside "Tags" in the same
+  collapsible right-edge panel (Architecture.md §14.25) — collapsed by default, expanding when
   clicked.
 * Shows a preview of whatever is selected in the currently focused pane/tab (or its browsed folder
   if nothing is selected): a folder's immediate contents (folders first, then files, both
@@ -268,7 +268,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   image formats (2.3); or a static representative frame for supported video formats (2.4) — full
   video playback belongs to the built-in video player below, not this panel. Anything else shows
   "no preview available."
-* **Syntax highlighting** (Architecture.md §14.26): recognized source files (C, C++, C#, Python,
+* **Syntax highlighting** (Architecture.md §14.27): recognized source files (C, C++, C#, Python,
   JavaScript, TypeScript, JSON, HTML, CSS in this pass) are shown with tree-sitter-based syntax
   highlighting rather than plain monospace text; other accepted text extensions remain plain text.
   Token colors are customizable per language (see the Settings dialog below).
@@ -308,7 +308,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   as if they were a folder: double-clicking/pressing Enter on one navigates into it in the same
   window rather than launching a separate archive-manager application, with full support for the
   standard navigation controls (Back/Forward/Up/breadcrumb), sorting, view modes, and multi-
-  selection while inside it (Architecture.md §14.28).
+  selection while inside it (Architecture.md §14.29).
 * Selecting an archive file (without entering it) shows its top-level contents in the Preview
   panel (2.2), the same way a folder's contents are shown.
 * Right-clicking an archive file offers archive-specific actions ("Extract Here", "Extract to...")
@@ -361,7 +361,7 @@ The following are explicitly out of scope for the initial release (v1), pending 
   exists outside the v1 CTest suite, Architecture.md §11; comprehensive automated UI coverage
   remains excluded).
 * Internationalization/localization — UI strings are English-only for v1.
-* Integrated terminal (Architecture.md §14.23) limitations: Windows-only (`cmd.exe` via ConPTY, no
+* Integrated terminal (Architecture.md §14.24) limitations: Windows-only (`cmd.exe` via ConPTY, no
   Linux shell backend); keyboard-only selection (character/word via Shift/Ctrl+Shift+Left/Right,
   select-all via Ctrl+A) and clipboard (Ctrl+Shift+C/V) — no mouse drag-to-select; only one terminal
   instance per tab; no 256-color/truecolor rendering; panel open/closed state and size are not
