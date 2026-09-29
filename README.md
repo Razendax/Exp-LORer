@@ -6,8 +6,8 @@ traditional file manager by combining fast, Unicode-safe file navigation with da
 tagging for organization and an integrated media preview, so you don't need to shell out to
 external apps to browse and view your files.
 
-Full requirements and design live in [`Specification.md`](Specification.md) and
-[`Architecture.md`](Architecture.md) at the repo root.
+Full requirements and design live in [`Specification.md`](docs/Specification.md) and
+[`Architecture.md`](docs/Architecture.md).
 
 > **Status:** under active development. The features below are currently supported; the rest of
 > `Specification.md` is still being implemented feature-by-feature.
@@ -32,7 +32,7 @@ Full requirements and design live in [`Specification.md`](Specification.md) and
 
 Strict Clean Architecture, dependencies point inward only. `src/domain` and `src/application`
 never depend on Qt, SQLite, or FFmpeg; those are injected through Port interfaces implemented in
-`src/adapters`. See [`Architecture.md`](Architecture.md) for the full layering, threading model,
+`src/adapters`. See [`Architecture.md`](docs/Architecture.md) for the full layering, threading model,
 DB schema, and file-hashing strategy.
 
 - `src/domain` — plain C++ entities (`FileNode`, `Tag`, `MediaMetadata`, `FileTagAssociation`).
