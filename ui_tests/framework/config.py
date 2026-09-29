@@ -46,9 +46,9 @@ class WorkspacePaneId(str, Enum):
     PANE_C = "PaneC"
     PANE_D = "PaneD"
 
-# Matches FileListModel::ColumnCount (Name/Size/Type/DateModified/GitStatus) --
-# src/adapters/viewmodels/FileListModel.h.
-_DETAILS_COLUMN_COUNT = 5
+# Matches FileListModel::ColumnCount (Name/Size/Type/DateModified/GitStatus/Tags/DateCreated/
+# Percent) -- src/adapters/viewmodels/FileListModel.h.
+_DETAILS_COLUMN_COUNT = 8
 
 _CONFIG_VERSION = 1
 

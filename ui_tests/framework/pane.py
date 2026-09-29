@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Callable, List
 
 from .automation_id import AutomationID
+from .bottom_panel import BottomPanel
 from .element import Element
 from .wait import wait_until
 
@@ -91,6 +92,7 @@ class WorkspacePane:
         self.file_browser = Element(self._container, AutomationID.FILE_BROWSER_VIEW)
         self.file_list_view = Element(self._container, AutomationID.FILE_LIST_VIEW)
         self.file_tree_view = Element(self._container, AutomationID.FILE_TREE_VIEW)
+        self.bottom_panel = BottomPanel(self._container)
 
     def _container(self) -> Any:
         return self._pane.raw

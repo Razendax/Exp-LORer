@@ -71,6 +71,7 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     m_treeView->setModel(m_model);
     m_treeView->setRootIsDecorated(false);
     m_treeView->header()->setSectionsClickable(true);
+    m_treeView->header()->setSectionsMovable(true);
     m_treeView->header()->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_treeView->header(), &QWidget::customContextMenuRequested, this, &FileBrowserView::showColumnMenu);
 

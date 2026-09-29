@@ -28,8 +28,19 @@ the framework to widgets it doesn't cover yet.
 
 from .app import ExpLorerApp
 from .automation_id import AutomationID, find
+from .bottom_panel import BottomPanel, FolderSizePanel
 from .config import THIS_PC, ExpLorerConfig, SplitLayout, WorkspacePaneId
-from .details_view import DetailsRow, find_row, read_details_rows, select_row
+from .details_view import (
+    TOGGLEABLE_COLUMN_TITLES,
+    DetailsRow,
+    drag_header,
+    find_header,
+    find_row,
+    read_details_rows,
+    read_header_titles,
+    select_row,
+    toggle_column_visibility,
+)
 from .element import Element
 from .favorites_menu import FavoritesMenu
 from .manage_favorites_dialog import ManageFavoritesDialog
@@ -52,6 +63,13 @@ __all__ = [
     "read_details_rows",
     "find_row",
     "select_row",
+    "read_header_titles",
+    "find_header",
+    "drag_header",
+    "toggle_column_visibility",
+    "TOGGLEABLE_COLUMN_TITLES",
+    "BottomPanel",
+    "FolderSizePanel",
     "connect_by_handle",
     "find_control",
     "TagChip",

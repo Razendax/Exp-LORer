@@ -144,6 +144,13 @@ class AutomationID:
     SETTINGS_SHOW_TAB_CLOSE_BUTTONS_CHECKBOX = "settingsShowTabCloseButtonsCheckBox"
     SETTINGS_DECORATIONS_TABLE = "settingsDecorationsTable"
     SETTINGS_ADD_DECORATION_RULE_BUTTON = "settingsAddDecorationRuleButton"
+    # Settings > General > Columns page (SettingsDialog::buildColumnsPage) -- "Default visibility
+    # for new tab" table. Every row's checkbox shares this one id (dynamic, data-driven per row,
+    # same posture as the decorations table's per-row buttons) -- locate a specific row's checkbox
+    # by its fixed position in FileListModel::Column order instead (see
+    # framework/details_view.py's TOGGLEABLE_COLUMN_TITLES).
+    SETTINGS_COLUMNS_TABLE = "settingsColumnsTable"
+    SETTINGS_COLUMN_VISIBLE_CHECKBOX = "settingsColumnVisibleCheckBox"
     SETTINGS_CLOSE_BUTTON = "settingsCloseButton"
 
     # --- Tag Manager Dialog (TagManagerDialog.cpp, modal, single instance at a time) ---
