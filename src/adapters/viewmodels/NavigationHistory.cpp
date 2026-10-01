@@ -11,6 +11,17 @@ void NavigationHistory::navigate(std::filesystem::path path)
     m_forwardStack.clear();
 }
 
+void NavigationHistory::replaceCurrent(std::filesystem::path path)
+{
+    if (!m_current)
+    {
+        navigate(std::move(path));
+        return;
+    }
+
+    m_current = NavigateToPathCommand(std::move(path));
+}
+
 std::optional<std::filesystem::path> NavigationHistory::goBack()
 {
     if (m_backStack.empty())

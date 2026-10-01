@@ -41,12 +41,16 @@ add_library(explorer_ui_widgets STATIC
     TagManagerDialog.cpp
     ContextMenuBuilder.h
     ContextMenuBuilder.cpp
+    FileItemContextMenu.h
+    FileItemContextMenu.cpp
+    FolderTreeView.h
+    FolderTreeView.cpp
     TerminalWidget.h
     TerminalWidget.cpp
     BottomPanelWidget.h
     BottomPanelWidget.cpp
-    RightPanelWidget.h
-    RightPanelWidget.cpp
+    SidePanelWidget.h
+    SidePanelWidget.cpp
     MonitoringLogModel.h
     MonitoringLogModel.cpp
     MonitoringPanelWidget.h

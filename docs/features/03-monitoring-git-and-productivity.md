@@ -5,7 +5,7 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.34–§14.40. Preceded by
+Covers §14.34–§14.41. Preceded by
 [01-workspace-navigation-and-search.md](01-workspace-navigation-and-search.md) (§14.1–§14.26)
 and [02-preview-decoration-and-status.md](02-preview-decoration-and-status.md) (§14.27–§14.33).
 
@@ -620,3 +620,74 @@ existing use case, aside from reusing `TabViewModel::navigateTo` for segment-cli
   `PercentRole` is invalid. No dedicated `SortCriterion`: clicking the header falls through to the
   existing `default: SortCriterion::Name` branch, same as `GitStatusColumn`/`TagsColumn`/
   `DateCreatedColumn` today.
+
+### 14.41 Left Panel with Folder Tree (Tree Tab)
+
+A collapsible, resizable side panel on the window's **left** edge — same mechanics as the right
+panel (§14.25): header-strip tab button, starts collapsed, click-to-toggle, drag-to-expand — with a
+single "Tree" tab: a folders-only tree rooted at "This PC" that follows the focused pane's active
+tab. No Domain/Application change, no new Port, no schema change.
+
+* **`SidePanelWidget` replaces `RightPanelWidget`.** §14.25 kept `RightPanelWidget` separate from
+  `BottomPanelWidget` because their *orientation* differs; the left and right panels share
+  orientation and collapse axis and differ only in which edge the header strip sits on, so one
+  class serves both: `SidePanelWidget(Edge, idPrefix)` puts the header strip on the edge facing the
+  workspace (`Edge::Right` → left edge, `Edge::Left` → right edge) and names itself
+  `<idPrefix>Widget`/`<idPrefix>Stack`. `addPanelTab(label, content, buttonObjectName)` takes each
+  button's `objectName` from the caller (the bottom panel's §14.40 move), so the right panel's
+  existing UI-Automation ids are unchanged. `BottomPanelWidget` is untouched.
+* **Splitter.** `MainWindow`'s central splitter becomes `[leftPanel, workspace, rightPanel]`
+  (workspace non-collapsible). Each panel's `expansionChanged` handler trades width with the
+  workspace only; the other side panel keeps its current width. Expanded state/width is not
+  persisted (same as §14.25).
+* **`FolderTreeModel`** (`adapters/viewmodels`, new): a lazily-populated `QAbstractItemModel` of
+  directories only — invisible root → "This PC" (`VirtualPaths::ThisPC`) → its drives/quick-access
+  folders (repository order, `FileNode::displayName()` honored) → real subfolders sorted
+  case-insensitively (`UnicodeCaseFold`, never `path::string()`). Owned by `WorkspaceController` and
+  retargeted to the focused tab alongside `TagListViewModel`/`FilePreviewViewModel` (§14.9/§14.26);
+  the UI never constructs it (§14.6). One level is listed per expand via
+  `FileNavigationUseCase::listDirectory` (`hasChildren` optimistic until listed, `canFetchMore`/
+  `fetchMore` do the listing, a failed listing just makes a leaf). Listing is synchronous on the UI
+  thread — the same accepted gap as navigation listings (§5); one level per call keeps it small.
+  * `indexForPath` walks from "This PC" down (the most specific This PC entry wins, so a Downloads
+    subfolder is revealed under "Downloads"), listing missing levels as it goes and returning the
+    deepest node reached. A path inside an archive stops at the archive's containing folder —
+    archives are files and never appear; browsing into archives from the tree is out of scope.
+  * **Hidden folders** follow the global "show hidden files/folders" toggle (§14.21) — except that
+    hidden folders on the path to the last revealed folder are always listed, otherwise the tree
+    could never follow a tab browsing under e.g. `AppData`.
+  * **Staying current without extra I/O:** the retargeted tab's own `directoryContentsChanged`
+    (navigation, refresh, §14.33 live-watch) feeds `applyListing`, and
+    `FileOperationsController::directoryContentsMayHaveChanged` drives `refreshDirectory`. Both diff
+    by path (insert/remove/move rows) so surviving children keep their loaded/expanded subtrees.
+    Folders expanded in the tree but not open in any tab are not live-watched (F5 in the tree
+    re-lists the current node).
+  * Column 0 lines up with `FileListModel::NameColumn` and answers its `FilePathRole`/
+    `IsDirectoryRole`, so `FileNameEditDelegate` (§14.13.4) works unchanged. "This PC", drive roots
+    and quick-access folders are not editable.
+* **Tabs survive folder rename/delete.** Renaming or deleting from the tree routinely hits an
+  ancestor of an open tab's folder (rare from the main view, where this was a latent bug).
+  `FileOperationsController` gains `pathRenamed(source, destination)` (from `renamePath`) and
+  `pathRemoved(path)` (from `moveToTrash`/`deletePermanently`), both emitted *before* the existing
+  `directoryContentsMayHaveChanged` so the tree renames its node before the parent's re-list diff
+  runs. `WorkspaceController` moves every tab at/below the path (any pane) — to the rebased path
+  (`rebasePath`, new in `PathContainment`) after a rename, to the parent after a delete — via a new
+  `TabViewModel::replaceCurrentPath`, which swaps the current history entry in place
+  (`NavigationHistory::replaceCurrent`) instead of pushing a new one.
+* **`FileItemContextMenu`** (`src/ui/widgets`, new, static helper like `ContextMenuBuilder`): the
+  body of `WorkspacePaneWidget::showItemContextMenu` and its confirm-then-delete flow, extracted so
+  the tree shows the *same* item menu. Caller-specific parts are callbacks (rename, delete — null
+  disables the action — error reporting, and an optional "Open" override). The main view's menu is
+  unchanged; in the tree "Open" navigates the focused tab instead of shelling out, drive roots and
+  quick-access folders get the menu with Rename/Delete disabled, and "This PC"/empty space get no
+  menu.
+* **`FolderTreeView`** (`src/ui/widgets`, new, `QTreeView`): single click on a row navigates the
+  focused tab (`WorkspacePaneWidget::navigateAndSelect`, keeping the §14.34 monitored-scope guard;
+  QTreeView emits no `clicked` for the expand arrow, which only expands/collapses); Enter
+  navigates; F2 renames inline; Delete/Shift+Delete delete with confirmation. Every
+  `activePathChanged` expands the ancestors and selects the folder programmatically (no navigation
+  feedback loop); while the panel is collapsed revealing is skipped and `showEvent` catches up, so a
+  collapsed panel costs no directory listing. After a tree click the tree re-reveals the tab's
+  actual folder, undoing the selection if navigation failed or was declined.
+* **Not built:** other left-panel tabs; persisting the panel's state/width; files, multi-select or
+  drag-and-drop in the tree; a background ("New Folder") menu on empty tree space; async listing.

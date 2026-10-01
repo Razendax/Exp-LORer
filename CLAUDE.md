@@ -16,7 +16,7 @@ Do not restate their content here — refer to them.
 
 `Architecture.md` §14 is a per-feature decision log that outgrew one file; it's split across
 `docs/features/01-workspace-navigation-and-search.md`, `docs/features/02-preview-decoration-and-status.md`,
-and `docs/features/03-monitoring-git-and-productivity.md` (section numbers §14.1–§14.40 are continuous
+and `docs/features/03-monitoring-git-and-productivity.md` (section numbers §14.1–§14.41 are continuous
 across the three). `Architecture.md` itself still holds §1–§13 (the core architecture) plus a short
 index into those three files — read the relevant one(s) for the feature you're touching.
 

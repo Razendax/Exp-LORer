@@ -43,6 +43,7 @@ from .details_view import (
 )
 from .element import Element
 from .favorites_menu import FavoritesMenu
+from .left_panel import FolderTree, LeftPanel
 from .manage_favorites_dialog import ManageFavoritesDialog
 from .modal_dialog import connect_by_handle, find_control
 from .tag_chip import TagChip, chip_names, find_chip, find_chip_label
@@ -79,6 +80,8 @@ __all__ = [
     "TagManagerDialog",
     "open_tag_manager_dialog",
     "FavoritesMenu",
+    "LeftPanel",
+    "FolderTree",
     "ManageFavoritesDialog",
     "ExpLorerTestCase",
     "ExpLorerFreshAppTestCase",

@@ -10,7 +10,7 @@ namespace UiColors
     constexpr const char* kNavigationPanelBackground = "#D3D7DD";   // every pane's toolbar/address-bar strip (item 7)
     constexpr const char* kActivePaneAccentBackground = "#C9D1DD";  // focused pane's toolbar, layered on top of the baseline tint (item 3)
     constexpr const char* kBottomPanelBackground = "#D1D4D8";
-    constexpr const char* kRightPanelBackground = "#D4D2D9";
+    constexpr const char* kSidePanelBackground = "#D4D2D9";        // left and right side panels (SidePanelWidget)
     constexpr const char* kAdvancedSearchButtonBackground = "#C6CDD9";
     constexpr const char* kAdvancedSearchButtonHoverBackground = "#BAC6D8";
     constexpr const char* kFolderTagsBackground = "#CED8D0";

@@ -29,6 +29,12 @@ public:
     // any forward history is discarded.
     void navigate(std::filesystem::path path);
 
+    // Swaps the current entry's path in place, leaving the back/forward stacks untouched (they're
+    // re-validated on use anyway). Used when the current folder itself was renamed/moved out from
+    // under the tab (Architecture.md §14.41) -- that's not a new navigation step. Behaves like
+    // navigate() when there is no current entry yet.
+    void replaceCurrent(std::filesystem::path path);
+
     // Moves the current pointer one step back/forward and returns the resulting path, or
     // std::nullopt if there is nothing to go back/forward to.
     std::optional<std::filesystem::path> goBack();

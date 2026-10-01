@@ -7,7 +7,6 @@
 #include <QActionGroup>
 #include <QDir>
 #include <QEvent>
-#include <QFileDialog>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
@@ -29,6 +28,7 @@
 #include "ColumnVisibilitySettingsViewModel.h"
 #include "ContextMenuBuilder.h"
 #include "FileBrowserView.h"
+#include "FileItemContextMenu.h"
 #include "FileOperationsController.h"
 #include "FolderSizeWidget.h"
 #include "IContextMenuProvider.h"
@@ -899,45 +899,16 @@ void WorkspacePaneWidget::onNavigationFailed(const std::filesystem::path& path, 
 
 void WorkspacePaneWidget::onDeleteRequested(TabViewModel* tab, bool permanent)
 {
-    // Copied rather than referenced: each deletion below synchronously emits
+    // Copied rather than referenced: each deletion synchronously emits
     // directoryContentsMayHaveChanged, which refreshes the tab and reassigns its selection,
     // invalidating a reference to selectedEntries() partway through the loop.
-    const std::vector<FileNode> entries = tab->selectedEntries();
-    if (entries.empty())
+    std::vector<std::filesystem::path> paths;
+    for (const FileNode& entry : tab->selectedEntries())
     {
-        return;
+        paths.push_back(entry.path());
     }
 
-    const QString message = [&]() {
-        if (entries.size() == 1)
-        {
-            const QString name = toQString(entries.front().name());
-            return permanent ? tr("Permanently delete \"%1\"? This cannot be undone.").arg(name)
-                              : tr("Move \"%1\" to the Recycle Bin?").arg(name);
-        }
-        return permanent ? tr("Permanently delete %1 items? This cannot be undone.").arg(entries.size())
-                          : tr("Move %1 items to the Recycle Bin?").arg(entries.size());
-    }();
-
-    const QMessageBox::StandardButton answer =
-        QMessageBox::question(this, permanent ? tr("Delete Permanently") : tr("Delete"), message);
-
-    if (answer != QMessageBox::Yes)
-    {
-        return;
-    }
-
-    for (const FileNode& entry : entries)
-    {
-        if (permanent)
-        {
-            m_fileOperationsController->deletePermanently(entry.path());
-        }
-        else
-        {
-            m_fileOperationsController->moveToTrash(entry.path());
-        }
-    }
+    FileItemContextMenu::confirmAndDelete(this, *m_fileOperationsController, paths, permanent);
 }
 
 void WorkspacePaneWidget::onViewModeChanged(ViewMode mode)
@@ -1140,136 +1111,15 @@ void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, FileBrowserView
         return;
     }
 
-    const auto ownerWindow = reinterpret_cast<NativeWindowHandle>(window()->winId());
-    const std::filesystem::path directory = paths.front().parent_path();
     const std::filesystem::path targetPath = paths.front();
 
-    // Archive browsing (Architecture.md §14.28): a lexical hint only (ArchiveExtensions), the
-    // adapter layer re-verifies against real disk state before doing anything -- a mismatch here
-    // just shows/hides the wrong menu items, never crashes.
+    FileItemContextMenu::Callbacks callbacks;
+    callbacks.rename = [browserView, targetPath]() { browserView->beginRename(targetPath); };
+    callbacks.deleteItems = [this, tab]() { onDeleteRequested(tab, false); };
+    callbacks.reportError = [this](const QString& message) { emit navigationFailed(message); };
+
     const bool browsingInsideArchive = ArchiveExtensions::archiveAncestorInPath(tab->currentPath()).has_value();
-    const bool selectionIsUnenteredArchives =
-        !browsingInsideArchive &&
-        std::all_of(paths.begin(), paths.end(),
-                    [](const std::filesystem::path& p) { return ArchiveExtensions::archiveAncestorInPath(p) == p; });
-
-    auto* openAction = new QAction(tr("Open"));
-    auto* cutAction = new QAction(tr("Cut"));
-    auto* copyAction = new QAction(tr("Copy"));
-    auto* pasteAction = new QAction(tr("Paste"));
-    auto* deleteAction = new QAction(tr("Delete"));
-    auto* renameAction = new QAction(tr("Rename"));
-    auto* propertiesAction = new QAction(tr("Properties"));
-    auto* extractHereAction = new QAction(tr("Extract Here"));
-    auto* extractToAction = new QAction(browsingInsideArchive ? tr("Extract...") : tr("Extract to..."));
-
-    connect(openAction, &QAction::triggered, this, [this, targetPath]() { m_fileOperationsController->openFile(targetPath); });
-    connect(cutAction, &QAction::triggered, this, [this, paths]() { m_fileOperationsController->cutToClipboard(paths); });
-    connect(copyAction, &QAction::triggered, this, [this, paths]() { m_fileOperationsController->copyToClipboard(paths); });
-    connect(pasteAction, &QAction::triggered, this, [this, directory]() { m_fileOperationsController->pasteInto(directory); });
-    connect(deleteAction, &QAction::triggered, this, [this, tab]() { onDeleteRequested(tab, false); });
-    connect(renameAction, &QAction::triggered, this, [browserView, targetPath]() { browserView->beginRename(targetPath); });
-    connect(propertiesAction, &QAction::triggered, this, [this, targetPath, ownerWindow]() {
-        m_fileOperationsController->showProperties(targetPath, ownerWindow);
-    });
-    connect(extractHereAction, &QAction::triggered, this, [this, paths]() {
-        for (const std::filesystem::path& archiveFile : paths)
-        {
-            m_fileOperationsController->extractArchive(archiveFile, archiveFile.parent_path() / archiveFile.stem());
-        }
-    });
-    connect(extractToAction, &QAction::triggered, this, [this, paths]() {
-        const QString chosen = QFileDialog::getExistingDirectory(this, tr("Extract to"));
-        if (chosen.isEmpty())
-        {
-            return;
-        }
-        const std::filesystem::path destination(chosen.toStdWString());
-
-        if (paths.size() == 1)
-        {
-            m_fileOperationsController->extractArchive(paths.front(), destination);
-            return;
-        }
-
-        // Multiple sources sharing one destination: extract each into its own subfolder named
-        // after the source's own filename (unique -- paths are siblings from the same directory
-        // listing) instead of flattening them all directly into destination, where same-named
-        // entries from different sources would silently overwrite each other.
-        for (const std::filesystem::path& source : paths)
-        {
-            m_fileOperationsController->extractArchive(source, destination / source.filename());
-        }
-    });
-
-    // Rename/Properties/Open are single-target-only (rename-as-move, showProperties, and
-    // openFile/itemActivated all take one path) — disable rather than guess a multi-item
-    // behavior when more than one item is selected (Architecture.md §14.13.2/§14.13.6).
-    const bool singleTarget = paths.size() == 1;
-    openAction->setEnabled(singleTarget);
-    renameAction->setEnabled(singleTarget && !browsingInsideArchive);
-    propertiesAction->setEnabled(singleTarget && !browsingInsideArchive);
-
-    // A read-only, virtual archive location has no real CF_HDROP paths for the OS clipboard, and
-    // Cut/Paste/Delete/New Folder/Properties aren't meaningful for it either (Architecture.md
-    // §14.28); the UI disables these proactively even though StandardFileSystemRepository also
-    // refuses them defensively.
-    cutAction->setEnabled(!browsingInsideArchive);
-    copyAction->setEnabled(!browsingInsideArchive);
-    pasteAction->setEnabled(!browsingInsideArchive);
-    deleteAction->setEnabled(!browsingInsideArchive);
-
-    ContextMenuBuilder::NativeActions actions;
-    actions.open = openAction;
-    actions.cut = cutAction;
-    actions.copy = copyAction;
-    actions.paste = pasteAction;
-    actions.deleteAction = deleteAction;
-    actions.rename = renameAction;
-    actions.properties = propertiesAction;
-    if (selectionIsUnenteredArchives)
-    {
-        actions.extractHere = extractHereAction;
-        actions.extractTo = extractToAction;
-    }
-    else if (browsingInsideArchive)
-    {
-        actions.extractTo = extractToAction;
-    }
-
-    const ContextMenuSourceMode mode =
-        extendedShellExtensionsEnabled() ? ContextMenuSourceMode::StaticAndShellExtensions : ContextMenuSourceMode::StaticVerbsOnly;
-    auto buildResult = m_fileOperationsController->buildContextMenuForSelection(paths, mode);
-
-    std::vector<ContextMenuEntry> entries;
-    if (buildResult.hasValue())
-    {
-        entries = std::move(buildResult).value();
-    }
-    else
-    {
-        emit navigationFailed(QString::fromStdString(buildResult.error().message));
-    }
-
-    QMenu* menu = ContextMenuBuilder::buildItemMenu(entries, actions, this);
-    QAction* chosen = menu->exec(globalPos);
-
-    const auto entryId = chosen ? ContextMenuBuilder::entryIdForAction(chosen) : std::nullopt;
-    if (entryId)
-    {
-        m_fileOperationsController->invokeContextMenuEntry(*entryId, directory, ownerWindow);
-    }
-    else
-    {
-        m_fileOperationsController->discardContextMenu();
-    }
-
-    menu->deleteLater();
-    for (QAction* action :
-         { openAction, cutAction, copyAction, pasteAction, deleteAction, renameAction, propertiesAction, extractHereAction, extractToAction })
-    {
-        action->deleteLater();
-    }
+    FileItemContextMenu::show(this, *m_fileOperationsController, paths, browsingInsideArchive, callbacks, globalPos);
 }
 
 void WorkspacePaneWidget::showBackgroundContextMenu(TabViewModel* tab, FileBrowserView* browserView, const QPoint& globalPos)

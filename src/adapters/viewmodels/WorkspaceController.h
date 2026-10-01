@@ -19,6 +19,7 @@ class TabViewModel;
 class TagListViewModel;
 class FilePreviewViewModel;
 class FileOperationsController;
+class FolderTreeModel;
 class GitStatusService;
 class DirectoryWatchUseCase;
 class DirectoryWatchService;
@@ -59,6 +60,7 @@ public:
     FilePreviewViewModel* filePreviewViewModel() const noexcept { return m_filePreviewViewModel; }
     MonitoringPanelViewModel* monitoringPanelViewModel() const noexcept { return m_monitoringPanelViewModel; }
     FileOperationsController* fileOperationsController() const noexcept { return m_fileOperationsController; }
+    FolderTreeModel* folderTreeModel() const noexcept { return m_folderTreeModel; }
     FileNavigationUseCase& fileNavigationUseCase() const noexcept { return m_fileNavigationUseCase; }
 
     // Snapshots the current layout/focused pane and every pane's ordered tabs (path, ViewMode,
@@ -89,6 +91,13 @@ private:
     // from is reflected everywhere (Architecture.md §14.10).
     void refreshTabsShowing(const std::filesystem::path& directory);
 
+    // Connected to m_fileOperationsController->pathRenamed/pathRemoved (Architecture.md §14.41).
+    // Every live tab, in any pane, whose currentPath() is the renamed/removed path or inside it is
+    // moved -- to the rewritten path after a rename, to the removed path's parent after a delete --
+    // replacing its current history entry rather than adding one.
+    void onPathRenamed(const std::filesystem::path& source, const std::filesystem::path& destination);
+    void onPathRemoved(const std::filesystem::path& path);
+
     // Recomputes the visible+active tab set from m_layout and each visible pane's activeTab(),
     // and hands it to m_directoryWatchService. Called whenever that set may have changed: after
     // construction, from setLayout(), and from any pane's activeTabChanged (Architecture.md
@@ -104,6 +113,7 @@ private:
     FilePreviewViewModel* m_filePreviewViewModel = nullptr;
     MonitoringPanelViewModel* m_monitoringPanelViewModel = nullptr;
     FileOperationsController* m_fileOperationsController = nullptr;
+    FolderTreeModel* m_folderTreeModel = nullptr;
     DirectoryWatchService* m_directoryWatchService = nullptr;
     TagChangeNotifier& m_tagChangeNotifier;
 };

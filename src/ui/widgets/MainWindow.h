@@ -35,7 +35,8 @@ class TagChangeNotifier;
 class WorkspaceController;
 class WorkspaceLayoutWidget;
 class TagPanelWidget;
-class RightPanelWidget;
+class SidePanelWidget;
+class FolderTreeView;
 class PreviewPanelWidget;
 class MonitoringPanelWidget;
 class NotificationOverlayWidget;
@@ -84,6 +85,7 @@ private:
     void createLayoutToolBar();
     void createSearchBar(QToolBar* toolBar);
     void createWorkspace();
+    void createFolderTree();
     void createMainStatusBar();
     void showTagManagerDialog();
     void showSettingsDialog();
@@ -97,6 +99,11 @@ private:
     void onDriveSpaceInfoReady(int generation, Result<DriveSpaceInfo> result);
     void onSearchBarReturnPressed();
     void onSearchBarTextEdited(const QString& text);
+
+    // Navigates the focused pane's active tab to `path` (through WorkspacePaneWidget's
+    // monitored-scope guard) -- the left panel's folder tree click/Enter/"Open" (Architecture.md
+    // §14.41).
+    void navigateFocusedPaneTo(const std::filesystem::path& path);
 
     // Favorites menu (Architecture.md §14.35).
     void onAddToFavoritesTriggered();
@@ -123,7 +130,9 @@ private:
     PreviewPanelWidget* m_previewPanelWidget = nullptr;
     MonitoringPanelWidget* m_monitoringPanelWidget = nullptr;
     NotificationOverlayWidget* m_notificationOverlayWidget = nullptr;
-    RightPanelWidget* m_rightPanelWidget = nullptr;
+    SidePanelWidget* m_rightPanelWidget = nullptr;
+    SidePanelWidget* m_leftPanelWidget = nullptr;
+    FolderTreeView* m_folderTreeView = nullptr;
     TabViewModel* m_sortTrackedTab = nullptr;
     TabViewModel* m_searchTrackedTab = nullptr;
     TabViewModel* m_driveInfoTrackedTab = nullptr;

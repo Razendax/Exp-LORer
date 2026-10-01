@@ -157,7 +157,7 @@ void TabViewModel::navigateTo(const std::filesystem::path& path)
 {
     exitSearch();
     exitAdvancedSearch();
-    loadAndApply(path, true);
+    loadAndApply(path, HistoryUpdate::Record);
 }
 
 std::filesystem::path TabViewModel::upTarget() const
@@ -216,7 +216,7 @@ void TabViewModel::goBack()
         return;
     }
 
-    loadAndApply(*path, false);
+    loadAndApply(*path, HistoryUpdate::None);
 }
 
 void TabViewModel::goForward()
@@ -230,7 +230,7 @@ void TabViewModel::goForward()
         return;
     }
 
-    loadAndApply(*path, false);
+    loadAndApply(*path, HistoryUpdate::None);
 }
 
 void TabViewModel::setSelectedEntries(const std::vector<FileNode>& entries)
@@ -246,7 +246,14 @@ void TabViewModel::setSelectedEntries(const std::vector<FileNode>& entries)
 
 void TabViewModel::refresh()
 {
-    loadAndApply(currentPath(), false);
+    loadAndApply(currentPath(), HistoryUpdate::None);
+}
+
+void TabViewModel::replaceCurrentPath(const std::filesystem::path& path)
+{
+    exitSearch();
+    exitAdvancedSearch();
+    loadAndApply(path, HistoryUpdate::ReplaceCurrent);
 }
 
 void TabViewModel::setViewMode(ViewMode mode)
@@ -265,7 +272,7 @@ void TabViewModel::setSortCriterion(SortCriterion criterion, bool ascending)
     m_fileListModel->setSortCriterion(criterion, ascending);
 }
 
-void TabViewModel::loadAndApply(const std::filesystem::path& path, bool recordHistory)
+void TabViewModel::loadAndApply(const std::filesystem::path& path, HistoryUpdate historyUpdate)
 {
     auto result = m_fileNavigationUseCase.listDirectory(path);
     if (result.hasError())
@@ -274,9 +281,13 @@ void TabViewModel::loadAndApply(const std::filesystem::path& path, bool recordHi
         return;
     }
 
-    if (recordHistory)
+    if (historyUpdate == HistoryUpdate::Record)
     {
         m_history.navigate(path);
+    }
+    else if (historyUpdate == HistoryUpdate::ReplaceCurrent)
+    {
+        m_history.replaceCurrent(path);
     }
 
     setSelectedEntries({});

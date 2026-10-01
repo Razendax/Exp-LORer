@@ -53,6 +53,8 @@ add_library(explorer_adapters_viewmodels STATIC
     DiskUsageService.cpp
     FolderSizeViewModel.h
     FolderSizeViewModel.cpp
+    FolderTreeModel.h
+    FolderTreeModel.cpp
 )
 
 target_include_directories(explorer_adapters_viewmodels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

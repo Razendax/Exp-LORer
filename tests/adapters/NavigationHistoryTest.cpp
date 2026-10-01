@@ -125,3 +125,30 @@ TEST(NavigationHistory, NavigateAfterGoBackClearsForwardStack)
     EXPECT_TRUE(history.canGoBack());
     EXPECT_EQ(*history.current(), std::filesystem::path("C:/c"));
 }
+
+TEST(NavigationHistory, ReplaceCurrentSwapsPathWithoutTouchingBackOrForward)
+{
+    NavigationHistory history;
+    history.navigate("C:/a");
+    history.navigate("C:/b");
+    history.navigate("C:/c");
+    history.goBack();
+
+    history.replaceCurrent("C:/renamed");
+
+    ASSERT_TRUE(history.current().has_value());
+    EXPECT_EQ(*history.current(), std::filesystem::path("C:/renamed"));
+    EXPECT_EQ(history.peekBack(), std::filesystem::path("C:/a"));
+    EXPECT_EQ(history.peekForward(), std::filesystem::path("C:/c"));
+}
+
+TEST(NavigationHistory, ReplaceCurrentWithNoCurrentBehavesLikeNavigate)
+{
+    NavigationHistory history;
+
+    history.replaceCurrent("C:/a");
+
+    ASSERT_TRUE(history.current().has_value());
+    EXPECT_EQ(*history.current(), std::filesystem::path("C:/a"));
+    EXPECT_FALSE(history.canGoBack());
+}

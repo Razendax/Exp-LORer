@@ -35,7 +35,10 @@
 #include "AppConfigStore.h"
 #include "DriveSpaceInfoWorker.h"
 #include "FavoritesViewModel.h"
+#include "FileItemContextMenu.h"
 #include "FileOperationsController.h"
+#include "FolderTreeModel.h"
+#include "FolderTreeView.h"
 #include "ManageFavoritesDialog.h"
 #include "MainStatusBarWidget.h"
 #include "MonitoringPanelWidget.h"
@@ -45,7 +48,8 @@
 #include "TagManagerDialog.h"
 #include "TagManagerViewModel.h"
 #include "PreviewPanelWidget.h"
-#include "RightPanelWidget.h"
+#include "PathContainment.h"
+#include "SidePanelWidget.h"
 #include "TagPanelWidget.h"
 #include "UiColors.h"
 #include "VirtualPaths.h"
@@ -394,6 +398,7 @@ void MainWindow::createShowHiddenFilesAction()
                 tab->advancedSearchResultsModel()->setShowHiddenFiles(checked);
             }
         }
+        m_workspaceController->folderTreeModel()->setShowHiddenFiles(checked);
     });
 }
 
@@ -505,38 +510,56 @@ void MainWindow::createWorkspace()
                                                           m_diskUsageService, m_columnWidths, m_columnOrder, this);
     m_workspaceLayoutWidget->setObjectName(QStringLiteral("workspaceLayoutWidget"));
 
-    // Right panel (Architecture.md §14.23): the side-panel counterpart of BottomPanelWidget, a
-    // collapsible tab strip with a single "Tags" tab, wrapping the existing tag UI instead of
-    // placing it directly in the splitter.
-    m_rightPanelWidget = new RightPanelWidget(this);
-    m_rightPanelWidget->setObjectName(QStringLiteral("rightPanelWidget"));
+    // Right panel (Architecture.md §14.25): a collapsible side-panel tab strip wrapping the tag UI,
+    // file preview and folder monitoring log.
+    m_rightPanelWidget = new SidePanelWidget(SidePanelWidget::Edge::Right, QStringLiteral("rightPanel"), this);
     m_tagPanelWidget = new TagPanelWidget(m_workspaceController->tagListViewModel(), m_rightPanelWidget);
     m_tagPanelWidget->setObjectName(QStringLiteral("tagPanelWidget"));
-    m_rightPanelWidget->addPanelTab(tr("Tags"), m_tagPanelWidget);
+    m_rightPanelWidget->addPanelTab(tr("Tags"), m_tagPanelWidget, QStringLiteral("rightPanelTagsButton"));
 
     m_previewPanelWidget = new PreviewPanelWidget(m_workspaceController->filePreviewViewModel(), m_syntaxHighlightEngine,
                                                    m_highlightThemeViewModel, m_rightPanelWidget);
     m_previewPanelWidget->setObjectName(QStringLiteral("previewPanelWidget"));
-    m_rightPanelWidget->addPanelTab(tr("Preview"), m_previewPanelWidget);
+    m_rightPanelWidget->addPanelTab(tr("Preview"), m_previewPanelWidget, QStringLiteral("rightPanelPreviewButton"));
 
     m_monitoringPanelWidget = new MonitoringPanelWidget(m_workspaceController->monitoringPanelViewModel(), m_rightPanelWidget);
     m_monitoringPanelWidget->setObjectName(QStringLiteral("monitoringPanelWidget"));
-    m_rightPanelWidget->addPanelTab(tr("Monitoring"), m_monitoringPanelWidget);
+    m_rightPanelWidget->addPanelTab(tr("Monitoring"), m_monitoringPanelWidget, QStringLiteral("rightPanelMonitoringButton"));
     connect(m_monitoringPanelWidget, &MonitoringPanelWidget::monitoringFailed, this, &MainWindow::onStatusMessage);
+
+    // Left panel (Architecture.md §14.41): same side-panel mechanics, mirrored, with a single
+    // "Tree" tab.
+    m_leftPanelWidget = new SidePanelWidget(SidePanelWidget::Edge::Left, QStringLiteral("leftPanel"), this);
+    createFolderTree();
+    m_leftPanelWidget->addPanelTab(tr("Tree"), m_folderTreeView, QStringLiteral("leftPanelTreeButton"));
 
     auto* splitter = new QSplitter(Qt::Horizontal, this);
     splitter->setObjectName(QStringLiteral("mainSplitter"));
+    splitter->addWidget(m_leftPanelWidget);
     splitter->addWidget(m_workspaceLayoutWidget);
     splitter->addWidget(m_rightPanelWidget);
-    splitter->setCollapsible(0, false);
-    splitter->setSizes({ 1000, m_rightPanelWidget->collapsedWidth() });
+    splitter->setCollapsible(1, false);
+    splitter->setSizes({ m_leftPanelWidget->collapsedWidth(), 1000, m_rightPanelWidget->collapsedWidth() });
     setCentralWidget(splitter);
 
-    connect(m_rightPanelWidget, &RightPanelWidget::expansionChanged, splitter, [splitter, rightPanel = m_rightPanelWidget](bool expanded) {
+    // Expanding/collapsing one side panel trades width with the workspace only; the other side
+    // panel keeps whatever width it currently has.
+    const auto resizeSidePanel = [splitter](int sideIndex, int sideWidth) {
+        QList<int> sizes = splitter->sizes();
         const int total = std::max(splitter->width(), splitter->sizeHint().width());
-        const int rightWidth = expanded ? rightPanel->preferredExpandedWidth() : rightPanel->collapsedWidth();
-        splitter->setSizes({ total - rightWidth, rightWidth });
-    });
+        const int otherSideWidth = sizes[2 - sideIndex];
+        sizes[sideIndex] = sideWidth;
+        sizes[1] = std::max(0, total - sideWidth - otherSideWidth);
+        splitter->setSizes(sizes);
+    };
+    connect(m_leftPanelWidget, &SidePanelWidget::expansionChanged, splitter,
+            [resizeSidePanel, leftPanel = m_leftPanelWidget](bool expanded) {
+                resizeSidePanel(0, expanded ? leftPanel->preferredExpandedWidth() : leftPanel->collapsedWidth());
+            });
+    connect(m_rightPanelWidget, &SidePanelWidget::expansionChanged, splitter,
+            [resizeSidePanel, rightPanel = m_rightPanelWidget](bool expanded) {
+                resizeSidePanel(2, expanded ? rightPanel->preferredExpandedWidth() : rightPanel->collapsedWidth());
+            });
 
     for (WorkspacePaneId id : kAllPanes)
     {
@@ -546,6 +569,59 @@ void MainWindow::createWorkspace()
 
     connect(m_workspaceController->fileOperationsController(), &FileOperationsController::operationFailed, this,
             &MainWindow::onStatusMessage);
+}
+
+void MainWindow::createFolderTree()
+{
+    FileOperationsController* fileOperations = m_workspaceController->fileOperationsController();
+
+    m_folderTreeView = new FolderTreeView(m_workspaceController->folderTreeModel(), m_leftPanelWidget);
+    m_folderTreeView->setObjectName(QStringLiteral("folderTreeView"));
+
+    connect(m_folderTreeView, &FolderTreeView::navigateRequested, this, &MainWindow::navigateFocusedPaneTo);
+    connect(m_folderTreeView, &FolderTreeView::renameRequested, fileOperations, &FileOperationsController::renamePath);
+    connect(m_folderTreeView, &FolderTreeView::deleteRequested, this,
+            [this, fileOperations](const std::filesystem::path& path, bool permanent) {
+                FileItemContextMenu::confirmAndDelete(this, *fileOperations, { path }, permanent);
+            });
+    connect(m_folderTreeView, &FolderTreeView::itemContextMenuRequested, this,
+            [this, fileOperations](const std::filesystem::path& path, bool isTopLevelLocation, const QPoint& globalPos) {
+                FileItemContextMenu::Callbacks callbacks;
+                if (!isTopLevelLocation)
+                {
+                    callbacks.rename = [this, path]() { m_folderTreeView->beginRename(path); };
+                    callbacks.deleteItems = [this, fileOperations, path]() {
+                        FileItemContextMenu::confirmAndDelete(this, *fileOperations, { path }, false);
+                    };
+                }
+                callbacks.reportError = [this](const QString& message) { onStatusMessage(message); };
+                // "Open" on a folder in the tree means "show it here", not "hand it to the shell".
+                callbacks.open = [this](const std::filesystem::path& target) { navigateFocusedPaneTo(target); };
+
+                FileItemContextMenu::show(this, *fileOperations, { path }, false, callbacks, globalPos);
+            });
+}
+
+void MainWindow::navigateFocusedPaneTo(const std::filesystem::path& path)
+{
+    TabViewModel* tab = m_workspaceController->focusedTab();
+    WorkspacePaneWidget* paneWidget = m_workspaceLayoutWidget->paneWidget(m_workspaceController->focusedPane());
+    if (!tab || !paneWidget)
+    {
+        return;
+    }
+
+    // Re-clicking the folder the tab is already showing would otherwise push a duplicate history
+    // entry.
+    if (!pathsEqualCaseInsensitive(tab->currentPath(), path))
+    {
+        paneWidget->navigateAndSelect(path, std::nullopt);
+    }
+
+    // Snap the tree back to wherever the tab actually is: a no-op after a successful navigation,
+    // but it undoes the click's selection if navigation failed or the user declined leaving a
+    // monitored folder.
+    m_folderTreeView->revealPath(m_workspaceController->folderTreeModel()->activePath());
 }
 
 void MainWindow::createMainStatusBar()

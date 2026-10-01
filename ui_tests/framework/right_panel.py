@@ -1,4 +1,4 @@
-"""Page objects for RightPanelWidget's 3-way tab switcher (Tags / Preview / Monitoring)."""
+"""Page objects for the right SidePanelWidget's 3-way tab switcher (Tags / Preview / Monitoring)."""
 
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ class MonitoringPanel:
 
 
 class RightPanel:
-    """RightPanelWidget itself. `.tags`/`.preview`/`.monitoring` each make sure the matching
+    """The right SidePanelWidget itself. `.tags`/`.preview`/`.monitoring` each make sure the matching
     switch button is checked (so that stack page is actually the visible/interactable one) and
     then return that page's element group -- so e.g.
     `app.right_panel.monitoring.start_monitoring.click()` switches to Monitoring *and* presses

@@ -5,7 +5,9 @@
 #include "DirectoryWatchService.h"
 #include "FileOperationsController.h"
 #include "FilePreviewViewModel.h"
+#include "FolderTreeModel.h"
 #include "MonitoringPanelViewModel.h"
+#include "PathContainment.h"
 #include "TabViewModel.h"
 #include "TagListViewModel.h"
 #include "WorkspaceLayoutTopology.h"
@@ -54,6 +56,7 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
     m_monitoringPanelViewModel = new MonitoringPanelViewModel(this);
     m_fileOperationsController = new FileOperationsController(m_fileNavigationUseCase, this);
     m_directoryWatchService = new DirectoryWatchService(directoryWatchUseCase, this);
+    m_folderTreeModel = new FolderTreeModel(fileNavigationUseCase, this);
 
     connect(this, &WorkspaceController::focusedPaneChanged, this, &WorkspaceController::retargetFocusedTab);
     for (WorkspacePaneViewModel* pane : m_panes)
@@ -64,6 +67,10 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
 
     connect(m_fileOperationsController, &FileOperationsController::directoryContentsMayHaveChanged, this,
             &WorkspaceController::refreshTabsShowing);
+    connect(m_fileOperationsController, &FileOperationsController::directoryContentsMayHaveChanged, m_folderTreeModel,
+            &FolderTreeModel::refreshDirectory);
+    connect(m_fileOperationsController, &FileOperationsController::pathRenamed, this, &WorkspaceController::onPathRenamed);
+    connect(m_fileOperationsController, &FileOperationsController::pathRemoved, this, &WorkspaceController::onPathRemoved);
 
     retargetFocusedTab();
     updateLiveWatchedTabs();
@@ -163,6 +170,7 @@ void WorkspaceController::retargetFocusedTab()
     m_tagListViewModel->setActiveTab(focusedTab());
     m_filePreviewViewModel->setActiveTab(focusedTab());
     m_monitoringPanelViewModel->setFocusedTab(focusedTab());
+    m_folderTreeModel->setActiveTab(focusedTab());
     emit focusedTabChanged(focusedTab());
 }
 
@@ -176,6 +184,40 @@ void WorkspaceController::refreshTabsShowing(const std::filesystem::path& direct
             if (tab->currentPath() == directory)
             {
                 tab->refresh();
+            }
+        }
+    }
+}
+
+void WorkspaceController::onPathRenamed(const std::filesystem::path& source, const std::filesystem::path& destination)
+{
+    // Tree first, so the tabs' own re-listings below land on the already-renamed node rather than
+    // replacing it (and its expanded subtree) with a fresh one.
+    m_folderTreeModel->renameNode(source, destination);
+
+    for (WorkspacePaneViewModel* pane : m_panes)
+    {
+        for (int i = 0; i < pane->tabCount(); ++i)
+        {
+            TabViewModel* tab = pane->tabAt(i);
+            if (isPathWithinOrEqual(tab->currentPath(), source))
+            {
+                tab->replaceCurrentPath(rebasePath(tab->currentPath(), source, destination));
+            }
+        }
+    }
+}
+
+void WorkspaceController::onPathRemoved(const std::filesystem::path& path)
+{
+    for (WorkspacePaneViewModel* pane : m_panes)
+    {
+        for (int i = 0; i < pane->tabCount(); ++i)
+        {
+            TabViewModel* tab = pane->tabAt(i);
+            if (isPathWithinOrEqual(tab->currentPath(), path))
+            {
+                tab->replaceCurrentPath(path.parent_path());
             }
         }
     }

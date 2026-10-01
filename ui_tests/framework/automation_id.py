@@ -23,7 +23,7 @@ when the framework doesn't yet cover a widget you need.
 
 Scoping follows the widget's actual runtime multiplicity, not a globally unique name per widget:
 
-- App-wide singletons (MainWindow, WorkspaceLayoutWidget, RightPanelWidget, TagPanelWidget,
+- App-wide singletons (MainWindow, WorkspaceLayoutWidget, both SidePanelWidgets, FolderTreeView, TagPanelWidget,
   PreviewPanelWidget, MonitoringPanelWidget, MainStatusBarWidget, and on-demand-but-never-concurrent
   modal dialogs) each have one fixed id.
 - The 4 WorkspacePaneWidget instances (WORKSPACE_PANE_A..D) each have a per-instance container id;
@@ -69,6 +69,10 @@ class AutomationID:
     RIGHT_PANEL_TAGS_BUTTON = "rightPanelTagsButton"
     RIGHT_PANEL_PREVIEW_BUTTON = "rightPanelPreviewButton"
     RIGHT_PANEL_MONITORING_BUTTON = "rightPanelMonitoringButton"
+    LEFT_PANEL = "leftPanelWidget"
+    LEFT_PANEL_STACK = "leftPanelStack"
+    LEFT_PANEL_TREE_BUTTON = "leftPanelTreeButton"
+    FOLDER_TREE_VIEW = "folderTreeView"
     TAG_PANEL = "tagPanelWidget"
     PREVIEW_PANEL = "previewPanelWidget"
     MONITORING_PANEL = "monitoringPanelWidget"

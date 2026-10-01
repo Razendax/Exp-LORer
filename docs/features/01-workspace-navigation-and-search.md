@@ -553,6 +553,9 @@ itself is unmodified; only its container changed. Only "Tags" exists in v1, but 
 added later without further plumbing, same intent as the bottom panel's Terminal-only v1 scope.
 Like the bottom panel, expanded/collapsed state is not persisted across restarts.
 
+*Superseded in part by §14.41:* `RightPanelWidget` was generalized into `SidePanelWidget(Edge)`,
+which now serves both this panel and the new left panel; its behavior here is unchanged.
+
 ### 14.26 Right-Panel File Preview (Preview Tab)
 
 A second `RightPanelWidget` tab, "Preview" (§14.25's panel already supports more than one tab with

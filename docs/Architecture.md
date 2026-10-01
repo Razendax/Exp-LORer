@@ -74,6 +74,8 @@ Converts between Domain/Application types and framework types.
   search state), `WorkspacePaneViewModel`/`WorkspaceController` (pane/tab bookkeeping and cross-pane
   mediation, §14), `TagListViewModel` (tag panel, retargeted to the focused tab, §14.9),
   `FileOperationsController` (clipboard/delete/open/context-menu orchestration, §14.10),
+  `FolderTreeModel` (the left panel's lazily-listed folders-only tree, retargeted to the focused
+  tab, §14.41),
   `TagManagerViewModel` (global tag CRUD, §14.17), `MediaPreviewViewModel` (QML-facing state; not
   yet implemented).
 * **Persistence** (`adapters/persistence`) — `SQLiteTagRepository`, implements `ITagRepository`
@@ -135,7 +137,7 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
 | Domain | `FileNode`, `Tag`, `MediaMetadata`, `FileTagAssociation` |
 | Application | `FileNavigationUseCase`, `TagManagementUseCase`, `MediaProcessingUseCase`, `DiskUsageUseCase` (§14.40), and their Ports (§2.2) |
 | Adapters | `SQLiteTagRepository`, `StandardFileSystemRepository`, `ShellContextMenuProvider`, `AppConfigStore`, `WindowsDiskUsageScanner`/`SQLiteDiskUsageRepository` (§14.40), plus the ViewModels listed in §2.3 |
-| UI (Widgets) | `MainWindow`, `WorkspaceLayoutWidget`, `WorkspacePaneWidget`, `FileBrowserView`, `RightPanelWidget`, `TagPanelWidget`, `ContextMenuBuilder`, dialogs |
+| UI (Widgets) | `MainWindow`, `WorkspaceLayoutWidget`, `WorkspacePaneWidget`, `FileBrowserView`, `SidePanelWidget` (left/right panels), `FolderTreeView`, `TagPanelWidget`, `ContextMenuBuilder`/`FileItemContextMenu`, dialogs |
 | UI (QML) | Media viewer (not yet implemented) |
 
 ## 5. Concurrency and Threading Model
@@ -375,7 +377,7 @@ Exp-LORer/
   id strings — tests import names (and `find`) from it rather than hardcoding raw id strings or
   full ancestor paths. Scoping follows the widget's actual runtime multiplicity rather than giving
   every widget a globally-unique name:
-  * **App-wide singletons** (`MainWindow`, `WorkspaceLayoutWidget`, `RightPanelWidget`,
+  * **App-wide singletons** (`MainWindow`, `WorkspaceLayoutWidget`, both `SidePanelWidget`s, `FolderTreeView`,
     `TagPanelWidget`, `PreviewPanelWidget`, `MonitoringPanelWidget`, `MainStatusBarWidget`, and
     on-demand-but-never-concurrent modal dialogs) get one fixed id.
   * **The 4 `WorkspacePaneWidget` instances** (PaneA–PaneD, §14.1/§14.2 — all 4 constructed up
@@ -435,7 +437,7 @@ walkthrough; see git history and the code's own comments (many cite these subsec
 directly) for the detail.
 
 The log grew too large for one document and is split across three files under `docs/features/`.
-Section numbers (§14.1–§14.40) are continuous across all three:
+Section numbers (§14.1–§14.41) are continuous across all three:
 
 * **[features/01-workspace-navigation-and-search.md](features/01-workspace-navigation-and-search.md)**
   — §14.1–§14.26: split-window layout/tabs/panes, tag panel, clipboard file operations,
@@ -447,7 +449,7 @@ Section numbers (§14.1–§14.40) are continuous across all three:
   browsing/preview/extraction, per-file/folder font & color decoration, window-wide status bar, git
   status badges, live directory update.
 * **[features/03-monitoring-git-and-productivity.md](features/03-monitoring-git-and-productivity.md)**
-  — §14.34–§14.40: recursive folder monitoring, git branch status/checkout, favorites,
+  — §14.34–§14.41: recursive folder monitoring, git branch status/checkout, favorites,
   notification system, async advanced search, customizable Details-view columns, disk usage/folder
-  size.
+  size, left panel with folder tree.
 

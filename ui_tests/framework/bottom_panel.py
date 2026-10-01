@@ -28,8 +28,14 @@ class FolderSizePanel:
         recursively walks the tab's current folder on a background thread and persists the result;
         the button's text flips back from "Scanning..." to "Scan Folder" (FolderSizeWidget::
         onScanningChanged) once that completes.
+
+        Waits for the button to first show "Scanning..." before waiting for it to revert --
+        otherwise the completion check can pass immediately on the pre-click "Scan Folder" text,
+        before the cross-process UI Automation click has even reached the app, silently skipping
+        the wait for an actual scan.
         """
         self.scan_folder_button.click()
+        wait_until(lambda: self.scan_folder_button.text == "Scanning...", timeout=5, interval=0.02)
         wait_until(lambda: self.scan_folder_button.text == "Scan Folder", timeout=timeout)
 
 

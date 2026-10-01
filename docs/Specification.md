@@ -20,6 +20,17 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 
 **Directory Navigation:**
 * Tree view and list/grid view of the local file system.
+* **Folder tree** (Architecture.md §14.41): a collapsible, resizable side panel on the left edge of
+  the window (collapsed by default, same behavior as the right-hand panel) with a "Tree" tab
+  showing only folders, rooted at "This PC". It always follows the active pane's active tab —
+  expanding down to and selecting that tab's current folder whenever the tab navigates or another
+  tab becomes active. Single-clicking a folder navigates the active tab there (clicking the expand
+  arrow only expands/collapses); right-clicking a folder shows the same context menu as in the file
+  view; F2 renames a folder inline and Delete/Shift+Delete deletes it after confirmation. Hidden
+  folders follow the "Show hidden files/folders" setting, except that hidden folders leading to the
+  active tab's folder are always shown. Renaming or deleting a folder that any tab is currently
+  browsing (or browsing inside) moves that tab to the renamed folder, or to the deleted folder's
+  parent, rather than leaving it on a path that no longer exists.
 * Standard navigation controls (Back, Forward, Up, Path Bar).
 * **Path bar folder autocomplete** (Architecture.md §14.21): as the user types, a popup lists only
   the matching folders (never files) under the implied parent directory, navigable with the

@@ -8,6 +8,7 @@ add_executable(explorer_adapters_tests
     SQLiteTagRepositoryTest.cpp
     AppConfigStoreTest.cpp
     WorkspaceControllerTest.cpp
+    FolderTreeModelTest.cpp
     LoggingTest.cpp
     AnsiTerminalBufferTest.cpp
     ThumbnailCacheTest.cpp

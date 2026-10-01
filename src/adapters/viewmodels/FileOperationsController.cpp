@@ -153,6 +153,7 @@ void FileOperationsController::moveToTrash(const std::filesystem::path& path)
         return;
     }
 
+    emit pathRemoved(path);
     emit directoryContentsMayHaveChanged(path.parent_path());
 }
 
@@ -165,6 +166,7 @@ void FileOperationsController::deletePermanently(const std::filesystem::path& pa
         return;
     }
 
+    emit pathRemoved(path);
     emit directoryContentsMayHaveChanged(path.parent_path());
 }
 
@@ -199,6 +201,9 @@ void FileOperationsController::renamePath(const std::filesystem::path& source, c
         return;
     }
 
+    // pathRenamed first: WorkspaceController renames the folder tree's node in place before the
+    // parent's re-list diff runs, so an expanded subtree survives (Architecture.md §14.41).
+    emit pathRenamed(source, destination);
     emit directoryContentsMayHaveChanged(source.parent_path());
 }
 

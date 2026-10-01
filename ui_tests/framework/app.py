@@ -22,6 +22,7 @@ from .automation_id import AutomationID
 from .element import Element
 from .favorites_menu import FavoritesMenu
 from .layout import LayoutToolbar
+from .left_panel import LeftPanel
 from .pane import PaneNavigation, WorkspacePanes
 from .right_panel import RightPanel
 from .status_bar import MainStatusBar
@@ -47,6 +48,7 @@ class ExpLorerApp:
         self.window = window  # raw pywinauto WindowSpecification escape hatch
         self.panes = WorkspacePanes(self._container)
         self.right_panel = RightPanel(self._container)
+        self.left_panel = LeftPanel(self._container)
         self.layout = LayoutToolbar(self._container)
         self.status_bar = MainStatusBar(self._container)
         self.favorites = FavoritesMenu(self)

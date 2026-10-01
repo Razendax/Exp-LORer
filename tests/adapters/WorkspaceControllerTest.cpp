@@ -10,8 +10,10 @@
 #include "FileDecorationsViewModel.h"
 #include "FileNavigationUseCase.h"
 #include "FilePreviewUseCase.h"
+#include "FileOperationsController.h"
 #include "FileTagsService.h"
 #include "FolderMonitorUseCase.h"
+#include "FolderTreeModel.h"
 #include "GitBranchUseCase.h"
 #include "GitStatusService.h"
 #include "GitStatusUseCase.h"
@@ -182,4 +184,68 @@ TEST_F(WorkspaceControllerTest, RestoreFromConfigWithDeletedPathDegradesToNaviga
 
     EXPECT_TRUE(navigationFailedEmitted);
     EXPECT_TRUE(tab->currentPath().empty());
+}
+
+TEST_F(WorkspaceControllerTest, RenamingAnAncestorFolderMovesTabsBrowsingInsideIt)
+{
+    fs::create_directories(m_tempDir / "project" / "src");
+
+    TabViewModel* inside = m_controller.pane(WorkspacePaneId::PaneA)->addTab();
+    inside->navigateTo(m_tempDir / "project" / "src");
+    TabViewModel* otherPane = m_controller.pane(WorkspacePaneId::PaneB)->addTab();
+    otherPane->navigateTo(m_tempDir / "project");
+    TabViewModel* outside = m_controller.pane(WorkspacePaneId::PaneB)->addTab();
+    outside->navigateTo(m_tempDir);
+
+    m_controller.fileOperationsController()->renamePath(m_tempDir / "project", m_tempDir / "renamed");
+
+    EXPECT_EQ(inside->currentPath(), m_tempDir / "renamed" / "src");
+    EXPECT_EQ(otherPane->currentPath(), m_tempDir / "renamed");
+    EXPECT_EQ(outside->currentPath(), m_tempDir);
+    // Replaced in place, not recorded as a new navigation step.
+    EXPECT_FALSE(inside->backAvailable());
+}
+
+TEST_F(WorkspaceControllerTest, DeletingAFolderMovesTabsBrowsingInsideItToItsParent)
+{
+    fs::create_directories(m_tempDir / "doomed" / "inner");
+
+    TabViewModel* inner = m_controller.pane(WorkspacePaneId::PaneA)->addTab();
+    inner->navigateTo(m_tempDir / "doomed" / "inner");
+    TabViewModel* atFolder = m_controller.pane(WorkspacePaneId::PaneA)->addTab();
+    atFolder->navigateTo(m_tempDir / "doomed");
+
+    // Permanent delete, so the test never touches the real Recycle Bin.
+    m_controller.fileOperationsController()->deletePermanently(m_tempDir / "doomed");
+
+    EXPECT_EQ(inner->currentPath(), m_tempDir);
+    EXPECT_EQ(atFolder->currentPath(), m_tempDir);
+}
+
+TEST_F(WorkspaceControllerTest, FolderTreeFollowsTheFocusedTabsPath)
+{
+    fs::create_directories(m_tempDir / "sub");
+    FolderTreeModel* tree = m_controller.folderTreeModel();
+
+    std::vector<fs::path> revealed;
+    QObject::connect(tree, &FolderTreeModel::activePathChanged, [&revealed](const fs::path& path) { revealed.push_back(path); });
+
+    TabViewModel* tabA = m_controller.pane(WorkspacePaneId::PaneA)->addTab();
+    tabA->navigateTo(m_tempDir);
+    EXPECT_EQ(tree->activePath(), m_tempDir);
+
+    tabA->navigateTo(m_tempDir / "sub");
+    EXPECT_EQ(tree->activePath(), m_tempDir / "sub");
+
+    // A tab in an unfocused pane doesn't drive the tree...
+    TabViewModel* tabB = m_controller.pane(WorkspacePaneId::PaneB)->addTab();
+    tabB->navigateTo(m_tempDir);
+    EXPECT_EQ(tree->activePath(), m_tempDir / "sub");
+
+    // ...until its pane gets focus.
+    m_controller.setFocusedPane(WorkspacePaneId::PaneB);
+    EXPECT_EQ(tree->activePath(), m_tempDir);
+
+    ASSERT_FALSE(revealed.empty());
+    EXPECT_EQ(revealed.back(), m_tempDir);
 }

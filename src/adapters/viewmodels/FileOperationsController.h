@@ -77,6 +77,16 @@ signals:
     // refreshes any live tab whose currentPath() matches.
     void directoryContentsMayHaveChanged(const std::filesystem::path& directory);
 
+    // Emitted by renamePath() on success, just before directoryContentsMayHaveChanged(source's
+    // parent). WorkspaceController re-points every tab browsing at/inside `source` to the matching
+    // path under `destination`, and renames the folder tree's node (Architecture.md §14.41).
+    void pathRenamed(const std::filesystem::path& source, const std::filesystem::path& destination);
+
+    // Emitted by moveToTrash()/deletePermanently() on success, just before
+    // directoryContentsMayHaveChanged(path's parent). WorkspaceController moves every tab browsing
+    // at/inside `path` up to its parent (Architecture.md §14.41).
+    void pathRemoved(const std::filesystem::path& path);
+
 private:
     // Appends " (2)", " (3)", ... before the extension until destinationDirectory/candidate
     // doesn't exist, checked via FileNavigationUseCase::stat (NotFound => free) rather than

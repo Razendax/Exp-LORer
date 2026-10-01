@@ -154,6 +154,12 @@ public slots:
     // that has it open (Architecture.md §14.10).
     void refresh();
 
+    // Moves the tab to `path` as a replacement for its current history entry rather than a new
+    // one -- used when the folder the tab is showing (or one of its ancestors) was renamed or
+    // deleted out from under it (Architecture.md §14.41). Same validation/failure signalling as
+    // navigateTo(); exits any active search.
+    void replaceCurrentPath(const std::filesystem::path& path);
+
     // Recursive filename search scoped to currentPath() (Architecture.md §14.18). No-op if query
     // is empty/whitespace-only. Performs one recursive Port call, caches the snapshot, filters +
     // sorts it into searchResultsModel(), and flips searchActive on. On failure, emits
@@ -266,7 +272,13 @@ private:
     // once, and on success emits currentPathChanged + directoryContentsChanged, recording history
     // only when recordHistory is true (false for goBack/goForward, which only move the existing
     // history pointer rather than recording a new entry).
-    void loadAndApply(const std::filesystem::path& path, bool recordHistory);
+    enum class HistoryUpdate
+    {
+        None,           // back/forward/refresh: history already points at `path`
+        Record,         // a new navigation step
+        ReplaceCurrent, // current entry swapped in place (replaceCurrentPath)
+    };
+    void loadAndApply(const std::filesystem::path& path, HistoryUpdate historyUpdate);
     void emitAvailability();
 
     // Connected to directoryContentsChanged (normal browsing only -- not the search result

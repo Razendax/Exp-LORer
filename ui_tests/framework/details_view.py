@@ -156,23 +156,29 @@ def drag_header(tree_view: Element, from_title: str, to_title: str, steps: int =
     build that QHeaderView's live drag-reorder tracking needs a steady stream of intermediate
     mouseMoveEvents, and that the cursor has to clearly cross past a section's midpoint before a
     swap actually commits; the canned single-jump approach did neither and never reordered anything.
+
+    Re-locates `to_title`'s header on every step rather than targeting a single rectangle captured
+    before the drag started: QHeaderView's live reorder preview can shift intervening sections (and
+    therefore `to_title`'s position) while the drag is in progress, which would otherwise leave the
+    mouse releasing over a stale, no-longer-correct destination.
     """
     source = find_header(tree_view, from_title)
     src_rect = source.rectangle()
     y = (src_rect.top + src_rect.bottom) // 2
     x_start = (src_rect.left + src_rect.right) // 2
 
-    dest_rect = find_header(tree_view, to_title).rectangle()
-    x_end = dest_rect.left + int((dest_rect.right - dest_rect.left) * 0.8)
+    def target_x() -> int:
+        dest_rect = find_header(tree_view, to_title).rectangle()
+        return dest_rect.left + int((dest_rect.right - dest_rect.left) * 0.8)
 
     source.press_mouse_input(coords=(x_start, y))
     time.sleep(0.2)
     for i in range(1, steps + 1):
-        x = x_start + (x_end - x_start) * i // steps
+        x = x_start + (target_x() - x_start) * i // steps
         source.move_mouse_input(coords=(x, y))
         time.sleep(step_delay)
     time.sleep(0.2)
-    source.release_mouse_input(coords=(x_end, y))
+    source.release_mouse_input(coords=(target_x(), y))
 
 
 def toggle_column_visibility(tree_view: Element, column_title: str) -> None:

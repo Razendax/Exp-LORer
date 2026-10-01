@@ -1,6 +1,4 @@
-#include "RightPanelWidget.h"
-
-#include <array>
+#include "SidePanelWidget.h"
 
 #include <QHBoxLayout>
 #include <QResizeEvent>
@@ -10,10 +8,10 @@
 
 #include "UiColors.h"
 
-RightPanelWidget::RightPanelWidget(QWidget* parent)
+SidePanelWidget::SidePanelWidget(Edge edge, const QString& idPrefix, QWidget* parent)
     : QWidget(parent)
 {
-    setObjectName(QStringLiteral("rightPanelWidget"));
+    setObjectName(idPrefix + QStringLiteral("Widget"));
 
     auto* layout = new QHBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -21,36 +19,36 @@ RightPanelWidget::RightPanelWidget(QWidget* parent)
 
     m_headerStrip = new QWidget(this);
     m_headerStrip->setAttribute(Qt::WA_StyledBackground, true);
-    m_headerStrip->setStyleSheet(QString("background-color: %1;").arg(QLatin1String(UiColors::kRightPanelBackground)));
+    m_headerStrip->setStyleSheet(QString("background-color: %1;").arg(QLatin1String(UiColors::kSidePanelBackground)));
     auto* headerLayout = new QVBoxLayout(m_headerStrip);
     headerLayout->setContentsMargins(2, 4, 2, 4);
     headerLayout->setSpacing(2);
     headerLayout->addStretch(1); // buttons are inserted before this, keeping them top-aligned
 
     m_stack = new QStackedWidget(this);
-    m_stack->setObjectName(QStringLiteral("rightPanelStack"));
+    m_stack->setObjectName(idPrefix + QStringLiteral("Stack"));
     m_stack->hide();
 
-    layout->addWidget(m_headerStrip);
-    layout->addWidget(m_stack, 1);
+    // The header strip always faces the workspace: left edge for the right panel, right edge for
+    // the left panel.
+    if (edge == Edge::Right)
+    {
+        layout->addWidget(m_headerStrip);
+        layout->addWidget(m_stack, 1);
+    }
+    else
+    {
+        layout->addWidget(m_stack, 1);
+        layout->addWidget(m_headerStrip);
+    }
 }
 
-int RightPanelWidget::addPanelTab(const QString& label, QWidget* content)
+int SidePanelWidget::addPanelTab(const QString& label, QWidget* content, const QString& buttonObjectName)
 {
     const int index = m_stack->addWidget(content);
 
     auto* button = new QToolButton(m_headerStrip);
-    // Order shared with MainWindow::createWorkspace()'s addPanelTab calls: Tags (0), Preview (1),
-    // Monitoring (2) -- the only caller today.
-    static constexpr std::array<const char*, 3> kPanelTabButtonIds = {
-        "rightPanelTagsButton",
-        "rightPanelPreviewButton",
-        "rightPanelMonitoringButton",
-    };
-    if (index >= 0 && static_cast<size_t>(index) < kPanelTabButtonIds.size())
-    {
-        button->setObjectName(QLatin1String(kPanelTabButtonIds[static_cast<size_t>(index)]));
-    }
+    button->setObjectName(buttonObjectName);
     button->setText(label);
     button->setCheckable(true);
 
@@ -65,7 +63,7 @@ int RightPanelWidget::addPanelTab(const QString& label, QWidget* content)
     return index;
 }
 
-void RightPanelWidget::onPanelTabButtonClicked(int index)
+void SidePanelWidget::onPanelTabButtonClicked(int index)
 {
     if (m_expanded && m_activeIndex == index)
     {
@@ -105,7 +103,7 @@ void RightPanelWidget::onPanelTabButtonClicked(int index)
     }
 }
 
-void RightPanelWidget::resizeEvent(QResizeEvent* event)
+void SidePanelWidget::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
 
@@ -120,12 +118,12 @@ void RightPanelWidget::resizeEvent(QResizeEvent* event)
     }
 }
 
-int RightPanelWidget::collapsedWidth() const
+int SidePanelWidget::collapsedWidth() const
 {
     return m_headerStrip->sizeHint().width();
 }
 
-int RightPanelWidget::preferredExpandedWidth() const
+int SidePanelWidget::preferredExpandedWidth() const
 {
     constexpr int kContentWidth = 260;
     return collapsedWidth() + kContentWidth;
