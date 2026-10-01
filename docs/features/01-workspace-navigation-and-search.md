@@ -239,6 +239,12 @@ automated coverage beyond the already-tested use case (§11).
 
 ### 14.18 Filename Search (Per-Tab, Recursive)
 
+> Superseded in UI placement by §14.42 (`docs/features/03-monitoring-git-and-productivity.md`):
+> the toolbar search box described below was removed and this search entry point was consolidated
+> into the left panel's "Search" tab, now always async per §14.38's machinery rather than
+> synchronous. The recursive-scan/caching mechanics below are otherwise unchanged and still
+> accurate for how a search is actually executed.
+
 Recursive filename/extension search scoped to a tab's current folder, triggered from a toolbar
 search box and rendered inside the tab it ran against (search state lives on `TabViewModel`, not a
 separate panel). `IFileSystemRepository::listDirectoryRecursive` (new, symmetric to
@@ -252,6 +258,11 @@ the initial scan, accepted. Pure filtering logic and the repository method are G
 ViewModel/UI state is not (§11).
 
 ### 14.19 Advanced (Criteria) Search Pane
+
+> §14.42 relocates only this pane's *entry-point button* (the former toolbar "Advanced Search..."
+> action) into the left panel's new "Search" tab, below its search bar — everything described
+> below (the pane itself, its fields, its per-tab in-place results view, and §14.20's tag
+> integration) is otherwise unchanged.
 
 A second, richer search entry point alongside §14.18 (kept unmodified) — Name / Min size / Max size
 criteria, results always rendered in a taller, match-highlighting Details-like view

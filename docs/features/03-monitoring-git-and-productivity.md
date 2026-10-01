@@ -5,7 +5,7 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.34–§14.41. Preceded by
+Covers §14.34–§14.43. Preceded by
 [01-workspace-navigation-and-search.md](01-workspace-navigation-and-search.md) (§14.1–§14.26)
 and [02-preview-decoration-and-status.md](02-preview-decoration-and-status.md) (§14.27–§14.33).
 
@@ -689,5 +689,131 @@ tab. No Domain/Application change, no new Port, no schema change.
   feedback loop); while the panel is collapsed revealing is skipped and `showEvent` catches up, so a
   collapsed panel costs no directory listing. After a tree click the tree re-reveals the tab's
   actual folder, undoing the selection if navigation failed or was declined.
-* **Not built:** other left-panel tabs; persisting the panel's state/width; files, multi-select or
-  drag-and-drop in the tree; a background ("New Folder") menu on empty tree space; async listing.
+* **Not built:** persisting the panel's state/width; files, multi-select or drag-and-drop in the
+  tree; a background ("New Folder") menu on empty tree space; async listing. (A second left-panel
+  tab, "Search," is added by §14.42.)
+
+### 14.42 Search Tab (Left Panel)
+
+Adds a "Search" tab to the left `SidePanelWidget`, alongside "Tree" (§14.41), replacing the former
+toolbar quick search (§14.18) with an async, list-or-tree-capable equivalent rendered in the left
+panel. **Advanced Search (§14.19/§14.20, async since §14.38) is functionally untouched** — same
+dedicated per-tab pane, same Name/Min size/Max size/tag fields and Search button, same in-place
+results view, same `TabViewModel` API. The only change made to it here is cosmetic: its
+entry-point button relocates from the main toolbar into this new Search tab, below the search bar.
+No Domain/Application/Port/schema change.
+
+* **§14.18's quick search becomes async, in place of being removed.** `TabViewModel`'s existing
+  quick-search block (`searchResultsModel()`/`searchActive()`/`searchQuery()`,
+  `startSearch`/`updateSearchQuery`/`exitSearch`, `searchModeChanged`/`searchResultsChanged`/
+  `searchFailed`) is reimplemented on top of `AdvancedSearchService`/`AdvancedSearchWorker`
+  (§14.38) — its own independent generation-fenced pipeline (own snapshot/partial-snapshot/
+  generation members), entirely separate from `m_advancedSearch*`, dispatching a
+  `SearchCriteria{.nameQuery = query}` (name-only; no min/max/tags) through the same
+  `requestRecursiveScan` the Advanced Search pane already uses. `startSearch`/`updateSearchQuery`
+  collapse into one slot, `updateSearchQuery(const QString&)` — no Enter-press step, since the
+  search bar now searches live as the user types; an empty query is a no-op that clears results
+  (§14.18's historical behavior, preserved). New `refreshSearch()` slot forces a rescan (backs the
+  Refresh toolbar button) and new `searchLoading()`/`searchLoadingFinished()` signals (mirroring
+  the advanced-search pair) let the UI show a busy state. No new debounce timer: per-keystroke
+  calls stay cheap via the same in-flight-scan-reuse rule §14.38 already established — the first
+  edit against a given root triggers the one recursive scan, every edit before it completes
+  re-filters the latest progress tick's partial snapshot in memory, and every edit after re-filters
+  the full cached snapshot, also in memory.
+* **`SearchPanelWidget`** (`src/ui/widgets`, new) — the Search tab's content, registered via
+  `m_leftPanelWidget->addPanelTab(tr("Search"), ..., "leftPanelSearchButton")` next to "Tree." Top
+  to bottom: an icon toolbar (Refresh/Clear/View-as-tree (checkable)/Collapse-all, the last enabled
+  only while View-as-tree is on); the search `QLineEdit`; an "Advanced Search..." `QPushButton`
+  (the relocated former toolbar action, unchanged click behavior —
+  `tab->showAdvancedSearchPanel()`, still opening the existing in-place pane in the focused pane's
+  tab, not in this panel); a `QStackedWidget` of two result views for *this tab's own* quick
+  search. List mode reuses `FileBrowserView` in `DisplayMode::AdvancedSearchResults` (§14.19,
+  bound to this search's own `FileListModel`, not the Advanced Search pane's) with every column
+  but Name hidden via the existing per-view `setColumnVisible` — so `SearchResultDelegate`'s
+  highlight painting and the existing `itemActivated(path, isDirectory)` double-click signal are
+  inherited for free, satisfying "name only, with the matching part highlighted." Tree mode is
+  new: a `QTreeView` over `SearchResultsTreeModel` (`adapters/viewmodels`, new) — a
+  `FolderTreeModel`-shaped but much simpler model (no lazy loading/`fetchMore`; rebuilt wholesale
+  from the current flat result snapshot on every change) that groups matches into the folder
+  hierarchy between the search root and each hit, reusing a second `SearchResultDelegate` instance
+  for the same Name-highlight painting.
+* **`WorkspacePaneWidget`'s per-tab stack loses only the old `quickSearchResultsView` page** (its
+  in-place quick-search results, now rendered in the left panel instead) — the
+  `advancedSearchResultsPane` page (`SearchResultsPane`/`SearchCriteriaPanel`, §14.19) is
+  untouched, so a tab's stack goes from three pages to two (normal browsing, advanced search),
+  not one.
+* **Retargeting to the focused tab.** `MainWindow` mediates directly (no new ViewModel class),
+  the same posture it already used for the old toolbar search bar via `m_searchTrackedTab`:
+  `onFocusedTabChanged` disconnects the previous tab's quick-search signals from
+  `SearchPanelWidget` and connects the newly-focused tab's, pushing its current `searchQuery()`/
+  results immediately so the panel always reflects whichever tab is focused — preserving §14.18's
+  "a tab's search results and query persist, independent of focus." The existing
+  `advancedSearchFailed`→status-bar wiring for Advanced Search is untouched.
+* **Double-click navigation.** `SearchPanelWidget::resultActivated(path, isDirectory)` (bubbled
+  from whichever result view is active) drives a new `MainWindow::onSearchResultActivated`, which
+  calls the focused pane's existing `WorkspacePaneWidget::navigateAndSelect` — a directory
+  navigates there directly; a file navigates to `path.parent_path()` with `path` as the entry to
+  select/highlight. This is the same entry point Favorites (§14.36) already uses, so no new
+  navigation logic was needed. (Advanced Search results keep their existing double-click behavior,
+  unaffected by this.)
+* **"View as tree" is a panel-level UI preference, not per-tab state** — it changes how the
+  focused tab's current quick-search results render, not what is searched; not persisted (same
+  posture as §14.25/§14.41's un-persisted panel width/expanded state). It has no equivalent in
+  Advanced Search, which keeps its single Details-like results view.
+* **Not built:** showing non-matching sibling folders for context in tree mode (grouping is purely
+  structural, built only from the matched paths themselves); persisting the view-as-tree toggle;
+  true cancellation of an in-flight scan (unchanged from §14.38 — still generation-fenced discard,
+  not a real abort); any merging of this tab's quick search with Advanced Search's criteria or
+  results — the two remain fully independent search mechanisms sharing only the backend service.
+
+### 14.43 Search Tab Follow-Up: Selection Sync, Enter-to-Refresh, Refresh-After-Navigate
+
+Four small UX fixes to §14.42's Search tab, all UI/Adapters glue — no Domain/Application/Port/
+schema change.
+
+* **Selecting a result updates the right panel.** `TagListViewModel`/`FilePreviewViewModel::
+  resolveTarget()` already resolve purely from `TabViewModel::selectedEntries()`, same as the main
+  browse view — the only gap was that nothing ever called `setSelectedEntries()` from the Search
+  tab's own result views. `SearchPanelWidget` now bubbles a `selectionChanged(const
+  std::vector<FileNode>&)` signal: for list mode, forwarded directly from `m_listResultsView`'s
+  existing `FileBrowserView::selectionChanged` (already built from `FileListModel::entryAt()`, no
+  new code there); for tree mode, resolved from `QTreeView`'s selection via `SearchResultsTreeModel::
+  pathForIndex()` looked up (case-insensitively, `PathContainment.h`) against a `m_lastResults`
+  cache `SearchPanelWidget` now keeps alongside `setResults()`. A selected tree node that is a
+  structural ancestor rather than one of the matched entries isn't in `m_lastResults` and resolves
+  to "no selection," rather than adding a `stat()`-based fallback for that edge case.
+  `MainWindow::createSearchPanel()` forwards the signal to
+  `m_workspaceController->focusedTab()->setSelectedEntries(...)`, looked up fresh at signal time —
+  the same posture already used there for `resultActivated`/`refreshRequested`, so no new
+  disconnect/reconnect bookkeeping was needed in `onFocusedTabChanged`. The main browse view's own
+  visual selection is left untouched by a search-result selection (and vice versa); whichever view's
+  selection changed most recently is what the right panel reflects.
+* **Highlighting matched substrings was already built** (§14.19/§14.42's `SearchResultDelegate` +
+  `SearchPanelWidget::setQuery()`) in both list and tree result views — verified still rendering
+  correctly, no change needed here. Known narrow gap, left as-is: a query containing `*`/`?` is
+  glob-matched by `AdvancedSearchService` but highlighted via a literal substring search, so a
+  wildcard query's own literal text usually won't appear in, and therefore won't highlight in, its
+  matches.
+* **Enter forces a refresh.** `QLineEdit::returnPressed` now triggers the same action as the
+  Refresh button (below) with the box's current text — additive to, not a replacement for, the
+  existing per-keystroke live search, giving users an explicit way to force a fresh disk scan (live
+  search only scans once per root; further keystrokes re-filter the cached snapshot, so files
+  added/removed on disk afterward need an explicit refresh to show up).
+* **Refresh now works after navigating away mid-search.** `TabViewModel::navigateTo()` has always
+  unconditionally called `exitSearch()` (clearing `m_searchActive`/`m_searchQuery`/`m_searchRoot`),
+  but nothing cleared the Search tab's own `QLineEdit` text on an in-tab navigation (only
+  `onFocusedTabChanged`'s focus-change sync did), so the box could keep showing a stale query after
+  the tab moved to a different folder — and the old no-arg, `m_searchActive`-gated
+  `TabViewModel::refreshSearch()` was then a silent no-op, since search had already been exited.
+  `refreshSearch()` now takes the query explicitly (`refreshSearch(const QString& query)`,
+  `SearchPanelWidget::refreshRequested` updated to carry it, also reused by Enter above): it sets
+  `m_searchQuery` and force-dispatches `runSearch(true)` unconditionally, which already re-roots to
+  `currentPath()` on every forced dispatch and flips `m_searchActive` back on once results land —
+  so Refresh/Enter now always (re)search wherever the tab is currently browsing, regardless of
+  whether a search was still active. `exitSearch()`/`navigateTo()` themselves are unchanged — fully
+  exiting search on navigation is still correct; only Refresh/Enter's ability to *restart* it
+  changed.
+* **Not built:** preserving the exited search's query/results across a navigation (the box simply
+  keeps showing stale text until Refresh/Enter or a focus change resets it — same un-persisted
+  posture §14.42 already accepts elsewhere); a visual indicator distinguishing "live filtered
+  results" from "stale results, folder changed since" beyond what Refresh/Enter now fix.

@@ -72,7 +72,8 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
 
         if (m_searchActive)
         {
-            requestSearchResultTags(m_searchGeneration, m_searchSnapshot);
+            const std::vector<FileNode>& candidates = m_searchFullScanDone ? m_searchSnapshot : m_searchPartialSnapshot;
+            requestSearchResultTags(m_searchGeneration, candidates);
         }
 
         if (m_advancedSearchActive)
@@ -297,35 +298,101 @@ void TabViewModel::loadAndApply(const std::filesystem::path& path, HistoryUpdate
     emitAvailability();
 }
 
-void TabViewModel::startSearch(const QString& query)
+void TabViewModel::updateSearchQuery(const QString& query)
 {
     if (query.trimmed().isEmpty())
     {
+        exitSearch();
         return;
     }
 
     exitAdvancedSearch();
 
-    m_searchRoot = currentPath();
     m_searchQuery = query;
-
-    const int generation = ++m_searchGeneration;
-
-    // Recursive scan runs off the Qt UI thread via AdvancedSearchService's worker -- same scan
-    // FileNavigationUseCase::listDirectoryRecursive would have done synchronously here before.
-    m_advancedSearchService.requestRecursiveScan(this, m_searchRoot, [this, generation](Result<std::vector<FileNode>> result) {
-        onSearchScanReady(generation, std::move(result));
-    });
+    runSearch(/*forceRescan=*/false);
 }
 
-void TabViewModel::onSearchScanReady(int generation, Result<std::vector<FileNode>> result)
+void TabViewModel::refreshSearch(const QString& query)
+{
+    if (query.trimmed().isEmpty())
+    {
+        exitSearch();
+        return;
+    }
+
+    exitAdvancedSearch();
+
+    m_searchQuery = query;
+    runSearch(/*forceRescan=*/true);
+}
+
+void TabViewModel::runSearch(bool forceRescan)
+{
+    if (forceRescan || m_searchRoot.empty() || (!m_searchFullScanDone && !m_searchScanPending))
+    {
+        // No scan covering the current root is running or cached -- dispatch a fresh one. This also
+        // covers forceRescan explicitly re-scanning a root that *was* already fully/partially
+        // scanned (Refresh clicked again).
+        m_searchRoot = currentPath();
+        m_searchFullScanDone = false;
+        m_searchPartialSnapshot.clear();
+        m_searchScanPending = true;
+
+        const int generation = ++m_searchGeneration;
+
+        emit searchLoading();
+        m_advancedSearchService.requestRecursiveScan(
+            this, m_searchRoot,
+            [this, generation](Result<std::vector<FileNode>> result) { onSearchCandidatesReady(generation, std::move(result)); },
+            [this, generation](std::vector<FileNode> partial) { onSearchProgress(generation, std::move(partial)); });
+        return;
+    }
+
+    if (!m_searchFullScanDone && m_searchScanPending)
+    {
+        // A recursive scan of this same root is already running (the user kept typing while it's
+        // in flight) -- don't start a second, redundant walk of the same subtree. Just re-filter
+        // whatever the in-flight scan has reported so far; its own next progress tick (or final
+        // result) will pick up m_searchQuery as it stands then (Architecture.md §14.37).
+        applySearchFilter(m_searchPartialSnapshot);
+        return;
+    }
+
+    // Cached, no rescan needed -- no disk I/O, so this stays fully synchronous (the common "user is
+    // typing" case).
+    applySearchFilter(m_searchSnapshot);
+}
+
+void TabViewModel::applySearchFilter(const std::vector<FileNode>& candidates)
+{
+    auto filtered = FileNavigationUseCase::filterByName(candidates, m_searchQuery.toStdString());
+    filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
+    m_searchResultsModel->setEntries(m_searchRoot, filtered);
+    // setEntries() above clears the model's tags -- m_searchSnapshotTags already has every tag for
+    // the current candidate list (requestSearchResultTags fetched it whenever that list itself last
+    // changed), so re-applying it here needs no new DB round trip even though this runs on every
+    // keystroke.
+    m_searchResultsModel->setFileTags(m_searchSnapshotTags);
+
+    if (!m_searchActive)
+    {
+        m_searchActive = true;
+        setSelectedEntries({});
+        emit searchModeChanged(true);
+    }
+
+    emit searchResultsChanged(filtered);
+}
+
+void TabViewModel::onSearchCandidatesReady(int generation, Result<std::vector<FileNode>> result)
 {
     if (generation != m_searchGeneration)
     {
-        // Superseded by a newer startSearch() call, or the search was exited/tab closed in the
-        // meantime -- discard.
+        // Superseded by a newer dispatch, or the search/tab was closed in the meantime -- discard.
         return;
     }
+
+    m_searchScanPending = false;
 
     if (result.hasError())
     {
@@ -334,36 +401,25 @@ void TabViewModel::onSearchScanReady(int generation, Result<std::vector<FileNode
     }
 
     m_searchSnapshot = std::move(result).value();
-    m_searchActive = true;
-
-    auto filtered = FileNavigationUseCase::filterByName(m_searchSnapshot, m_searchQuery.toStdString());
-    filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
-    m_searchResultsModel->setEntries(m_searchRoot, filtered);
+    m_searchPartialSnapshot.clear();
+    m_searchFullScanDone = true;
+    applySearchFilter(m_searchSnapshot);
     requestSearchResultTags(generation, m_searchSnapshot);
 
-    setSelectedEntries({});
-    emit searchModeChanged(true);
-    emit searchResultsChanged(filtered);
+    emit searchLoadingFinished();
 }
 
-void TabViewModel::updateSearchQuery(const QString& query)
+void TabViewModel::onSearchProgress(int generation, std::vector<FileNode> partial)
 {
-    if (!m_searchActive)
+    if (generation != m_searchGeneration)
     {
+        // Superseded/abandoned, same as onSearchCandidatesReady -- discard.
         return;
     }
 
-    m_searchQuery = query;
-
-    auto filtered = FileNavigationUseCase::filterByName(m_searchSnapshot, query.toStdString());
-    filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
-    m_searchResultsModel->setEntries(m_searchRoot, filtered);
-    // setEntries() above clears the model's tags -- m_searchSnapshotTags already has every tag for
-    // the whole snapshot (requestSearchResultTags fetched it once when the snapshot itself was set),
-    // so re-applying it here needs no new DB round trip even though this runs on every keystroke.
-    m_searchResultsModel->setFileTags(m_searchSnapshotTags);
-
-    emit searchResultsChanged(filtered);
+    m_searchPartialSnapshot = std::move(partial);
+    applySearchFilter(m_searchPartialSnapshot);
+    requestSearchResultTags(generation, m_searchPartialSnapshot);
 }
 
 void TabViewModel::exitSearch()
@@ -375,9 +431,12 @@ void TabViewModel::exitSearch()
 
     m_searchActive = false;
     m_searchSnapshot.clear();
+    m_searchPartialSnapshot.clear();
     m_searchSnapshotTags.clear();
     m_searchQuery.clear();
     m_searchRoot.clear();
+    m_searchFullScanDone = false;
+    m_searchScanPending = false;
     ++m_searchGeneration;
 
     setSelectedEntries({});
@@ -778,7 +837,8 @@ void TabViewModel::requestSearchResultTags(int generation, const std::vector<Fil
     m_fileTagsService.requestTags(this, candidates, [this, generation](Result<TagsByPathMap> result) {
         if (generation != m_searchGeneration)
         {
-            // Superseded/abandoned, same discard-by-generation-id approach onSearchScanReady uses.
+            // Superseded/abandoned, same discard-by-generation-id approach onSearchCandidatesReady/
+            // onSearchProgress use.
             return;
         }
 

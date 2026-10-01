@@ -63,8 +63,8 @@ class DetailsRow:
 
 def read_details_rows(tree_view: Element) -> List[DetailsRow]:
     """Snapshot of every row currently shown in `tree_view` (a Details-view FileBrowserView's
-    `file_tree_view`/`quick_search_results_view`), in display order. Empty list for an empty
-    folder/no results. Assumes every column is visible -- see `DetailsRow`'s docstring.
+    `file_tree_view`), in display order. Empty list for an empty folder/no results. Assumes every
+    column is visible -- see `DetailsRow`'s docstring.
     """
     cells = [
         child.window_text()

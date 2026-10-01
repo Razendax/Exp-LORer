@@ -20,8 +20,6 @@ class QActionGroup;
 class QCloseEvent;
 class QResizeEvent;
 class QMenu;
-class QLineEdit;
-class QToolBar;
 class AppConfigStore;
 class HighlightThemeViewModel;
 class FileDecorationsViewModel;
@@ -37,6 +35,7 @@ class WorkspaceLayoutWidget;
 class TagPanelWidget;
 class SidePanelWidget;
 class FolderTreeView;
+class SearchPanelWidget;
 class PreviewPanelWidget;
 class MonitoringPanelWidget;
 class NotificationOverlayWidget;
@@ -69,9 +68,6 @@ protected:
     // place a save happens; no periodic/live autosave).
     void closeEvent(QCloseEvent* event) override;
 
-    // Watches m_searchBar for Escape (clears the box and exits search on the focused tab).
-    bool eventFilter(QObject* watched, QEvent* event) override;
-
     // Repositions m_notificationOverlayWidget to the bottom-right corner on every resize.
     void resizeEvent(QResizeEvent* event) override;
 
@@ -83,9 +79,9 @@ private:
     void createMenuBar();
     void createFavoritesMenu();
     void createLayoutToolBar();
-    void createSearchBar(QToolBar* toolBar);
     void createWorkspace();
     void createFolderTree();
+    void createSearchPanel();
     void createMainStatusBar();
     void showTagManagerDialog();
     void showSettingsDialog();
@@ -97,13 +93,17 @@ private:
     void onSortOrderChanged(SortCriterion criterion, bool ascending);
     void onActiveTabPathChanged(const std::filesystem::path& path);
     void onDriveSpaceInfoReady(int generation, Result<DriveSpaceInfo> result);
-    void onSearchBarReturnPressed();
-    void onSearchBarTextEdited(const QString& text);
 
     // Navigates the focused pane's active tab to `path` (through WorkspacePaneWidget's
     // monitored-scope guard) -- the left panel's folder tree click/Enter/"Open" (Architecture.md
     // §14.41).
     void navigateFocusedPaneTo(const std::filesystem::path& path);
+
+    // Search tab result activation (Architecture.md §14.42): a file navigates to its parent
+    // folder with the file selected, a folder navigates into it -- same two forms as
+    // onFavoriteItemTriggered's file/folder favorite handling, via the same navigateAndSelect entry
+    // point.
+    void onSearchResultActivated(const std::filesystem::path& path, bool isDirectory);
 
     // Favorites menu (Architecture.md §14.35).
     void onAddToFavoritesTriggered();
@@ -133,11 +133,10 @@ private:
     SidePanelWidget* m_rightPanelWidget = nullptr;
     SidePanelWidget* m_leftPanelWidget = nullptr;
     FolderTreeView* m_folderTreeView = nullptr;
+    SearchPanelWidget* m_searchPanelWidget = nullptr;
     TabViewModel* m_sortTrackedTab = nullptr;
     TabViewModel* m_searchTrackedTab = nullptr;
     TabViewModel* m_driveInfoTrackedTab = nullptr;
-    QLineEdit* m_searchBar = nullptr;
-    QAction* m_advancedSearchAction = nullptr;
     MainStatusBarWidget* m_mainStatusBarWidget = nullptr;
 
     // Favorites menu (Architecture.md §14.35): rebuilt lazily on QMenu::aboutToShow rather than

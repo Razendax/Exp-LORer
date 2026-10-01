@@ -52,9 +52,9 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     , m_model(model)
     , m_displayMode(displayMode)
 {
-    // Default id; overridden by the owner for a specific per-tab role (e.g. WorkspacePaneWidget
-    // renames the quick-search-results instance to "quickSearchResultsView") -- see Architecture.md
-    // §11's UI Automation convention.
+    // Default id; overridden by the owner for a specific role (e.g. SearchPanelWidget renames its
+    // results instance to "searchListResultsView") -- see Architecture.md §11's UI Automation
+    // convention.
     setObjectName(QStringLiteral("fileBrowserView"));
 
     m_listView = new QListView(this);

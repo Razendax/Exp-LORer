@@ -52,7 +52,6 @@ class ExpLorerApp:
         self.layout = LayoutToolbar(self._container)
         self.status_bar = MainStatusBar(self._container)
         self.favorites = FavoritesMenu(self)
-        self.global_search_bar = Element(self._container, AutomationID.GLOBAL_SEARCH_BAR)
         self.advanced_search_button = Element(self._container, AutomationID.ADVANCED_SEARCH_BUTTON)
 
     def _container(self) -> Any:

@@ -35,6 +35,12 @@ public:
     std::vector<FileDecorationRule> rules() const { return m_rules.rules(); }
     void setRules(std::vector<FileDecorationRule> rules);
 
+    // The underlying FileDecorationRules object itself (not a copy), for constructing a
+    // FileListModel outside WorkspacePaneViewModel's own per-tab ownership -- e.g. the Search tab's
+    // single long-lived SearchPanelWidget (Architecture.md §14.42), which owns its own FileListModel
+    // rather than rebinding to whichever tab is currently focused.
+    const FileDecorationRules& decorationRules() const noexcept { return m_rules; }
+
     // Built-in Hidden Files/Hidden Folders rows (Architecture.md §14.29) -- edited separately from
     // the pattern-rule list, same immediate-apply-and-save posture as setRules().
     FileDecorationRule hiddenFilesRule() const { return m_rules.hiddenFilesRule(); }

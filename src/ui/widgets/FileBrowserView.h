@@ -136,7 +136,7 @@ signals:
     void renameRequested(const std::filesystem::path& source, const std::filesystem::path& destination);
 
     // Emitted by setColumnVisible (Architecture.md §14.x), so WorkspacePaneWidget can mirror the
-    // change onto this tab's other two FileBrowserView instances (quick-search/advanced-search
+    // change onto this tab's other FileBrowserView instance (normal browsing and advanced-search
     // results share the same visibility per tab).
     void columnVisibilityChanged(FileListModel::Column column, bool visible);
 

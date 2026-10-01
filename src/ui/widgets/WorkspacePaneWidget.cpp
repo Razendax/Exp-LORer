@@ -373,32 +373,21 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     wireBrowserView(browserView, tab);
     stack->addWidget(browserView); // page 0: normal browsing
 
-    auto* searchResultsView = new FileBrowserView(tab->searchResultsModel(), stack);
-    searchResultsView->setObjectName(QStringLiteral("quickSearchResultsView")); // overrides the default "fileBrowserView" id
-    searchResultsView->setViewMode(tab->viewMode());
-    searchResultsView->setColumnWidths(m_initialColumnWidths);
-    searchResultsView->setColumnOrder(m_initialColumnOrder);
-    applyDefaultColumnVisibility(searchResultsView);
-    wireBrowserView(searchResultsView, tab);
-    stack->addWidget(searchResultsView); // page 1: search results
-
     auto* advancedSearchPane = new SearchResultsPane(tab->advancedSearchResultsModel(), stack);
     advancedSearchPane->setCriteria(tab->advancedSearchCriteria(), tab->resolveTagCriteria());
     advancedSearchPane->browserView()->setColumnWidths(m_initialColumnWidths);
     advancedSearchPane->browserView()->setColumnOrder(m_initialColumnOrder);
     applyDefaultColumnVisibility(advancedSearchPane->browserView());
     wireBrowserView(advancedSearchPane->browserView(), tab);
-    stack->addWidget(advancedSearchPane); // page 2: advanced search results
+    stack->addWidget(advancedSearchPane); // page 1: advanced search results
 
-    // Keeps this tab's three FileBrowserView instances in sync (Architecture.md §14.x): toggling a
-    // column in one (normally the visible one, but any of the three works) hides/shows it in the
-    // other two as well, since visibility is a per-*tab* concept, not a per-view one.
-    connect(browserView, &FileBrowserView::columnVisibilityChanged, searchResultsView, &FileBrowserView::setColumnVisible);
+    // Keeps this tab's two FileBrowserView instances in sync (Architecture.md §14.x): toggling a
+    // column in one (normally the visible one, but either works) hides/shows it in the other too,
+    // since visibility is a per-*tab* concept, not a per-view one. The Search tab's own results
+    // (Architecture.md §14.42) render in the left panel's SearchPanelWidget instead, which has its
+    // own independent FileListModel/visibility and isn't part of this mirroring.
     connect(browserView, &FileBrowserView::columnVisibilityChanged, advancedSearchPane->browserView(), &FileBrowserView::setColumnVisible);
-    connect(searchResultsView, &FileBrowserView::columnVisibilityChanged, browserView, &FileBrowserView::setColumnVisible);
-    connect(searchResultsView, &FileBrowserView::columnVisibilityChanged, advancedSearchPane->browserView(), &FileBrowserView::setColumnVisible);
     connect(advancedSearchPane->browserView(), &FileBrowserView::columnVisibilityChanged, browserView, &FileBrowserView::setColumnVisible);
-    connect(advancedSearchPane->browserView(), &FileBrowserView::columnVisibilityChanged, searchResultsView, &FileBrowserView::setColumnVisible);
 
     connect(tab, &TabViewModel::currentPathChanged, this, [this, tab](const std::filesystem::path& path) {
         const int idx = indexOfTab(tab);
@@ -408,21 +397,10 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
         }
     });
 
-    auto pickStackPage = [stack, tab]() {
-        if (tab->advancedSearchActive())
-        {
-            stack->setCurrentIndex(2);
-        }
-        else if (tab->searchActive())
-        {
-            stack->setCurrentIndex(1);
-        }
-        else
-        {
-            stack->setCurrentIndex(0);
-        }
-    };
-    connect(tab, &TabViewModel::searchModeChanged, stack, [pickStackPage](bool) { pickStackPage(); });
+    // The Search tab's own quick search (Architecture.md §14.42) no longer has an in-place page
+    // here -- its results render in the left panel's SearchPanelWidget instead, so this pane's
+    // stack only ever switches between normal browsing and Advanced Search's in-place results.
+    auto pickStackPage = [stack, tab]() { stack->setCurrentIndex(tab->advancedSearchActive() ? 1 : 0); };
     connect(tab, &TabViewModel::advancedSearchModeChanged, stack, [pickStackPage](bool) { pickStackPage(); });
 
     connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::searchRequested, tab,
@@ -603,14 +581,11 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
         disconnect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged);
 
         disconnect(m_boundTab, &TabViewModel::directoryContentsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
-        disconnect(m_boundTab, &TabViewModel::searchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
         disconnect(m_boundTab, &TabViewModel::advancedSearchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
-        disconnect(m_boundTab, &TabViewModel::searchModeChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
         disconnect(m_boundTab, &TabViewModel::advancedSearchModeChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
         disconnect(m_boundTab, &TabViewModel::selectedEntriesChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
 
         disconnect(m_boundTab, &TabViewModel::currentPathChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
-        disconnect(m_boundTab, &TabViewModel::searchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
         disconnect(m_boundTab, &TabViewModel::advancedSearchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
 
         disconnect(m_boundTab, &TabViewModel::gitRepositorySummaryChanged, this, &WorkspacePaneWidget::updateGitStatusBar);
@@ -640,14 +615,11 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
     connect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged);
 
     connect(m_boundTab, &TabViewModel::directoryContentsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
-    connect(m_boundTab, &TabViewModel::searchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
     connect(m_boundTab, &TabViewModel::advancedSearchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
-    connect(m_boundTab, &TabViewModel::searchModeChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
     connect(m_boundTab, &TabViewModel::advancedSearchModeChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
     connect(m_boundTab, &TabViewModel::selectedEntriesChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
 
     connect(m_boundTab, &TabViewModel::currentPathChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
-    connect(m_boundTab, &TabViewModel::searchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
     connect(m_boundTab, &TabViewModel::advancedSearchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
 
     connect(m_boundTab, &TabViewModel::gitRepositorySummaryChanged, this, &WorkspacePaneWidget::updateGitStatusBar);
@@ -913,7 +885,7 @@ void WorkspacePaneWidget::onDeleteRequested(TabViewModel* tab, bool permanent)
 
 void WorkspacePaneWidget::onViewModeChanged(ViewMode mode)
 {
-    // The tab page is now a QSplitter (browse/search/advanced-search stack + BottomPanelWidget,
+    // The tab page is now a QSplitter (browse/advanced-search stack + BottomPanelWidget,
     // Architecture.md §14.23); the stack is always its first direct child (bottomPanel, the
     // splitter's other child, is never itself a QStackedWidget), so this unwrap stays unambiguous.
     auto* splitter = qobject_cast<QSplitter*>(m_tabWidget->currentWidget());
@@ -921,8 +893,8 @@ void WorkspacePaneWidget::onViewModeChanged(ViewMode mode)
     {
         for (int i = 0; i < stack->count(); ++i)
         {
-            // The per-tab stack is heterogeneous: pages 0/1 are plain FileBrowserView, page 2 is a
-            // SearchResultsPane wrapping one. A blind static_cast<FileBrowserView*> on page 2 would
+            // The per-tab stack is heterogeneous: page 0 is a plain FileBrowserView, page 1 is a
+            // SearchResultsPane wrapping one. A blind static_cast<FileBrowserView*> on page 1 would
             // reinterpret a SearchResultsPane's memory as a FileBrowserView, corrupting/crashing.
             if (auto* browserView = qobject_cast<FileBrowserView*>(stack->widget(i)))
             {
@@ -967,8 +939,8 @@ std::array<int, FileListModel::ColumnCount> WorkspacePaneWidget::currentColumnOr
 
 FileBrowserView* WorkspacePaneWidget::currentBrowserView() const
 {
-    // Same splitter-unwrap and heterogeneous-stack shape as onViewModeChanged: page 2 is a
-    // SearchResultsPane wrapping a FileBrowserView, pages 0/1 are plain FileBrowserView.
+    // Same splitter-unwrap and heterogeneous-stack shape as onViewModeChanged: page 1 is a
+    // SearchResultsPane wrapping a FileBrowserView, page 0 is a plain FileBrowserView.
     auto* splitter = qobject_cast<QSplitter*>(m_tabWidget->currentWidget());
     if (auto* stack = splitter ? qobject_cast<QStackedWidget*>(splitter->widget(0)) : nullptr)
     {
@@ -992,9 +964,10 @@ void WorkspacePaneWidget::refreshStatusCounts()
         return;
     }
 
-    const int total = m_boundTab->advancedSearchActive() ? m_boundTab->advancedSearchResultsModel()->rowCount()
-                     : m_boundTab->searchActive()          ? m_boundTab->searchResultsModel()->rowCount()
-                                                            : m_boundTab->fileListModel()->rowCount();
+    // The Search tab's own quick search (Architecture.md §14.42) renders in the left panel, not in
+    // this pane, so it doesn't factor into this pane's own status-bar counts.
+    const int total =
+        m_boundTab->advancedSearchActive() ? m_boundTab->advancedSearchResultsModel()->rowCount() : m_boundTab->fileListModel()->rowCount();
     const int selected = static_cast<int>(m_boundTab->selectedEntries().size());
     m_statusBar->setCounts(total, selected);
 }

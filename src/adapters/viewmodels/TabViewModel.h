@@ -160,15 +160,22 @@ public slots:
     // navigateTo(); exits any active search.
     void replaceCurrentPath(const std::filesystem::path& path);
 
-    // Recursive filename search scoped to currentPath() (Architecture.md §14.18). No-op if query
-    // is empty/whitespace-only. Performs one recursive Port call, caches the snapshot, filters +
-    // sorts it into searchResultsModel(), and flips searchActive on. On failure, emits
-    // searchFailed and leaves any prior search state untouched.
-    void startSearch(const QString& query);
-
-    // Re-filters the cached snapshot from the last startSearch() call — no disk I/O. No-op if
-    // searchActive() is false.
+    // Recursive filename search scoped to currentPath() (Architecture.md §14.42), async via
+    // AdvancedSearchService -- same in-flight-scan-reuse posture as Advanced Search (Architecture.md
+    // §14.37/§14.38). Empty/whitespace-only query exits search (no-op if already inactive).
+    // Otherwise: the first call against a given root dispatches one recursive scan; an edit that
+    // arrives before that scan finishes re-filters its latest progress tick in memory instead of
+    // starting a second concurrent scan of the same root; an edit after it finishes re-filters the
+    // cached snapshot, no disk I/O. On a scan failure, emits searchFailed and leaves prior search
+    // state untouched.
     void updateSearchQuery(const QString& query);
+
+    // Forces a fresh recursive rescan of currentPath() against `query` (Refresh button / Enter in
+    // the search bar). Unlike the old no-arg form, this always (re)starts a search scoped to
+    // wherever the tab is *currently* browsing, even if a prior search was exited by an in-tab
+    // navigation (searchActive() == false) -- the search bar's text can outlive navigateTo()'s
+    // exitSearch() without this being a no-op. Empty/whitespace-only query exits search instead.
+    void refreshSearch(const QString& query);
 
     // Clears search state and flips searchActive off. No-op if already inactive.
     void exitSearch();
@@ -234,6 +241,15 @@ signals:
     void searchModeChanged(bool active);
     void searchResultsChanged(const std::vector<FileNode>& entries);
     void searchFailed(const QString& message);
+
+    // Emitted right before dispatching a recursive-scan request for the Search tab's own quick
+    // search (Architecture.md §14.42), mirroring advancedSearchLoading below.
+    void searchLoading();
+
+    // Emitted once the in-flight scan that most recently triggered searchLoading() actually
+    // finishes (successfully -- searchFailed covers the error case); does NOT fire for a long
+    // scan's intermediate progress ticks, same posture as advancedSearchLoadingFinished.
+    void searchLoadingFinished();
 
     void advancedSearchModeChanged(bool active);
     void advancedSearchResultsChanged(const std::vector<FileNode>& entries);
@@ -309,9 +325,10 @@ private:
 
     // Fetches tags for every file in `candidates` and, once they arrive (discarded if
     // `generation` no longer matches m_searchGeneration), caches them into m_searchSnapshotTags and
-    // applies them to m_searchResultsModel. Used whenever the search snapshot itself changes
-    // (onSearchScanReady) -- updateSearchQuery's own re-filters reuse the cached map directly
-    // instead of re-dispatching (its filtered subset is always a subset of the same snapshot).
+    // applies them to m_searchResultsModel. Used whenever the search candidate set itself changes
+    // (a new full/partial snapshot) -- applySearchFilter's own re-filters reuse the cached map
+    // directly instead of re-dispatching (its filtered subset is always a subset of the same
+    // snapshot).
     void requestSearchResultTags(int generation, const std::vector<FileNode>& candidates);
 
     // Same shape as requestSearchResultTags, for the advanced-search side: fetches tags for
@@ -353,11 +370,30 @@ private:
     // rescan (see the "reuse the in-flight scan" branch of runAdvancedSearch).
     void onAdvancedSearchProgress(int generation, std::vector<FileNode> partial);
 
-    // Completion callback for the recursive scan dispatched by startSearch() (via
+    // Shared implementation of updateSearchQuery/refreshSearch (Architecture.md §14.42), mirroring
+    // runAdvancedSearch's non-tag branch: re-scans recursively only when forceRescan or no valid
+    // cached/in-flight scan of the current root exists yet, otherwise re-filters whatever candidate
+    // list (cached snapshot, or an in-flight scan's latest partial snapshot) is already available in
+    // memory -- never a second concurrent scan of the same root.
+    void runSearch(bool forceRescan);
+
+    // Composes filterByName -> sortBy -> setEntries -> activate-if-needed -> emit
+    // searchResultsChanged, the tail shared by the synchronous cached-snapshot path and both async
+    // completion callbacks below. Mirrors applyAdvancedSearchFilter.
+    void applySearchFilter(const std::vector<FileNode>& candidates);
+
+    // Completion callback for the recursive scan dispatched by runSearch() (via
     // AdvancedSearchService::requestRecursiveScan, same off-UI-thread scan the Advanced Search pane
     // uses). Discards the result if `generation` no longer matches m_searchGeneration (a newer
-    // startSearch() call, or exitSearch()/tab close, superseded it in the meantime).
-    void onSearchScanReady(int generation, Result<std::vector<FileNode>> result);
+    // dispatch, or exitSearch()/tab close, superseded it in the meantime).
+    void onSearchCandidatesReady(int generation, Result<std::vector<FileNode>> result);
+
+    // Progress callback for AdvancedSearchService::requestRecursiveScan's onProgress
+    // (Architecture.md §14.37), mirroring onAdvancedSearchProgress: discarded the same way as
+    // onSearchCandidatesReady via the generation check. Caches `partial` as the best-known
+    // candidate list so far and re-filters it with whatever m_searchQuery holds *right now* -- so a
+    // query edit that arrives while the scan is still running is reflected on the very next tick.
+    void onSearchProgress(int generation, std::vector<FileNode> partial);
 
     FileNavigationUseCase& m_fileNavigationUseCase;
     TagManagementUseCase& m_tagManagementUseCase;
@@ -376,15 +412,26 @@ private:
     bool m_searchActive = false;
     std::filesystem::path m_searchRoot;
     std::vector<FileNode> m_searchSnapshot;
-    // Tags for every file in m_searchSnapshot (Architecture.md §14.x, Tags column), fetched
-    // whenever the snapshot itself changes (onSearchScanReady) via requestSearchResultTags and
-    // reapplied as-is by every updateSearchQuery() re-filter -- a filtered subset never needs a
-    // fresh fetch since it's always a subset of the same snapshot.
+    // True only right after a successful recursive scan has fully populated m_searchSnapshot --
+    // mirrors m_advancedSearchFullScanDone.
+    bool m_searchFullScanDone = false;
+    // True from the moment a recursive scan is dispatched until its completion callback runs (with
+    // a matching generation) or exitSearch() resets it -- mirrors m_advancedSearchScanPending. While
+    // true, a query edit (updateSearchQuery, forceRescan=false) does NOT dispatch a second
+    // concurrent scan of the same root; it just re-filters m_searchPartialSnapshot synchronously.
+    bool m_searchScanPending = false;
+    // Best-known candidate list from the in-flight scan's progress ticks (Architecture.md §14.37),
+    // updated by onSearchProgress -- mirrors m_advancedSearchPartialSnapshot.
+    std::vector<FileNode> m_searchPartialSnapshot;
+    // Tags for whichever candidate list (m_searchSnapshot or m_searchPartialSnapshot) was most
+    // recently fetched, fetched via requestSearchResultTags whenever that candidate list itself
+    // changes and reapplied as-is by every applySearchFilter re-filter -- a filtered subset never
+    // needs a fresh fetch since it's always a subset of the same candidate list.
     TagsByPathMap m_searchSnapshotTags;
     QString m_searchQuery;
-    // Bumped on every startSearch() dispatch and on exitSearch(); onSearchScanReady discards any
-    // reply whose generation no longer matches, same discard-by-generation-id approach as
-    // m_advancedSearchGeneration above.
+    // Bumped on every recursive-scan dispatch and on exitSearch(); onSearchCandidatesReady/
+    // onSearchProgress discard any reply whose generation no longer matches, same discard-by-
+    // generation-id approach as m_advancedSearchGeneration above.
     int m_searchGeneration = 0;
 
     FileListModel* m_advancedSearchResultsModel = nullptr;

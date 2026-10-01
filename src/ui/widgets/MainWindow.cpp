@@ -11,9 +11,7 @@
 #include <QFont>
 #include <QHBoxLayout>
 #include <QIcon>
-#include <QKeyEvent>
 #include <QLabel>
-#include <QLineEdit>
 #include <QLocale>
 #include <QMenu>
 #include <QMenuBar>
@@ -35,6 +33,7 @@
 #include "AppConfigStore.h"
 #include "DriveSpaceInfoWorker.h"
 #include "FavoritesViewModel.h"
+#include "FileDecorationsViewModel.h"
 #include "FileItemContextMenu.h"
 #include "FileOperationsController.h"
 #include "FolderTreeModel.h"
@@ -49,6 +48,7 @@
 #include "TagManagerViewModel.h"
 #include "PreviewPanelWidget.h"
 #include "PathContainment.h"
+#include "SearchPanelWidget.h"
 #include "SidePanelWidget.h"
 #include "TagPanelWidget.h"
 #include "UiColors.h"
@@ -469,39 +469,6 @@ void MainWindow::createLayoutToolBar()
             button->setObjectName(QLatin1String(kLayoutButtonIds[static_cast<size_t>(i)]));
         }
     }
-
-    createSearchBar(toolBar);
-}
-
-void MainWindow::createSearchBar(QToolBar* toolBar)
-{
-    m_searchBar = new QLineEdit(toolBar);
-    m_searchBar->setObjectName(QStringLiteral("globalSearchBar"));
-    m_searchBar->setClearButtonEnabled(true);
-    m_searchBar->setPlaceholderText(tr("Search this folder..."));
-    m_searchBar->installEventFilter(this);
-    toolBar->addWidget(m_searchBar);
-
-    connect(m_searchBar, &QLineEdit::returnPressed, this, &MainWindow::onSearchBarReturnPressed);
-    connect(m_searchBar, &QLineEdit::textEdited, this, &MainWindow::onSearchBarTextEdited);
-
-    m_advancedSearchAction = toolBar->addAction(tr("Advanced Search..."));
-    connect(m_advancedSearchAction, &QAction::triggered, this, [this]() {
-        if (TabViewModel* tab = m_workspaceController->focusedTab())
-        {
-            tab->showAdvancedSearchPanel();
-        }
-    });
-
-    if (auto* button = qobject_cast<QToolButton*>(toolBar->widgetForAction(m_advancedSearchAction)))
-    {
-        button->setObjectName(QStringLiteral("advancedSearchButton"));
-        button->setStyleSheet(QStringLiteral(
-            "QToolButton#advancedSearchButton { background: %1; border: 1px solid %2; border-radius: 3px; }"
-            "QToolButton#advancedSearchButton:hover { background: %3; }")
-            .arg(QLatin1String(UiColors::kAdvancedSearchButtonBackground), QLatin1String(UiColors::kAccentBlue),
-                 QLatin1String(UiColors::kAdvancedSearchButtonHoverBackground)));
-    }
 }
 
 void MainWindow::createWorkspace()
@@ -527,11 +494,13 @@ void MainWindow::createWorkspace()
     m_rightPanelWidget->addPanelTab(tr("Monitoring"), m_monitoringPanelWidget, QStringLiteral("rightPanelMonitoringButton"));
     connect(m_monitoringPanelWidget, &MonitoringPanelWidget::monitoringFailed, this, &MainWindow::onStatusMessage);
 
-    // Left panel (Architecture.md §14.41): same side-panel mechanics, mirrored, with a single
-    // "Tree" tab.
+    // Left panel (Architecture.md §14.41/§14.42): same side-panel mechanics, mirrored, with "Tree"
+    // and "Search" tabs.
     m_leftPanelWidget = new SidePanelWidget(SidePanelWidget::Edge::Left, QStringLiteral("leftPanel"), this);
     createFolderTree();
     m_leftPanelWidget->addPanelTab(tr("Tree"), m_folderTreeView, QStringLiteral("leftPanelTreeButton"));
+    createSearchPanel();
+    m_leftPanelWidget->addPanelTab(tr("Search"), m_searchPanelWidget, QStringLiteral("leftPanelSearchButton"));
 
     auto* splitter = new QSplitter(Qt::Horizontal, this);
     splitter->setObjectName(QStringLiteral("mainSplitter"));
@@ -600,6 +569,62 @@ void MainWindow::createFolderTree()
 
                 FileItemContextMenu::show(this, *fileOperations, { path }, false, callbacks, globalPos);
             });
+}
+
+void MainWindow::createSearchPanel()
+{
+    m_searchPanelWidget = new SearchPanelWidget(m_fileDecorationsViewModel.decorationRules(), m_fileDecorationsViewModel,
+                                                 m_leftPanelWidget);
+
+    connect(m_searchPanelWidget, &SearchPanelWidget::queryChanged, this, [this](const QString& query) {
+        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        {
+            tab->updateSearchQuery(query);
+        }
+    });
+    connect(m_searchPanelWidget, &SearchPanelWidget::refreshRequested, this, [this](const QString& query) {
+        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        {
+            tab->refreshSearch(query);
+        }
+    });
+    connect(m_searchPanelWidget, &SearchPanelWidget::clearRequested, this, [this]() {
+        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        {
+            tab->exitSearch();
+        }
+    });
+    connect(m_searchPanelWidget, &SearchPanelWidget::advancedSearchRequested, this, [this]() {
+        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        {
+            tab->showAdvancedSearchPanel();
+        }
+    });
+    connect(m_searchPanelWidget, &SearchPanelWidget::resultActivated, this, &MainWindow::onSearchResultActivated);
+    connect(m_searchPanelWidget, &SearchPanelWidget::selectionChanged, this, [this](const std::vector<FileNode>& entries) {
+        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        {
+            tab->setSelectedEntries(entries);
+        }
+    });
+}
+
+void MainWindow::onSearchResultActivated(const std::filesystem::path& path, bool isDirectory)
+{
+    WorkspacePaneWidget* paneWidget = m_workspaceLayoutWidget->paneWidget(m_workspaceController->focusedPane());
+    if (!paneWidget)
+    {
+        return;
+    }
+
+    if (isDirectory)
+    {
+        paneWidget->navigateAndSelect(path, std::nullopt);
+    }
+    else
+    {
+        paneWidget->navigateAndSelect(path.parent_path(), path);
+    }
 }
 
 void MainWindow::navigateFocusedPaneTo(const std::filesystem::path& path)
@@ -688,6 +713,11 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     {
         disconnect(m_searchTrackedTab, &TabViewModel::searchFailed, this, &MainWindow::onStatusMessage);
         disconnect(m_searchTrackedTab, &TabViewModel::advancedSearchFailed, this, &MainWindow::onStatusMessage);
+        // Every searchResultsChanged/searchModeChanged/searchLoading/searchLoadingFinished/
+        // searchFailed connection into m_searchPanelWidget below is a lambda (receiver ==
+        // m_searchPanelWidget, never `this`) -- disconnecting all of them by receiver alone is
+        // safe and precise, same pattern as MonitoringPanelViewModel::disconnectDisplayedTab.
+        disconnect(m_searchTrackedTab, nullptr, m_searchPanelWidget, nullptr);
     }
     m_searchTrackedTab = tab;
 
@@ -707,7 +737,7 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     if (!tab)
     {
         m_sortByMenu->setEnabled(false);
-        m_searchBar->clear();
+        m_searchPanelWidget->clearForNoTab();
         onActiveTabPathChanged({});
         updateFavoritesActionEnabled();
         return;
@@ -719,7 +749,29 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
 
     connect(tab, &TabViewModel::searchFailed, this, &MainWindow::onStatusMessage);
     connect(tab, &TabViewModel::advancedSearchFailed, this, &MainWindow::onStatusMessage);
-    m_searchBar->setText(tab->searchActive() ? tab->searchQuery() : QString());
+
+    connect(tab, &TabViewModel::searchResultsChanged, m_searchPanelWidget, [this, tab](const std::vector<FileNode>& entries) {
+        m_searchPanelWidget->setResults(entries, tab->searchResultsModel()->currentDirectory());
+    });
+    connect(tab, &TabViewModel::searchModeChanged, m_searchPanelWidget, [this](bool active) {
+        if (!active)
+        {
+            m_searchPanelWidget->setResults({}, {});
+        }
+    });
+    connect(tab, &TabViewModel::searchLoading, m_searchPanelWidget, [this]() { m_searchPanelWidget->setLoading(true); });
+    connect(tab, &TabViewModel::searchLoadingFinished, m_searchPanelWidget, [this]() { m_searchPanelWidget->setLoading(false); });
+    connect(tab, &TabViewModel::searchFailed, m_searchPanelWidget, [this]() { m_searchPanelWidget->setLoading(false); });
+
+    m_searchPanelWidget->setQuery(tab->searchActive() ? tab->searchQuery() : QString());
+    if (tab->searchActive())
+    {
+        m_searchPanelWidget->setResults(tab->searchResultsModel()->entries(), tab->searchResultsModel()->currentDirectory());
+    }
+    else
+    {
+        m_searchPanelWidget->setResults({}, {});
+    }
 
     connect(tab, &TabViewModel::currentPathChanged, this, &MainWindow::onActiveTabPathChanged);
     onActiveTabPathChanged(tab->currentPath());
@@ -778,36 +830,6 @@ void MainWindow::onDriveSpaceInfoReady(int generation, Result<DriveSpaceInfo> re
                                    QLocale().formattedDataSize(static_cast<qint64>(info.freeBytes)),
                                    QLocale().formattedDataSize(static_cast<qint64>(info.totalBytes)));
     m_mainStatusBarWidget->setDriveInfoText(text);
-}
-
-void MainWindow::onSearchBarReturnPressed()
-{
-    TabViewModel* tab = m_workspaceController->focusedTab();
-    if (!tab)
-    {
-        return;
-    }
-    tab->startSearch(m_searchBar->text());
-}
-
-void MainWindow::onSearchBarTextEdited(const QString& text)
-{
-    TabViewModel* tab = m_workspaceController->focusedTab();
-    if (!tab)
-    {
-        return;
-    }
-
-    if (text.trimmed().isEmpty())
-    {
-        tab->exitSearch();
-        return;
-    }
-
-    if (tab->searchActive())
-    {
-        tab->updateSearchQuery(text);
-    }
 }
 
 void MainWindow::onAddToFavoritesTriggered()
@@ -992,24 +1014,6 @@ void MainWindow::onFavoritesTrackedSelectionChanged(const std::vector<FileNode>&
 void MainWindow::onFavoritesTrackedPathChanged(const std::filesystem::path&)
 {
     updateFavoritesActionEnabled();
-}
-
-bool MainWindow::eventFilter(QObject* watched, QEvent* event)
-{
-    if (watched == m_searchBar && event->type() == QEvent::KeyPress)
-    {
-        auto* keyEvent = static_cast<QKeyEvent*>(event);
-        if (keyEvent->key() == Qt::Key_Escape)
-        {
-            m_searchBar->clear();
-            if (TabViewModel* tab = m_workspaceController->focusedTab())
-            {
-                tab->exitSearch();
-            }
-            return true;
-        }
-    }
-    return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::resizeEvent(QResizeEvent* event)

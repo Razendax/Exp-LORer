@@ -197,34 +197,40 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   more than one item is selected (Architecture.md §14.16).
 
 **Search and Filter:**
-* Fast filename and extension search within the current directory and subdirectories
-  (Architecture.md §14.18). A search box in the toolbar, next to the split-layout controls, searches
-  recursively under whichever pane/tab currently has focus once Enter is pressed; results replace
-  that tab's folder view in place (other tabs/panes are unaffected). While that tab is showing
-  results, further typing in the same box live-filters them without needing Enter again. Switching to
-  a different tab never triggers a search for it — a tab's search results and query persist,
-  independent of which tab or pane currently has focus.
-* **Advanced search pane** (Architecture.md §14.19), a second and separate entry point from the
-  quick search box above, opened via an "Advanced Search..." toolbar action: a dedicated per-tab
-  pane with Name, Min size, and Max size fields plus a Search button. The Name field supports `*`
-  (any run of characters) and `?` (exactly one character) wildcards — the same syntax as the
-  per-file/folder appearance patterns above — e.g. `*.pdf` (all PDFs), `doc*` (`doc`,
-  `document.txt`), or `file?.txt` (`file2.txt` but not `file12.txt`); a query with no wildcard still
-  matches anywhere in the name, as before. There is no separate Extension field — a `*.ext`-style
-  Name query covers that case. Opening the pane
-  shows the focused tab's current folder contents (a plain, non-recursive listing, not a search) so
-  it doesn't open empty; searching recursively under the focused tab only happens once Search is
-  pressed (or Enter in the Name field). Editing any field afterward live-refines the already-fetched
-  results without re-scanning disk. Results
-  render in a dedicated view — always styled like Details view but with taller rows and the
-  matching part of each Name highlighted — regardless of the tab's own chosen view mode. Only one
-  of normal browsing, quick search, or advanced search is shown at a time per tab; opening either
-  search mode closes the other, and each remembers its own fields/results while hidden.
+* **Search tab** (Architecture.md §14.42), on the collapsible left panel alongside the "Tree" tab
+  (§14.41) — replaces the former toolbar search box as the fast filename/extension search entry
+  point. A small icon toolbar (Refresh — re-runs the current search; Clear — empties both the
+  search bar and the results; View as tree — renders results grouped by containing folder instead
+  of a flat list; Collapse all — collapses the tree view, enabled only while View as tree is on)
+  sits above a search bar. The search bar searches recursively under whichever pane/tab currently
+  has focus, live as the user types — no Enter press required — performed asynchronously so the UI
+  is never blocked, even on a large folder; an empty search bar performs no search and shows no
+  results. It supports `*` (any run of characters) and `?` (exactly one character) wildcards — the
+  same syntax as the per-file/folder appearance patterns elsewhere — e.g. `*.pdf` (all PDFs),
+  `doc*` (`doc`, `document.txt`), or `file?.txt` (`file2.txt` but not `file12.txt`); a query with
+  no wildcard still matches anywhere in the name, as before. Results show only each match's name,
+  with the part satisfying the query highlighted, as either a flat list (default) or, with View as
+  tree toggled, a tree grouped by the folders between the search root and each match. Double-
+  clicking a result opens it in the active tab: a file opens its parent folder with the file
+  itself highlighted; a folder opens directly. Switching which pane/tab is focused retargets the
+  Search tab to that tab's own search state (query, results) — each tab's search persists
+  independently while another tab is focused, same as before.
+* **Advanced search pane** (Architecture.md §14.19), unchanged in function from before — a
+  dedicated per-tab pane with Name, Min size, and Max size fields plus a Search button, opened by
+  an "Advanced Search..." button now living below the Search tab's search bar (Architecture.md
+  §14.42) instead of on the main toolbar. The Name field supports `*`/`?` wildcards, same as
+  above; there is no separate Extension field — a `*.ext`-style Name query covers that case.
+  Opening the pane shows the focused tab's current folder contents (a plain, non-recursive
+  listing, not a search) so it doesn't open empty; searching recursively only happens once Search
+  is pressed (or Enter in the Name field). Editing any field afterward live-refines the
+  already-fetched results without re-scanning disk. Results render in a dedicated view, in place of
+  the tab's own folder view — always styled like Details view but with taller rows and the
+  matching part of each Name highlighted — regardless of the tab's own chosen view mode.
   **Tag criteria** (Architecture.md §14.20) act as a fourth, ANDed criterion alongside Name/Min
-  size/Max size: a "search tags" box lists matching tags (same lookup as the Tag
-  Panel's search, but clicking a tag adds it straight to the criteria instead of showing a "+"),
-  and a separate, removable chip list shows the tags currently applied to the search. A result
-  must satisfy both the file-property criteria and every applied tag to appear.
+  size/Max size: a "search tags" box lists matching tags (same lookup as the Tag Panel's search,
+  but clicking a tag adds it straight to the criteria instead of showing a "+"), and a separate,
+  removable chip list shows the tags currently applied to the search. A result must satisfy both
+  the file-property criteria and every applied tag to appear.
 
 ### 2.2 Database-Backed File Tagging System
 
