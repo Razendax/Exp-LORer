@@ -11,6 +11,7 @@
 #include "FileNode.h"
 #include "IContextMenuProvider.h"
 #include "IFileSystemRepository.h"
+#include "NameSearchOptions.h"
 #include "NativeTypes.h"
 #include "Result.h"
 #include "SearchCriteria.h"
@@ -52,7 +53,16 @@ public:
     // Empty query is a no-op passthrough. A query containing no '*'/'?' keeps the historical
     // "contains" behavior (wrapped as "*query*" internally); a query containing either is matched
     // as a full anchored glob against the whole name via GlobMatch (Architecture.md §14.19/§14.29).
+    // Forwards to the options-aware overload below with default-constructed NameSearchOptions, so
+    // filterByCriteria/Advanced Search (which calls this overload) is unaffected by §14.44.
     static std::vector<FileNode> filterByName(std::vector<FileNode> files, const std::string& query);
+
+    // Quick Search tab's Match Case/Whole Word/Exact Name/Match Regex toggles (Architecture.md
+    // §14.44). Empty query is still a no-op passthrough regardless of options. An invalid Regex
+    // pattern yields zero matches, same as any other non-matching query -- no separate error
+    // channel.
+    static std::vector<FileNode> filterByName(std::vector<FileNode> files, const std::string& query,
+                                               const NameSearchOptions& options);
 
     // Excludes directories whenever either bound is set (a directory has no "size" in this app's
     // model); no-op passthrough when both bounds are nullopt.

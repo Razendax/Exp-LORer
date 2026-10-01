@@ -365,7 +365,7 @@ void TabViewModel::runSearch(bool forceRescan)
 
 void TabViewModel::applySearchFilter(const std::vector<FileNode>& candidates)
 {
-    auto filtered = FileNavigationUseCase::filterByName(candidates, m_searchQuery.toStdString());
+    auto filtered = FileNavigationUseCase::filterByName(candidates, m_searchQuery.toStdString(), searchOptions());
     filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
     m_searchResultsModel->setEntries(m_searchRoot, filtered);
     // setEntries() above clears the model's tags -- m_searchSnapshotTags already has every tag for
@@ -422,6 +422,21 @@ void TabViewModel::onSearchProgress(int generation, std::vector<FileNode> partia
     requestSearchResultTags(generation, m_searchPartialSnapshot);
 }
 
+void TabViewModel::setSearchOptions(const NameSearchOptions& options)
+{
+    m_searchMatchMode = options.mode;
+    m_searchCaseSensitive = options.caseSensitive;
+
+    if (m_searchQuery.isEmpty())
+    {
+        // Nothing to filter yet -- the new options still take effect the next time a query is
+        // typed.
+        return;
+    }
+
+    applySearchFilter(m_searchFullScanDone ? m_searchSnapshot : m_searchPartialSnapshot);
+}
+
 void TabViewModel::exitSearch()
 {
     if (!m_searchActive)
@@ -434,6 +449,8 @@ void TabViewModel::exitSearch()
     m_searchPartialSnapshot.clear();
     m_searchSnapshotTags.clear();
     m_searchQuery.clear();
+    m_searchMatchMode = NameMatchMode::Contains;
+    m_searchCaseSensitive = false;
     m_searchRoot.clear();
     m_searchFullScanDone = false;
     m_searchScanPending = false;

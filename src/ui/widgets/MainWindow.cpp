@@ -600,6 +600,12 @@ void MainWindow::createSearchPanel()
             tab->showAdvancedSearchPanel();
         }
     });
+    connect(m_searchPanelWidget, &SearchPanelWidget::searchOptionsChanged, this, [this](const NameSearchOptions& options) {
+        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        {
+            tab->setSearchOptions(options);
+        }
+    });
     connect(m_searchPanelWidget, &SearchPanelWidget::resultActivated, this, &MainWindow::onSearchResultActivated);
     connect(m_searchPanelWidget, &SearchPanelWidget::selectionChanged, this, [this](const std::vector<FileNode>& entries) {
         if (TabViewModel* tab = m_workspaceController->focusedTab())
@@ -764,6 +770,7 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     connect(tab, &TabViewModel::searchFailed, m_searchPanelWidget, [this]() { m_searchPanelWidget->setLoading(false); });
 
     m_searchPanelWidget->setQuery(tab->searchActive() ? tab->searchQuery() : QString());
+    m_searchPanelWidget->setOptions(tab->searchOptions());
     if (tab->searchActive())
     {
         m_searchPanelWidget->setResults(tab->searchResultsModel()->entries(), tab->searchResultsModel()->currentDirectory());

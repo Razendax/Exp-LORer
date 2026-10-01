@@ -214,7 +214,17 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   clicking a result opens it in the active tab: a file opens its parent folder with the file
   itself highlighted; a folder opens directly. Switching which pane/tab is focused retargets the
   Search tab to that tab's own search state (query, results) — each tab's search persists
-  independently while another tab is focused, same as before.
+  independently while another tab is focused, same as before. Above the search bar, four toggle
+  buttons (Architecture.md §14.44) narrow how the query text is interpreted: **Match whole word**,
+  **Exact name**, and **Match regex** are mutually exclusive with each other and with the default
+  substring/wildcard behavior (selecting one deselects the others; clicking the active one again
+  returns to the default) — Whole word requires the query to appear as a separate word (e.g. `File`
+  matches `File Name` but not `FileName`), Exact name requires the query to equal the entire name,
+  and Match regex treats the query as a regular expression. **Match case** is independent and
+  combines with any of the above, including the default (off by default, so `File` and `file` match
+  each other until it's enabled). Toggle state is per-tab and not persisted across restarts, same as
+  View as tree. These toggles apply only to this Search tab; the Advanced Search pane's Name field
+  (below) is unchanged.
 * **Advanced search pane** (Architecture.md §14.19), unchanged in function from before — a
   dedicated per-tab pane with Name, Min size, and Max size fields plus a Search button, opened by
   an "Advanced Search..." button now living below the Search tab's search bar (Architecture.md

@@ -18,6 +18,7 @@
 #include "FolderMonitorUseCase.h"
 #include "FolderSizesByPath.h"
 #include "GitRepositorySummary.h"
+#include "NameSearchOptions.h"
 #include "NavigationHistory.h"
 #include "SearchCriteria.h"
 #include "Tag.h"
@@ -63,6 +64,11 @@ public:
     FileListModel* searchResultsModel() const noexcept { return m_searchResultsModel; }
     bool searchActive() const noexcept { return m_searchActive; }
     QString searchQuery() const noexcept { return m_searchQuery; }
+
+    // Quick Search tab's Match Case/Whole Word/Exact Name/Match Regex toggles (Architecture.md
+    // §14.44), per-tab and not persisted across restarts (same posture as m_searchQuery/View as
+    // tree).
+    NameSearchOptions searchOptions() const noexcept { return { m_searchMatchMode, m_searchCaseSensitive }; }
 
     FileListModel* advancedSearchResultsModel() const noexcept { return m_advancedSearchResultsModel; }
     bool advancedSearchActive() const noexcept { return m_advancedSearchActive; }
@@ -176,6 +182,14 @@ public slots:
     // navigation (searchActive() == false) -- the search bar's text can outlive navigateTo()'s
     // exitSearch() without this being a no-op. Empty/whitespace-only query exits search instead.
     void refreshSearch(const QString& query);
+
+    // Updates the Match Case/Whole Word/Exact Name/Match Regex toggles (Architecture.md §14.44) and
+    // re-filters whatever candidate list (cached snapshot, or an in-flight scan's latest partial
+    // snapshot) is already available in memory -- never dispatches a rescan, since the option
+    // change doesn't affect which root/candidate set is being searched, only how it's filtered. A
+    // no-op beyond updating the two members if the search query is currently empty (nothing to
+    // filter yet) -- the new options still take effect the next time a query is typed.
+    void setSearchOptions(const NameSearchOptions& options);
 
     // Clears search state and flips searchActive off. No-op if already inactive.
     void exitSearch();
@@ -429,6 +443,11 @@ private:
     // needs a fresh fetch since it's always a subset of the same candidate list.
     TagsByPathMap m_searchSnapshotTags;
     QString m_searchQuery;
+    // Match Case/Whole Word/Exact Name/Match Regex toggle state (Architecture.md §14.44), applied
+    // by applySearchFilter via FileNavigationUseCase::filterByName's options-aware overload. Reset
+    // to their defaults by exitSearch(), mirroring m_searchQuery.
+    NameMatchMode m_searchMatchMode = NameMatchMode::Contains;
+    bool m_searchCaseSensitive = false;
     // Bumped on every recursive-scan dispatch and on exitSearch(); onSearchCandidatesReady/
     // onSearchProgress discard any reply whose generation no longer matches, same discard-by-
     // generation-id approach as m_advancedSearchGeneration above.

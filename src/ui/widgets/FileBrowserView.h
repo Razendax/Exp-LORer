@@ -53,7 +53,9 @@ public:
     void setViewMode(ViewMode mode);
 
     // AdvancedSearchResults mode only: forwarded to the SearchResultDelegate. No-op in Normal mode.
-    void setNameHighlightQuery(const QString& query);
+    // caseSensitive (Architecture.md §14.44) defaults false, preserving the Advanced Search pane's
+    // existing always-case-insensitive highlighting.
+    void setNameHighlightQuery(const QString& query, bool caseSensitive = false);
 
     // Details-view (QTreeView) column widths, indexed by FileListModel::Column (Architecture.md
     // §14.14). setColumnWidths() ignores any entry <= 0 (the "unset, use QHeaderView's own

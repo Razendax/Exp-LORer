@@ -14,6 +14,7 @@ add_library(explorer_application STATIC
     ArchiveExtensions.h
     VirtualPaths.h
     SearchCriteria.h
+    NameSearchOptions.h
     DriveSpaceInfo.h
     GitFileStatus.h
     GitDirectoryStatus.h

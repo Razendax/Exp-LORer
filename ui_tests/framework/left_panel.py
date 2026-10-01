@@ -84,6 +84,11 @@ class SearchPanel:
         self.view_as_tree_button = Element(container, AutomationID.SEARCH_VIEW_AS_TREE_BUTTON)
         self.collapse_all_button = Element(container, AutomationID.SEARCH_COLLAPSE_ALL_BUTTON)
         self.advanced_search_button = Element(container, AutomationID.ADVANCED_SEARCH_BUTTON)
+        # Match Case/Whole Word/Exact Name/Match Regex toggles (Architecture.md §14.44).
+        self.match_case_button = Element(container, AutomationID.SEARCH_MATCH_CASE_BUTTON)
+        self.whole_word_button = Element(container, AutomationID.SEARCH_WHOLE_WORD_BUTTON)
+        self.exact_name_button = Element(container, AutomationID.SEARCH_EXACT_NAME_BUTTON)
+        self.regex_button = Element(container, AutomationID.SEARCH_REGEX_BUTTON)
         self._list_results = Element(container, AutomationID.SEARCH_LIST_RESULTS_VIEW)
         self._tree_results = Element(container, AutomationID.SEARCH_TREE_RESULTS_VIEW)
 

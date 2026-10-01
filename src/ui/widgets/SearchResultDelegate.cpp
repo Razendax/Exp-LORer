@@ -19,9 +19,10 @@ SearchResultDelegate::SearchResultDelegate(QObject* parent)
 {
 }
 
-void SearchResultDelegate::setHighlightQuery(const QString& query)
+void SearchResultDelegate::setHighlightQuery(const QString& query, bool caseSensitive)
 {
     m_highlightQuery = query;
+    m_highlightCaseSensitive = caseSensitive;
 }
 
 void SearchResultDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
@@ -79,7 +80,7 @@ void SearchResultDelegate::paintNameColumn(QPainter* painter, const QStyleOption
     int matchLength = 0;
     if (!m_highlightQuery.isEmpty())
     {
-        matchStart = name.indexOf(m_highlightQuery, 0, Qt::CaseInsensitive);
+        matchStart = name.indexOf(m_highlightQuery, 0, m_highlightCaseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive);
         matchLength = m_highlightQuery.length();
     }
 

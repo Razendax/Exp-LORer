@@ -10,5 +10,6 @@
 namespace GlobMatch
 {
     // '*' matches any run of characters, including none; '?' matches exactly one codepoint.
-    bool matches(const std::string& patternUtf8, const std::string& textUtf8);
+    // caseSensitive=false (default) folds both sides via UnicodeCaseFold before comparing.
+    bool matches(const std::string& patternUtf8, const std::string& textUtf8, bool caseSensitive = false);
 }

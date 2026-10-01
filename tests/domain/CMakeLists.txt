@@ -3,6 +3,8 @@ add_executable(explorer_domain_tests
     PathUtf8Test.cpp
     PathContainmentTest.cpp
     GlobMatchTest.cpp
+    WholeWordMatchTest.cpp
+    RegexMatchTest.cpp
     FileNodeTest.cpp
     TagTest.cpp
     MediaMetadataTest.cpp

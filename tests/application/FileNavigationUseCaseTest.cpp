@@ -344,6 +344,90 @@ TEST(FileNavigationUseCase, FilterByNameQuestionMarkMatchesExactlyOneCharacter)
     EXPECT_EQ(filtered[0].name(), "file1.txt");
 }
 
+TEST(FileNavigationUseCase, FilterByNameOptionsContainsModeDefaultsMatchOriginalOverload)
+{
+    std::vector<FileNode> files{ makeFile("C:/data/Report.txt", 1), makeFile("C:/data/b.jpg", 2) };
+
+    auto filtered = FileNavigationUseCase::filterByName(files, "REPORT", NameSearchOptions{});
+
+    ASSERT_EQ(filtered.size(), 1u);
+    EXPECT_EQ(filtered[0].name(), "Report.txt");
+}
+
+TEST(FileNavigationUseCase, FilterByNameOptionsContainsModeCaseSensitive)
+{
+    std::vector<FileNode> files{ makeFile("C:/data/Report.txt", 1), makeFile("C:/data/report.txt", 2) };
+
+    NameSearchOptions options;
+    options.mode = NameMatchMode::Contains;
+    options.caseSensitive = true;
+    auto filtered = FileNavigationUseCase::filterByName(files, "Report", options);
+
+    ASSERT_EQ(filtered.size(), 1u);
+    EXPECT_EQ(filtered[0].name(), "Report.txt");
+}
+
+TEST(FileNavigationUseCase, FilterByNameOptionsWholeWordMode)
+{
+    std::vector<FileNode> files{ makeFile("C:/data/File Name.txt", 1), makeFile("C:/data/FileName.txt", 2) };
+
+    NameSearchOptions options;
+    options.mode = NameMatchMode::WholeWord;
+    auto filtered = FileNavigationUseCase::filterByName(files, "File", options);
+
+    ASSERT_EQ(filtered.size(), 1u);
+    EXPECT_EQ(filtered[0].name(), "File Name.txt");
+}
+
+TEST(FileNavigationUseCase, FilterByNameOptionsExactNameMode)
+{
+    std::vector<FileNode> files{ makeFile("C:/data/File.txt", 1), makeFile("C:/data/File.txt.bak", 2) };
+
+    NameSearchOptions options;
+    options.mode = NameMatchMode::ExactName;
+    auto filtered = FileNavigationUseCase::filterByName(files, "file.txt", options);
+
+    ASSERT_EQ(filtered.size(), 1u);
+    EXPECT_EQ(filtered[0].name(), "File.txt");
+}
+
+TEST(FileNavigationUseCase, FilterByNameOptionsExactNameModeCaseSensitive)
+{
+    std::vector<FileNode> files{ makeFile("C:/data/File.txt", 1), makeFile("C:/data/file.txt", 2) };
+
+    NameSearchOptions options;
+    options.mode = NameMatchMode::ExactName;
+    options.caseSensitive = true;
+    auto filtered = FileNavigationUseCase::filterByName(files, "File.txt", options);
+
+    ASSERT_EQ(filtered.size(), 1u);
+    EXPECT_EQ(filtered[0].name(), "File.txt");
+}
+
+TEST(FileNavigationUseCase, FilterByNameOptionsRegexMode)
+{
+    std::vector<FileNode> files{ makeFile("C:/data/Img123.png", 1), makeFile("C:/data/Vacation.png", 2) };
+
+    NameSearchOptions options;
+    options.mode = NameMatchMode::Regex;
+    auto filtered = FileNavigationUseCase::filterByName(files, "^Img\\d+", options);
+
+    ASSERT_EQ(filtered.size(), 1u);
+    EXPECT_EQ(filtered[0].name(), "Img123.png");
+}
+
+TEST(FileNavigationUseCase, FilterByNameOptionsRegexModeInvalidPatternMatchesNothing)
+{
+    std::vector<FileNode> files{ makeFile("C:/data/a.txt", 1), makeFile("C:/data/b.txt", 2) };
+
+    NameSearchOptions options;
+    options.mode = NameMatchMode::Regex;
+
+    std::vector<FileNode> filtered;
+    EXPECT_NO_THROW(filtered = FileNavigationUseCase::filterByName(files, "[unterminated", options));
+    EXPECT_TRUE(filtered.empty());
+}
+
 TEST(FileNavigationUseCase, FilterBySizeRangeNoBoundsIsPassthrough)
 {
     std::vector<FileNode> files{ makeFile("C:/data/a.txt", 1), makeFile("C:/data/folder", 0, FileType::Directory) };

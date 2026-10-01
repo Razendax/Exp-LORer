@@ -1,11 +1,13 @@
 # Architecture Document — Feature Decision Log: Monitoring, Git & Productivity Features
 
 Continues [Architecture.md](../Architecture.md) §14. Everything here extends the UI/Adapters
-layers only — **no Domain or Application layer redesign** — and is recorded as a decision log
-per feature, not an implementation walkthrough; see git history and the code's own comments
-(many cite these subsection numbers directly) for the detail.
+layers only — **no Domain or Application layer redesign** (§14.44 is the one exception: a small,
+additive set of new Domain name-matching helpers and an Application-layer options struct, not a
+redesign of either layer's existing shape) — and is recorded as a decision log per feature, not an
+implementation walkthrough; see git history and the code's own comments (many cite these subsection
+numbers directly) for the detail.
 
-Covers §14.34–§14.43. Preceded by
+Covers §14.34–§14.44. Preceded by
 [01-workspace-navigation-and-search.md](01-workspace-navigation-and-search.md) (§14.1–§14.26)
 and [02-preview-decoration-and-status.md](02-preview-decoration-and-status.md) (§14.27–§14.33).
 
@@ -817,3 +819,75 @@ schema change.
   keeps showing stale text until Refresh/Enter or a focus change resets it — same un-persisted
   posture §14.42 already accepts elsewhere); a visual indicator distinguishing "live filtered
   results" from "stale results, folder changed since" beyond what Refresh/Enter now fix.
+
+### 14.44 Quick Search: Match Case / Whole Word / Exact Name / Regex Toggles
+
+Adds four toggle buttons above §14.42's Search-tab search bar that narrow how the query text is
+interpreted. Scoped entirely to the quick Search tab — Advanced Search (§14.19/§14.20) is untouched,
+by construction (see API shape below). No Port/schema change.
+
+* **`NameSearchOptions`** (`src/application/NameSearchOptions.h`, new) — a plain struct, `{
+  NameMatchMode mode = Contains; bool caseSensitive = false; }`, `NameMatchMode` being `Contains`
+  (today's wildcard/substring behavior) / `WholeWord` / `ExactName` / `Regex`. `caseSensitive` is
+  orthogonal to `mode` and applies to all four.
+* **`FileNavigationUseCase::filterByName`** gains an options-aware overload; the original
+  `filterByName(files, query)` becomes a one-line forward to the new overload with default-constructed
+  `NameSearchOptions` — so `filterByCriteria`/Advanced Search's call site is untouched and keeps
+  exactly today's behavior.
+* **Three new domain-level matchers**, mirroring `GlobMatch`'s existing posture (UTF-8 in, matched
+  via decoded Unicode codepoints):
+  - `GlobMatch::matches` itself gained a `bool caseSensitive = false` parameter (default preserves
+    every existing call site, including `FileNamePattern`'s decoration-rule usage) — when true, the
+    internal matcher skips `UnicodeCaseFold::foldCodepoint` on both sides.
+  - **`WholeWordMatch`** (new) — scans for every occurrence of the query in the name and accepts one
+    only if the codepoint immediately before/after (if any) is not a letter/digit. Word-char
+    classification is a heuristic (ASCII letter/digit, or any codepoint above `0x7F`), same
+    "good enough for real-world names, not a full Unicode table" trade-off `UnicodeCaseFold`
+    already documents for itself — so `File` matches `File Name`/`File-Name`/`File_Name`/`File.txt`
+    but not `FileName`.
+  - **`RegexMatch`** (new) — wraps `std::wregex`. Converts both the pattern and the candidate name
+    from UTF-8 to a wide string via `std::filesystem::path(...).wstring()` (reusing the project's
+    existing portable UTF-8↔native-wide conversion rather than a hand-rolled one) — giving UTF-16
+    matching on Windows and full UTF-32 codepoint matching on Linux "for free." Returns
+    `Result<bool>`, not a thrown exception: an invalid live-typed pattern throws `std::regex_error`
+    from `std::wregex`'s constructor, caught at this boundary and translated to `Result::failure`
+    (the same adapters-catch-third-party-exceptions posture Architecture.md already allows, applied
+    here because the pattern is user search-box input, not a programmer constant). Known trade-off:
+    on Windows, a codepoint outside the BMP is a UTF-16 surrogate pair, which a `.`/character-class
+    regex construct may not treat as a single "character" — acceptable for a search box, not claimed
+    as fully Unicode-correct.
+  - `ExactName` mode needs no new domain file — it's `name == query` (case-sensitive) or
+    `UnicodeCaseFold::foldUtf8(name) == UnicodeCaseFold::foldUtf8(query)` (default), inline in
+    `FileNavigationUseCase::filterByName`.
+  - An invalid regex pattern makes `filterByName` return zero matches (same as any other
+    non-matching query) rather than surfacing a separate validity/error indicator in the UI — a
+    deliberate v1 scope cut, not an oversight.
+* **`TabViewModel`** gains `m_searchMatchMode`/`m_searchCaseSensitive` (defaults `Contains`/`false`)
+  alongside the existing `m_searchQuery`, a `searchOptions()` getter, and a `setSearchOptions(const
+  NameSearchOptions&)` slot. Toggling a mode/case flag **never** dispatches a rescan — it only
+  re-filters whatever candidate list (`m_searchSnapshot` or `m_searchPartialSnapshot`) is already
+  cached/in-flight, the same cheap synchronous path `updateSearchQuery` already takes once a scan of
+  the current root exists. `exitSearch()` resets both back to their defaults, same as it already does
+  for `m_searchQuery`.
+* **`SearchPanelWidget`** adds four checkable text-label `QToolButton`s to the existing icon toolbar
+  row (`Aa` / `ab` / `=` / `.*`, full tooltips with the exact examples from this spec), separated from
+  the Refresh/Clear/View-as-tree/Collapse-all group by a `QFrame::VLine` — consistent with the
+  project having no custom icon/SVG assets anywhere (every existing button icon is a `QStyle::SP_*`
+  standard icon) and reusing the text-only `QToolButton` pattern "Collapse All" already established.
+  Whole Word/Exact Name/Regex sit in one `QButtonGroup` with
+  `setExclusionPolicy(QButtonGroup::ExclusionPolicy::ExclusiveOptional)` — Qt6's exclusive-but-
+  zero-allowed mode, letting a click on the already-active button deselect it back to Contains mode,
+  which a classic exclusive `QButtonGroup`/radio-button group cannot do. Match Case stays outside that
+  group. A new `searchOptionsChanged(const NameSearchOptions&)` signal and `setOptions(...)` method
+  (the latter `QSignalBlocker`-guarded, mirroring `setQuery()`) round-trip through `MainWindow` the
+  same way query/results already do, including on `onFocusedTabChanged` retargeting — so each tab's
+  toggle state, like its query, is restored independently when that tab regains focus. Not persisted
+  across app restarts, same posture as the un-persisted View-as-tree toggle.
+* **Highlighting** (`SearchResultDelegate`/`FileBrowserView`) now takes a case-sensitivity flag
+  alongside the existing highlight query, so Match Case also governs which part of a result's name is
+  bolded — correct for Contains/Whole Word/Exact Name, all three being, once matched, a literal
+  substring of the name. **Not built:** pixel-accurate highlighting of the actual matched span in
+  Regex mode — the literal-substring highlight attempt is reused as-is, same precedent as this file's
+  already-accepted gap for wildcard-pattern highlighting in Contains mode (§14.43).
+* **Not built:** any equivalent of these four toggles on the Advanced Search pane's Name field;
+  persisting toggle state across restarts.

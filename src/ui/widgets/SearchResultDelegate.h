@@ -14,7 +14,9 @@ class SearchResultDelegate : public QStyledItemDelegate
 public:
     explicit SearchResultDelegate(QObject* parent = nullptr);
 
-    void setHighlightQuery(const QString& query);
+    // caseSensitive (Architecture.md §14.44) governs the Qt::CaseSensitive/Qt::CaseInsensitive flag
+    // used to locate the highlighted span -- default false preserves every existing call site.
+    void setHighlightQuery(const QString& query, bool caseSensitive = false);
 
     void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
     QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override;
@@ -23,4 +25,5 @@ private:
     void paintNameColumn(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const;
 
     QString m_highlightQuery;
+    bool m_highlightCaseSensitive = false;
 };

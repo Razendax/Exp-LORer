@@ -5,6 +5,9 @@
 
 #include "GlobMatch.h"
 #include "PathUtf8.h"
+#include "RegexMatch.h"
+#include "UnicodeCaseFold.h"
+#include "WholeWordMatch.h"
 
 namespace
 {
@@ -101,17 +104,53 @@ std::vector<FileNode> FileNavigationUseCase::filterByExtension(std::vector<FileN
 
 std::vector<FileNode> FileNavigationUseCase::filterByName(std::vector<FileNode> files, const std::string& query)
 {
+    return filterByName(std::move(files), query, NameSearchOptions{});
+}
+
+std::vector<FileNode> FileNavigationUseCase::filterByName(std::vector<FileNode> files, const std::string& query,
+                                                            const NameSearchOptions& options)
+{
     if (query.empty())
     {
         return files;
     }
 
-    const bool hasWildcard = query.find('*') != std::string::npos || query.find('?') != std::string::npos;
-    const std::string pattern = hasWildcard ? query : "*" + query + "*";
+    std::function<bool(const std::string&)> matchesName;
+
+    switch (options.mode)
+    {
+    case NameMatchMode::WholeWord:
+        matchesName = [&query, &options](const std::string& name) {
+            return WholeWordMatch::matches(query, name, options.caseSensitive);
+        };
+        break;
+
+    case NameMatchMode::ExactName:
+        matchesName = [&query, &options](const std::string& name) {
+            return options.caseSensitive ? name == query : UnicodeCaseFold::foldUtf8(name) == UnicodeCaseFold::foldUtf8(query);
+        };
+        break;
+
+    case NameMatchMode::Regex:
+        matchesName = [&query, &options](const std::string& name) {
+            const Result<bool> matched = RegexMatch::matches(query, name, options.caseSensitive);
+            return matched.hasValue() && matched.value();
+        };
+        break;
+
+    case NameMatchMode::Contains:
+    default:
+    {
+        const bool hasWildcard = query.find('*') != std::string::npos || query.find('?') != std::string::npos;
+        const std::string pattern = hasWildcard ? query : "*" + query + "*";
+        matchesName = [pattern, &options](const std::string& name) { return GlobMatch::matches(pattern, name, options.caseSensitive); };
+        break;
+    }
+    }
 
     std::vector<FileNode> result;
-    std::copy_if(files.begin(), files.end(), std::back_inserter(result), [&pattern](const FileNode& file) {
-        return GlobMatch::matches(pattern, PathUtf8::toUtf8(file.name()));
+    std::copy_if(files.begin(), files.end(), std::back_inserter(result), [&matchesName](const FileNode& file) {
+        return matchesName(PathUtf8::toUtf8(file.name()));
     });
 
     return result;

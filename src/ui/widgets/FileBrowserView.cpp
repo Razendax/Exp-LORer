@@ -376,11 +376,11 @@ void FileBrowserView::setColumnOrder(const std::array<int, FileListModel::Column
     }
 }
 
-void FileBrowserView::setNameHighlightQuery(const QString& query)
+void FileBrowserView::setNameHighlightQuery(const QString& query, bool caseSensitive)
 {
     if (m_searchResultDelegate)
     {
-        m_searchResultDelegate->setHighlightQuery(query);
+        m_searchResultDelegate->setHighlightQuery(query, caseSensitive);
         m_treeView->viewport()->update();
     }
 }

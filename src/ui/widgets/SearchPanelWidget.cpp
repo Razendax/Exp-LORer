@@ -1,5 +1,6 @@
 #include "SearchPanelWidget.h"
 
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QItemSelectionModel>
 #include <QLineEdit>
@@ -64,13 +65,67 @@ SearchPanelWidget::SearchPanelWidget(const FileDecorationRules& fileDecorationRu
     connect(m_collapseAllButton, &QToolButton::clicked, this, [this]() { m_treeResultsView->collapseAll(); });
     iconLayout->addWidget(m_collapseAllButton);
 
+    auto* matchOptionsDivider = new QFrame(iconToolBar);
+    matchOptionsDivider->setFrameShape(QFrame::VLine);
+    matchOptionsDivider->setFrameShadow(QFrame::Sunken);
+    iconLayout->addWidget(matchOptionsDivider);
+
+    // Match Case/Whole Word/Exact Name/Match Regex toggles (Architecture.md §14.44). Text-only,
+    // same posture as m_collapseAllButton -- the project has no custom icon assets.
+    m_matchCaseButton = new QToolButton(iconToolBar);
+    m_matchCaseButton->setObjectName(QStringLiteral("searchMatchCaseButton"));
+    m_matchCaseButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    m_matchCaseButton->setText(tr("Aa"));
+    m_matchCaseButton->setCheckable(true);
+    m_matchCaseButton->setToolTip(tr("Match Case\nE.g. \"File\" will not match \"file\""));
+    connect(m_matchCaseButton, &QToolButton::toggled, this, &SearchPanelWidget::emitSearchOptionsChanged);
+    iconLayout->addWidget(m_matchCaseButton);
+
+    m_wholeWordButton = new QToolButton(iconToolBar);
+    m_wholeWordButton->setObjectName(QStringLiteral("searchWholeWordButton"));
+    m_wholeWordButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    m_wholeWordButton->setText(tr("ab"));
+    m_wholeWordButton->setCheckable(true);
+    m_wholeWordButton->setToolTip(
+        tr("Match Whole Word\nMatches whole word only, not in between. Case insensitive.\n"
+           "E.g. \"File\" will not match \"FileName\", but will match \"File Name\""));
+    connect(m_wholeWordButton, &QToolButton::toggled, this,
+            [this](bool checked) { onMatchModeButtonToggled(m_wholeWordButton, checked); });
+    iconLayout->addWidget(m_wholeWordButton);
+
+    m_exactNameButton = new QToolButton(iconToolBar);
+    m_exactNameButton->setObjectName(QStringLiteral("searchExactNameButton"));
+    m_exactNameButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    m_exactNameButton->setText(tr("="));
+    m_exactNameButton->setCheckable(true);
+    m_exactNameButton->setToolTip(
+        tr("Exact Name\nMatches exact name only, not in between. Case insensitive.\n"
+           "E.g. \"File\" will not match \"FileName\" nor \"File Name\", but will match only \"file\" or \"File\""));
+    connect(m_exactNameButton, &QToolButton::toggled, this,
+            [this](bool checked) { onMatchModeButtonToggled(m_exactNameButton, checked); });
+    iconLayout->addWidget(m_exactNameButton);
+
+    m_regexButton = new QToolButton(iconToolBar);
+    m_regexButton->setObjectName(QStringLiteral("searchRegexButton"));
+    m_regexButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    m_regexButton->setText(tr(".*"));
+    m_regexButton->setCheckable(true);
+    m_regexButton->setToolTip(tr("Match Regex\nMatches regex pattern"));
+    connect(m_regexButton, &QToolButton::toggled, this, [this](bool checked) { onMatchModeButtonToggled(m_regexButton, checked); });
+    iconLayout->addWidget(m_regexButton);
+
     iconLayout->addStretch();
 
     m_searchBar = new QLineEdit(this);
     m_searchBar->setObjectName(QStringLiteral("searchPanelSearchBar"));
     m_searchBar->setClearButtonEnabled(true);
     m_searchBar->setPlaceholderText(tr("Search..."));
-    connect(m_searchBar, &QLineEdit::textEdited, this, &SearchPanelWidget::queryChanged);
+    connect(m_searchBar, &QLineEdit::textEdited, this, [this](const QString& text) {
+        const bool caseSensitive = m_matchCaseButton->isChecked();
+        m_listResultsView->setNameHighlightQuery(text, caseSensitive);
+        m_treeDelegate->setHighlightQuery(text, caseSensitive);
+        emit queryChanged(text);
+    });
     connect(m_searchBar, &QLineEdit::returnPressed, this, [this]() { emit refreshRequested(m_searchBar->text()); });
 
     m_advancedSearchButton = new QPushButton(tr("Advanced Search..."), this);
@@ -140,8 +195,71 @@ void SearchPanelWidget::setQuery(const QString& query)
     const QSignalBlocker blocker(m_searchBar);
     m_searchBar->setText(query);
 
-    m_listResultsView->setNameHighlightQuery(query);
-    m_treeDelegate->setHighlightQuery(query);
+    const bool caseSensitive = m_matchCaseButton->isChecked();
+    m_listResultsView->setNameHighlightQuery(query, caseSensitive);
+    m_treeDelegate->setHighlightQuery(query, caseSensitive);
+}
+
+void SearchPanelWidget::setOptions(const NameSearchOptions& options)
+{
+    const QSignalBlocker caseBlocker(m_matchCaseButton);
+    const QSignalBlocker wholeWordBlocker(m_wholeWordButton);
+    const QSignalBlocker exactNameBlocker(m_exactNameButton);
+    const QSignalBlocker regexBlocker(m_regexButton);
+
+    m_matchCaseButton->setChecked(options.caseSensitive);
+    m_wholeWordButton->setChecked(options.mode == NameMatchMode::WholeWord);
+    m_exactNameButton->setChecked(options.mode == NameMatchMode::ExactName);
+    m_regexButton->setChecked(options.mode == NameMatchMode::Regex);
+
+    m_listResultsView->setNameHighlightQuery(m_searchBar->text(), options.caseSensitive);
+    m_treeDelegate->setHighlightQuery(m_searchBar->text(), options.caseSensitive);
+}
+
+void SearchPanelWidget::onMatchModeButtonToggled(QToolButton* button, bool checked)
+{
+    if (checked)
+    {
+        // Manual "exclusive but deselectable" behavior: this vendored Qt build's QButtonGroup has
+        // no ExclusionPolicy::ExclusiveOptional (only the classic always-one-selected exclusive
+        // mode), so the 3 buttons aren't in a QButtonGroup at all -- enforce "at most one of the 3
+        // checked" here instead, while still letting a button be unchecked by clicking it again.
+        for (QToolButton* other : { m_wholeWordButton, m_exactNameButton, m_regexButton })
+        {
+            if (other != button && other->isChecked())
+            {
+                const QSignalBlocker blocker(other);
+                other->setChecked(false);
+            }
+        }
+    }
+
+    emitSearchOptionsChanged();
+}
+
+void SearchPanelWidget::emitSearchOptionsChanged()
+{
+    NameSearchOptions options;
+    options.caseSensitive = m_matchCaseButton->isChecked();
+
+    if (m_wholeWordButton->isChecked())
+    {
+        options.mode = NameMatchMode::WholeWord;
+    }
+    else if (m_exactNameButton->isChecked())
+    {
+        options.mode = NameMatchMode::ExactName;
+    }
+    else if (m_regexButton->isChecked())
+    {
+        options.mode = NameMatchMode::Regex;
+    }
+
+    const bool caseSensitive = options.caseSensitive;
+    m_listResultsView->setNameHighlightQuery(m_searchBar->text(), caseSensitive);
+    m_treeDelegate->setHighlightQuery(m_searchBar->text(), caseSensitive);
+
+    emit searchOptionsChanged(options);
 }
 
 void SearchPanelWidget::setResults(const std::vector<FileNode>& entries, const std::filesystem::path& root)
@@ -188,5 +306,6 @@ void SearchPanelWidget::clearForNoTab()
     m_listModel->setEntries({}, {});
     m_treeModel->setRoot({});
     m_treeModel->setResults({});
+    setOptions({});
     setEnabled(false);
 }

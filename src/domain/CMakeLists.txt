@@ -10,6 +10,10 @@ add_library(explorer_domain STATIC
     UnicodeCaseFold.cpp
     GlobMatch.h
     GlobMatch.cpp
+    WholeWordMatch.h
+    WholeWordMatch.cpp
+    RegexMatch.h
+    RegexMatch.cpp
     FileNode.h
     FileNode.cpp
     Tag.h

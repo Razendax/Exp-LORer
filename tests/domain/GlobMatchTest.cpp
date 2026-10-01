@@ -50,3 +50,12 @@ TEST(GlobMatch, NoWildcardsRequiresExactFullMatch)
     EXPECT_TRUE(GlobMatch::matches("report.txt", "report.txt"));
     EXPECT_FALSE(GlobMatch::matches("report.txt", "quarterly_report.txt"));
 }
+
+TEST(GlobMatch, CaseSensitiveModeDistinguishesCase)
+{
+    EXPECT_FALSE(GlobMatch::matches("File", "file", true));
+    EXPECT_TRUE(GlobMatch::matches("File", "File", true));
+
+    // Default-arg call sites (no 3rd argument) are unaffected -- still case-insensitive.
+    EXPECT_TRUE(GlobMatch::matches("File", "file"));
+}

@@ -7,6 +7,7 @@
 #include <QWidget>
 
 #include "FileNode.h"
+#include "NameSearchOptions.h"
 
 class QLineEdit;
 class QPushButton;
@@ -36,8 +37,14 @@ public:
 
     // QSignalBlocker-guarded resync of the search bar's text (mirrors the old
     // m_searchBar->setText(...) in MainWindow::onFocusedTabChanged) -- also re-applies `query` as
-    // the highlight term on both result views.
+    // the highlight term on both result views (using whatever case-sensitivity setOptions() last
+    // set).
     void setQuery(const QString& query);
+
+    // Match Case/Whole Word/Exact Name/Match Regex toggles (Architecture.md §14.44).
+    // QSignalBlocker-guarded resync of all 4 buttons' checked state, mirrors setQuery() -- also
+    // re-applies the highlight query's case-sensitivity on both result views.
+    void setOptions(const NameSearchOptions& options);
 
     void setResults(const std::vector<FileNode>& entries, const std::filesystem::path& root);
     void setLoading(bool loading);
@@ -52,6 +59,9 @@ signals:
     void advancedSearchRequested();
     void resultActivated(const std::filesystem::path& path, bool isDirectory);
 
+    // Emitted whenever any of the 4 toggle buttons changes state (Architecture.md §14.44).
+    void searchOptionsChanged(const NameSearchOptions& options);
+
     // Bubbled from whichever result view (list or tree) the user selected in -- empty on
     // deselection or a tree click on a structural ancestor node that isn't itself a matched entry
     // (see m_lastResults).
@@ -61,10 +71,25 @@ private:
     void setViewAsTree(bool tree);
     void onTreeSelectionChanged();
 
+    // Enforces "at most one of Whole Word/Exact Name/Regex checked, but clicking the active one
+    // again unchecks it" -- this vendored Qt build's QButtonGroup has no
+    // ExclusionPolicy::ExclusiveOptional, so the 3 buttons aren't grouped at all and this is done
+    // by hand instead.
+    void onMatchModeButtonToggled(QToolButton* button, bool checked);
+
+    // Shared tail for all 4 toggle buttons: recomputes a NameSearchOptions from current button
+    // states and emits searchOptionsChanged.
+    void emitSearchOptionsChanged();
+
     QToolButton* m_refreshButton = nullptr;
     QToolButton* m_clearButton = nullptr;
     QToolButton* m_viewAsTreeButton = nullptr;
     QToolButton* m_collapseAllButton = nullptr;
+
+    QToolButton* m_matchCaseButton = nullptr;
+    QToolButton* m_wholeWordButton = nullptr;
+    QToolButton* m_exactNameButton = nullptr;
+    QToolButton* m_regexButton = nullptr;
 
     QLineEdit* m_searchBar = nullptr;
     QPushButton* m_advancedSearchButton = nullptr;
