@@ -1,4 +1,4 @@
-add_executable(Exp-LORer
+add_executable(Exp-LORer WIN32
     main.cpp
     CompositionRoot.h
     CompositionRoot.cpp
