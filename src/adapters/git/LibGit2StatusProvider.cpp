@@ -151,3 +151,52 @@ Result<GitDirectoryStatus> LibGit2StatusProvider::statusForDirectory(const std::
 
     return Result<GitDirectoryStatus>::success(std::move(result));
 }
+
+Result<std::vector<fs::path>> LibGit2StatusProvider::ignoredPaths(const std::filesystem::path& root) const
+{
+    auto repoResult = LibGit2Repository::open(root);
+    if (!repoResult)
+    {
+        // No repository at or above `root` -- tolerated by blanking (same posture as
+        // statusForDirectory), not an error.
+        return Result<std::vector<fs::path>>::success({});
+    }
+
+    LibGit2Repository repository = std::move(repoResult).value();
+    const fs::path workdir = repository.workdirPath();
+    if (workdir.empty())
+    {
+        // Bare repository -- no working tree, nothing to ignore.
+        return Result<std::vector<fs::path>>::success({});
+    }
+
+    std::error_code ec;
+    const fs::path relativeRoot = fs::relative(root, workdir, ec);
+    if (ec)
+    {
+        return Result<std::vector<fs::path>>::success({});
+    }
+    const std::string relativeRootUtf8 = relativeRoot == fs::path(".") ? std::string() : toGitRelativeUtf8(relativeRoot);
+
+    auto ignoredResult = repository.ignoredPaths(relativeRootUtf8);
+    if (!ignoredResult)
+    {
+        return Result<std::vector<fs::path>>::failure(std::move(ignoredResult).error());
+    }
+
+    std::vector<fs::path> result;
+    result.reserve(ignoredResult.value().size());
+    for (const std::string& relativePathUtf8 : ignoredResult.value())
+    {
+        std::string_view trimmed = relativePathUtf8;
+        // libgit2 reports a wholly-ignored directory with a trailing slash on its path.
+        if (!trimmed.empty() && trimmed.back() == '/')
+        {
+            trimmed = trimmed.substr(0, trimmed.size() - 1);
+        }
+
+        result.push_back(workdir / fromGitUtf8(trimmed));
+    }
+
+    return Result<std::vector<fs::path>>::success(std::move(result));
+}

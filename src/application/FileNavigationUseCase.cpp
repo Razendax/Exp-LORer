@@ -32,9 +32,10 @@ Result<std::vector<FileNode>> FileNavigationUseCase::listDirectory(const std::fi
 }
 
 Result<std::vector<FileNode>> FileNavigationUseCase::listDirectoryRecursive(
-    const std::filesystem::path& root, const std::function<void(const std::vector<FileNode>&)>& onProgress) const
+    const std::filesystem::path& root, const std::function<void(const std::vector<FileNode>&)>& onProgress,
+    const std::function<bool(const std::filesystem::path&)>& shouldPrune) const
 {
-    return m_fileSystemRepository.listDirectoryRecursive(root, onProgress);
+    return m_fileSystemRepository.listDirectoryRecursive(root, onProgress, shouldPrune);
 }
 
 Result<FileNode> FileNavigationUseCase::stat(const std::filesystem::path& path) const

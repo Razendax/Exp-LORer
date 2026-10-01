@@ -17,9 +17,12 @@ class StandardFileSystemRepository : public IFileSystemRepository
 {
 public:
     Result<std::vector<FileNode>> listDirectory(const std::filesystem::path& directory) const override;
+    // Defaulted here (unlike the Port's own pure-virtual signature) purely for this concrete
+    // type's direct callers -- StandardFileSystemRepositoryTest's existing single-argument call
+    // sites, same posture as the pre-§14.45 single-parameter default this replaces.
     Result<std::vector<FileNode>> listDirectoryRecursive(
-        const std::filesystem::path& root,
-        const std::function<void(const std::vector<FileNode>&)>& onProgress = nullptr) const override;
+        const std::filesystem::path& root, const std::function<void(const std::vector<FileNode>&)>& onProgress = nullptr,
+        const std::function<bool(const std::filesystem::path&)>& shouldPrune = nullptr) const override;
     Result<FileNode> stat(const std::filesystem::path& path) const override;
 
     Result<FileNode> move(const std::filesystem::path& source, const std::filesystem::path& destination) override;

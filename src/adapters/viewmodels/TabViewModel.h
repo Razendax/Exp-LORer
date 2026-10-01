@@ -65,10 +65,13 @@ public:
     bool searchActive() const noexcept { return m_searchActive; }
     QString searchQuery() const noexcept { return m_searchQuery; }
 
-    // Quick Search tab's Match Case/Whole Word/Exact Name/Match Regex toggles (Architecture.md
-    // §14.44), per-tab and not persisted across restarts (same posture as m_searchQuery/View as
-    // tree).
-    NameSearchOptions searchOptions() const noexcept { return { m_searchMatchMode, m_searchCaseSensitive }; }
+    // Quick Search tab's Match Case/Whole Word/Exact Name/Match Regex/Skip Git-Ignored toggles
+    // (Architecture.md §14.44/§14.45), per-tab and not persisted across restarts (same posture as
+    // m_searchQuery/View as tree).
+    NameSearchOptions searchOptions() const noexcept
+    {
+        return { m_searchMatchMode, m_searchCaseSensitive, m_searchSkipGitIgnored };
+    }
 
     FileListModel* advancedSearchResultsModel() const noexcept { return m_advancedSearchResultsModel; }
     bool advancedSearchActive() const noexcept { return m_advancedSearchActive; }
@@ -448,6 +451,10 @@ private:
     // to their defaults by exitSearch(), mirroring m_searchQuery.
     NameMatchMode m_searchMatchMode = NameMatchMode::Contains;
     bool m_searchCaseSensitive = false;
+    // Skip Git-Ignored toggle state (Architecture.md §14.45) -- unlike the three above, changing
+    // this forces a rescan (setSearchOptions), since it changes what a scan visits, not just how a
+    // candidate list already in memory is filtered. Reset to false by exitSearch().
+    bool m_searchSkipGitIgnored = false;
     // Bumped on every recursive-scan dispatch and on exitSearch(); onSearchCandidatesReady/
     // onSearchProgress discard any reply whose generation no longer matches, same discard-by-
     // generation-id approach as m_advancedSearchGeneration above.

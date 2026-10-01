@@ -50,7 +50,7 @@ TEST(FileNavigationUseCase, ListDirectoryRecursiveDelegatesToRepository)
     MockFileSystemRepository repository;
     MockContextMenuProvider contextMenuProvider;
     std::vector<FileNode> files{ makeFile("C:/data/sub/a.txt", 10) };
-    EXPECT_CALL(repository, listDirectoryRecursive(std::filesystem::path("C:/data"), _))
+    EXPECT_CALL(repository, listDirectoryRecursive(std::filesystem::path("C:/data"), _, _))
         .WillOnce(Return(Result<std::vector<FileNode>>::success(files)));
 
     FileNavigationUseCase useCase(repository, contextMenuProvider);

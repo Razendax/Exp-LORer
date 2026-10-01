@@ -29,10 +29,18 @@ public:
     // callers must not add their own throttling) with the files discovered *so far*, so a caller
     // doing a slow scan (Advanced Search, Architecture.md §14.19/§14.37) can show partial results
     // instead of blocking the UI until the whole subtree has been walked. It is called on whatever
-    // thread is running the scan; nullptr (the default) disables progress reporting entirely.
+    // thread is running the scan; nullptr disables progress reporting entirely.
+    //
+    // shouldPrune, when set, is called for every entry the walk visits; an entry for which it
+    // returns true is excluded from the result and, if it's a directory, never descended into --
+    // actual I/O avoidance, not a post-hoc result filter (Architecture.md §14.45's quick-search
+    // "skip git-ignored" toggle is the first caller). nullptr disables pruning entirely. A plain
+    // required parameter here (no default) -- a default argument on a pure-virtual Port method is
+    // a known footgun with mocks/overrides; convenience defaults live only on
+    // FileNavigationUseCase's non-virtual wrapper.
     virtual Result<std::vector<FileNode>> listDirectoryRecursive(
-        const std::filesystem::path& root,
-        const std::function<void(const std::vector<FileNode>&)>& onProgress = nullptr) const = 0;
+        const std::filesystem::path& root, const std::function<void(const std::vector<FileNode>&)>& onProgress,
+        const std::function<bool(const std::filesystem::path&)>& shouldPrune) const = 0;
 
     // Resolves a single path into a FileNode (e.g. to treat a browsed directory itself as a
     // taggable target when no child row is selected). Unlike listDirectory(), this stats the

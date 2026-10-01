@@ -55,7 +55,9 @@ instance safely serves concurrent callers from every tab/pane (§14.2).
   (`ContextMenuEntry`) and invokes the chosen entry — it hands back data, it doesn't show the OS's
   own popup (§14.13).
 * `IGitStatusProvider` — resolves a directory's working-tree git status (per-immediate-child
-  `GitFileStatus`, or an empty result when the directory isn't inside a repository), §14.32.
+  `GitFileStatus`, or an empty result when the directory isn't inside a repository), §14.32; also
+  `ignoredPaths(root)`, every ignored path under a subtree (files and wholly-ignored directories each
+  as one entry), used to prune git-ignored content from a recursive quick search (§14.45).
 * `IDirectoryWatcher` — non-recursive immediate-children change notification backing live directory
   update (§14.33).
 * `IFolderMonitor` — recursive, subtree-wide change notification with per-event
@@ -437,7 +439,7 @@ walkthrough; see git history and the code's own comments (many cite these subsec
 directly) for the detail.
 
 The log grew too large for one document and is split across three files under `docs/features/`.
-Section numbers (§14.1–§14.42) are continuous across all three:
+Section numbers (§14.1–§14.45) are continuous across all three:
 
 * **[features/01-workspace-navigation-and-search.md](features/01-workspace-navigation-and-search.md)**
   — §14.1–§14.26: split-window layout/tabs/panes, tag panel, clipboard file operations,
@@ -449,7 +451,8 @@ Section numbers (§14.1–§14.42) are continuous across all three:
   browsing/preview/extraction, per-file/folder font & color decoration, window-wide status bar, git
   status badges, live directory update.
 * **[features/03-monitoring-git-and-productivity.md](features/03-monitoring-git-and-productivity.md)**
-  — §14.34–§14.42: recursive folder monitoring, git branch status/checkout, favorites,
+  — §14.34–§14.45: recursive folder monitoring, git branch status/checkout, favorites,
   notification system, async advanced search, customizable Details-view columns, disk usage/folder
-  size, left panel with folder tree, unified search tab.
+  size, left panel with folder tree, unified search tab, search tab follow-up fixes, quick-search
+  match options, quick-search skip-git-ignored toggle.
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <vector>
 
 #include "GitDirectoryStatus.h"
 #include "Result.h"
@@ -17,6 +18,9 @@ public:
     explicit GitStatusUseCase(IGitStatusProvider& gitStatusProvider);
 
     Result<GitDirectoryStatus> statusForDirectory(const std::filesystem::path& directory) const;
+
+    // Thin passthrough to IGitStatusProvider::ignoredPaths (Architecture.md §14.45).
+    Result<std::vector<std::filesystem::path>> ignoredPaths(const std::filesystem::path& root) const;
 
 private:
     IGitStatusProvider& m_gitStatusProvider;

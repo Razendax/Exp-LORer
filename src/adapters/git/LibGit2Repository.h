@@ -46,6 +46,15 @@ public:
     // left off, libgit2's default) rather than walked file by file.
     Result<std::vector<StatusEntry>> statusForImmediateChildren(const std::string& relativeDirectoryUtf8) const;
 
+    // Every ignored path under relativeDirectoryUtf8 ('/'-separated UTF-8, no leading/trailing
+    // slash, empty for the workdir root), recursively -- unlike statusForImmediateChildren, no
+    // immediate-children-only rollup: a wholly-ignored directory is still reported as a single
+    // entry (RECURSE_IGNORED_DIRS left off, same mechanism statusForImmediateChildren's own doc
+    // comment credits for untracked folders), but a *partially* ignored directory's individual
+    // ignored files underneath are each reported in full (Architecture.md §14.45). Returned paths
+    // are repo-workdir-relative, '/'-separated UTF-8 (same convention as StatusEntry).
+    Result<std::vector<std::string>> ignoredPaths(const std::string& relativeDirectoryUtf8) const;
+
     // Branch short name if HEAD points at one; a short commit id if detached (isDetachedOut set to
     // true); the would-be branch name (HEAD's own symbolic target, "refs/heads/" prefix stripped)
     // if the repository has zero commits yet (unborn HEAD) -- never an error for that last case.

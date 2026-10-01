@@ -236,6 +236,50 @@ TEST_F(LibGit2RepositoryTest, ChangedFileCountReflectsStagedUnstagedAndUntracked
     EXPECT_EQ(countResult.value(), 3);
 }
 
+TEST_F(LibGit2RepositoryTest, IgnoredPathsReturnsIgnoredFileAndWhollyIgnoredDirectoryAsSingleEntries)
+{
+    writeFile(".gitignore", "ignored.txt\nignored_dir/\n");
+    stage(".gitignore");
+    commitAll("initial");
+
+    writeFile("ignored.txt", "secret");
+    writeFile("ignored_dir/inner.txt", "secret2");
+    writeFile("tracked.txt", "kept");
+    stage("tracked.txt");
+    commitAll("tracked");
+
+    auto repoResult = LibGit2Repository::open(m_tempDir);
+    ASSERT_TRUE(repoResult.hasValue());
+    LibGit2Repository repository = std::move(repoResult).value();
+
+    auto ignoredResult = repository.ignoredPaths("");
+
+    ASSERT_TRUE(ignoredResult.hasValue());
+    std::vector<std::string> paths = ignoredResult.value();
+    std::sort(paths.begin(), paths.end());
+
+    // ignored_dir is reported as a single entry (trailing slash), not walked file-by-file --
+    // RECURSE_IGNORED_DIRS left off mirrors statusForImmediateChildren's own untracked-folder
+    // behavior.
+    EXPECT_EQ(paths, (std::vector<std::string>{ "ignored.txt", "ignored_dir/" }));
+}
+
+TEST_F(LibGit2RepositoryTest, IgnoredPathsIsEmptyWhenNothingIsIgnored)
+{
+    writeFile("a.txt", "hello");
+    stage("a.txt");
+    commitAll("initial");
+
+    auto repoResult = LibGit2Repository::open(m_tempDir);
+    ASSERT_TRUE(repoResult.hasValue());
+    LibGit2Repository repository = std::move(repoResult).value();
+
+    auto ignoredResult = repository.ignoredPaths("");
+
+    ASSERT_TRUE(ignoredResult.hasValue());
+    EXPECT_TRUE(ignoredResult.value().empty());
+}
+
 TEST_F(LibGit2RepositoryTest, ListLocalBranchesReturnsExactlyCreatedBranchesNoRemotes)
 {
     writeFile("a.txt", "hello");

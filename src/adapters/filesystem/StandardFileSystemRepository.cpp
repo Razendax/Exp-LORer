@@ -239,7 +239,8 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectory(const 
 }
 
 Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursive(
-    const std::filesystem::path& root, const std::function<void(const std::vector<FileNode>&)>& onProgress) const
+    const std::filesystem::path& root, const std::function<void(const std::vector<FileNode>&)>& onProgress,
+    const std::function<bool(const std::filesystem::path&)>& shouldPrune) const
 {
     if (root == VirtualPaths::ThisPC)
     {
@@ -267,15 +268,33 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursi
     auto lastProgressTime = std::chrono::steady_clock::now();
     try
     {
-        for (const auto& entry :
-             fs::recursive_directory_iterator(target, fs::directory_options::skip_permission_denied))
+        // Explicit-iterator loop (rather than a range-based for) so disable_recursion_pending() is
+        // reachable below -- the actual I/O-avoidance payoff of shouldPrune (Architecture.md
+        // §14.45): a pruned directory is never descended into, not just filtered out afterwards.
+        auto it = fs::recursive_directory_iterator(target, fs::directory_options::skip_permission_denied);
+        const auto end = fs::end(it);
+        for (; it != end; ++it)
         {
+            const auto& entry = *it;
+
             // fs::relative() canonicalizes both paths, which resolves symlinks (including the
             // entry's own final path component if it is itself a symlink) — a symlink entry would
             // silently be remapped onto its target's path/name instead of keeping its own.
             // lexically_relative() is purely textual and never touches the filesystem.
             const fs::path relative = entry.path().lexically_relative(target);
-            auto node = buildFileNode(root / relative, entry);
+            const fs::path outwardPath = root / relative;
+
+            if (shouldPrune && shouldPrune(outwardPath))
+            {
+                std::error_code isDirEc;
+                if (entry.is_directory(isDirEc))
+                {
+                    it.disable_recursion_pending();
+                }
+                continue;
+            }
+
+            auto node = buildFileNode(outwardPath, entry);
             if (node.hasValue())
             {
                 files.push_back(std::move(node).value());

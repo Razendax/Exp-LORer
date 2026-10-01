@@ -15,6 +15,8 @@ class FileNavigationUseCase;
 class IFileSystemRepository;
 class SQLiteTagRepository;
 class TagManagementUseCase;
+class LibGit2StatusProvider;
+class GitStatusUseCase;
 
 // Runs the I/O parts of TabViewModel::runAdvancedSearch (Architecture.md §14.19/§14.22) on
 // whatever thread it has been moved to. Owned and driven by AdvancedSearchService, same shape as
@@ -40,8 +42,13 @@ public:
     // forwards to FileNavigationUseCase::listDirectoryRecursive; it is called on this worker's own
     // thread, so AdvancedSearchService is responsible for marshalling it back to the caller's
     // thread (Architecture.md §14.37).
+    //
+    // skipGitIgnored, when true, prunes the walk to skip everything .gitignore would exclude under
+    // `root` (Architecture.md §14.45) -- the quick Search tab's "skip git-ignored" toggle; the
+    // Advanced Search pane's own call site leaves this at its default (no equivalent toggle there).
     Result<std::vector<FileNode>> scanRecursive(const std::filesystem::path& root,
-                                                 const std::function<void(const std::vector<FileNode>&)>& onProgress = nullptr) const;
+                                                 const std::function<void(const std::vector<FileNode>&)>& onProgress = nullptr,
+                                                 bool skipGitIgnored = false) const;
 
     // Tag-first candidate fetch -- DB query + per-path stat() (Architecture.md §14.22 steps 1-3).
     // Returns the *candidate* FileNodes; filterByCriteria/sortBy stay on the calling thread (pure,
@@ -51,6 +58,23 @@ public:
 private:
     void ensureTagRepository();
 
+    // Lazily constructs m_gitStatusProvider/m_gitStatusUseCase on this worker's own thread, the
+    // first time skipGitIgnored is actually used -- libgit2's git_repository* handles are
+    // thread-affine (never touch the same handle from two threads at once), so this worker needs
+    // its own instances rather than sharing GitStatusService/GitStatusWorker's, the same reasoning
+    // that already governs m_tagRepository/ensureTagRepository above (Architecture.md §14.45).
+    // const (mutating only the mutable members below) so it's reachable from scanRecursive, which
+    // stays const to match its own pre-existing signature.
+    void ensureGitStatusUseCase() const;
+
+    // Builds the shouldPrune predicate scanRecursive passes to
+    // FileNavigationUseCase::listDirectoryRecursive: every path ignoredPaths(root) reports, plus
+    // root/".git" itself (git's own status machinery never reports ".git" as "ignored" since it
+    // isn't part of the working tree at all, but a user skipping ignored content clearly doesn't
+    // want ".git"'s internals in results either). Tolerates ignoredPaths() failure/empty (not a
+    // repository) by returning an always-false predicate, i.e. an unrestricted scan.
+    std::function<bool(const std::filesystem::path&)> buildGitIgnorePrunePredicate(const std::filesystem::path& root) const;
+
     FileNavigationUseCase& m_fileNavigationUseCase;
     IFileSystemRepository& m_fileSystemRepository;
     std::filesystem::path m_databasePath;
@@ -58,4 +82,9 @@ private:
     // This worker's own connection, constructed lazily on this thread (see class comment).
     std::unique_ptr<SQLiteTagRepository> m_tagRepository;
     std::unique_ptr<TagManagementUseCase> m_tagManagementUseCase;
+
+    // This worker's own libgit2 instances, constructed lazily on this thread (see
+    // ensureGitStatusUseCase). mutable so scanRecursive can stay const.
+    mutable std::unique_ptr<LibGit2StatusProvider> m_gitStatusProvider;
+    mutable std::unique_ptr<GitStatusUseCase> m_gitStatusUseCase;
 };

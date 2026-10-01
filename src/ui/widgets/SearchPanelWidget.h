@@ -41,9 +41,9 @@ public:
     // set).
     void setQuery(const QString& query);
 
-    // Match Case/Whole Word/Exact Name/Match Regex toggles (Architecture.md §14.44).
-    // QSignalBlocker-guarded resync of all 4 buttons' checked state, mirrors setQuery() -- also
-    // re-applies the highlight query's case-sensitivity on both result views.
+    // Match Case/Whole Word/Exact Name/Match Regex/Skip Git-Ignored toggles (Architecture.md
+    // §14.44/§14.45). QSignalBlocker-guarded resync of all 5 buttons' checked state, mirrors
+    // setQuery() -- also re-applies the highlight query's case-sensitivity on both result views.
     void setOptions(const NameSearchOptions& options);
 
     void setResults(const std::vector<FileNode>& entries, const std::filesystem::path& root);
@@ -59,7 +59,7 @@ signals:
     void advancedSearchRequested();
     void resultActivated(const std::filesystem::path& path, bool isDirectory);
 
-    // Emitted whenever any of the 4 toggle buttons changes state (Architecture.md §14.44).
+    // Emitted whenever any of the 5 toggle buttons changes state (Architecture.md §14.44/§14.45).
     void searchOptionsChanged(const NameSearchOptions& options);
 
     // Bubbled from whichever result view (list or tree) the user selected in -- empty on
@@ -90,6 +90,7 @@ private:
     QToolButton* m_wholeWordButton = nullptr;
     QToolButton* m_exactNameButton = nullptr;
     QToolButton* m_regexButton = nullptr;
+    QToolButton* m_skipGitIgnoredButton = nullptr;
 
     QLineEdit* m_searchBar = nullptr;
     QPushButton* m_advancedSearchButton = nullptr;

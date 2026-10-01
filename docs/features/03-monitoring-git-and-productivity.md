@@ -7,7 +7,7 @@ redesign of either layer's existing shape) — and is recorded as a decision log
 implementation walkthrough; see git history and the code's own comments (many cite these subsection
 numbers directly) for the detail.
 
-Covers §14.34–§14.44. Preceded by
+Covers §14.34–§14.45. Preceded by
 [01-workspace-navigation-and-search.md](01-workspace-navigation-and-search.md) (§14.1–§14.26)
 and [02-preview-decoration-and-status.md](02-preview-decoration-and-status.md) (§14.27–§14.33).
 
@@ -891,3 +891,75 @@ by construction (see API shape below). No Port/schema change.
   already-accepted gap for wildcard-pattern highlighting in Contains mode (§14.43).
 * **Not built:** any equivalent of these four toggles on the Advanced Search pane's Name field;
   persisting toggle state across restarts.
+
+### 14.45 Quick Search: Skip Git-Ignored Files/Folders Toggle
+
+Adds a fifth Search-tab toggle, next to §14.44's four: when enabled, a quick search run inside a git
+working tree never scans into (or returns results from) anything `.gitignore` would exclude. Unlike
+§14.44's toggles, this one changes what gets *scanned*, not just what's shown — the point is to avoid
+walking large ignored trees (`node_modules`, `build`, ...) at all, so toggling it forces a rescan
+rather than re-filtering the cached snapshot.
+
+* **`NameSearchOptions` gains `bool skipGitIgnored = false`** — orthogonal to `mode`/`caseSensitive`,
+  same posture as `caseSensitive` itself.
+* **New Port method, `IGitStatusProvider::ignoredPaths(root) -> Result<vector<path>>`** — every
+  ignored path under `root` (files and *wholly*-ignored directories each as one entry, matching plain
+  `git status`'s own default of not descending into an already-ignored directory), empty (not an
+  error) when `root` isn't inside a repository, same tolerate-by-blanking posture as
+  `statusForDirectory` (§14.32). `GitStatusUseCase` gets a thin passthrough.
+  `LibGit2Repository::ignoredPaths(relativeDirectory)` (`src/adapters/git`) is a new sibling to
+  `statusForImmediateChildren`: its own `git_status_list_new` call, pathspec = `relativeDirectory`
+  (recursively, no immediate-children-only rollup needed here, unlike that method),
+  `GIT_STATUS_OPT_INCLUDE_IGNORED` set and `RECURSE_IGNORED_DIRS` left off — the same mechanism
+  `statusForImmediateChildren`'s doc comment already credits for untracked folders, symmetric for
+  ignored ones, filtered to `GIT_STATUS_IGNORED` entries and returned as absolute paths.
+  `LibGit2StatusProvider::ignoredPaths` opens a fresh repo per call (no caching, matching every other
+  method on that class) and translates "no repository" into `Ok({})`.
+* **`IFileSystemRepository::listDirectoryRecursive` gains a required third parameter**,
+  `const std::function<bool(const std::filesystem::path&)>& shouldPrune` (a plain required param on
+  the Port's virtual method — a default argument on a pure-virtual signature is a known footgun with
+  mocks/overrides; convenience defaults live only on `FileNavigationUseCase`'s non-virtual wrapper,
+  `listDirectoryRecursive(root, onProgress = nullptr, shouldPrune = nullptr)`, so the method's one
+  existing caller is unaffected). `StandardFileSystemRepository`'s implementation switches from a
+  range-based `for` over `fs::recursive_directory_iterator` to an explicit-iterator loop so
+  `it.disable_recursion_pending()` is reachable: an entry for which `shouldPrune` returns true is
+  both excluded from the result and, if it's a directory, never descended into — the actual
+  I/O-avoidance payoff, not just a post-hoc result filter. This is the first pruning hook this walk
+  has ever had (previously unconditional, not even special-casing `.git`).
+* **`AdvancedSearchWorker::scanRecursive` gains a trailing `bool skipGitIgnored = false`** (default
+  preserves Advanced Search's own untouched call site — no equivalent toggle exists there, same cut
+  §14.44 already made). When true, it opens its **own**, worker-thread-owned
+  `LibGit2StatusProvider`/`GitStatusUseCase` pair — never the shared instance
+  `GitStatusService`/`GitStatusWorker` use — lazily constructed on first use after `moveToThread`,
+  the same precedent §14.38 already established for `AdvancedSearchWorker`'s own second
+  `SQLiteTagRepository` connection: a thread-affine resource needs its own instance per thread rather
+  than cross-thread sharing. This is a refinement of, not a contradiction of, §14.32's "every libgit2
+  call funnels through one worker thread" note — the actual libgit2 constraint is
+  `git_repository*` object thread-affinity (never touch the same handle from two threads at once),
+  not a process-wide single-thread rule, so a second, wholly independent handle on a second thread is
+  safe. It calls `ignoredPaths(root)` (tolerating failure/empty by scanning unrestricted), also folds
+  in `workdirPath() / ".git"` itself (git's own status machinery never reports `.git` as "ignored"
+  since it isn't part of the working tree at all, but a user skipping ignored content clearly doesn't
+  want `.git`'s internals in results either), and builds a
+  `std::unordered_set<std::filesystem::path, PathHash>` (`src/domain/PathHash.h`, the same hasher
+  `GitDirectoryStatus`'s map already uses) backing the `shouldPrune` predicate passed to
+  `FileNavigationUseCase::listDirectoryRecursive`. `AdvancedSearchService::requestRecursiveScan`
+  threads the new bool through unchanged otherwise.
+* **`TabViewModel::setSearchOptions` forces a rescan specifically when `skipGitIgnored` changes**,
+  unlike mode/case changes which keep re-filtering the cached snapshot for free — a prior scan
+  without pruning active never excluded anything, and a prior pruned scan never visited the excluded
+  paths at all, so neither snapshot can answer the other state from memory. `exitSearch()` resets the
+  flag to `false` alongside the existing mode/case reset.
+* **`SearchPanelWidget`** gains a fifth text-only, independently-checkable `QToolButton` after the
+  existing `Aa`/`ab`/`=`/`.*` group (not part of their exclusive-mode `QButtonGroup`, same
+  independent-toggle posture as Match Case), wired into the existing
+  `emitSearchOptionsChanged`/`setOptions`/`clearForNoTab` round-trip.
+* **Not built:** an equivalent toggle on the Advanced Search pane (§14.19/§14.20), same cut §14.44
+  already made; persisting the toggle across restarts; special handling for multiple/nested
+  repositories under one search root beyond whatever `git_status_list_new` itself does. No automated
+  coverage for the `TabViewModel`/`SearchPanelWidget`/`AdvancedSearchWorker` glue, per the existing
+  §11 UI/ViewModel-glue carve-out; `LibGit2Repository::ignoredPaths`/`LibGit2StatusProvider::
+  ignoredPaths` get a real-temp-repo adapter test (mirroring `LibGit2StatusProviderTest.cpp`'s
+  existing fixtures), `GitStatusUseCase`'s passthrough gets an ordinary mocked-Port test, and
+  `StandardFileSystemRepository`'s new pruning behavior gets an adapter test asserting a pruned
+  directory's contents never appear in the walk's result.

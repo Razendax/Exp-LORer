@@ -9,4 +9,5 @@ class LibGit2StatusProvider : public IGitStatusProvider
 {
 public:
     Result<GitDirectoryStatus> statusForDirectory(const std::filesystem::path& directory) const override;
+    Result<std::vector<std::filesystem::path>> ignoredPaths(const std::filesystem::path& root) const override;
 };

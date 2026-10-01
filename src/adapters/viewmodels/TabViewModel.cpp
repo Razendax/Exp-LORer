@@ -344,7 +344,8 @@ void TabViewModel::runSearch(bool forceRescan)
         m_advancedSearchService.requestRecursiveScan(
             this, m_searchRoot,
             [this, generation](Result<std::vector<FileNode>> result) { onSearchCandidatesReady(generation, std::move(result)); },
-            [this, generation](std::vector<FileNode> partial) { onSearchProgress(generation, std::move(partial)); });
+            [this, generation](std::vector<FileNode> partial) { onSearchProgress(generation, std::move(partial)); },
+            m_searchSkipGitIgnored);
         return;
     }
 
@@ -424,13 +425,26 @@ void TabViewModel::onSearchProgress(int generation, std::vector<FileNode> partia
 
 void TabViewModel::setSearchOptions(const NameSearchOptions& options)
 {
+    const bool skipGitIgnoredChanged = options.skipGitIgnored != m_searchSkipGitIgnored;
+
     m_searchMatchMode = options.mode;
     m_searchCaseSensitive = options.caseSensitive;
+    m_searchSkipGitIgnored = options.skipGitIgnored;
 
     if (m_searchQuery.isEmpty())
     {
         // Nothing to filter yet -- the new options still take effect the next time a query is
         // typed.
+        return;
+    }
+
+    if (skipGitIgnoredChanged)
+    {
+        // Unlike mode/caseSensitive, this changes what a scan *visits*, not just how an
+        // already-scanned candidate list is filtered -- a prior scan without pruning never
+        // excluded anything, and a prior pruned scan never visited the excluded paths at all, so
+        // neither cached snapshot can serve the other state from memory (Architecture.md §14.45).
+        runSearch(/*forceRescan=*/true);
         return;
     }
 
@@ -451,6 +465,7 @@ void TabViewModel::exitSearch()
     m_searchQuery.clear();
     m_searchMatchMode = NameMatchMode::Contains;
     m_searchCaseSensitive = false;
+    m_searchSkipGitIgnored = false;
     m_searchRoot.clear();
     m_searchFullScanDone = false;
     m_searchScanPending = false;

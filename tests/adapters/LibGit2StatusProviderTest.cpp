@@ -304,6 +304,40 @@ TEST_F(LibGit2StatusProviderTest, SubfolderContainingOnlyAnIgnoredFileIsNotMarke
     EXPECT_FALSE(result.value().statusByPath.count(m_tempDir / "sub"));
 }
 
+TEST_F(LibGit2StatusProviderTest, IgnoredPathsReturnsIgnoredFileAndWhollyIgnoredDirectoryUnderRoot)
+{
+    writeFile(".gitignore", "ignored.txt\nignored_dir/\n");
+    stage(".gitignore");
+    commitAll("initial");
+
+    writeFile("ignored.txt", "secret");
+    writeFile("ignored_dir/inner.txt", "secret2");
+
+    LibGit2StatusProvider provider;
+    auto result = provider.ignoredPaths(m_tempDir);
+
+    ASSERT_TRUE(result.hasValue());
+    std::vector<fs::path> paths = result.value();
+    std::sort(paths.begin(), paths.end());
+
+    EXPECT_EQ(paths, (std::vector<fs::path>{ m_tempDir / "ignored.txt", m_tempDir / "ignored_dir" }));
+}
+
+TEST_F(LibGit2StatusProviderTest, IgnoredPathsForDirectoryWithNoRepositoryIsEmptyNotError)
+{
+    const fs::path outsideDir = fs::temp_directory_path() / "explorer_libgit2_status_provider_test_ignored_no_repo";
+    fs::remove_all(outsideDir);
+    fs::create_directories(outsideDir);
+
+    LibGit2StatusProvider provider;
+    auto result = provider.ignoredPaths(outsideDir);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(result.value().empty());
+
+    fs::remove_all(outsideDir);
+}
+
 TEST_F(LibGit2StatusProviderTest, RollupPrefersModifiedOverIgnoredWithinSameSubfolder)
 {
     writeFile("sub/tracked.txt", "content");

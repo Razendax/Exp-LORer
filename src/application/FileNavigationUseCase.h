@@ -35,10 +35,13 @@ public:
 
     Result<std::vector<FileNode>> listDirectory(const std::filesystem::path& directory) const;
 
-    // onProgress forwards to IFileSystemRepository::listDirectoryRecursive -- see its doc comment
-    // for the ~1/second throttling guarantee.
+    // onProgress/shouldPrune forward to IFileSystemRepository::listDirectoryRecursive -- see its
+    // doc comment for the ~1/second throttling guarantee and the pruning semantics (Architecture.md
+    // §14.45). Both default to disabled here; the Port's own method keeps them required
+    // (no default on a pure-virtual signature).
     Result<std::vector<FileNode>> listDirectoryRecursive(
-        const std::filesystem::path& root, const std::function<void(const std::vector<FileNode>&)>& onProgress = nullptr) const;
+        const std::filesystem::path& root, const std::function<void(const std::vector<FileNode>&)>& onProgress = nullptr,
+        const std::function<bool(const std::filesystem::path&)>& shouldPrune = nullptr) const;
     Result<FileNode> stat(const std::filesystem::path& path) const;
 
     // `sizeOf`, when set, overrides FileNode::size() for SortCriterion::Size/Percent comparisons --

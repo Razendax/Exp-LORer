@@ -28,13 +28,13 @@ AdvancedSearchService::~AdvancedSearchService()
 
 void AdvancedSearchService::requestRecursiveScan(QObject* context, const std::filesystem::path& root,
                                                   std::function<void(Result<std::vector<FileNode>>)> callback,
-                                                  std::function<void(std::vector<FileNode>)> onProgress)
+                                                  std::function<void(std::vector<FileNode>)> onProgress, bool skipGitIgnored)
 {
     QPointer<QObject> guard(context);
 
     QMetaObject::invokeMethod(
         m_worker,
-        [this, guard, root, callback = std::move(callback), onProgress = std::move(onProgress)]() {
+        [this, guard, root, callback = std::move(callback), onProgress = std::move(onProgress), skipGitIgnored]() {
             // Called synchronously on this worker thread from inside the scan below -- bounce each
             // tick back to the requesting side the same way the final result is, so onProgress
             // never runs on the wrong thread and never fires after `context` is gone.
@@ -56,7 +56,7 @@ void AdvancedSearchService::requestRecursiveScan(QObject* context, const std::fi
                     Qt::QueuedConnection);
             };
 
-            Result<std::vector<FileNode>> result = m_worker->scanRecursive(root, progressBridge);
+            Result<std::vector<FileNode>> result = m_worker->scanRecursive(root, progressBridge, skipGitIgnored);
 
             QMetaObject::invokeMethod(
                 this,

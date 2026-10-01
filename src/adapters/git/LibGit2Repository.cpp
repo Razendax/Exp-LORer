@@ -225,6 +225,54 @@ Result<std::vector<LibGit2Repository::StatusEntry>> LibGit2Repository::statusFor
     return Result<std::vector<StatusEntry>>::success(std::move(entries));
 }
 
+Result<std::vector<std::string>> LibGit2Repository::ignoredPaths(const std::string& relativeDirectoryUtf8) const
+{
+    git_status_options options = GIT_STATUS_OPTIONS_INIT;
+    // RECURSE_IGNORED_DIRS deliberately left off (default) -- a wholly-ignored directory is
+    // reported as a single entry instead of walking every file inside it, the same perf win
+    // statusForImmediateChildren's own doc comment already credits for untracked folders. Unlike
+    // statusForImmediateChildren, no pathspec-scoped rollup onto immediate children is needed here
+    // -- every reported path is returned as-is, at whatever depth it was found.
+    options.flags = GIT_STATUS_OPT_INCLUDE_IGNORED;
+
+    char* pathspecStrings[1] = { const_cast<char*>(relativeDirectoryUtf8.c_str()) };
+    if (!relativeDirectoryUtf8.empty())
+    {
+        options.pathspec.strings = pathspecStrings;
+        options.pathspec.count = 1;
+    }
+
+    git_status_list* rawList = nullptr;
+    const int rc = git_status_list_new(&rawList, m_handle, &options);
+    if (rc != 0)
+    {
+        return Result<std::vector<std::string>>::failure(libgit2Error("Failed to compute ignored paths"));
+    }
+    StatusListGuard guard{ rawList };
+
+    std::vector<std::string> paths;
+    const size_t count = git_status_list_entrycount(rawList);
+    paths.reserve(count);
+    for (size_t i = 0; i < count; ++i)
+    {
+        const git_status_entry* entry = git_status_byindex(rawList, i);
+        if (!entry || !(entry->status & GIT_STATUS_IGNORED))
+        {
+            continue;
+        }
+
+        std::string relativePath = pathForEntry(entry);
+        if (relativePath.empty())
+        {
+            continue;
+        }
+
+        paths.push_back(std::move(relativePath));
+    }
+
+    return Result<std::vector<std::string>>::success(std::move(paths));
+}
+
 Result<std::string> LibGit2Repository::headDisplayName(bool& isDetachedOut) const
 {
     isDetachedOut = false;

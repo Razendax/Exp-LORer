@@ -114,6 +114,18 @@ SearchPanelWidget::SearchPanelWidget(const FileDecorationRules& fileDecorationRu
     connect(m_regexButton, &QToolButton::toggled, this, [this](bool checked) { onMatchModeButtonToggled(m_regexButton, checked); });
     iconLayout->addWidget(m_regexButton);
 
+    // Skip Git-Ignored toggle (Architecture.md §14.45) -- independent, not part of the
+    // Whole Word/Exact Name/Regex exclusive-mode group above (same posture as Match Case).
+    m_skipGitIgnoredButton = new QToolButton(iconToolBar);
+    m_skipGitIgnoredButton->setObjectName(QStringLiteral("searchSkipGitIgnoredButton"));
+    m_skipGitIgnoredButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    m_skipGitIgnoredButton->setText(tr(".gi"));
+    m_skipGitIgnoredButton->setCheckable(true);
+    m_skipGitIgnoredButton->setToolTip(
+        tr("Skip Git-Ignored\nSkips files and folders excluded by .gitignore when searching inside a git working tree"));
+    connect(m_skipGitIgnoredButton, &QToolButton::toggled, this, &SearchPanelWidget::emitSearchOptionsChanged);
+    iconLayout->addWidget(m_skipGitIgnoredButton);
+
     iconLayout->addStretch();
 
     m_searchBar = new QLineEdit(this);
@@ -206,11 +218,13 @@ void SearchPanelWidget::setOptions(const NameSearchOptions& options)
     const QSignalBlocker wholeWordBlocker(m_wholeWordButton);
     const QSignalBlocker exactNameBlocker(m_exactNameButton);
     const QSignalBlocker regexBlocker(m_regexButton);
+    const QSignalBlocker skipGitIgnoredBlocker(m_skipGitIgnoredButton);
 
     m_matchCaseButton->setChecked(options.caseSensitive);
     m_wholeWordButton->setChecked(options.mode == NameMatchMode::WholeWord);
     m_exactNameButton->setChecked(options.mode == NameMatchMode::ExactName);
     m_regexButton->setChecked(options.mode == NameMatchMode::Regex);
+    m_skipGitIgnoredButton->setChecked(options.skipGitIgnored);
 
     m_listResultsView->setNameHighlightQuery(m_searchBar->text(), options.caseSensitive);
     m_treeDelegate->setHighlightQuery(m_searchBar->text(), options.caseSensitive);
@@ -254,6 +268,8 @@ void SearchPanelWidget::emitSearchOptionsChanged()
     {
         options.mode = NameMatchMode::Regex;
     }
+
+    options.skipGitIgnored = m_skipGitIgnoredButton->isChecked();
 
     const bool caseSensitive = options.caseSensitive;
     m_listResultsView->setNameHighlightQuery(m_searchBar->text(), caseSensitive);

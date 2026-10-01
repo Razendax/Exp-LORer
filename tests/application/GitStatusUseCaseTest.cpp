@@ -52,3 +52,50 @@ TEST(GitStatusUseCase, DirectoryNotInAnyRepositoryIsToleratedAsEmptySuccess)
     EXPECT_FALSE(result.value().repositoryRoot.has_value());
     EXPECT_TRUE(result.value().statusByPath.empty());
 }
+
+// Architecture.md §14.45: ignoredPaths is a thin passthrough, same shape as statusForDirectory
+// above.
+TEST(GitStatusUseCase, IgnoredPathsDelegatesToProviderAndPassesThroughSuccess)
+{
+    MockGitStatusProvider provider;
+
+    const std::vector<std::filesystem::path> ignored{ std::filesystem::path("C:/repo/build"),
+                                                        std::filesystem::path("C:/repo/a.log") };
+
+    EXPECT_CALL(provider, ignoredPaths(std::filesystem::path("C:/repo")))
+        .WillOnce(Return(Result<std::vector<std::filesystem::path>>::success(ignored)));
+
+    GitStatusUseCase useCase(provider);
+    auto result = useCase.ignoredPaths(std::filesystem::path("C:/repo"));
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value(), ignored);
+}
+
+TEST(GitStatusUseCase, IgnoredPathsDelegatesToProviderAndPassesThroughFailure)
+{
+    MockGitStatusProvider provider;
+
+    EXPECT_CALL(provider, ignoredPaths(::testing::_))
+        .WillOnce(Return(Result<std::vector<std::filesystem::path>>::failure(Error(ErrorCode::IoError, "corrupt repo"))));
+
+    GitStatusUseCase useCase(provider);
+    auto result = useCase.ignoredPaths(std::filesystem::path("C:/repo"));
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::IoError);
+}
+
+TEST(GitStatusUseCase, IgnoredPathsForDirectoryNotInAnyRepositoryIsToleratedAsEmptySuccess)
+{
+    MockGitStatusProvider provider;
+
+    EXPECT_CALL(provider, ignoredPaths(::testing::_))
+        .WillOnce(Return(Result<std::vector<std::filesystem::path>>::success({})));
+
+    GitStatusUseCase useCase(provider);
+    auto result = useCase.ignoredPaths(std::filesystem::path("C:/not-a-repo"));
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(result.value().empty());
+}

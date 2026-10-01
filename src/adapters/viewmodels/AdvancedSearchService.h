@@ -38,9 +38,12 @@ public:
     // Architecture.md §14.37) -- letting Advanced Search populate results progressively instead of
     // only once the whole recursive walk finishes. Discarded the same way as callback if `context`
     // is destroyed mid-scan.
+    //
+    // skipGitIgnored forwards to AdvancedSearchWorker::scanRecursive (Architecture.md §14.45);
+    // defaults to false, preserving the Advanced Search pane's own call site unchanged.
     void requestRecursiveScan(QObject* context, const std::filesystem::path& root,
                                std::function<void(Result<std::vector<FileNode>>)> callback,
-                               std::function<void(std::vector<FileNode>)> onProgress = nullptr);
+                               std::function<void(std::vector<FileNode>)> onProgress = nullptr, bool skipGitIgnored = false);
 
     void requestTagFirstCandidates(QObject* context, const std::filesystem::path& root, const std::vector<Tag::Id>& tagIds,
                                     std::function<void(Result<std::vector<FileNode>>)> callback);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <vector>
 
 #include "GitDirectoryStatus.h"
 #include "Result.h"
@@ -20,4 +21,11 @@ public:
     // "tolerate by blanking" posture). A genuine failure (corrupt repo, permission error) is
     // propagated as an Error.
     virtual Result<GitDirectoryStatus> statusForDirectory(const std::filesystem::path& directory) const = 0;
+
+    // Every path under `root` that .gitignore would exclude (files and *wholly*-ignored
+    // directories each as one entry, matching plain `git status`'s own default of not descending
+    // into an already-ignored directory), used to prune git-ignored content from a recursive quick
+    // search (Architecture.md §14.45). `root` not inside any git repository => Result::success with
+    // an empty vector, not an error -- same tolerate-by-blanking posture as statusForDirectory.
+    virtual Result<std::vector<std::filesystem::path>> ignoredPaths(const std::filesystem::path& root) const = 0;
 };

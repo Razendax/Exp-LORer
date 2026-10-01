@@ -109,6 +109,40 @@ TEST_F(StandardFileSystemRepositoryTest, ListDirectoryRecursiveReturnsAllDescend
     EXPECT_EQ(result.value().size(), 5u);
 }
 
+// Architecture.md §14.45: shouldPrune excludes a pruned entry from the result and, for a pruned
+// directory, never descends into it at all -- the actual I/O-avoidance payoff, not a post-hoc
+// result filter. "never descends" is asserted by never seeing the directory's own children in the
+// result (there's no I/O counter to assert against directly in this adapter test).
+TEST_F(StandardFileSystemRepositoryTest, ListDirectoryRecursivePrunesDirectoryAndItsContents)
+{
+    writeFile(m_tempDir / "a.txt", "hello");
+    fs::create_directory(m_tempDir / "pruned");
+    writeFile(m_tempDir / "pruned" / "inner.txt", "world");
+    fs::create_directory(m_tempDir / "kept");
+    writeFile(m_tempDir / "kept" / "inner.txt", "!");
+
+    const fs::path prunedDir = m_tempDir / "pruned";
+    auto result = m_repository.listDirectoryRecursive(
+        m_tempDir, nullptr, [&prunedDir](const fs::path& path) { return path == prunedDir; });
+
+    ASSERT_TRUE(result.hasValue());
+
+    const auto findByName = [&result](const char* name) {
+        return std::find_if(result.value().begin(), result.value().end(),
+                             [name](const FileNode& entry) { return entry.name() == name; });
+    };
+
+    EXPECT_EQ(findByName("pruned"), result.value().end());
+    EXPECT_EQ(findByName("a.txt") == result.value().end(), false);
+    EXPECT_EQ(findByName("kept") == result.value().end(), false);
+
+    // "pruned"'s own child must never appear -- it was never descended into, not merely filtered.
+    const bool prunedChildPresent =
+        std::any_of(result.value().begin(), result.value().end(), [](const FileNode& entry) { return entry.name() == "inner.txt" &&
+                                                                                                         entry.path().parent_path().filename() == "pruned"; });
+    EXPECT_FALSE(prunedChildPresent);
+}
+
 TEST_F(StandardFileSystemRepositoryTest, ListDirectoryRecursiveRejectsThisPc)
 {
     auto result = m_repository.listDirectoryRecursive(VirtualPaths::ThisPC);
