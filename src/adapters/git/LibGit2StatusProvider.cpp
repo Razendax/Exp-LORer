@@ -135,6 +135,17 @@ Result<GitDirectoryStatus> LibGit2StatusProvider::statusForDirectory(const std::
         const std::size_t slashPos = remaining.find('/');
         const std::string_view childName = slashPos == std::string_view::npos ? remaining : remaining.substr(0, slashPos);
 
+        // Ignored only rolls up onto the immediate child it was reported for (slashPos ==
+        // npos), which is either an ignored file itself or a wholly-ignored subfolder -- both
+        // genuinely ignored. For an entry nested *inside* a subfolder (slashPos != npos),
+        // Ignored means some file further down happens to be gitignored while the subfolder
+        // itself is still tracked/untracked; rolling that up would wrongly paint the whole
+        // subfolder as ignored, so it's dropped instead of recorded.
+        if (slashPos != std::string_view::npos && entry.status == GitFileStatus::Ignored)
+        {
+            continue;
+        }
+
         recordStatus(result.statusByPath, directory / fromGitUtf8(childName), entry.status);
     }
 

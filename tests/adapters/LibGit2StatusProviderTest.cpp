@@ -284,6 +284,26 @@ TEST_F(LibGit2StatusProviderTest, ChangeSeveralLevelsDeepRollsUpOntoImmediateChi
     EXPECT_FALSE(result.value().statusByPath.count(m_tempDir / "sub" / "inner"));
 }
 
+TEST_F(LibGit2StatusProviderTest, SubfolderContainingOnlyAnIgnoredFileIsNotMarkedIgnored)
+{
+    writeFile("sub/tracked.txt", "content");
+    stage("sub/tracked.txt");
+    writeFile(".gitignore", "sub/ignored.txt\n");
+    stage(".gitignore");
+    commitAll("initial");
+
+    writeFile("sub/ignored.txt", "secret");
+
+    LibGit2StatusProvider provider;
+    auto result = provider.statusForDirectory(m_tempDir);
+
+    ASSERT_TRUE(result.hasValue());
+    // sub/tracked.txt is unmodified and sub/ignored.txt is only ignored -- "sub" itself has no
+    // real change to show, so it must not appear in the rollup at all (and in particular must
+    // not be painted Ignored just because the one status entry found underneath it was Ignored).
+    EXPECT_FALSE(result.value().statusByPath.count(m_tempDir / "sub"));
+}
+
 TEST_F(LibGit2StatusProviderTest, RollupPrefersModifiedOverIgnoredWithinSameSubfolder)
 {
     writeFile("sub/tracked.txt", "content");
