@@ -204,8 +204,11 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   of a flat list; Collapse all — collapses the tree view, enabled only while View as tree is on)
   sits above a search bar. The search bar searches recursively under whichever pane/tab currently
   has focus, live as the user types — no Enter press required — performed asynchronously so the UI
-  is never blocked, even on a large folder; an empty search bar performs no search and shows no
-  results. It supports `*` (any run of characters) and `?` (exactly one character) wildcards — the
+  is never blocked, even on a large folder; search text highlighting updates instantly, while the
+  search itself settles ~500ms after the last keystroke (Architecture.md §14.46) rather than
+  re-running on every single one, so rapid typing in a large folder stays responsive; an empty
+  search bar performs no search and shows no results. It supports `*` (any run of characters) and
+  `?` (exactly one character) wildcards — the
   same syntax as the per-file/folder appearance patterns elsewhere — e.g. `*.pdf` (all PDFs),
   `doc*` (`doc`, `document.txt`), or `file?.txt` (`file2.txt` but not `file12.txt`); a query with
   no wildcard still matches anywhere in the name, as before. Results show only each match's name,
@@ -227,8 +230,8 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   (below) is unchanged.
 * **Advanced search pane** (Architecture.md §14.19), unchanged in function from before — a
   dedicated per-tab pane with Name, Min size, and Max size fields plus a Search button, opened by
-  an "Advanced Search..." button now living below the Search tab's search bar (Architecture.md
-  §14.42) instead of on the main toolbar. The Name field supports `*`/`?` wildcards, same as
+  an "Advanced Search..." button now living beside the Search tab's search bar (Architecture.md
+  §14.42/§14.46) instead of on the main toolbar. The Name field supports `*`/`?` wildcards, same as
   above; there is no separate Extension field — a `*.ext`-style Name query covers that case.
   Opening the pane shows the focused tab's current folder contents (a plain, non-recursive
   listing, not a search) so it doesn't open empty; searching recursively only happens once Search

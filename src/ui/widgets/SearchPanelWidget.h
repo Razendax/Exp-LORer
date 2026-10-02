@@ -15,6 +15,7 @@ class QToolButton;
 class QStackedWidget;
 class QTreeView;
 class QItemSelection;
+class QTimer;
 class FileListModel;
 class FileDecorationRules;
 class FileBrowserView;
@@ -94,6 +95,7 @@ private:
 
     QLineEdit* m_searchBar = nullptr;
     QPushButton* m_advancedSearchButton = nullptr;
+    QTimer* m_searchDebounceTimer = nullptr;
 
     QStackedWidget* m_resultsStack = nullptr;
     FileListModel* m_listModel = nullptr;

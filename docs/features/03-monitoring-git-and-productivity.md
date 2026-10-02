@@ -963,3 +963,50 @@ rather than re-filtering the cached snapshot.
   existing fixtures), `GitStatusUseCase`'s passthrough gets an ordinary mocked-Port test, and
   `StandardFileSystemRepository`'s new pruning behavior gets an adapter test asserting a pruned
   directory's contents never appear in the walk's result.
+
+### 14.46 Search Tab: Inline Advanced Search Toggle, Debounced Quick Search
+
+Two small UX fixes to §14.42's Search tab, both UI-layer only — no Domain/Application/Port/schema
+change, `TabViewModel`/`AdvancedSearchService`/`AdvancedSearchWorker` untouched.
+
+* **Advanced Search entry point moves beside the search bar.** `SearchPanelWidget`'s
+  `m_advancedSearchButton` ("Advanced Search...", relocated from the main toolbar by §14.42) sat in
+  its own full-width row below the search `QLineEdit`. It now shares one `QHBoxLayout` row with the
+  search bar instead — the line edit takes the stretch, the button keeps its natural size next to
+  it. Purely cosmetic: object name, automation id, styling, and the `advancedSearchRequested()`
+  click behavior are all unchanged.
+* **Quick search gains a 500ms debounce, superseding §14.42's "No new debounce timer" call.** That
+  decision assumed `TabViewModel::applySearchFilter`'s `filterByName`+`sortBy` pass is cheap enough
+  to run on every keystroke because it's pure in-memory work with no I/O. That holds for a modest
+  result set, but not for a large directory tree: the recursive scan's progress callback
+  (`AdvancedSearchWorker`/`StandardFileSystemRepository::listDirectoryRecursive`, throttled to
+  ~1/sec per §14.37) delivers increasingly large partial snapshots over the life of a scan, and
+  `applySearchFilter` re-filters and re-sorts the *entire* candidate list from scratch — on every
+  progress tick *and* on every keystroke — synchronously on the UI thread. For tens/hundreds of
+  thousands of candidates this is no longer cheap, and firing it on every single keystroke while
+  the user is still typing is what produced the reported lag.
+  - `SearchPanelWidget` gains a single-shot `QTimer` (`kSearchDebounceMs = 500`), following the
+    exact convention `AddressBarWidget`'s own (120ms, unrelated-purpose) debounce timer already
+    established in this codebase: `textEdited` restarts the timer instead of emitting
+    `queryChanged` directly; only the timer's `timeout()` emits it, carrying whatever text is in
+    the box at that point. Clearing the box (typed to empty, or the Clear button) bypasses the
+    delay and emits immediately, same as `AddressBarWidget::onTextEdited`'s empty-input fast path.
+    `returnPressed` (Refresh) and a focus-change `setQuery()` resync both stop any pending timer —
+    the former so it doesn't redundantly re-fire right after an explicit forced refresh, the latter
+    so a timer left running from the *previous* focused tab's typing can't leak a stale query onto
+    the newly-focused tab.
+  - The live highlight-query update on the result views (`setNameHighlightQuery`/
+    `setHighlightQuery`) stays un-debounced — it's a cheap, visual-only, no-scan/no-filter operation,
+    so the typed text still highlights instantly even while the actual re-search is still settling.
+  - The scan dispatch itself (`AdvancedSearchService::requestRecursiveScan`) was already fully
+    asynchronous before this change (posts to `AdvancedSearchWorker`'s thread via a non-blocking
+    `QMetaObject::invokeMethod(..., Qt::QueuedConnection)` and returns immediately, including for
+    the very first scan of a root) — the debounce's job is purely to coalesce rapid keystrokes
+    into fewer `applySearchFilter` calls, not to make the dispatch itself non-blocking (it already
+    was).
+* **Not built:** moving `applySearchFilter`'s per-progress-tick re-filter/re-sort off the UI thread
+  — the debounce reduces how often it runs on keystrokes, but a single very large snapshot's
+  periodic progress-tick filtering can still cost a noticeable, if brief, UI-thread stall
+  independent of typing cadence; an equivalent debounce on the Advanced Search pane's live
+  field-editing (`SearchCriteriaPanel::criteriaEdited`), which has a similar per-keystroke
+  synchronous-refilter shape but wasn't reported as laggy.

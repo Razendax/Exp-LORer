@@ -8,6 +8,7 @@
 #include <QSignalBlocker>
 #include <QStackedWidget>
 #include <QStyle>
+#include <QTimer>
 #include <QToolButton>
 #include <QTreeView>
 #include <QVBoxLayout>
@@ -19,6 +20,13 @@
 #include "SearchResultDelegate.h"
 #include "SearchResultsTreeModel.h"
 #include "UiColors.h"
+
+namespace
+{
+    // Distinct from AddressBarWidget's kDebounceMs = 120, which is for suggestion-popup lookups,
+    // not a recursive file-tree scan + synchronous filter/sort (Architecture.md §14.46).
+    constexpr int kSearchDebounceMs = 500;
+}
 
 SearchPanelWidget::SearchPanelWidget(const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                                       QWidget* parent)
@@ -43,6 +51,7 @@ SearchPanelWidget::SearchPanelWidget(const FileDecorationRules& fileDecorationRu
     m_clearButton->setIcon(style()->standardIcon(QStyle::SP_LineEditClearButton));
     m_clearButton->setToolTip(tr("Clear"));
     connect(m_clearButton, &QToolButton::clicked, this, [this]() {
+        m_searchDebounceTimer->stop();
         m_searchBar->clear();
         emit queryChanged(QString());
         emit clearRequested();
@@ -128,6 +137,11 @@ SearchPanelWidget::SearchPanelWidget(const FileDecorationRules& fileDecorationRu
 
     iconLayout->addStretch();
 
+    m_searchDebounceTimer = new QTimer(this);
+    m_searchDebounceTimer->setSingleShot(true);
+    m_searchDebounceTimer->setInterval(kSearchDebounceMs);
+    connect(m_searchDebounceTimer, &QTimer::timeout, this, [this]() { emit queryChanged(m_searchBar->text()); });
+
     m_searchBar = new QLineEdit(this);
     m_searchBar->setObjectName(QStringLiteral("searchPanelSearchBar"));
     m_searchBar->setClearButtonEnabled(true);
@@ -136,9 +150,21 @@ SearchPanelWidget::SearchPanelWidget(const FileDecorationRules& fileDecorationRu
         const bool caseSensitive = m_matchCaseButton->isChecked();
         m_listResultsView->setNameHighlightQuery(text, caseSensitive);
         m_treeDelegate->setHighlightQuery(text, caseSensitive);
-        emit queryChanged(text);
+
+        if (text.trimmed().isEmpty())
+        {
+            m_searchDebounceTimer->stop();
+            emit queryChanged(text);
+        }
+        else
+        {
+            m_searchDebounceTimer->start();
+        }
     });
-    connect(m_searchBar, &QLineEdit::returnPressed, this, [this]() { emit refreshRequested(m_searchBar->text()); });
+    connect(m_searchBar, &QLineEdit::returnPressed, this, [this]() {
+        m_searchDebounceTimer->stop();
+        emit refreshRequested(m_searchBar->text());
+    });
 
     m_advancedSearchButton = new QPushButton(tr("Advanced Search..."), this);
     m_advancedSearchButton->setObjectName(QStringLiteral("advancedSearchButton"));
@@ -183,12 +209,18 @@ SearchPanelWidget::SearchPanelWidget(const FileDecorationRules& fileDecorationRu
             [this]() { onTreeSelectionChanged(); });
     m_resultsStack->addWidget(m_treeResultsView); // page 1: tree
 
+    auto* searchRow = new QWidget(this);
+    auto* searchRowLayout = new QHBoxLayout(searchRow);
+    searchRowLayout->setContentsMargins(0, 0, 0, 0);
+    searchRowLayout->setSpacing(4);
+    searchRowLayout->addWidget(m_searchBar, /*stretch=*/1);
+    searchRowLayout->addWidget(m_advancedSearchButton);
+
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(4);
     layout->addWidget(iconToolBar);
-    layout->addWidget(m_searchBar);
-    layout->addWidget(m_advancedSearchButton);
+    layout->addWidget(searchRow);
     layout->addWidget(m_resultsStack);
 
     clearForNoTab();
@@ -203,6 +235,8 @@ void SearchPanelWidget::setViewAsTree(bool tree)
 void SearchPanelWidget::setQuery(const QString& query)
 {
     setEnabled(true);
+
+    m_searchDebounceTimer->stop();
 
     const QSignalBlocker blocker(m_searchBar);
     m_searchBar->setText(query);
