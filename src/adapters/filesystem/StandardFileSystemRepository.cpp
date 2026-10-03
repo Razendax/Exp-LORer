@@ -5,6 +5,7 @@
 #include <fstream>
 #include <map>
 #include <system_error>
+#include <vector>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -195,6 +196,39 @@ namespace
         }
         return Error(errorCode, e.what());
     }
+
+#ifdef _WIN32
+    Error win32CopyError(DWORD lastError)
+    {
+        if (lastError == ERROR_REQUEST_ABORTED)
+        {
+            return Error(ErrorCode::Cancelled, "Copy cancelled");
+        }
+        if (lastError == ERROR_FILE_NOT_FOUND || lastError == ERROR_PATH_NOT_FOUND)
+        {
+            return Error(ErrorCode::NotFound, "Source file not found");
+        }
+        if (lastError == ERROR_FILE_EXISTS || lastError == ERROR_ALREADY_EXISTS)
+        {
+            return Error(ErrorCode::AlreadyExists, "Destination already exists");
+        }
+        return Error(ErrorCode::IoError, "Failed to copy file (Win32 error " + std::to_string(lastError) + ")");
+    }
+
+    // LPPROGRESS_ROUTINE trampoline: lpData is a pointer to the caller's onChunk callback, passed
+    // straight through by copyFileWithProgress below. Returning PROGRESS_CANCEL aborts the copy --
+    // CopyFileExW itself then deletes the partial destination file (documented Windows behavior),
+    // so no manual cleanup is needed here or in the caller.
+    DWORD CALLBACK copyProgressTrampoline(LARGE_INTEGER /*totalFileSize*/, LARGE_INTEGER totalBytesTransferred,
+                                           LARGE_INTEGER /*streamSize*/, LARGE_INTEGER /*streamBytesTransferred*/,
+                                           DWORD /*streamNumber*/, DWORD /*callbackReason*/, HANDLE /*hSourceFile*/,
+                                           HANDLE /*hDestinationFile*/, LPVOID lpData)
+    {
+        const auto* onChunk = static_cast<const std::function<bool(std::uint64_t)>*>(lpData);
+        const bool keepGoing = (*onChunk)(static_cast<std::uint64_t>(totalBytesTransferred.QuadPart));
+        return keepGoing ? PROGRESS_CONTINUE : PROGRESS_CANCEL;
+    }
+#endif
 }
 
 Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectory(const std::filesystem::path& directory) const
@@ -977,5 +1011,69 @@ Result<DriveSpaceInfo> StandardFileSystemRepository::driveSpaceInfo(const std::f
 #else
     (void)path;
     return Result<DriveSpaceInfo>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
+#endif
+}
+
+Result<FileNode> StandardFileSystemRepository::copyFileWithProgress(
+    const std::filesystem::path& source, const std::filesystem::path& destination,
+    const std::function<bool(std::uint64_t bytesCopiedSoFar)>& onChunk)
+{
+    if (isInsideArchive(source) || isInsideArchive(destination))
+    {
+        return Result<FileNode>::failure(readOnlyArchiveError().error());
+    }
+
+    const fs::path src = withPrefix(source);
+    const fs::path dst = withPrefix(destination);
+
+#ifdef _WIN32
+    LPVOID progressContext = const_cast<void*>(static_cast<const void*>(&onChunk));
+    const BOOL ok = CopyFileExW(src.c_str(), dst.c_str(), copyProgressTrampoline, progressContext, nullptr, 0);
+    if (!ok)
+    {
+        return Result<FileNode>::failure(win32CopyError(GetLastError()));
+    }
+
+    return buildFileNode(destination, makeDirectoryEntry(dst));
+#else
+    std::ifstream input(src, std::ios::binary);
+    if (!input)
+    {
+        return Result<FileNode>::failure(Error(ErrorCode::IoError, "Failed to open " + PathUtf8::toUtf8(source) + " for reading"));
+    }
+
+    std::ofstream output(dst, std::ios::binary | std::ios::trunc);
+    if (!output)
+    {
+        return Result<FileNode>::failure(Error(ErrorCode::IoError, "Failed to open " + PathUtf8::toUtf8(destination) + " for writing"));
+    }
+
+    constexpr std::size_t chunkSize = 1024 * 1024;
+    std::vector<char> buffer(chunkSize);
+    std::uint64_t totalCopied = 0;
+
+    while (input)
+    {
+        input.read(buffer.data(), static_cast<std::streamsize>(chunkSize));
+        const std::streamsize bytesRead = input.gcount();
+        if (bytesRead <= 0)
+        {
+            break;
+        }
+
+        output.write(buffer.data(), bytesRead);
+        totalCopied += static_cast<std::uint64_t>(bytesRead);
+
+        if (onChunk && !onChunk(totalCopied))
+        {
+            output.close();
+            std::error_code ec;
+            fs::remove(dst, ec);
+            return Result<FileNode>::failure(Error(ErrorCode::Cancelled, "Copy cancelled"));
+        }
+    }
+
+    output.close();
+    return buildFileNode(destination, makeDirectoryEntry(dst));
 #endif
 }

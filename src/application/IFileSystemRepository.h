@@ -100,4 +100,16 @@ public:
     // sentinel, an archive-virtual path, or an unreachable/disconnected volume) is tolerated by
     // callers by simply blanking the display — same posture as buildDriveNode()'s optional return.
     virtual Result<DriveSpaceInfo> driveSpaceInfo(const std::filesystem::path& path) const = 0;
+
+    // Byte-copies a real source file to destination, invoking onChunk(bytesCopiedSoFar) periodically
+    // as the copy progresses (Windows: driven by CopyFileExW's native progress callback; portable
+    // fallback: a fixed-size buffered read/write loop). onChunk returning false aborts the copy as
+    // soon as possible and the destination's partial file is removed; the call then returns
+    // Error(ErrorCode::Cancelled, ...). Source must be a real on-disk file, not a directory and not an
+    // archive-virtual path (callers resolve those first, same as copy()/move() already require) --
+    // backs FileTransferUseCase::executeTransfer's per-file copy step (Architecture.md §14.47); the
+    // existing copy() above stays a one-shot, non-cancellable call for every other caller.
+    virtual Result<FileNode> copyFileWithProgress(const std::filesystem::path& source,
+                                                   const std::filesystem::path& destination,
+                                                   const std::function<bool(std::uint64_t bytesCopiedSoFar)>& onChunk) = 0;
 };

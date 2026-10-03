@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <fstream>
 
 #ifdef _WIN32
@@ -216,6 +217,47 @@ TEST_F(StandardFileSystemRepositoryTest, CopyDuplicatesFile)
     ASSERT_TRUE(result.hasValue());
     EXPECT_TRUE(fs::exists(m_tempDir / "source.txt"));
     EXPECT_TRUE(fs::exists(m_tempDir / "copy.txt"));
+}
+
+TEST_F(StandardFileSystemRepositoryTest, CopyFileWithProgressCopiesContentAndReportsIncreasingProgress)
+{
+    const std::string content(5000, 'x');
+    writeFile(m_tempDir / "source.txt", content);
+
+    std::vector<std::uint64_t> progressTicks;
+    auto result = m_repository.copyFileWithProgress(m_tempDir / "source.txt", m_tempDir / "copy.txt",
+                                                      [&progressTicks](std::uint64_t bytesSoFar) {
+                                                          progressTicks.push_back(bytesSoFar);
+                                                          return true;
+                                                      });
+
+    ASSERT_TRUE(result.hasValue());
+    ASSERT_TRUE(fs::exists(m_tempDir / "copy.txt"));
+    EXPECT_EQ(fs::file_size(m_tempDir / "copy.txt"), content.size());
+    ASSERT_FALSE(progressTicks.empty());
+    EXPECT_EQ(progressTicks.back(), content.size());
+    EXPECT_TRUE(std::is_sorted(progressTicks.begin(), progressTicks.end()));
+}
+
+TEST_F(StandardFileSystemRepositoryTest, CopyFileWithProgressCancellationRemovesPartialDestination)
+{
+    writeFile(m_tempDir / "source.txt", std::string(5000, 'x'));
+
+    auto result = m_repository.copyFileWithProgress(m_tempDir / "source.txt", m_tempDir / "copy.txt",
+                                                      [](std::uint64_t) { return false; });
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::Cancelled);
+    EXPECT_FALSE(fs::exists(m_tempDir / "copy.txt"));
+}
+
+TEST_F(StandardFileSystemRepositoryTest, CopyFileWithProgressFailsForMissingSource)
+{
+    auto result = m_repository.copyFileWithProgress(m_tempDir / "does-not-exist.txt", m_tempDir / "copy.txt",
+                                                      [](std::uint64_t) { return true; });
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::NotFound);
 }
 
 TEST_F(StandardFileSystemRepositoryTest, DeletePermanentlyRemovesFile)

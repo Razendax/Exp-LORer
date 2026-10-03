@@ -12,6 +12,8 @@
 #include "NativeTypes.h"
 
 class FileNavigationUseCase;
+class FileTransferService;
+class NotificationCenter;
 
 // Single shared instance (pane-agnostic; the OS clipboard is process/OS-global, unlike
 // TagListViewModel there is no "active tab" retargeting), owned by WorkspaceController
@@ -23,7 +25,8 @@ class FileOperationsController : public QObject
     Q_OBJECT
 
 public:
-    explicit FileOperationsController(FileNavigationUseCase& fileNavigationUseCase, QObject* parent = nullptr);
+    FileOperationsController(FileNavigationUseCase& fileNavigationUseCase, FileTransferService& fileTransferService,
+                              NotificationCenter& notificationCenter, QObject* parent = nullptr);
 
 public slots:
     void copyToClipboard(const std::vector<std::filesystem::path>& sources);
@@ -31,9 +34,16 @@ public slots:
 
     // Reads the OS clipboard's file URLs and Preferred-DropEffect flag; copies (plain clipboard)
     // or moves (cut clipboard) each into destinationDirectory, auto-renaming on collision. Clears
-    // the clipboard afterwards if it was a cut. Best-effort across multiple URLs (interop with a
-    // multi-file Explorer clipboard): failures are collected into one operationFailed message
-    // rather than aborting the whole paste.
+    // the clipboard afterwards if it was a cut.
+    //
+    // A move is first attempted as a direct, instant FileNavigationUseCase::moveFile (same-volume
+    // rename) for each URL; only URLs where that fails (cross-volume) plus every copy-paste URL
+    // (which always has to duplicate bytes) are batched into one FileTransferService transfer
+    // driving a cancellable progress notification -- the estimate -> free-space-check -> copy ->
+    // completion-toast pipeline of Architecture.md §14.47. If every URL resolves via the instant
+    // path, no progress notification is created at all (same instant behavior as before this
+    // feature). The batch's errors surface as a single operationFailed message (or, for
+    // insufficient space, insufficientDiskSpace below) rather than per-file messages.
     void pasteInto(const std::filesystem::path& destinationDirectory);
 
     void moveToTrash(const std::filesystem::path& path);
@@ -72,6 +82,13 @@ signals:
     // Mirrors TabViewModel::navigationFailed's pattern for status-bar reporting.
     void operationFailed(const QString& message);
 
+    // Emitted by pasteInto() when FileTransferUseCase::checkDestinationHasSpace fails for a batch
+    // that needed real byte-copying (Architecture.md §14.47) -- no file is copied in that case.
+    // MainWindow raises a blocking QMessageBox for it, parallel to operationFailed's status-bar
+    // channel, since this failure happens before any progress notification would otherwise explain
+    // why the paste did nothing.
+    void insufficientDiskSpace(const QString& message);
+
     // Emitted after any successful copy/move/paste/delete with the affected directory (the
     // destination for a paste, the source's parent for a cut-paste or delete). WorkspaceController
     // refreshes any live tab whose currentPath() matches.
@@ -95,4 +112,6 @@ private:
                                                  const std::filesystem::path& desiredName) const;
 
     FileNavigationUseCase& m_fileNavigationUseCase;
+    FileTransferService& m_fileTransferService;
+    NotificationCenter& m_notificationCenter;
 };

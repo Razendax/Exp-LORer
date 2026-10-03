@@ -1,5 +1,7 @@
 #include "NotificationOverlayWidget.h"
 
+#include <algorithm>
+
 #include <QVBoxLayout>
 
 #include "NotificationCenter.h"
@@ -12,19 +14,13 @@ NotificationOverlayWidget::NotificationOverlayWidget(NotificationCenter& notific
 {
     setObjectName(QStringLiteral("notificationOverlayWidget"));
 
-    // This widget spans the full right-hand strip of MainWindow so it can anchor cards to the
-    // bottom-right corner, but it must not swallow clicks over the (usually empty) area where no
-    // card is showing. Making it transparent to mouse events lets clicks fall through to whatever
-    // is underneath; child cards (toasts, progress bars) are hit-tested before this flag applies,
-    // so their own buttons/close "x" still receive input normally.
-    setAttribute(Qt::WA_TransparentForMouseEvents, true);
-
-    // Stretch first, packed cards after: newly-added cards land at the bottom of the layout
-    // (nearest the bottom-right corner this widget is anchored to), pushing earlier cards upward.
+    // Newly-added cards are appended to the bottom of the layout; combined with updateGeometry()
+    // re-anchoring this widget's bottom edge to m_availableHeight on every add/remove, that makes
+    // new cards land nearest the bottom-right corner and pushes earlier cards upward as the stack
+    // grows, without needing a stretch spacer or a tall, mostly-empty widget.
     m_stackLayout = new QVBoxLayout(this);
     m_stackLayout->setContentsMargins(8, 8, 8, 8);
     m_stackLayout->setSpacing(6);
-    m_stackLayout->addStretch(1);
 
     connect(&m_notificationCenter, &NotificationCenter::popupRequested, this, &NotificationOverlayWidget::onPopupRequested);
     connect(&m_notificationCenter, &NotificationCenter::progressNotificationCreated, this,
@@ -36,12 +32,25 @@ NotificationOverlayWidget::NotificationOverlayWidget(NotificationCenter& notific
 
 void NotificationOverlayWidget::reposition(int availableHeight)
 {
+    m_availableHeight = availableHeight;
+    updateGeometry();
+}
+
+void NotificationOverlayWidget::updateGeometry()
+{
     if (!parentWidget())
     {
         return;
     }
 
-    setGeometry(parentWidget()->width() - kWidth, 0, kWidth, availableHeight);
+    // totalHeightForWidth() returns -1 when none of the current cards' items have a
+    // width-dependent height (e.g. a lone ProgressNotificationWidget, whose labels don't
+    // word-wrap) -- fall back to totalSizeHint() in that case, since blindly min()-ing a -1
+    // against m_availableHeight would collapse this widget (and everything in it) to nothing.
+    const int contentHeight = m_stackLayout->hasHeightForWidth() ? m_stackLayout->totalHeightForWidth(kWidth)
+                                                                   : m_stackLayout->totalSizeHint().height();
+    const int height = std::min(std::max(contentHeight, 0), m_availableHeight);
+    setGeometry(parentWidget()->width() - kWidth, m_availableHeight - height, kWidth, height);
     raise();
 }
 
@@ -51,24 +60,30 @@ void NotificationOverlayWidget::onPopupRequested(NotificationType type, const QS
     connect(toast, &ToastNotificationWidget::closeRequested, this, [this, toast]() {
         m_stackLayout->removeWidget(toast);
         toast->deleteLater();
+        updateGeometry();
     });
     m_stackLayout->addWidget(toast);
     toast->show();
+    updateGeometry();
 }
 
-void NotificationOverlayWidget::onProgressNotificationCreated(int id, const QString& title, int barCount)
+void NotificationOverlayWidget::onProgressNotificationCreated(int id, const QString& title, int barCount, bool cancellable)
 {
-    auto* progress = new ProgressNotificationWidget(title, barCount, this);
+    auto* progress = new ProgressNotificationWidget(title, barCount, cancellable, this);
+    connect(progress, &ProgressNotificationWidget::cancelRequested, this,
+            [this, id]() { m_notificationCenter.requestCancel(id); });
     m_progressWidgets.insert(id, progress);
     m_stackLayout->addWidget(progress);
     progress->show();
+    updateGeometry();
 }
 
-void NotificationOverlayWidget::onProgressBarUpdated(int id, int barIndex, int current, int max, const QString& text)
+void NotificationOverlayWidget::onProgressBarUpdated(int id, int barIndex, int current, int max, const QString& aboveText,
+                                                       const QString& progressText, const QString& belowText)
 {
     if (ProgressNotificationWidget* progress = m_progressWidgets.value(id, nullptr))
     {
-        progress->updateBar(barIndex, current, max, text);
+        progress->updateBar(barIndex, current, max, aboveText, progressText, belowText);
     }
 }
 
@@ -78,5 +93,6 @@ void NotificationOverlayWidget::onProgressNotificationTerminated(int id)
     {
         m_stackLayout->removeWidget(progress);
         progress->deleteLater();
+        updateGeometry();
     }
 }

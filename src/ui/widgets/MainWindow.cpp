@@ -538,6 +538,8 @@ void MainWindow::createWorkspace()
 
     connect(m_workspaceController->fileOperationsController(), &FileOperationsController::operationFailed, this,
             &MainWindow::onStatusMessage);
+    connect(m_workspaceController->fileOperationsController(), &FileOperationsController::insufficientDiskSpace, this,
+            [this](const QString& message) { QMessageBox::warning(this, tr("Not Enough Space"), message); });
 }
 
 void MainWindow::createFolderTree()

@@ -39,6 +39,9 @@ add_library(explorer_application STATIC
     FolderMonitorUseCase.cpp
     DiskUsageUseCase.h
     DiskUsageUseCase.cpp
+    FileTransferTypes.h
+    FileTransferUseCase.h
+    FileTransferUseCase.cpp
 )
 
 target_include_directories(explorer_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

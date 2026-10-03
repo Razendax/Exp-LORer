@@ -43,6 +43,10 @@ add_library(explorer_adapters_viewmodels STATIC
     AdvancedSearchWorker.cpp
     AdvancedSearchService.h
     AdvancedSearchService.cpp
+    FileTransferWorker.h
+    FileTransferWorker.cpp
+    FileTransferService.h
+    FileTransferService.cpp
     DirectoryWatchService.h
     DirectoryWatchService.cpp
     MonitoringPanelViewModel.h

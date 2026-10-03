@@ -30,4 +30,8 @@ public:
                 (const std::filesystem::path& archiveFile, const std::filesystem::path& destinationDirectory), (override));
     MOCK_METHOD(Result<std::filesystem::path>, materializeForReading, (const std::filesystem::path& path), (const, override));
     MOCK_METHOD(Result<DriveSpaceInfo>, driveSpaceInfo, (const std::filesystem::path& path), (const, override));
+    MOCK_METHOD(Result<FileNode>, copyFileWithProgress,
+                (const std::filesystem::path& source, const std::filesystem::path& destination,
+                 const std::function<bool(std::uint64_t bytesCopiedSoFar)>& onChunk),
+                (override));
 };

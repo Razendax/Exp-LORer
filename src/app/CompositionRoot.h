@@ -20,6 +20,7 @@
 #include "FileNavigationUseCase.h"
 #include "FilePreviewUseCase.h"
 #include "FileTagsService.h"
+#include "FileTransferService.h"
 #include "FolderMonitorUseCase.h"
 #include "GitBranchUseCase.h"
 #include "GitStatusService.h"
@@ -108,6 +109,12 @@ private:
     // and m_fileSystemRepository (needs both); grouped here with the other shared background-work
     // services.
     AdvancedSearchService m_advancedSearchService;
+
+    // Architecture.md §14.47: custom copy/move pipeline (estimate -> free-space-check -> copy,
+    // cancellable mid-transfer) backing the paste/cut-paste progress notification, off the Qt UI
+    // thread -- same "own dedicated thread" shape as m_advancedSearchService, grouped here with the
+    // other shared background-work services.
+    FileTransferService m_fileTransferService;
 
     // Architecture.md §14.x: every open tab's Tags-column lookups, off the Qt UI thread -- same
     // "own dedicated thread + own SQLite connection" shape as m_advancedSearchService, grouped here

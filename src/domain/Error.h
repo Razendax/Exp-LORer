@@ -10,6 +10,8 @@ enum class ErrorCode
     AlreadyExists,
     IoError,
     Unknown,
+    Cancelled,             // User cancelled via the progress notification's Cancel button.
+    InsufficientDiskSpace, // Destination volume doesn't have enough free space for the transfer.
 };
 
 struct Error

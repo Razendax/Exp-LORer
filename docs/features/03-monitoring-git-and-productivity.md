@@ -322,10 +322,11 @@ use-case wiring**.
 * **Two kinds.** *Popup* notifications (Info/blue, Warning/yellow, Error/red) auto-dismiss after a
   per-type timeout and always have a manual close button; stack bottom-right, newest nearest the
   corner. *Progress-bar* notifications are a factory API — `createProgressNotification(title,
-  barCount)` returns an id; client code asynchronously updates a bar's current/max/text or
-  terminates the whole notification via that id. **Not wired to any real operation yet** — copy/
-  move stay synchronous with no progress UI (§5's existing accepted gap) — only the generic
-  mechanism exists, for a future feature to call into.
+  barCount, cancellable = false)` returns an id; client code asynchronously updates a bar's
+  current/max/above-text/below-text or terminates the whole notification via that id, and an
+  optional Cancel button surfaces a `progressCancelRequested(id)` signal back to whoever owns that
+  id. **Wired to the custom copy/move pipeline as of §14.47** — see that section; the mechanism
+  remains generic for any future long-running operation to call into.
 * **`src/adapters/notifications`** (new module, `explorer_adapters_notifications`, links only
   `explorer_domain` + `Qt6::Core` — sits *below* `adapters/viewmodels`, deliberately not in
   `adapters/config`): `NotificationType` (plain enum); `NotificationSettings` (plain C++, no Qt — a
@@ -359,20 +360,21 @@ use-case wiring**.
   call sites; the mechanism is generic so a future feature can raise Warning/Error the same way.
 * **`src/ui/widgets`:** `ToastNotificationWidget` (one popup card: colored header icon+type name,
   body text, close button, an auto-dismiss `QTimer` skipped when `timeoutMs == 0`);
-  `ProgressNotificationWidget` (title + N labeled `QProgressBar` rows, no manual close — ends only
-  via `terminateProgressNotification`); `NotificationOverlayWidget` (a plain child of `MainWindow`,
-  always raised, anchored bottom-right via a `resizeEvent` override, stacking the cards above in a
-  bottom-aligned layout). `SettingsDialog` gains a `General → Notifications` category: a fixed
-  3-row table (Type / Enabled checkbox / Timeout spinbox in seconds), immediate-apply like every
-  other Settings page — no Add/Remove, unlike the Colors page's editable rule list, since the rows
-  are fixed. `UiColors.h` gains `kNotificationInfoBlue`/`kNotificationWarningYellow`/
-  `kNotificationErrorRed`.
-* **Not built:** progress-bar notifications wired into a real operation; a cap on simultaneously
-  visible notifications/overflow scrolling (unbounded stacking accepted); sound; click-to-action;
-  a history/log of dismissed popups; persisting in-flight notifications across restart (only the
-  3-row settings persist). No automated coverage for `NotificationCenter` or any widget above
-  beyond the existing §11 UI/ViewModel-glue carve-out; `NotificationSettings`'s plain logic and
-  `NotificationSettingsStore`'s JSON round-trip get ordinary GTest coverage under `tests/adapters`.
+  `ProgressNotificationWidget` (title + N rows, each a label *above* and a smaller-font label
+  *below* one `QProgressBar`, plus an optional Cancel button when constructed `cancellable` — see
+  §14.47; still no manual close otherwise, ends only via `terminateProgressNotification`);
+  `NotificationOverlayWidget` (a plain child of `MainWindow`, always raised, anchored bottom-right
+  via a `resizeEvent` override, stacking the cards above in a bottom-aligned layout).
+  `SettingsDialog` gains a `General → Notifications` category: a fixed 3-row table (Type / Enabled
+  checkbox / Timeout spinbox in seconds), immediate-apply like every other Settings page — no
+  Add/Remove, unlike the Colors page's editable rule list, since the rows are fixed. `UiColors.h`
+  gains `kNotificationInfoBlue`/`kNotificationWarningYellow`/`kNotificationErrorRed`.
+* **Not built:** a cap on simultaneously visible notifications/overflow scrolling (unbounded
+  stacking accepted); sound; click-to-action; a history/log of dismissed popups; persisting
+  in-flight notifications across restart (only the 3-row settings persist). No automated coverage
+  for `NotificationCenter` or any widget above beyond the existing §11 UI/ViewModel-glue carve-out;
+  `NotificationSettings`'s plain logic and `NotificationSettingsStore`'s JSON round-trip get
+  ordinary GTest coverage under `tests/adapters`.
 
 ### 14.38 Async Advanced Search
 
@@ -1010,3 +1012,82 @@ change, `TabViewModel`/`AdvancedSearchService`/`AdvancedSearchWorker` untouched.
   independent of typing cadence; an equivalent debounce on the Advanced Search pane's live
   field-editing (`SearchCriteriaPanel::criteriaEdited`), which has a similar per-keystroke
   synchronous-refilter shape but wasn't reported as laggy.
+
+### 14.47 Custom Copy/Move with Progress Notifications
+
+Wires `pasteInto` (Ctrl+V / context-menu Paste, the only real cross-directory copy/move entry
+point, §14.10) into the notification system's progress-bar mechanism (§14.37), replacing the
+synchronous, no-feedback `FileNavigationUseCase::moveFile`/`copyFile` loop that was §5's long-
+accepted gap — with genuine background execution, a free-space check, and cooperative
+mid-transfer cancellation.
+
+* **Fast path unchanged.** A move is first attempted as a direct `IFileSystemRepository::move`
+  (`fs::rename`) on each top-level clipboard item, exactly as before. Same-volume moves succeed
+  here and never touch the new pipeline at all — no progress popup for an operation that's already
+  instant. Only items where that fails (cross-volume moves) and every copy (which always has to
+  duplicate bytes) go through the pipeline below, batched into one progress notification per
+  `pasteInto` call if the batch is non-empty.
+* **`FileTransferUseCase`** (`src/application`, new, depends only on `IFileSystemRepository`, same
+  "never call another use case" posture as `FilePreviewUseCase`): `planTransfer` recursively
+  enumerates every source (reusing `IFileSystemRepository::listDirectoryRecursive`'s existing
+  ~1/sec-throttled progress callback, accumulated into a grand total across multiple top-level
+  sources) into a flat `FileTransferPlan` of files and directories with their mapped destination
+  paths, file count, and total bytes; `checkDestinationHasSpace` wraps the existing
+  `driveSpaceInfo` Port call; `executeTransfer` creates destination directories on demand (each
+  file's parent chain is created tolerant of `AlreadyExists` immediately before that file is
+  copied, so plan ordering never matters) and copies each file via the new
+  `IFileSystemRepository::copyFileWithProgress` Port method, deleting the matching top-level
+  source afterward only for a move whose every file finished copying. Cancellation is "best effort
+  so far": already-copied files (and, for a move, their already-deleted sources) are not rolled
+  back when Cancel interrupts a later file — this is a transfer that stops partway, not an
+  all-or-nothing transaction.
+* **`IFileSystemRepository::copyFileWithProgress`** (new Port method, alongside the existing
+  one-shot `copy()`): byte-copies one real file with a periodic progress callback that doubles as
+  the cooperative-cancel hook — returning `false` aborts as soon as possible and removes the
+  partial destination file. Windows: `CopyFileExW` with an `LPPROGRESS_ROUTINE` trampoline
+  returning `PROGRESS_CANCEL`/`PROGRESS_CONTINUE` (Windows deletes the partial file on cancel
+  itself); portable fallback (Linux-later): a buffered `ifstream`/`ofstream` loop checking the
+  callback between chunks and removing the partial file itself on cancel.
+* **`FileTransferService`/`FileTransferWorker`** (`adapters/viewmodels`, new): one dedicated
+  background `QThread`, the same owned-worker shape as `AdvancedSearchService`/`AdvancedSearchWorker`
+  (§14.38) — one transfer at a time, a second concurrent paste queues behind it (accepted
+  limitation, not a thread pool). Unlike Advanced Search's "cancel = discard a stale result,"
+  cancellation here is a real `std::atomic<bool>` flag, created per request and flipped directly
+  from the UI thread by `FileTransferService::cancel(requestId)` with no thread hop needed; the
+  worker thread's copy loop observes it between chunks via `copyFileWithProgress`'s callback.
+* **`NotificationCenter` gains a cancel path and two extra progress labels.**
+  `createProgressNotification(title, barCount, cancellable = false)` and
+  `updateProgressBar(id, barIndex, current, max, aboveText, progressText, belowText)` —
+  existing/future non-cancellable, single-label callers are unaffected (`cancellable` defaults
+  false, `progressText`/`belowText` can stay empty). A new `progressCancelRequested(id)` signal
+  fires when the user clicks a cancellable notification's Cancel button; `FileOperationsController`
+  is the only subscriber today, mapping the id (which it deliberately reuses as
+  `FileTransferService`'s own request id — the two systems share one correlation key rather than
+  maintaining two maps) to `FileTransferService::cancel`.
+* **`ProgressNotificationWidget`** gains two more smaller-font labels below each bar (request: "Top
+  label says... Copying n files with size x. Middle label shows how many files/how much size is
+  copied so far. Bottom label displays relative path of file with size") and an optional Cancel
+  `QPushButton` (disabled, not removed, immediately on click, so the
+  notification's own `terminateProgressNotification` — arriving once the worker thread confirms
+  the cancellation — is still what actually removes the card).
+* **The pipeline's three stages**, reusing one progress notification end to end: *Estimating*
+  (indeterminate bar, above-label "Estimating: files N, size X" updated ~1/sec from
+  `planTransfer`'s progress callback) → *free-space check* (silent pass-through, or terminates the
+  notification and raises a blocking `QMessageBox` via `FileOperationsController`'s new
+  `insufficientDiskSpace(message)` signal, wired in `MainWindow.cpp` next to the existing
+  `operationFailed` connection — no file is copied if this fails) → *Copying* (determinate bar,
+  bytes copied over total bytes, above-label "Copying/Moving N files (X)" set once, below-label the
+  current file's relative path + size, updated per file). On success, a single Info popup
+  ("Copy/Move Complete", naming the source/destination) summarizes the whole batch; on
+  cancellation, no popup (the user asked for this); on any other failure, the existing
+  `operationFailed` status-bar channel is used, same as every other `FileOperationsController` slot.
+* **Not built:** all-or-nothing rollback on cancel (see above); a cancellable *estimating* phase
+  mid-single-huge-subtree-walk (`listDirectoryRecursive` itself has no cancel hook — a cancel
+  request during estimating only takes effect at the next top-level source boundary; it always
+  takes full effect once the copy phase starts); more than one concurrent transfer; drag-and-drop
+  using this mechanism (drag-and-drop itself doesn't exist yet); a "Copy to.../Move to..." picker
+  dialog. No CTest coverage for `FileTransferService`/`FileTransferWorker`/the
+  `FileOperationsController`/`NotificationCenter`/widget changes, per §11's existing UI/ViewModel-
+  glue carve-out; `FileTransferUseCase` (mocked `IFileSystemRepository`, `tests/application`) and
+  `StandardFileSystemRepository::copyFileWithProgress` (real `:memory:`-adjacent temp-directory I/O,
+  `tests/adapters`) get ordinary GTest coverage.

@@ -19,6 +19,7 @@ CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir)
     , m_gitBranchUseCase(m_gitBranchProvider)
     , m_gitStatusService(m_gitStatusUseCase, m_gitBranchUseCase)
     , m_advancedSearchService(m_fileNavigationUseCase, m_fileSystemRepository, appDataDir / "explorer.db")
+    , m_fileTransferService(m_fileSystemRepository)
     , m_fileTagsService(m_fileSystemRepository, appDataDir / "explorer.db")
     , m_directoryWatchUseCase(m_directoryWatcher)
     , m_folderMonitorUseCase(m_folderMonitor)
@@ -66,5 +67,5 @@ std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController(
                                                   m_fileSystemRepository, m_fileDecorationRules, m_fileDecorationsViewModel,
                                                   m_gitStatusService, m_directoryWatchUseCase, m_folderMonitorUseCase,
                                                   m_notificationCenter, m_advancedSearchService, m_fileTagsService,
-                                                  m_diskUsageService, m_tagChangeNotifier);
+                                                  m_diskUsageService, m_tagChangeNotifier, m_fileTransferService);
 }

@@ -1,6 +1,7 @@
 #include "FileOperationsController.h"
 
 #include <algorithm>
+#include <memory>
 #include <vector>
 
 #include <QApplication>
@@ -11,6 +12,11 @@
 #include <QUrl>
 
 #include "FileNavigationUseCase.h"
+#include "FileSizeFormat.h"
+#include "FileTransferService.h"
+#include "FileTransferTypes.h"
+#include "NotificationCenter.h"
+#include "PathContainment.h"
 
 namespace
 {
@@ -48,12 +54,42 @@ namespace
     {
         return QString::fromStdWString(path.wstring());
     }
+
+    // NotificationCenter::updateProgressBar/ProgressNotificationWidget::updateBar take `int`
+    // current/max, matching QProgressBar's own int-only range API. Passing a raw byte count
+    // through directly overflows for any file >= 2 GiB (INT_MAX), wrapping into a negative
+    // `max`; QProgressBarPrivate::setRange then clamps maximum to std::max(minimum, maximum),
+    // collapsing the range to min == max == 0 -- which Qt renders as a permanent busy/
+    // indeterminate animation instead of real progress. Normalizing to a fixed scale keeps the
+    // bar accurate regardless of file size.
+    constexpr int kProgressScale = 10000;
+
+    int scaledProgress(std::uintmax_t bytesSoFar, std::uintmax_t totalBytes)
+    {
+        if (totalBytes == 0)
+        {
+            return 0;
+        }
+        return static_cast<int>((bytesSoFar * kProgressScale) / totalBytes);
+    }
 }
 
-FileOperationsController::FileOperationsController(FileNavigationUseCase& fileNavigationUseCase, QObject* parent)
+FileOperationsController::FileOperationsController(FileNavigationUseCase& fileNavigationUseCase,
+                                                     FileTransferService& fileTransferService,
+                                                     NotificationCenter& notificationCenter, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
+    , m_fileTransferService(fileTransferService)
+    , m_notificationCenter(notificationCenter)
 {
+    // The Cancel button on a transfer's progress notification only emits
+    // NotificationCenter::progressCancelRequested(id) -- nothing flips FileTransferService's actual
+    // cancel flag unless something connects the two. pasteInto() is the only place that creates a
+    // progress notification id, and it always passes that same id straight through to
+    // FileTransferService::requestTransfer as the request id, so forwarding it here is correct for
+    // every transfer this controller starts.
+    connect(&m_notificationCenter, &NotificationCenter::progressCancelRequested, this,
+            [this](NotificationCenter::ProgressId id) { m_fileTransferService.cancel(id); });
 }
 
 namespace
@@ -96,8 +132,8 @@ void FileOperationsController::pasteInto(const std::filesystem::path& destinatio
 
     const bool isMove = (readDropEffect(*mimeData) & kDropEffectMove) != 0;
 
-    QStringList failures;
     std::vector<std::filesystem::path> sourceParents;
+    std::vector<std::pair<std::filesystem::path, std::filesystem::path>> needsCopy;
 
     for (const QUrl& url : mimeData->urls())
     {
@@ -109,39 +145,159 @@ void FileOperationsController::pasteInto(const std::filesystem::path& destinatio
         const std::filesystem::path source(url.toLocalFile().toStdWString());
         const std::filesystem::path candidate = uniqueDestinationName(destinationDirectory, source.filename());
 
-        auto result = isMove ? m_fileNavigationUseCase.moveFile(source, candidate)
-                              : m_fileNavigationUseCase.copyFile(source, candidate);
-
-        if (result.hasError())
-        {
-            failures.append(QString::fromStdString(result.error().message));
-            continue;
-        }
-
         if (isMove)
         {
+            auto renamed = m_fileNavigationUseCase.moveFile(source, candidate);
+            if (renamed.hasValue())
+            {
+                sourceParents.push_back(source.parent_path());
+                continue;
+            }
+            // Any failure here (classically cross-volume) falls back to the copy+delete-source
+            // pipeline below for this item; if the real problem is something else (e.g.
+            // permissions), the subsequent copy attempt surfaces the same underlying error through
+            // the batch's operationFailed message.
+        }
+
+        needsCopy.emplace_back(source, candidate);
+        if (isMove)
+        {
+            // A copy-paste never touches its source, but a move-via-copy deletes it on success --
+            // the source's parent needs refreshing either way once the batch finishes.
             sourceParents.push_back(source.parent_path());
         }
     }
 
-    emit directoryContentsMayHaveChanged(destinationDirectory);
+    if (needsCopy.empty())
+    {
+        emit directoryContentsMayHaveChanged(destinationDirectory);
+
+        std::sort(sourceParents.begin(), sourceParents.end());
+        sourceParents.erase(std::unique(sourceParents.begin(), sourceParents.end()), sourceParents.end());
+        for (const auto& parent : sourceParents)
+        {
+            emit directoryContentsMayHaveChanged(parent);
+        }
+
+        if (isMove)
+        {
+            QApplication::clipboard()->clear();
+        }
+        return;
+    }
 
     std::sort(sourceParents.begin(), sourceParents.end());
     sourceParents.erase(std::unique(sourceParents.begin(), sourceParents.end()), sourceParents.end());
-    for (const auto& parent : sourceParents)
-    {
-        emit directoryContentsMayHaveChanged(parent);
-    }
 
-    if (isMove)
+    // Cached above/below label text plus running file/byte counters, so the very frequent
+    // onBytesProgress tick only needs to reformat the progress-count label (via progressText
+    // below) instead of every label on the card.
+    struct TransferDisplayState
     {
-        QApplication::clipboard()->clear();
-    }
+        std::size_t totalFiles = 0;
+        std::uintmax_t totalBytes = 0;
+        std::size_t filesStarted = 0;       // current (1-based) file number; incremented in onFileStarted.
+        std::uintmax_t bytesCopiedSoFar = 0; // last value reported by onBytesProgress, across the whole plan.
+        QString aboveText;
+        QString belowText;
+    };
+    auto state = std::make_shared<TransferDisplayState>();
 
-    if (!failures.isEmpty())
-    {
-        emit operationFailed(failures.join(QStringLiteral("; ")));
-    }
+    // "File N of M -- A of B copied", refreshed on every onFileStarted/onBytesProgress tick so it
+    // always reflects the latest counts without the caller re-deriving them.
+    auto progressText = [](const TransferDisplayState& s) {
+        return tr("File %1 of %2 -- %3 of %4 copied")
+            .arg(static_cast<qulonglong>(std::min(s.filesStarted, s.totalFiles)))
+            .arg(static_cast<qulonglong>(s.totalFiles))
+            .arg(FileSizeFormat::format(s.bytesCopiedSoFar))
+            .arg(FileSizeFormat::format(s.totalBytes));
+    };
+
+    const auto progressId =
+        m_notificationCenter.createProgressNotification(isMove ? tr("Moving...") : tr("Copying..."), /*barCount=*/1,
+                                                          /*cancellable=*/true);
+
+    FileTransferService::Callbacks callbacks;
+
+    callbacks.onEstimateProgress = [this, progressId, state](std::size_t filesSoFar, std::uintmax_t bytesSoFar) {
+        state->totalFiles = filesSoFar;
+        state->totalBytes = bytesSoFar;
+        m_notificationCenter.updateProgressBar(
+            progressId, 0, 0, 0,
+            tr("Estimating: files %1, size %2").arg(static_cast<qulonglong>(filesSoFar)).arg(FileSizeFormat::format(bytesSoFar)),
+            QString(), QString());
+    };
+
+    callbacks.onInsufficientSpace = [this, progressId](std::uintmax_t requiredBytes, std::uintmax_t availableBytes) {
+        m_notificationCenter.terminateProgressNotification(progressId);
+        emit insufficientDiskSpace(tr("Not enough free space: need %1, only %2 available.")
+                                        .arg(FileSizeFormat::format(requiredBytes))
+                                        .arg(FileSizeFormat::format(availableBytes)));
+    };
+
+    callbacks.onFileStarted = [this, progressId, isMove, state, needsCopy, progressText](const FileTransferItem& item) {
+        if (state->aboveText.isEmpty())
+        {
+            state->aboveText = tr("%1 %2 file(s) (%3)")
+                                    .arg(isMove ? tr("Moving") : tr("Copying"))
+                                    .arg(static_cast<qulonglong>(state->totalFiles))
+                                    .arg(FileSizeFormat::format(state->totalBytes));
+        }
+
+        state->filesStarted += 1;
+
+        std::filesystem::path relative = item.source.filename();
+        for (const auto& [rootSource, rootDestination] : needsCopy)
+        {
+            (void)rootDestination;
+            if (isPathWithinOrEqual(item.source, rootSource))
+            {
+                relative = item.source.lexically_relative(rootSource.parent_path());
+                break;
+            }
+        }
+
+        state->belowText = tr("%1 (%2)").arg(toQString(relative)).arg(FileSizeFormat::format(item.size));
+        m_notificationCenter.updateProgressBar(progressId, 0, 0, kProgressScale, state->aboveText, progressText(*state),
+                                                state->belowText);
+    };
+
+    callbacks.onBytesProgress = [this, progressId, state, progressText](std::uintmax_t bytesCopiedSoFar, std::uintmax_t totalBytes) {
+        state->bytesCopiedSoFar = bytesCopiedSoFar;
+        m_notificationCenter.updateProgressBar(progressId, 0, scaledProgress(bytesCopiedSoFar, totalBytes), kProgressScale,
+                                                state->aboveText, progressText(*state), state->belowText);
+    };
+
+    callbacks.onFinished = [this, progressId, isMove, destinationDirectory, sourceParents](Result<void> result) {
+        m_notificationCenter.terminateProgressNotification(progressId);
+
+        // Still refresh even on cancel/failure -- partial progress may have happened already.
+        emit directoryContentsMayHaveChanged(destinationDirectory);
+        for (const auto& parent : sourceParents)
+        {
+            emit directoryContentsMayHaveChanged(parent);
+        }
+
+        if (isMove)
+        {
+            QApplication::clipboard()->clear();
+        }
+
+        if (result.hasError())
+        {
+            if (result.error().code != ErrorCode::Cancelled)
+            {
+                emit operationFailed(QString::fromStdString(result.error().message));
+            }
+            return;
+        }
+
+        m_notificationCenter.showPopup(NotificationType::Info, isMove ? tr("Move Complete") : tr("Copy Complete"),
+                                        isMove ? tr("Items moved into %1.").arg(toQString(destinationDirectory))
+                                               : tr("Items copied into %1.").arg(toQString(destinationDirectory)));
+    };
+
+    m_fileTransferService.requestTransfer(this, progressId, needsCopy, isMove, callbacks);
 }
 
 void FileOperationsController::moveToTrash(const std::filesystem::path& path)

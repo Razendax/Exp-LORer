@@ -19,6 +19,7 @@ add_executable(explorer_application_tests
     DirectoryWatchUseCaseTest.cpp
     FolderMonitorUseCaseTest.cpp
     DiskUsageUseCaseTest.cpp
+    FileTransferUseCaseTest.cpp
 )
 
 target_link_libraries(explorer_application_tests PRIVATE

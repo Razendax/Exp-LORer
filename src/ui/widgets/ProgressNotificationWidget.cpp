@@ -4,9 +4,10 @@
 
 #include <QLabel>
 #include <QProgressBar>
+#include <QPushButton>
 #include <QVBoxLayout>
 
-ProgressNotificationWidget::ProgressNotificationWidget(const QString& title, int barCount, QWidget* parent)
+ProgressNotificationWidget::ProgressNotificationWidget(const QString& title, int barCount, bool cancellable, QWidget* parent)
     : QWidget(parent)
 {
     setAttribute(Qt::WA_StyledBackground);
@@ -23,19 +24,41 @@ ProgressNotificationWidget::ProgressNotificationWidget(const QString& title, int
     m_bars.reserve(static_cast<size_t>(std::max(barCount, 0)));
     for (int i = 0; i < barCount; ++i)
     {
-        auto* textLabel = new QLabel(this);
-        layout->addWidget(textLabel);
+        auto* aboveLabel = new QLabel(this);
+        layout->addWidget(aboveLabel);
 
         auto* progressBar = new QProgressBar(this);
         progressBar->setRange(0, 0);
         progressBar->setValue(0);
         layout->addWidget(progressBar);
 
-        m_bars.push_back(BarRow{ textLabel, progressBar });
+        auto* progressLabel = new QLabel(this);
+        progressLabel->setStyleSheet(QStringLiteral("color: #707070; font-size: 9px;"));
+        layout->addWidget(progressLabel);
+
+        auto* belowLabel = new QLabel(this);
+        belowLabel->setStyleSheet(QStringLiteral("color: #707070; font-size: 9px;"));
+        layout->addWidget(belowLabel);
+
+        m_bars.push_back(BarRow{ aboveLabel, progressBar, progressLabel, belowLabel });
+    }
+
+    if (cancellable)
+    {
+        m_cancelButton = new QPushButton(tr("Cancel"), this);
+        layout->addWidget(m_cancelButton);
+        connect(m_cancelButton, &QPushButton::clicked, this, [this]() {
+            // Disabled (not removed/hidden) immediately to prevent double-firing while the actual
+            // termination -- confirmed by the worker thread, then terminateProgressNotification --
+            // is still in flight.
+            m_cancelButton->setEnabled(false);
+            emit cancelRequested();
+        });
     }
 }
 
-void ProgressNotificationWidget::updateBar(int barIndex, int current, int max, const QString& text)
+void ProgressNotificationWidget::updateBar(int barIndex, int current, int max, const QString& aboveText,
+                                            const QString& progressText, const QString& belowText)
 {
     if (barIndex < 0 || static_cast<size_t>(barIndex) >= m_bars.size())
     {
@@ -45,5 +68,7 @@ void ProgressNotificationWidget::updateBar(int barIndex, int current, int max, c
     BarRow& row = m_bars[static_cast<size_t>(barIndex)];
     row.progressBar->setRange(0, max);
     row.progressBar->setValue(current);
-    row.textLabel->setText(text);
+    row.aboveLabel->setText(aboveText);
+    row.progressLabel->setText(progressText);
+    row.belowLabel->setText(belowText);
 }

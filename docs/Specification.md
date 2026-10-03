@@ -148,9 +148,10 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   the bottom-right corner of the window. Popup notifications — Info (blue), Warning (yellow), or
   Error (red), each showing an icon/type header and a message body — auto-dismiss after a
   configurable timeout (see Settings above) and always have a manual close button. Progress-bar
-  notifications can show one or more progress bars for a long-running operation; v1 ships the
-  underlying mechanism only, with no operation wired to it yet (copy/move remain as described
-  under "File Operations" below, without a progress display).
+  notifications can show one or more progress bars for a long-running operation, each with a label
+  above and a smaller-font label below it, and an optional Cancel button; copy and move operations
+  that need to transfer real bytes drive one of these (see "File Operations" below,
+  Architecture.md §14.47).
 * **Per-file/folder appearance customization (Architecture.md §14.30):** under Settings >
   General > Colors, the user maintains an ordered list of rules, each pairing a comma-separated set
   of name patterns with a style (custom color, custom font, and independently toggleable bold,
@@ -171,6 +172,15 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 
 **File Operations:**
 * Create, open, rename, delete (move to trash/permanently delete), and copy/paste files and folders.
+* **Copy/move progress (Architecture.md §14.47):** pasting a cut/copied selection that stays on the
+  same drive for a move is instant, exactly as before. Every other case (any copy; a move across
+  drives) shows a progress notification: first an "Estimating" phase (file count and total size,
+  updated about once a second), then — if the destination doesn't have enough free space — a
+  dialog and the operation stops before anything is copied, otherwise a "Copying"/"Moving" phase
+  (current file's relative path and size, overall bytes transferred) with a Cancel button that
+  stops the transfer as soon as the file in progress can be safely interrupted. A short
+  notification confirms completion; cancelling shows no such notification, and files already
+  transferred before a cancel are not undone.
 * Double-clicking or pressing Enter/Return on a file opens it with the OS-registered default
   application; folders navigate into them the same way (Architecture.md §14.11).
 * File properties inspection (size, creation date, modification date, file type).

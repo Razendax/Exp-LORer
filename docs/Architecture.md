@@ -41,6 +41,10 @@ instance safely serves concurrent callers from every tab/pane (§14.2).
   this layer.
 * `GitStatusUseCase` — thin stateless passthrough to `IGitStatusProvider`, backing the Details-view
   git status column (§14.32).
+* `FileTransferUseCase` — plans (recursive enumerate + total count/size) and executes a multi-file
+  copy or move with per-file progress and cooperative cancellation, backing the custom copy/move
+  progress notification (§14.47). Stateless, depends only on `IFileSystemRepository`, same posture
+  as `FilePreviewUseCase`.
 
 **Ports:**
 * `IFileSystemRepository` — file operations: list, recursive list, move, copy, delete, hash,
@@ -48,7 +52,10 @@ instance safely serves concurrent callers from every tab/pane (§14.2).
   capped byte prefix of a file (`readFilePrefix`, §14.26), extract archive content
   (`extractArchive`, §14.29), and resolve a path to a real, on-disk file for callers that need
   actual file I/O (`materializeForReading` — identity for a real path, a private temp-extracted
-  copy for an entry inside an archive, §14.29).
+  copy for an entry inside an archive, §14.29). `copyFileWithProgress` (§14.47) byte-copies one real
+  file with a periodic progress callback that doubles as a cooperative-cancel hook, for
+  `FileTransferUseCase`'s per-file execution step — `copy()` above stays a one-shot, non-cancellable
+  call for every other existing caller.
 * `ITagRepository` — persists tags and file/tag associations.
 * `IMediaDecoder` — decodes media streams, extracts thumbnails.
 * `IContextMenuProvider` — builds a registry/COM-sourced context menu as plain data
@@ -75,7 +82,10 @@ Converts between Domain/Application types and framework types.
   list and tree views, §2.3.1), `TabViewModel` (a tab's navigation, view mode, sort, selection, and
   search state), `WorkspacePaneViewModel`/`WorkspaceController` (pane/tab bookkeeping and cross-pane
   mediation, §14), `TagListViewModel` (tag panel, retargeted to the focused tab, §14.9),
-  `FileOperationsController` (clipboard/delete/open/context-menu orchestration, §14.10),
+  `FileOperationsController` (clipboard/delete/open/context-menu orchestration, §14.10; also drives
+  `FileTransferService` for the custom copy/move progress pipeline, §14.47),
+  `FileTransferService`/`FileTransferWorker` (one dedicated background `QThread` executing
+  `FileTransferUseCase`, same shape as `AdvancedSearchService`/`AdvancedSearchWorker`, §14.47),
   `FolderTreeModel` (the left panel's lazily-listed folders-only tree, retargeted to the focused
   tab, §14.41),
   `TagManagerViewModel` (global tag CRUD, §14.17), `MediaPreviewViewModel` (QML-facing state; not
@@ -137,7 +147,7 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
 | Layer | Representative components |
 | --- | --- |
 | Domain | `FileNode`, `Tag`, `MediaMetadata`, `FileTagAssociation` |
-| Application | `FileNavigationUseCase`, `TagManagementUseCase`, `MediaProcessingUseCase`, `DiskUsageUseCase` (§14.40), and their Ports (§2.2) |
+| Application | `FileNavigationUseCase`, `TagManagementUseCase`, `MediaProcessingUseCase`, `DiskUsageUseCase` (§14.40), `FileTransferUseCase` (§14.47), and their Ports (§2.2) |
 | Adapters | `SQLiteTagRepository`, `StandardFileSystemRepository`, `ShellContextMenuProvider`, `AppConfigStore`, `WindowsDiskUsageScanner`/`SQLiteDiskUsageRepository` (§14.40), plus the ViewModels listed in §2.3 |
 | UI (Widgets) | `MainWindow`, `WorkspaceLayoutWidget`, `WorkspacePaneWidget`, `FileBrowserView`, `SidePanelWidget` (left/right panels), `FolderTreeView`, `TagPanelWidget`, `ContextMenuBuilder`/`FileItemContextMenu`, dialogs |
 | UI (QML) | Media viewer (not yet implemented) |
@@ -158,7 +168,13 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
   `AdvancedSearchWorker`, the same worker-thread shape. In both cases, "cancelling" an in-flight
   request means discarding a stale result by a generation-id check when it arrives, not aborting
   the underlying call itself — neither the libvips/FFmpeg decode nor a `std::filesystem`
-  recursive walk/`stat()` loop is interruptible mid-call.
+  recursive walk/`stat()` loop is interruptible mid-call. Custom copy/move (§14.47) dispatches to a
+  third such worker thread, `FileTransferService`/`FileTransferWorker`, but unlike the two above its
+  cancellation is a genuine mid-call abort: `IFileSystemRepository::copyFileWithProgress`'s chunked
+  copy loop checks a shared `std::atomic<bool>` cancel flag between chunks (Windows:
+  `CopyFileExW`'s own progress-callback return value; portable fallback: between buffered-read
+  iterations), so pressing Cancel on an in-flight transfer stops it within one chunk, not just at
+  the next request boundary.
 * **Database concurrency:** `SQLiteTagRepository` wraps a `QSqlDatabase`/`QSQLITE` connection, which
   Qt requires to be used only from the thread that created it — so cross-thread tag-DB access isn't
   achieved by sharing one `TagManagementUseCase`/`SQLiteTagRepository` instance across threads, but

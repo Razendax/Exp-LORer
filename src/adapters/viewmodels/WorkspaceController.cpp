@@ -29,7 +29,7 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
                                            FolderMonitorUseCase& folderMonitorUseCase, NotificationCenter& notificationCenter,
                                            AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
                                            DiskUsageService& diskUsageService, TagChangeNotifier& tagChangeNotifier,
-                                           QObject* parent)
+                                           FileTransferService& fileTransferService, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagChangeNotifier(tagChangeNotifier)
@@ -54,7 +54,7 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
     m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, notificationCenter, tagChangeNotifier, this);
     m_filePreviewViewModel = new FilePreviewViewModel(filePreviewUseCase, fileSystemRepository, this);
     m_monitoringPanelViewModel = new MonitoringPanelViewModel(this);
-    m_fileOperationsController = new FileOperationsController(m_fileNavigationUseCase, this);
+    m_fileOperationsController = new FileOperationsController(m_fileNavigationUseCase, fileTransferService, notificationCenter, this);
     m_directoryWatchService = new DirectoryWatchService(directoryWatchUseCase, this);
     m_folderTreeModel = new FolderTreeModel(fileNavigationUseCase, this);
 

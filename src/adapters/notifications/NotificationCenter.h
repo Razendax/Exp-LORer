@@ -33,18 +33,29 @@ public:
     void showPopup(NotificationType type, const QString& title, const QString& body);
 
     // Progress-bar notifications (factory pattern): the caller asks for barCount bars and gets
-    // back an id, then asynchronously updates a given bar's current/max/text via that id, and can
-    // terminate the whole notification via the id. Not wired to any real operation yet -- only the
-    // generic mechanism exists, for future features to call into.
-    ProgressId createProgressNotification(const QString& title, int barCount);
-    void updateProgressBar(ProgressId id, int barIndex, int current, int max, const QString& text);
+    // back an id, then asynchronously updates a given bar's current/max and its three text rows
+    // (above/progress/below) via that id, and can terminate the whole notification via the id.
+    // `cancellable`, when true, adds
+    // a Cancel button to the notification card; clicking it emits progressCancelRequested(id) --
+    // see requestCancel() below. Wired to the custom copy/move pipeline (Architecture.md §14.47);
+    // the mechanism stays generic for any future long-running operation to call into.
+    ProgressId createProgressNotification(const QString& title, int barCount, bool cancellable = false);
+    void updateProgressBar(ProgressId id, int barIndex, int current, int max, const QString& aboveText,
+                            const QString& progressText, const QString& belowText);
     void terminateProgressNotification(ProgressId id);
+
+    // Called by NotificationOverlayWidget when the user clicks a cancellable notification's Cancel
+    // button; simply forwards as a signal so whoever owns that progress id (FileOperationsController)
+    // can react. A no-op from this class's own point of view beyond emitting.
+    void requestCancel(ProgressId id);
 
 signals:
     void popupRequested(NotificationType type, const QString& title, const QString& body, int timeoutMs);
-    void progressNotificationCreated(ProgressId id, const QString& title, int barCount);
-    void progressBarUpdated(ProgressId id, int barIndex, int current, int max, const QString& text);
+    void progressNotificationCreated(ProgressId id, const QString& title, int barCount, bool cancellable);
+    void progressBarUpdated(ProgressId id, int barIndex, int current, int max, const QString& aboveText,
+                             const QString& progressText, const QString& belowText);
     void progressNotificationTerminated(ProgressId id);
+    void progressCancelRequested(ProgressId id);
 
 private:
     const NotificationSettings& m_settings;

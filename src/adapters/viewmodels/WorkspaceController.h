@@ -27,6 +27,7 @@ class FolderMonitorUseCase;
 class MonitoringPanelViewModel;
 class NotificationCenter;
 class AdvancedSearchService;
+class FileTransferService;
 class FileTagsService;
 class DiskUsageService;
 class TagChangeNotifier;
@@ -50,7 +51,8 @@ public:
                          GitStatusService& gitStatusService, DirectoryWatchUseCase& directoryWatchUseCase,
                          FolderMonitorUseCase& folderMonitorUseCase, NotificationCenter& notificationCenter,
                          AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
-                         DiskUsageService& diskUsageService, TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
+                         DiskUsageService& diskUsageService, TagChangeNotifier& tagChangeNotifier,
+                         FileTransferService& fileTransferService, QObject* parent = nullptr);
 
     WorkspacePaneViewModel* pane(WorkspacePaneId id) const;
     SplitLayout layout() const noexcept { return m_layout; }
