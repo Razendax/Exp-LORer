@@ -18,6 +18,13 @@ namespace
     {
         return QColor(QLatin1String(TagColorPalette::kColors[index % TagColorPalette::kColors.size()]));
     }
+
+    // Fixed neutral color for the synthetic "Other" wedge -- deliberately not wedgeColor(index), since
+    // that would collide (mod the palette size) with a real wedge's color once 10 children are shown.
+    QColor otherWedgeColor()
+    {
+        return QColor(QStringLiteral("#9E9E9E"));
+    }
 }
 
 PieChartWidget::PieChartWidget(QWidget* parent)
@@ -34,6 +41,7 @@ void PieChartWidget::setData(const std::filesystem::path& folder, const std::vec
     m_wedges.clear();
 
     double cumulative = 0.0;
+    std::uintmax_t shownSize = 0;
     for (const DiskUsageNode& node : topChildren)
     {
         if (m_totalSize == 0)
@@ -50,6 +58,24 @@ void PieChartWidget::setData(const std::filesystem::path& folder, const std::vec
         m_wedges.push_back(wedge);
 
         cumulative += fraction;
+        shownSize += node.size;
+    }
+
+    if (m_totalSize > shownSize)
+    {
+        const std::uintmax_t otherSize = m_totalSize - shownSize;
+
+        DiskUsageNode otherNode;
+        otherNode.name = "Other";
+        otherNode.size = otherSize;
+        otherNode.isDirectory = false; // not a real path -- keeps it non-clickable via the existing isDirectory check
+
+        Wedge wedge;
+        wedge.node = otherNode;
+        wedge.startFraction = cumulative;
+        wedge.fraction = static_cast<double>(otherSize) / static_cast<double>(m_totalSize);
+        wedge.isOther = true;
+        m_wedges.push_back(wedge);
     }
 
     update();
@@ -87,7 +113,7 @@ void PieChartWidget::paintEvent(QPaintEvent*)
         const double startAngleDegrees = 90.0 - wedge.startFraction * 360.0;
         const double spanAngleDegrees = wedge.fraction * 360.0;
 
-        painter.setBrush(wedgeColor(i));
+        painter.setBrush(wedge.isOther ? otherWedgeColor() : wedgeColor(i));
         painter.setPen(QPen(palette().window().color(), 1));
         painter.drawPie(rect, static_cast<int>(std::lround(startAngleDegrees * 16.0)),
                          -static_cast<int>(std::lround(spanAngleDegrees * 16.0)));

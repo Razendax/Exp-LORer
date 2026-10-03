@@ -8,12 +8,12 @@
 
 #include "DiskUsageNode.h"
 
-// Custom-painted pie chart (Architecture.md §14.39) -- no QtCharts dependency for one chart, same
+// Custom-painted pie chart (Architecture.md §14.40) -- no QtCharts dependency for one chart, same
 // posture as this codebase's other hand-painted widgets (TerminalWidget, TagChipWidget). Paints up
 // to 10 wedges (the caller already sorted/truncated via DiskUsageUseCase::topChildren), each sized
 // by share of `totalSize`. `totalSize` is the FULL children total, not the sum of the shown
-// wedges, so a folder with more than 10 children leaves a visible unfilled gap for what isn't
-// individually shown -- no "Other" bucket (Architecture.md §14.39 design decision).
+// wedges, so a folder with more than 10 children gets one extra synthetic "Other" wedge for the
+// remainder -- a fixed neutral color, not individually navigable (it has no real path).
 class PieChartWidget : public QWidget
 {
     Q_OBJECT
@@ -38,6 +38,7 @@ private:
         DiskUsageNode node;
         double startFraction = 0.0; // cumulative share of the circle swept before this wedge, in [0, 1)
         double fraction = 0.0;      // this wedge's own share of the circle, in (0, 1]
+        bool isOther = false;       // synthetic "everything not individually shown" wedge, not real data
     };
 
     QRect chartRect() const;
