@@ -743,7 +743,18 @@ void WorkspacePaneWidget::onBackRequested()
         return;
     }
 
+    // Same "select the folder we just left" behaviour as Key_Left in FileBrowserView::handleKeyPress
+    // -- goBack() runs synchronously (direct-connected through TabViewModel), so by the time it
+    // returns m_boundTab->currentPath() already reflects the target if navigation succeeded.
+    const std::filesystem::path previousPath = m_boundTab->currentPath();
     m_boundTab->goBack();
+    if (m_boundTab->currentPath() != previousPath)
+    {
+        if (auto* browserView = currentBrowserView())
+        {
+            browserView->selectEntryByPath(previousPath);
+        }
+    }
 }
 
 void WorkspacePaneWidget::onForwardRequested()
