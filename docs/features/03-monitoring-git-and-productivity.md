@@ -583,7 +583,16 @@ existing use case, aside from reusing `TabViewModel::navigateTo` for segment-cli
   lifetime as `TerminalWidget`) tracks the tab's current path (read-only via
   `TabViewModel::currentPathChanged`) and drives `DiskUsageService`. `PieChartWidget`
   (`src/ui/widgets`, new, plain `QPainter` — no QtCharts/new vcpkg dependency for one chart) paints
-  up to 10 wedges with name/percentage/size labels and emits `segmentClicked(path)` on hit-test;
+  up to 10 wedges with name/percentage/size labels and emits `segmentClicked(path)` on hit-test.
+  Labels form a single legend column on the **right** of the pie — one line each, `<color swatch>
+  [name]  NN.N%  size`, the name eliding when the column is too narrow — stacked at their wedge's
+  rim height, decluttered by the usual two-pass nearest-neighbour push, and spread evenly over the
+  panel's height when even minimum spacing won't fit all 11 rows. Leader lines are drawn in a muted
+  neutral, never the wedge's color (the swatch already carries that), and always leave the circle
+  *horizontally at the right rim* at the wedge's own height — mirrored across for a wedge pointing
+  left — so a leader never crosses the pie. Angularly adjacent wedges thinner than 2% of the circle
+  share one merged trunk out of the rim and only fan out into per-label branches once clear of it,
+  instead of each drawing its own colliding line;
   `FolderSizeWidget` hosts it plus the two buttons (text flips to "Scanning..." and both disable
   while a scan is in flight) and wires `segmentClicked` to `TabViewModel::navigateTo`. Registered via
   a second `bottomPanel->addPanelTab(tr("Folder Size"), folderSizeWidget)` call in

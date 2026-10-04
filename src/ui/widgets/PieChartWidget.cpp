@@ -14,6 +14,27 @@ namespace
     constexpr int kMargin = 8;
     constexpr double kPi = 3.14159265358979323846;
 
+    // Legend-style label column (Architecture.md §14.40 UI polish): every label sits in one column
+    // on the *right* of the pie -- "<swatch> [name]  NN.N%  size" -- so the pie is shrunk only on
+    // that side. Each label is a single line (the name elides if the row is too narrow), which keeps
+    // the whole stack short enough to fit a bottom panel's height even with 11 wedges.
+    constexpr int kLabelBoxWidth = 170;  // text width budget for "[name]  NN.N%  size"
+    constexpr int kSwatchSize = 10;      // filled square echoing the wedge's color, drawn before the name
+    constexpr int kSwatchGap = 6;        // swatch -> text
+    constexpr int kTrunkLength = 18;     // horizontal run from the pie's rim out to the fan-out column
+    // Wide enough that the branches leaving a shared trunk read as a fan rather than collapsing
+    // into one near-vertical bundle: a group's branches get kLeaderGap - kLeaderRunIn of horizontal
+    // travel to spread over whatever vertical distance separates their labels.
+    constexpr int kLeaderGap = 36;       // fan-out column -> swatch
+    constexpr int kLeaderRunIn = 6;      // short horizontal run into the label, so the leader meets it level
+    constexpr int kLabelVerticalPadding = 5;
+
+    // A wedge thinner than this shares one merged leader trunk with its (equally thin) angular
+    // neighbours instead of drawing its own near-identical line out of the circle: the group leaves
+    // the rim as a single horizontal line and only fans out into per-label branches once it is clear
+    // of the pie. 2% of the circle is ~7 degrees -- below that, individual leaders visually collide.
+    constexpr double kTinyWedgeFraction = 0.02;
+
     QColor wedgeColor(std::size_t index)
     {
         return QColor(QLatin1String(TagColorPalette::kColors[index % TagColorPalette::kColors.size()]));
@@ -24,6 +45,15 @@ namespace
     QColor otherWedgeColor()
     {
         return QColor(QStringLiteral("#9E9E9E"));
+    }
+
+    // Leader lines are deliberately *not* tinted per wedge -- the swatch in front of each name
+    // already carries the color, so coloring the lines too only adds noise.
+    QColor leaderColor(const QPalette& widgetPalette)
+    {
+        QColor color = widgetPalette.text().color();
+        color.setAlpha(110);
+        return color;
     }
 }
 
@@ -83,9 +113,14 @@ void PieChartWidget::setData(const std::filesystem::path& folder, const std::vec
 
 QRect PieChartWidget::chartRect() const
 {
-    const int side = std::max(std::min(width(), height()) - 2 * kMargin, 0);
+    // The label column lives entirely on the right, so only that side is reserved; the circle is
+    // then centered in whatever space is left on the left.
+    const int reservedRight = kTrunkLength + kLeaderGap + kSwatchSize + kSwatchGap + kLabelBoxWidth;
+    const int availableWidth = std::max(width() - 2 * kMargin - reservedRight, 0);
+    const int availableHeight = std::max(height() - 2 * kMargin, 0);
+    const int side = std::min(availableWidth, availableHeight);
     QRect bounds(0, 0, side, side);
-    bounds.translate((width() - side) / 2, (height() - side) / 2);
+    bounds.translate(kMargin + (availableWidth - side) / 2, (height() - side) / 2);
     return bounds;
 }
 
@@ -101,7 +136,7 @@ void PieChartWidget::paintEvent(QPaintEvent*)
         return;
     }
 
-    const QRect rect = chartRect();
+    const QRect pieRect = chartRect();
 
     // QPainter::drawPie angles are in 1/16ths of a degree, measured counterclockwise from 3
     // o'clock. Each wedge starts at 12 o'clock (90 degrees) minus its cumulative clockwise sweep
@@ -115,27 +150,176 @@ void PieChartWidget::paintEvent(QPaintEvent*)
 
         painter.setBrush(wedge.isOther ? otherWedgeColor() : wedgeColor(i));
         painter.setPen(QPen(palette().window().color(), 1));
-        painter.drawPie(rect, static_cast<int>(std::lround(startAngleDegrees * 16.0)),
+        painter.drawPie(pieRect, static_cast<int>(std::lround(startAngleDegrees * 16.0)),
                          -static_cast<int>(std::lround(spanAngleDegrees * 16.0)));
     }
 
-    painter.setPen(palette().text().color());
-    const QPointF center = rect.center();
-    const double radius = rect.width() / 2.0;
-    for (const Wedge& wedge : m_wedges)
+    const QPointF center = pieRect.center();
+    const double pieRadius = pieRect.width() / 2.0;
+    const QFontMetrics fm = painter.fontMetrics();
+    const double labelHeight = fm.height();
+
+    // One label per wedge, stacked in the right-hand column. `idealY` is the height of the wedge's
+    // own mid-angle point on the rim -- the stack is sorted by it and then decluttered, so reading
+    // order down the column still follows the wedges around the circle.
+    struct LabelPlacement
     {
-        const double midAngleDegrees = 90.0 - (wedge.startFraction + wedge.fraction / 2.0) * 360.0;
-        const double midAngleRadians = midAngleDegrees * kPi / 180.0;
-        const QPointF labelPoint(center.x() + std::cos(midAngleRadians) * radius * 0.65,
-                                  center.y() - std::sin(midAngleRadians) * radius * 0.65);
+        std::size_t wedgeIndex = 0;
+        double idealY = 0.0;
+        double y = 0.0;
+        QString text;
+    };
 
-        const double percentage = m_totalSize == 0 ? 0.0 : static_cast<double>(wedge.node.size) * 100.0 / static_cast<double>(m_totalSize);
-        const QString label = QStringLiteral("%1\n%2%\n%3")
-                                   .arg(QString::fromStdString(wedge.node.name))
-                                   .arg(percentage, 0, 'f', 1)
-                                   .arg(FileSizeFormat::format(wedge.node.size));
+    std::vector<LabelPlacement> labels;
+    labels.reserve(m_wedges.size());
+    for (std::size_t i = 0; i < m_wedges.size(); ++i)
+    {
+        const Wedge& wedge = m_wedges[i];
+        const double midAngleRadians = (90.0 - (wedge.startFraction + wedge.fraction / 2.0) * 360.0) * kPi / 180.0;
+        const double percentage = m_totalSize == 0
+            ? 0.0
+            : static_cast<double>(wedge.node.size) * 100.0 / static_cast<double>(m_totalSize);
 
-        painter.drawText(QRectF(labelPoint.x() - 45, labelPoint.y() - 20, 90, 40), Qt::AlignCenter | Qt::TextWordWrap, label);
+        // The percentage and size always stay readable; only an over-long name gives way.
+        const QString suffix = QStringLiteral("  %1%  %2")
+                                    .arg(percentage, 0, 'f', 1)
+                                    .arg(FileSizeFormat::format(wedge.node.size));
+        const QString name = QStringLiteral("[%1]").arg(QString::fromStdString(wedge.node.name));
+        const int nameBudget = std::max(kLabelBoxWidth - fm.horizontalAdvance(suffix), 3 * kSwatchSize);
+
+        LabelPlacement placement;
+        placement.wedgeIndex = i;
+        placement.idealY = center.y() - std::sin(midAngleRadians) * pieRadius;
+        placement.y = placement.idealY;
+        placement.text = fm.elidedText(name, Qt::ElideMiddle, nameBudget) + suffix;
+        labels.push_back(placement);
+    }
+
+    std::sort(labels.begin(), labels.end(),
+               [](const LabelPlacement& a, const LabelPlacement& b) { return a.idealY < b.idealY; });
+
+    // Two-pass nearest-neighbour push (the usual donut-callout declutter), then a whole-stack shift
+    // back inside the widget -- shifting the stack rather than clamping individual labels, which
+    // would reintroduce overlap at the clamped end.
+    const double step = labelHeight + kLabelVerticalPadding;
+    for (std::size_t i = 1; i < labels.size(); ++i)
+    {
+        labels[i].y = std::max(labels[i].y, labels[i - 1].y + step);
+    }
+    for (std::size_t i = labels.size(); i > 1; --i)
+    {
+        const std::size_t idx = i - 2;
+        labels[idx].y = std::min(labels[idx].y, labels[idx + 1].y - step);
+    }
+
+    const double minY = kMargin + labelHeight / 2.0;
+    const double maxY = height() - kMargin - labelHeight / 2.0;
+    const double band = maxY - minY;
+    if (band <= 0.0 || labels.back().y - labels.front().y > band)
+    {
+        // Too many labels for the panel's height even at minimum spacing: spread them evenly over
+        // the band instead of letting the ends run off-widget. Order is preserved, so the column
+        // still reads in wedge order; the rows just crowd.
+        for (std::size_t i = 0; i < labels.size(); ++i)
+        {
+            labels[i].y = labels.size() == 1
+                ? (minY + maxY) / 2.0
+                : minY + std::max(band, 0.0) * static_cast<double>(i) / static_cast<double>(labels.size() - 1);
+        }
+    }
+    else
+    {
+        double shift = 0.0;
+        if (labels.front().y < minY)
+        {
+            shift = minY - labels.front().y;
+        }
+        else if (labels.back().y > maxY)
+        {
+            shift = maxY - labels.back().y;
+        }
+        for (LabelPlacement& placement : labels)
+        {
+            placement.y += shift;
+        }
+    }
+
+    std::vector<double> labelYByWedge(m_wedges.size(), 0.0);
+    for (const LabelPlacement& placement : labels)
+    {
+        labelYByWedge[placement.wedgeIndex] = placement.y;
+    }
+
+    // Leader trunks. Angularly adjacent wedges that are all "tiny" share one trunk; every other
+    // wedge forms a group of one, drawn by exactly the same code below.
+    struct LeaderGroup
+    {
+        double exitX = 0.0;  // where the trunk leaves the pie's rim
+        double trunkY = 0.0; // the trunk's (horizontal) height
+        std::size_t firstWedge = 0;
+        std::size_t lastWedge = 0;
+    };
+
+    std::vector<LeaderGroup> groups;
+    for (std::size_t i = 0; i < m_wedges.size();)
+    {
+        std::size_t last = i;
+        if (m_wedges[i].fraction < kTinyWedgeFraction)
+        {
+            while (last + 1 < m_wedges.size() && m_wedges[last + 1].fraction < kTinyWedgeFraction)
+            {
+                ++last;
+            }
+        }
+
+        const double groupMidFraction =
+            (m_wedges[i].startFraction + m_wedges[last].startFraction + m_wedges[last].fraction) / 2.0;
+        const double midAngleRadians = (90.0 - groupMidFraction * 360.0) * kPi / 180.0;
+
+        LeaderGroup group;
+        group.trunkY = center.y() - std::sin(midAngleRadians) * pieRadius;
+        // Mirrored onto the *right* rim for a wedge pointing left, so the trunk never crosses the
+        // pie: it leaves the circle horizontally at the wedge's own height, and the label's color
+        // swatch is what ties it back to the wedge.
+        group.exitX = center.x() + std::abs(std::cos(midAngleRadians)) * pieRadius;
+        group.firstWedge = i;
+        group.lastWedge = last;
+        groups.push_back(group);
+
+        i = last + 1;
+    }
+
+    const double fanX = center.x() + pieRadius + kTrunkLength;
+    const double labelX = fanX + kLeaderGap;
+
+    painter.setBrush(Qt::NoBrush);
+    painter.setPen(QPen(leaderColor(palette()), 1.0));
+    for (const LeaderGroup& group : groups)
+    {
+        painter.drawLine(QPointF(group.exitX, group.trunkY), QPointF(fanX, group.trunkY));
+
+        for (std::size_t i = group.firstWedge; i <= group.lastWedge; ++i)
+        {
+            const double y = labelYByWedge[i];
+            painter.drawLine(QPointF(fanX, group.trunkY), QPointF(labelX - kLeaderRunIn, y));
+            painter.drawLine(QPointF(labelX - kLeaderRunIn, y), QPointF(labelX, y));
+        }
+    }
+
+    for (const LabelPlacement& placement : labels)
+    {
+        const Wedge& wedge = m_wedges[placement.wedgeIndex];
+        const QColor color = wedge.isOther ? otherWedgeColor() : wedgeColor(placement.wedgeIndex);
+
+        painter.setBrush(color);
+        painter.setPen(QPen(leaderColor(palette()), 1.0));
+        painter.drawRect(QRectF(labelX, placement.y - kSwatchSize / 2.0, kSwatchSize, kSwatchSize));
+
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(palette().text().color());
+        painter.drawText(QRectF(labelX + kSwatchSize + kSwatchGap, placement.y - labelHeight / 2.0,
+                                 kLabelBoxWidth, labelHeight),
+                          Qt::AlignLeft | Qt::AlignVCenter, placement.text);
     }
 }
 
