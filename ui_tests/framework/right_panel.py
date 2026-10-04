@@ -82,15 +82,24 @@ class RightPanel:
 
     def __init__(self, window_container: Callable[[], object]):
         self._panel = Element(window_container, AutomationID.RIGHT_PANEL)
-        self._tags_button = Element(window_container, AutomationID.RIGHT_PANEL_TAGS_BUTTON)
-        self._preview_button = Element(window_container, AutomationID.RIGHT_PANEL_PREVIEW_BUTTON)
-        self._monitoring_button = Element(window_container, AutomationID.RIGHT_PANEL_MONITORING_BUTTON)
+        # Public (mirrors LeftPanel's tree_button/search_button) so a test can read a button's
+        # checked state -- i.e. whether that tab is the active/expanded one -- without the
+        # click-if-unchecked side effect that the tags/preview/monitoring properties below have.
+        self.tags_button = Element(window_container, AutomationID.RIGHT_PANEL_TAGS_BUTTON)
+        self.preview_button = Element(window_container, AutomationID.RIGHT_PANEL_PREVIEW_BUTTON)
+        self.monitoring_button = Element(window_container, AutomationID.RIGHT_PANEL_MONITORING_BUTTON)
         self._tags = TagPanel(self._container)
         self._preview = PreviewPanel(self._container)
         self._monitoring = MonitoringPanel(self._container)
 
     def _container(self) -> Any:
         return self._panel.raw
+
+    def is_expanded(self) -> bool:
+        """Whether the panel is currently expanded, regardless of which tab (Tags/Preview/
+        Monitoring) is the active one.
+        """
+        return self.tags_button.is_checked() or self.preview_button.is_checked() or self.monitoring_button.is_checked()
 
     @staticmethod
     def _select(button: Element) -> None:
@@ -99,15 +108,15 @@ class RightPanel:
 
     @property
     def tags(self) -> TagPanel:
-        self._select(self._tags_button)
+        self._select(self.tags_button)
         return self._tags
 
     @property
     def preview(self) -> PreviewPanel:
-        self._select(self._preview_button)
+        self._select(self.preview_button)
         return self._preview
 
     @property
     def monitoring(self) -> MonitoringPanel:
-        self._select(self._monitoring_button)
+        self._select(self.monitoring_button)
         return self._monitoring

@@ -154,6 +154,40 @@ TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsThroughRestoreFromConfig)
     EXPECT_EQ(restoredPaneC->tabCount(), 0);
 }
 
+TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsHiddenColumnsThroughRestoreFromConfig)
+{
+    writeFile(m_tempDir / "a.txt", "hello");
+
+    WorkspacePaneViewModel* paneA = m_controller.pane(WorkspacePaneId::PaneA);
+    TabViewModel* tabA0 = paneA->addTab();
+    tabA0->navigateTo(m_tempDir);
+    tabA0->setColumnHidden(FileListModel::SizeColumn, true);
+    tabA0->setColumnHidden(FileListModel::TypeColumn, false);
+    // DateModifiedColumn is deliberately left untouched -- its slot should stay nullopt.
+
+    const WorkspaceConfig captured = m_controller.captureConfig();
+
+    SQLiteTagRepository restoredTagRepository{ fs::path(":memory:") };
+    TagManagementUseCase restoredTagManagementUseCase{ restoredTagRepository, m_fileSystemRepository };
+    WorkspaceController restoredController{ m_fileNavigationUseCase,  restoredTagManagementUseCase, m_filePreviewUseCase,
+                                             m_fileSystemRepository, m_fileDecorationRules,        m_fileDecorationsViewModel,
+                                             m_gitStatusService,     m_directoryWatchUseCase,      m_folderMonitorUseCase,
+                                             m_notificationCenter,   m_advancedSearchService,      m_fileTagsService,
+                                             m_diskUsageService,     m_tagChangeNotifier,          m_fileTransferService };
+
+    ASSERT_TRUE(restoredController.restoreFromConfig(captured));
+
+    TabViewModel* restoredTab = restoredController.pane(WorkspacePaneId::PaneA)->tabAt(0);
+    ASSERT_NE(restoredTab, nullptr);
+
+    const auto& hiddenColumns = restoredTab->hiddenColumns();
+    ASSERT_TRUE(hiddenColumns[FileListModel::SizeColumn].has_value());
+    EXPECT_TRUE(*hiddenColumns[FileListModel::SizeColumn]);
+    ASSERT_TRUE(hiddenColumns[FileListModel::TypeColumn].has_value());
+    EXPECT_FALSE(*hiddenColumns[FileListModel::TypeColumn]);
+    EXPECT_FALSE(hiddenColumns[FileListModel::DateModifiedColumn].has_value());
+}
+
 TEST_F(WorkspaceControllerTest, RestoreFromConfigWithNoTabsReturnsFalse)
 {
     const WorkspaceConfig empty;

@@ -155,6 +155,40 @@ namespace
         return fallback;
     }
 
+    // Architecture.md §14.49: one entry per FileListModel::Column, JSON null for nullopt ("never
+    // explicitly toggled in this tab"), else the plain bool.
+    QJsonArray hiddenColumnsToJson(const std::array<std::optional<bool>, FileListModel::ColumnCount>& hiddenColumns)
+    {
+        QJsonArray array;
+        for (const std::optional<bool>& hidden : hiddenColumns)
+        {
+            array.append(hidden.has_value() ? QJsonValue(*hidden) : QJsonValue());
+        }
+        return array;
+    }
+
+    // Tolerant of a missing key, wrong length, or a non-bool/non-null entry -- any such slot falls
+    // back to nullopt, same posture as every other per-field fallback in this file.
+    std::array<std::optional<bool>, FileListModel::ColumnCount> hiddenColumnsFromJson(const QJsonValue& json)
+    {
+        std::array<std::optional<bool>, FileListModel::ColumnCount> hiddenColumns{};
+        if (!json.isArray())
+        {
+            return hiddenColumns;
+        }
+
+        const QJsonArray array = json.toArray();
+        for (int column = 0; column < FileListModel::ColumnCount && column < array.size(); ++column)
+        {
+            const QJsonValue entry = array.at(column);
+            if (entry.isBool())
+            {
+                hiddenColumns[static_cast<std::size_t>(column)] = entry.toBool();
+            }
+        }
+        return hiddenColumns;
+    }
+
     QJsonObject tabConfigToJson(const TabConfig& tab)
     {
         QJsonObject json;
@@ -162,6 +196,7 @@ namespace
         json[QStringLiteral("viewMode")] = toString(tab.viewMode);
         json[QStringLiteral("sortCriterion")] = toString(tab.sortCriterion);
         json[QStringLiteral("sortAscending")] = tab.sortAscending;
+        json[QStringLiteral("hiddenColumns")] = hiddenColumnsToJson(tab.hiddenColumns);
         return json;
     }
 
@@ -180,6 +215,7 @@ namespace
         tab.viewMode = viewModeFromString(object.value(QStringLiteral("viewMode")).toString(), tab.viewMode);
         tab.sortCriterion = sortCriterionFromString(object.value(QStringLiteral("sortCriterion")).toString(), tab.sortCriterion);
         tab.sortAscending = object.value(QStringLiteral("sortAscending")).toBool(tab.sortAscending);
+        tab.hiddenColumns = hiddenColumnsFromJson(object.value(QStringLiteral("hiddenColumns")));
         return tab;
     }
 
@@ -217,6 +253,30 @@ namespace
         }
 
         return pane;
+    }
+
+    QJsonObject sidePanelStateToJson(const SidePanelState& state)
+    {
+        QJsonObject json;
+        json[QStringLiteral("expanded")] = state.expanded;
+        json[QStringLiteral("activeTabIndex")] = state.activeTabIndex;
+        json[QStringLiteral("width")] = state.width;
+        return json;
+    }
+
+    SidePanelState sidePanelStateFromJson(const QJsonValue& json)
+    {
+        SidePanelState state;
+        if (!json.isObject())
+        {
+            return state;
+        }
+
+        const QJsonObject object = json.toObject();
+        state.expanded = object.value(QStringLiteral("expanded")).toBool(state.expanded);
+        state.activeTabIndex = object.value(QStringLiteral("activeTabIndex")).toInt(state.activeTabIndex);
+        state.width = object.value(QStringLiteral("width")).toInt(state.width);
+        return state;
     }
 
     constexpr std::array<WorkspacePaneId, 4> kAllPanes = {
@@ -299,6 +359,9 @@ AppConfig AppConfigStore::load() const
         config.detailsColumnOrder[static_cast<size_t>(i)] = columnOrder.at(i).toInt();
     }
 
+    config.leftPanel = sidePanelStateFromJson(root->value(QStringLiteral("leftPanel")));
+    config.rightPanel = sidePanelStateFromJson(root->value(QStringLiteral("rightPanel")));
+
     return config;
 }
 
@@ -322,6 +385,8 @@ bool AppConfigStore::save(const AppConfig& config) const
     root[QStringLiteral("workspace")] = workspaceConfigToJson(config.workspace);
     root[QStringLiteral("detailsColumnWidths")] = columnWidths;
     root[QStringLiteral("detailsColumnOrder")] = columnOrder;
+    root[QStringLiteral("leftPanel")] = sidePanelStateToJson(config.leftPanel);
+    root[QStringLiteral("rightPanel")] = sidePanelStateToJson(config.rightPanel);
 
     return JsonFileStore::trySave(m_configFilePath, root, "AppConfigStore");
 }

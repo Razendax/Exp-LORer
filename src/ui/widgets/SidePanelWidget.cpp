@@ -2,6 +2,7 @@
 
 #include <QHBoxLayout>
 #include <QResizeEvent>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -63,6 +64,11 @@ int SidePanelWidget::addPanelTab(const QString& label, QWidget* content, const Q
     return index;
 }
 
+void SidePanelWidget::activateTab(int index)
+{
+    onPanelTabButtonClicked(index);
+}
+
 void SidePanelWidget::onPanelTabButtonClicked(int index)
 {
     if (m_expanded && m_activeIndex == index)
@@ -112,10 +118,27 @@ void SidePanelWidget::resizeEvent(QResizeEvent* event)
     // with no tab selected (m_activeIndex reset to -1 on collapse, see onPanelTabButtonClicked) and
     // the user drags the divider out. Treat that the same as clicking the first panel tab, so the
     // user always sees content rather than blank space next to the header strip.
-    if (m_activeIndex < 0 && !m_buttons.empty() && width() > collapsedWidth())
+    //
+    // Only do this when it's actually a handle drag, i.e. the splitter's own total width is
+    // unchanged from the last resize (just redistributed between its children) -- NOT when the
+    // whole window was resized/maximized, which proportionally redistributes space across the
+    // splitter's children too and can nudge a deliberately-collapsed panel's width past
+    // collapsedWidth() without anyone dragging anything. Without this guard, maximizing the window
+    // after collapsing both side panels silently re-expands them, and that then gets persisted on
+    // close (Architecture.md §14.48) -- sticking the panels back open on every future launch.
+    int splitterWidth = -1;
+    if (auto* splitter = qobject_cast<QSplitter*>(parentWidget()))
+    {
+        splitterWidth = splitter->width();
+    }
+    const bool likelyHandleDrag = splitterWidth >= 0 && splitterWidth == m_lastKnownSplitterWidth;
+
+    if (m_activeIndex < 0 && !m_buttons.empty() && width() > collapsedWidth() && likelyHandleDrag)
     {
         onPanelTabButtonClicked(0);
     }
+
+    m_lastKnownSplitterWidth = splitterWidth;
 }
 
 int SidePanelWidget::collapsedWidth() const
@@ -125,6 +148,21 @@ int SidePanelWidget::collapsedWidth() const
 
 int SidePanelWidget::preferredExpandedWidth() const
 {
+    if (m_preferredExpandedWidthOverride > 0)
+    {
+        return m_preferredExpandedWidthOverride;
+    }
+
     constexpr int kContentWidth = 260;
     return collapsedWidth() + kContentWidth;
+}
+
+void SidePanelWidget::setPreferredExpandedWidth(int width)
+{
+    if (width <= 0)
+    {
+        return;
+    }
+
+    m_preferredExpandedWidthOverride = width;
 }

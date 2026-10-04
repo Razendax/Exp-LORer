@@ -117,6 +117,11 @@ private:
     // Applies m_columnVisibilitySettingsViewModel's current defaults (read live, not a copied
     // snapshot) to a freshly created FileBrowserView -- called once per view from addPageForTab.
     void applyDefaultColumnVisibility(FileBrowserView* browserView);
+
+    // Overrides applyDefaultColumnVisibility's result with `tab`'s own restored per-tab choices
+    // (Architecture.md §14.49) -- called right after it from addPageForTab, for each column where
+    // tab->hiddenColumns() has an explicit (non-nullopt) entry.
+    void applyRestoredColumnVisibility(FileBrowserView* browserView, TabViewModel* tab);
     void bindToolBarToTab(TabViewModel* tab);
     int indexOfTab(TabViewModel* tab) const;
 

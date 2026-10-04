@@ -273,6 +273,16 @@ void TabViewModel::setSortCriterion(SortCriterion criterion, bool ascending)
     m_fileListModel->setSortCriterion(criterion, ascending);
 }
 
+void TabViewModel::setHiddenColumns(const std::array<std::optional<bool>, FileListModel::ColumnCount>& hiddenColumns)
+{
+    m_hiddenColumns = hiddenColumns;
+}
+
+void TabViewModel::setColumnHidden(FileListModel::Column column, bool hidden)
+{
+    m_hiddenColumns[static_cast<std::size_t>(column)] = hidden;
+}
+
 void TabViewModel::loadAndApply(const std::filesystem::path& path, HistoryUpdate historyUpdate)
 {
     auto result = m_fileNavigationUseCase.listDirectory(path);

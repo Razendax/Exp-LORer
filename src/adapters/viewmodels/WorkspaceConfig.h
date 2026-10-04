@@ -2,8 +2,10 @@
 
 #include <array>
 #include <filesystem>
+#include <optional>
 #include <vector>
 
+#include "FileListModel.h"
 #include "FileNavigationUseCase.h"
 #include "SplitLayout.h"
 #include "ViewMode.h"
@@ -17,6 +19,15 @@ struct TabConfig
     ViewMode viewMode = ViewMode::Details;
     SortCriterion sortCriterion = SortCriterion::Name;
     bool sortAscending = true;
+
+    // Per-column hide/show override for THIS tab (Architecture.md §14.49), tri-state via
+    // std::optional<bool>: nullopt means "never explicitly toggled in this tab" and defers to
+    // Settings > General > Columns' "default visibility for new tab"
+    // (ColumnVisibilitySettingsViewModel); Some(true)/Some(false) is this tab's own explicit
+    // choice from its header right-click menu (FileBrowserView::showColumnMenu), which always
+    // wins over that default once set. NameColumn's slot is always nullopt -- Name can never be
+    // hidden (FileBrowserView::setColumnVisible already no-ops for it).
+    std::array<std::optional<bool>, FileListModel::ColumnCount> hiddenColumns{};
 };
 
 // Plain-data snapshot of one pane's ordered tabs plus which one was active.

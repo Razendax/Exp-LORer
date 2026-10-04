@@ -370,6 +370,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     browserView->setColumnWidths(m_initialColumnWidths);
     browserView->setColumnOrder(m_initialColumnOrder);
     applyDefaultColumnVisibility(browserView);
+    applyRestoredColumnVisibility(browserView, tab);
     wireBrowserView(browserView, tab);
     stack->addWidget(browserView); // page 0: normal browsing
 
@@ -378,6 +379,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     advancedSearchPane->browserView()->setColumnWidths(m_initialColumnWidths);
     advancedSearchPane->browserView()->setColumnOrder(m_initialColumnOrder);
     applyDefaultColumnVisibility(advancedSearchPane->browserView());
+    applyRestoredColumnVisibility(advancedSearchPane->browserView(), tab);
     wireBrowserView(advancedSearchPane->browserView(), tab);
     stack->addWidget(advancedSearchPane); // page 1: advanced search results
 
@@ -388,6 +390,14 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     // own independent FileListModel/visibility and isn't part of this mirroring.
     connect(browserView, &FileBrowserView::columnVisibilityChanged, advancedSearchPane->browserView(), &FileBrowserView::setColumnVisible);
     connect(advancedSearchPane->browserView(), &FileBrowserView::columnVisibilityChanged, browserView, &FileBrowserView::setColumnVisible);
+
+    // Records this tab's own explicit header-menu choice (Architecture.md §14.49) the moment it's
+    // toggled from either mirrored view, so captureConfig() always reads back the live state with
+    // no need to re-query FileBrowserView at close/save time.
+    connect(browserView, &FileBrowserView::columnVisibilityChanged, tab,
+            [tab](FileListModel::Column column, bool visible) { tab->setColumnHidden(column, !visible); });
+    connect(advancedSearchPane->browserView(), &FileBrowserView::columnVisibilityChanged, tab,
+            [tab](FileListModel::Column column, bool visible) { tab->setColumnHidden(column, !visible); });
 
     connect(tab, &TabViewModel::currentPathChanged, this, [this, tab](const std::filesystem::path& path) {
         const int idx = indexOfTab(tab);
@@ -492,6 +502,21 @@ void WorkspacePaneWidget::applyDefaultColumnVisibility(FileBrowserView* browserV
     {
         const auto typedColumn = static_cast<FileListModel::Column>(column);
         browserView->setColumnVisible(typedColumn, m_columnVisibilitySettingsViewModel.defaultVisibility(typedColumn));
+    }
+}
+
+void WorkspacePaneWidget::applyRestoredColumnVisibility(FileBrowserView* browserView, TabViewModel* tab)
+{
+    const auto& hiddenColumns = tab->hiddenColumns();
+    for (int column = FileListModel::NameColumn + 1; column < FileListModel::ColumnCount; ++column)
+    {
+        const std::optional<bool>& hidden = hiddenColumns[static_cast<std::size_t>(column)];
+        if (!hidden.has_value())
+        {
+            continue;
+        }
+
+        browserView->setColumnVisible(static_cast<FileListModel::Column>(column), !*hidden);
     }
 }
 

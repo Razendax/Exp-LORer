@@ -104,3 +104,45 @@ class ExpLorerFreshAppTestCase:
         with ExpLorerApp.start(data_dir=tmp_path / "data") as app:
             self.app = app
             yield
+
+
+class ExpLorerRestartableTestCase:
+    """Base for tests that need to close and relaunch Exp-LORer against the SAME data_dir, to
+    verify state round-trips through a real close -> relaunch cycle rather than just landing in
+    config.json correctly. Needed for anything captured in `MainWindow::closeEvent` and restored
+    only once, in the constructor (Architecture.md §14.14) -- e.g. side-panel expand/tab/width
+    persistence (§14.48) -- where the thing actually under test is the save-on-close/restore-on-
+    launch wiring itself, not the JSON shape (that's covered at the adapter level by
+    AppConfigStoreTest).
+
+    Starts one instance per test method (fresh `tmp_path`, stored as `self.data_dir`) in
+    `self.app`; call `self.restart()` to close it and launch a fresh instance against the same
+    `data_dir`, replacing `self.app` with the new one:
+
+        class TestSomething(ExpLorerRestartableTestCase):
+            def test_something(self) -> None:
+                self.app.layout.two_vertical.click()
+                self.restart()
+                assert self.app.layout.two_vertical.is_checked()
+    """
+
+    app: ExpLorerApp
+    data_dir: Path
+
+    @pytest.fixture(autouse=True)
+    def _fresh_app(self, tmp_path: Path) -> Iterator[None]:
+        ExpLorerApp.kill_stray_instances()
+        self.data_dir = tmp_path / "data"
+        self.app = ExpLorerApp.start(data_dir=self.data_dir)
+        try:
+            yield
+        finally:
+            self.app.close()
+
+    def restart(self) -> None:
+        """Closes the current instance (saving config.json via its closeEvent) and starts a fresh
+        one against the same data_dir, which boots by reading back whatever the previous instance
+        just saved.
+        """
+        self.app.close()
+        self.app = ExpLorerApp.start(data_dir=self.data_dir)

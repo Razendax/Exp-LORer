@@ -40,12 +40,25 @@ public:
 
     bool isExpanded() const noexcept { return m_expanded; }
 
+    // Index of the currently active/selected panel tab, or -1 if none (mirrors isExpanded()) --
+    // read back by MainWindow::closeEvent to persist panel state (Architecture.md §14.14).
+    int activeTabIndex() const noexcept { return m_activeIndex; }
+
     // Just the header strip's width -- how wide this widget should be while collapsed.
     int collapsedWidth() const;
 
-    // A fixed reasonable content width (not persisted/configurable in v1, Architecture.md §14.25)
-    // plus the header strip -- how wide this widget should be while expanded.
+    // A fixed reasonable content width (Architecture.md §14.25) plus the header strip -- how wide
+    // this widget should be while expanded, unless setPreferredExpandedWidth() set an override
+    // (e.g. restoring a previously persisted width).
     int preferredExpandedWidth() const;
+
+    // Overrides preferredExpandedWidth() with a specific width restored from persisted state.
+    // Ignores values <= 0 (leaves the computed default in place).
+    void setPreferredExpandedWidth(int width);
+
+    // Thin public wrapper for onPanelTabButtonClicked(), so restoring a persisted active tab goes
+    // through exactly the same expand/select/lazy-activate logic a real click uses.
+    void activateTab(int index);
 
 signals:
     // Fires whenever expansion state flips (collapsed <-> expanded), so the owning QSplitter can
@@ -70,4 +83,14 @@ private:
 
     bool m_expanded = false;
     int m_activeIndex = -1;
+    int m_preferredExpandedWidthOverride = 0;
+
+    // Last-seen width of the owning QSplitter (our parent), tracked across resizeEvent calls to
+    // tell an actual splitter-handle drag (the splitter's own total width is unchanged -- only how
+    // it's divided between children moved) apart from this widget merely growing because the whole
+    // window was resized/maximized, which proportionally redistributes space across the splitter's
+    // children and can push a collapsed panel's width past collapsedWidth() without anyone dragging
+    // anything. -1 ("never observed yet") never matches a real width, so the very first resizeEvent
+    // never auto-expands. See resizeEvent() for why this distinction matters.
+    int m_lastKnownSplitterWidth = -1;
 };

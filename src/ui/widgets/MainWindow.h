@@ -190,4 +190,10 @@ private:
     // Details-view column order (Architecture.md §14.14), same load/refresh/save lifecycle as
     // m_columnWidths above.
     std::array<int, FileListModel::ColumnCount> m_columnOrder{};
+
+    // Left/right side-panel expand/tab/width state (Architecture.md §14.14, §14.25/§14.41): read
+    // from AppConfig in the constructor, applied once createWorkspace() builds the panels, and
+    // captured back from the live widgets in closeEvent().
+    SidePanelState m_initialLeftPanelState;
+    SidePanelState m_initialRightPanelState;
 };

@@ -254,6 +254,8 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_diskUsageService(diskUsageService)
     , m_columnWidths(initialConfig.detailsColumnWidths)
     , m_columnOrder(initialConfig.detailsColumnOrder)
+    , m_initialLeftPanelState(initialConfig.leftPanel)
+    , m_initialRightPanelState(initialConfig.rightPanel)
 {
     setObjectName(QStringLiteral("mainWindow"));
     setWindowTitle(tr("Exp-LORer"));
@@ -529,6 +531,31 @@ void MainWindow::createWorkspace()
             [resizeSidePanel, rightPanel = m_rightPanelWidget](bool expanded) {
                 resizeSidePanel(2, expanded ? rightPanel->preferredExpandedWidth() : rightPanel->collapsedWidth());
             });
+
+    // Restore left/right side-panel expand/tab/width state (Architecture.md §14.14, §14.25/§14.41)
+    // -- activateTab() goes through the same logic as a real tab-button click, including emitting
+    // expansionChanged(true), which the resizeSidePanel lambdas above pick up to resize the
+    // splitter using the width just set here.
+    constexpr int kLeftPanelTabCount = 2;
+    constexpr int kRightPanelTabCount = 3;
+    if (m_initialLeftPanelState.width > 0)
+    {
+        m_leftPanelWidget->setPreferredExpandedWidth(m_initialLeftPanelState.width);
+    }
+    if (m_initialLeftPanelState.expanded)
+    {
+        const int tabIndex = std::clamp(m_initialLeftPanelState.activeTabIndex, 0, kLeftPanelTabCount - 1);
+        m_leftPanelWidget->activateTab(tabIndex);
+    }
+    if (m_initialRightPanelState.width > 0)
+    {
+        m_rightPanelWidget->setPreferredExpandedWidth(m_initialRightPanelState.width);
+    }
+    if (m_initialRightPanelState.expanded)
+    {
+        const int tabIndex = std::clamp(m_initialRightPanelState.activeTabIndex, 0, kRightPanelTabCount - 1);
+        m_rightPanelWidget->activateTab(tabIndex);
+    }
 
     for (WorkspacePaneId id : kAllPanes)
     {
@@ -1089,6 +1116,24 @@ void MainWindow::closeEvent(QCloseEvent* event)
     }
     config.detailsColumnWidths = m_columnWidths;
     config.detailsColumnOrder = m_columnOrder;
+
+    config.leftPanel.expanded = m_leftPanelWidget->isExpanded();
+    config.leftPanel.activeTabIndex = m_leftPanelWidget->activeTabIndex();
+    config.rightPanel.expanded = m_rightPanelWidget->isExpanded();
+    config.rightPanel.activeTabIndex = m_rightPanelWidget->activeTabIndex();
+
+    if (auto* splitter = qobject_cast<QSplitter*>(centralWidget()))
+    {
+        const QList<int> sizes = splitter->sizes();
+        if (config.leftPanel.expanded && sizes.size() > 0)
+        {
+            config.leftPanel.width = sizes[0];
+        }
+        if (config.rightPanel.expanded && sizes.size() > 2)
+        {
+            config.rightPanel.width = sizes[2];
+        }
+    }
 
     m_configStore.save(config);
 

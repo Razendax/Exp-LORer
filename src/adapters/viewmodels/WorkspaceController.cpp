@@ -101,7 +101,8 @@ WorkspaceConfig WorkspaceController::captureConfig() const
         for (int i = 0; i < paneViewModel->tabCount(); ++i)
         {
             TabViewModel* tab = paneViewModel->tabAt(i);
-            paneConfig.tabs.push_back(TabConfig{ tab->currentPath(), tab->viewMode(), tab->sortCriterion(), tab->sortAscending() });
+            paneConfig.tabs.push_back(
+                TabConfig{ tab->currentPath(), tab->viewMode(), tab->sortCriterion(), tab->sortAscending(), tab->hiddenColumns() });
         }
     }
 
@@ -127,6 +128,7 @@ bool WorkspaceController::restoreFromConfig(const WorkspaceConfig& config)
             tab->navigateTo(tabConfig.path);
             tab->setViewMode(tabConfig.viewMode);
             tab->setSortCriterion(tabConfig.sortCriterion, tabConfig.sortAscending);
+            tab->setHiddenColumns(tabConfig.hiddenColumns);
             restoredAny = true;
         }
 

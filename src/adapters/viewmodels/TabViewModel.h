@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <deque>
 #include <filesystem>
 #include <functional>
@@ -12,6 +13,7 @@
 #include <QStringList>
 
 #include "DriveSpaceInfo.h"
+#include "FileListModel.h"
 #include "FileNavigationUseCase.h"
 #include "FileNode.h"
 #include "FileTagsByPath.h"
@@ -60,6 +62,16 @@ public:
     bool forwardAvailable() const;
     bool upAvailable() const;
     ViewMode viewMode() const noexcept { return m_viewMode; }
+
+    // Per-column hide/show override for this tab (Architecture.md §14.49). nullopt slots defer to
+    // Settings > General > Columns' "default visibility for new tab"
+    // (ColumnVisibilitySettingsViewModel::defaultVisibility); see TabConfig::hiddenColumns for the
+    // full tri-state rationale.
+    const std::array<std::optional<bool>, FileListModel::ColumnCount>& hiddenColumns() const noexcept
+    {
+        return m_hiddenColumns;
+    }
+
     FileListModel* fileListModel() const noexcept { return m_fileListModel; }
     FileListModel* searchResultsModel() const noexcept { return m_searchResultsModel; }
     bool searchActive() const noexcept { return m_searchActive; }
@@ -153,6 +165,17 @@ public slots:
     void goForward();
 
     void setViewMode(ViewMode mode);
+
+    // Bulk-replaces the per-tab column-visibility overrides, used by WorkspaceController::
+    // restoreFromConfig to apply a restored TabConfig::hiddenColumns in one shot. No signal --
+    // nothing currently needs to react live to this copy changing, only read it back later via
+    // hiddenColumns() at capture time.
+    void setHiddenColumns(const std::array<std::optional<bool>, FileListModel::ColumnCount>& hiddenColumns);
+
+    // Records this tab's own explicit hide/show choice for `column` (Architecture.md §14.49),
+    // used by WorkspacePaneWidget's live FileBrowserView::columnVisibilityChanged connection so
+    // this copy always reflects the header-menu state the moment the user toggles a column.
+    void setColumnHidden(FileListModel::Column column, bool hidden);
 
     // Forwards to the tab's FileListModel, which owns the actual sort state and re-sorts both its
     // current entries and every future listing until changed again.
@@ -422,6 +445,9 @@ private:
     TagChangeNotifier& m_tagChangeNotifier;
     NavigationHistory m_history;
     ViewMode m_viewMode = ViewMode::Details;
+    // Per-tab column-visibility overrides (Architecture.md §14.49); see TabConfig::hiddenColumns
+    // for the tri-state rationale. Default-constructed to all-nullopt, same as TabConfig's.
+    std::array<std::optional<bool>, FileListModel::ColumnCount> m_hiddenColumns{};
     FileListModel* m_fileListModel = nullptr;
     std::vector<FileNode> m_selectedEntries;
 

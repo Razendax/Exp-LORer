@@ -172,7 +172,10 @@ class LeftPanel:
         return self._panel.raw
 
     def is_expanded(self) -> bool:
-        return self.tree_button.is_checked()
+        """Whether the panel is currently expanded, regardless of which tab (Tree or Search) is
+        the active one.
+        """
+        return self.tree_button.is_checked() or self.search_button.is_checked()
 
     def tree_visible(self) -> bool:
         """Whether the tree is currently on screen (panel expanded), without expanding it."""

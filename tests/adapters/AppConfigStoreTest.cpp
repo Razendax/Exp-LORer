@@ -31,9 +31,16 @@ namespace
         workspace.layout = SplitLayout::FourGrid;
         workspace.focusedPane = WorkspacePaneId::PaneC;
 
+        // A mix of true/false/nullopt hiddenColumns entries (Architecture.md §14.49) on the first
+        // tab, exercising the JSON null <-> nullopt mapping; the second tab's array stays all
+        // default-constructed nullopt, exercising the "never touched" case in the same round trip.
+        std::array<std::optional<bool>, FileListModel::ColumnCount> mixedHiddenColumns{};
+        mixedHiddenColumns[FileListModel::SizeColumn] = true;
+        mixedHiddenColumns[FileListModel::TypeColumn] = false;
+
         workspace.panes[static_cast<size_t>(WorkspacePaneId::PaneA)].activeTabIndex = 1;
         workspace.panes[static_cast<size_t>(WorkspacePaneId::PaneA)].tabs = {
-            TabConfig{ fs::path("C:/Users/example/Documents"), ViewMode::Tiles, SortCriterion::Size, false },
+            TabConfig{ fs::path("C:/Users/example/Documents"), ViewMode::Tiles, SortCriterion::Size, false, mixedHiddenColumns },
             TabConfig{ fs::path("C:/Users/example/Downloads"), ViewMode::List, SortCriterion::FileType, true },
         };
 
@@ -66,6 +73,12 @@ TEST_F(AppConfigStoreTest, LoadOnMissingFileReturnsDefaults)
     {
         EXPECT_EQ(logicalColumn, 0);
     }
+    EXPECT_FALSE(config.leftPanel.expanded);
+    EXPECT_EQ(config.leftPanel.activeTabIndex, -1);
+    EXPECT_EQ(config.leftPanel.width, 0);
+    EXPECT_FALSE(config.rightPanel.expanded);
+    EXPECT_EQ(config.rightPanel.activeTabIndex, -1);
+    EXPECT_EQ(config.rightPanel.width, 0);
 }
 
 TEST_F(AppConfigStoreTest, SaveThenLoadRoundTripsWindowGeometryAndWorkspace)
@@ -77,6 +90,8 @@ TEST_F(AppConfigStoreTest, SaveThenLoadRoundTripsWindowGeometryAndWorkspace)
     original.workspace = sampleWorkspaceConfig();
     original.detailsColumnWidths = { 220, 90, 130, 160 };
     original.detailsColumnOrder = { 2, 0, 1, 3 };
+    original.leftPanel = SidePanelState{ true, 1, 340 };
+    original.rightPanel = SidePanelState{ true, 2, 410 };
 
     ASSERT_TRUE(store.save(original));
     ASSERT_TRUE(fs::exists(m_configPath));
@@ -88,6 +103,12 @@ TEST_F(AppConfigStoreTest, SaveThenLoadRoundTripsWindowGeometryAndWorkspace)
     EXPECT_EQ(loaded.workspace.focusedPane, original.workspace.focusedPane);
     EXPECT_EQ(loaded.detailsColumnWidths, original.detailsColumnWidths);
     EXPECT_EQ(loaded.detailsColumnOrder, original.detailsColumnOrder);
+    EXPECT_EQ(loaded.leftPanel.expanded, original.leftPanel.expanded);
+    EXPECT_EQ(loaded.leftPanel.activeTabIndex, original.leftPanel.activeTabIndex);
+    EXPECT_EQ(loaded.leftPanel.width, original.leftPanel.width);
+    EXPECT_EQ(loaded.rightPanel.expanded, original.rightPanel.expanded);
+    EXPECT_EQ(loaded.rightPanel.activeTabIndex, original.rightPanel.activeTabIndex);
+    EXPECT_EQ(loaded.rightPanel.width, original.rightPanel.width);
 
     for (size_t i = 0; i < loaded.workspace.panes.size(); ++i)
     {
@@ -103,6 +124,7 @@ TEST_F(AppConfigStoreTest, SaveThenLoadRoundTripsWindowGeometryAndWorkspace)
             EXPECT_EQ(loadedPane.tabs[t].viewMode, originalPane.tabs[t].viewMode);
             EXPECT_EQ(loadedPane.tabs[t].sortCriterion, originalPane.tabs[t].sortCriterion);
             EXPECT_EQ(loadedPane.tabs[t].sortAscending, originalPane.tabs[t].sortAscending);
+            EXPECT_EQ(loadedPane.tabs[t].hiddenColumns, originalPane.tabs[t].hiddenColumns);
         }
     }
 }
@@ -171,6 +193,11 @@ TEST_F(AppConfigStoreTest, LoadOnPartialOrMalformedFieldsFallsBackPerField)
     EXPECT_EQ(paneA.tabs[0].sortCriterion, SortCriterion::Name);
     // Missing sortAscending falls back to TabConfig's default (true).
     EXPECT_TRUE(paneA.tabs[0].sortAscending);
+    // Missing hiddenColumns falls back to all-nullopt ("never explicitly toggled").
+    for (const std::optional<bool>& hidden : paneA.tabs[0].hiddenColumns)
+    {
+        EXPECT_FALSE(hidden.has_value());
+    }
     // Missing detailsColumnWidths falls back to all-zero ("unset").
     for (int width : config.detailsColumnWidths)
     {
@@ -181,6 +208,13 @@ TEST_F(AppConfigStoreTest, LoadOnPartialOrMalformedFieldsFallsBackPerField)
     {
         EXPECT_EQ(logicalColumn, 0);
     }
+    // Missing leftPanel/rightPanel keys fall back to SidePanelState defaults.
+    EXPECT_FALSE(config.leftPanel.expanded);
+    EXPECT_EQ(config.leftPanel.activeTabIndex, -1);
+    EXPECT_EQ(config.leftPanel.width, 0);
+    EXPECT_FALSE(config.rightPanel.expanded);
+    EXPECT_EQ(config.rightPanel.activeTabIndex, -1);
+    EXPECT_EQ(config.rightPanel.width, 0);
 }
 
 TEST_F(AppConfigStoreTest, LoadOnShortDetailsColumnWidthsArrayFillsRemainingColumnsWithZero)
@@ -197,6 +231,44 @@ TEST_F(AppConfigStoreTest, LoadOnShortDetailsColumnWidthsArrayFillsRemainingColu
     EXPECT_EQ(config.detailsColumnWidths[1], 100);
     EXPECT_EQ(config.detailsColumnWidths[2], 0);
     EXPECT_EQ(config.detailsColumnWidths[3], 0);
+}
+
+TEST_F(AppConfigStoreTest, LoadOnHiddenColumnsArrayMapsNullAndFallsBackPerMalformedEntry)
+{
+    {
+        std::ofstream stream(m_configPath, std::ios::binary);
+        // NameColumn=null, SizeColumn=true, TypeColumn=false, DateModifiedColumn=null (-> nullopt),
+        // GitStatusColumn wrong type (-> nullopt); TagsColumn/DateCreatedColumn/PercentColumn
+        // missing entirely (short array -> nullopt).
+        stream << R"({
+            "version": 1,
+            "workspace": {
+                "panes": {
+                    "PaneA": { "tabs": [
+                        { "path": "C:/ok", "hiddenColumns": [null, true, false, null, "not-a-bool"] }
+                    ]}
+                }
+            }
+        })";
+    }
+
+    AppConfigStore store{ m_configPath };
+    const AppConfig config = store.load();
+
+    const PaneConfig& paneA = config.workspace.panes[static_cast<size_t>(WorkspacePaneId::PaneA)];
+    ASSERT_EQ(paneA.tabs.size(), 1u);
+    const auto& hiddenColumns = paneA.tabs[0].hiddenColumns;
+
+    EXPECT_FALSE(hiddenColumns[FileListModel::NameColumn].has_value());
+    ASSERT_TRUE(hiddenColumns[FileListModel::SizeColumn].has_value());
+    EXPECT_TRUE(*hiddenColumns[FileListModel::SizeColumn]);
+    ASSERT_TRUE(hiddenColumns[FileListModel::TypeColumn].has_value());
+    EXPECT_FALSE(*hiddenColumns[FileListModel::TypeColumn]);
+    EXPECT_FALSE(hiddenColumns[FileListModel::DateModifiedColumn].has_value());
+    EXPECT_FALSE(hiddenColumns[FileListModel::GitStatusColumn].has_value());
+    EXPECT_FALSE(hiddenColumns[FileListModel::TagsColumn].has_value());
+    EXPECT_FALSE(hiddenColumns[FileListModel::DateCreatedColumn].has_value());
+    EXPECT_FALSE(hiddenColumns[FileListModel::PercentColumn].has_value());
 }
 
 TEST_F(AppConfigStoreTest, LoadOnShortDetailsColumnOrderArrayFillsRemainingColumnsWithZero)

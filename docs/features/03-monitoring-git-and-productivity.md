@@ -501,17 +501,17 @@ Name is excluded from the toggle (always visible, matching Explorer).
   change anywhere re-fetches every open tab's Tags data for its own current directory/search results,
   rather than diffing which paths actually changed — correctness over precision, and still cheap
   (one local query per open tab, off the UI thread).
-* **Per-tab visibility, not session state.** Unlike column *widths* (one shared
+* **Per-tab visibility, not global.** Unlike column *widths* (one shared
   `AppConfig::detailsColumnWidths` array applied to every tab), column *visibility* is genuinely
-  per-tab, so it is **not** added to `TabConfig`/`AppConfig` — it lives directly on each
-  `FileBrowserView`'s `QHeaderView` (`setSectionHidden`/`isSectionHidden`), exposed via
-  `FileBrowserView::setColumnVisible`/`isColumnVisible` and a new
+  per-tab — it lives directly on each `FileBrowserView`'s `QHeaderView` (`setSectionHidden`/
+  `isSectionHidden`), exposed via `FileBrowserView::setColumnVisible`/`isColumnVisible` and a
   `columnVisibilityChanged(Column, bool)` signal. A tab's three `FileBrowserView` instances (normal
   browsing, quick-search results, advanced-search pane, §14.19/§14.18) are kept in sync by that
   signal, the same "seed all three the same way" posture their column widths already have. Right-
   click on `QTreeView::header()` (`Qt::CustomContextMenu`) opens a `QMenu` of checkable per-column
-  actions (Name excluded); this is purely a UI-widget-layer addition, no ViewModel/Application
-  change, and — like the rest of the UI layer — has no CTest coverage (§11).
+  actions (Name excluded). *Superseded in part by §14.49:* this per-tab choice is now also
+  persisted across restarts via `TabConfig.hiddenColumns`, rather than being purely a UI-widget-
+  layer, session-only toggle with no ViewModel/Application involvement.
 * **Settings > General > Columns** ("Default visibility for new tab" group box, one checkbox row
   per non-Name column) follows the established `NotificationSettings*` shape exactly:
   `ColumnVisibilitySettings` (plain struct) + `ColumnVisibilitySettingsStore` (JSON, tolerant load/
@@ -702,9 +702,9 @@ tab. No Domain/Application change, no new Port, no schema change.
   feedback loop); while the panel is collapsed revealing is skipped and `showEvent` catches up, so a
   collapsed panel costs no directory listing. After a tree click the tree re-reveals the tab's
   actual folder, undoing the selection if navigation failed or was declined.
-* **Not built:** persisting the panel's state/width; files, multi-select or drag-and-drop in the
-  tree; a background ("New Folder") menu on empty tree space; async listing. (A second left-panel
-  tab, "Search," is added by §14.42.)
+* **Not built:** files, multi-select or drag-and-drop in the tree; a background ("New Folder") menu
+  on empty tree space; async listing. (A second left-panel tab, "Search," is added by §14.42.)
+  Persisting the panel's expanded/active-tab/width state across restarts is covered by §14.48.
 
 ### 14.42 Search Tab (Left Panel)
 
@@ -1100,3 +1100,78 @@ mid-transfer cancellation.
   glue carve-out; `FileTransferUseCase` (mocked `IFileSystemRepository`, `tests/application`) and
   `StandardFileSystemRepository::copyFileWithProgress` (real `:memory:`-adjacent temp-directory I/O,
   `tests/adapters`) get ordinary GTest coverage.
+
+### 14.48 Left/Right Panel State Persistence
+
+Closes the gap §14.25/§14.26/§14.41 explicitly left open: the left (Tree/Search) and right (Tags/
+Preview/Monitoring) `SidePanelWidget` instances always start collapsed on launch today, regardless
+of how the user left them. Extends `AppConfig`/`AppConfigStore`'s existing session-persistence
+mechanism (§14.14, `config.json`, save-on-close only) with one `SidePanelState{expanded,
+activeTabIndex, width}` per side panel, rather than any Domain/Application/Port/schema change —
+this is UI/adapters-config state only.
+
+* `SidePanelWidget` gains `activateTab(int)` (a public wrapper around the existing private
+  click-handling logic, so a config-driven restore goes through the exact same expand/select/
+  lazy-activate path a real click does) and `setPreferredExpandedWidth(int)` (overrides the
+  otherwise-fixed `collapsedWidth() + 260` default), plus an `activeTabIndex()` getter alongside
+  the existing `isExpanded()`.
+* `MainWindow` restores both panels once in its constructor (right after `createWorkspace()`'s
+  existing `expansionChanged` wiring, so the restore's `activateTab` call drives the same splitter-
+  resize lambda a real click would) and captures both panels' state in `closeEvent` (reading
+  `centralWidget()`'s `QSplitter::sizes()` for the live width, alongside
+  `isExpanded()`/`activeTabIndex()`).
+* **Width `0` is the "unset" sentinel**, same convention as `detailsColumnWidths` (§14.14): a panel
+  collapsed at close time has no meaningful "last expanded width" to preserve, so it's left unset
+  and falls back to `SidePanelWidget`'s own computed default whenever it's next opened.
+* **Not built:** the bottom/Terminal panel (`BottomPanelWidget`, §14.24) — out of scope, a separate,
+  differently-oriented widget; per-tab/per-pane side-panel state (the side panels are window-global,
+  matching their existing window-global construction); live autosave while running (save-on-close
+  only, matching every other piece of §14.14's session state).
+* **Bugfix uncovered by this persistence work:** `SidePanelWidget::resizeEvent`'s pre-existing
+  "dragging the splitter handle out past `collapsedWidth()` auto-reveals the panel" convenience
+  (§14.25/§14.41) fired on *any* resize that pushed a collapsed panel's width past that threshold —
+  including one caused by the whole window being resized/maximized (`QSplitter` proportionally
+  redistributes space across its children on a parent resize too, not just on an explicit handle
+  drag), not only an actual handle drag. Harmless before this feature (expand state was never
+  saved, so a spurious reveal reset on next launch regardless); once expand state started
+  surviving restarts, that same spurious reveal got *persisted* — collapsing both panels and then
+  maximizing the window before exiting would silently re-expand them, which then came back open on
+  every subsequent launch. Fixed by tracking the owning `QSplitter`'s own total width across
+  resizes (`SidePanelWidget::m_lastKnownSplitterWidth`) and only treating the growth as a deliberate
+  drag-reveal when that total is unchanged — i.e. the resize only redistributed space between the
+  splitter's children rather than the splitter itself growing. Covered by
+  `ui_tests/tests/test_side_panel_persistence.py::test_collapsed_panels_stay_collapsed_after_maximizing_before_close`.
+
+### 14.49 Per-Tab Column Visibility Persistence
+
+Reverses the "not added to `TabConfig`/`AppConfig`" half of §14.39's "Per-tab visibility, not
+global" decision: the header right-click hide/show toggle (`FileBrowserView::setColumnVisible`,
+§14.39) now survives a restart, per-tab, rather than resetting to whatever Settings → General →
+Columns' "default visibility for new tab" (`ColumnVisibilitySettingsViewModel`, §14.39) says every
+time. Deliberately kept per-tab rather than folded into the global `detailsColumnWidths`-style
+`AppConfig` mechanism (§14.14) — unlike width, two tabs showing different columns at once is the
+whole point of this feature existing, so a global override would defeat it.
+
+* `TabConfig` (`src/adapters/viewmodels/WorkspaceConfig.h`) gains
+  `std::array<std::optional<bool>, FileListModel::ColumnCount> hiddenColumns` — tri-state per
+  column: `nullopt` ("never explicitly toggled in this tab") defers to the Settings dialog's
+  default exactly as before this feature; `Some(bool)` is this tab's own explicit choice, which
+  always wins over that default once set, the same "no second-guessing a restored value" posture
+  `viewMode`/`sortCriterion` already have. `NameColumn`'s slot is always `nullopt` — Name can
+  never be hidden.
+* `TabViewModel` carries it as plain storage (`hiddenColumns()`/`setHiddenColumns(...)`/
+  `setColumnHidden(column, bool)`), the same shape `m_viewMode` already has — no new signal, since
+  nothing needs to react live to it, only read it back at capture time.
+  `WorkspaceController::restoreFromConfig`/`captureConfig` thread it through exactly like
+  `viewMode`/`sortCriterion` already are.
+* `WorkspacePaneWidget::addPageForTab` applies `tab->hiddenColumns()` as an override *after* the
+  existing `applyDefaultColumnVisibility` call (unchanged, still the baseline for any untouched
+  column), and a new connection from each view's `columnVisibilityChanged` keeps `tab`'s copy live
+  as the user toggles columns, so `captureConfig()` always reads the current truth without any
+  separate close-time re-read step.
+* JSON (`AppConfigStore`'s existing `tabConfigToJson`/`tabConfigFromJson`): one `QJsonArray` entry
+  per column, `null` for `nullopt`, else the plain bool — tolerant of a missing/wrong-length/
+  wrong-type array exactly like every other per-field fallback in this file.
+* **Not built:** any change to `ColumnVisibilitySettingsStore`/the Settings dialog default itself;
+  cross-tab/cross-pane visibility syncing (deliberately per-tab, per §14.39); any Domain/
+  Application/Port/schema change.

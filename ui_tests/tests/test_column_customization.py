@@ -19,6 +19,7 @@ from framework import (
     ExpLorerApp,
     ExpLorerConfig,
     ExpLorerFreshAppTestCase,
+    ExpLorerRestartableTestCase,
     drag_header,
     read_header_titles,
     toggle_column_visibility,
@@ -120,6 +121,56 @@ class TestDefaultColumnsForNewTabs:
 
         # Every other column keeps its own normal (checked) default -- only Percent was seeded off.
         assert titles == ["Name"] + [title for title in TOGGLEABLE_COLUMN_TITLES if title != "Percent"]
+
+
+class TestColumnVisibilityPersistsPerTabAcrossRestart(ExpLorerRestartableTestCase):
+    """Architecture.md §14.49: the header-menu toggle is per-*tab*, not a session-wide setting, so
+    this is the key proof that independence actually survives a restart -- not just that some
+    column's state round-trips in isolation (that's covered by `WorkspaceControllerTest`/
+    `AppConfigStoreTest` at the adapter level; this suite covers the restore-on-launch wiring
+    itself, same posture as `ExpLorerRestartableTestCase`'s other users).
+    """
+
+    def test_hiding_a_column_in_one_tab_leaves_another_tab_and_a_post_restart_new_tab_on_default(self) -> None:
+        tabs = self.app.panes.a.tabs
+        tree = self.app.panes.a.file_tree_view
+
+        wait_until(lambda: read_header_titles(tree) or None)
+
+        # Tab B, opened before the toggle below -- it must keep following the Settings-dialog
+        # default (every column visible) rather than inheriting tab A's later choice.
+        self.app.navigation.new_tab.click()
+        wait_until(lambda: tabs.titles() == ["This PC", "This PC"])
+
+        tabs.select(0)
+        wait_until(lambda: read_header_titles(tree) or None)
+        toggle_column_visibility(tree, "Tags")
+        wait_until(lambda: "Tags" not in read_header_titles(tree))
+
+        tabs.select(1)
+        wait_until(lambda: "Tags" in read_header_titles(tree))
+
+        self.restart()
+
+        tabs = self.app.panes.a.tabs
+        tree = self.app.panes.a.file_tree_view
+        wait_until(lambda: tabs.titles() == ["This PC", "This PC"])
+
+        tabs.select(0)
+        wait_until(lambda: read_header_titles(tree) or None)
+        assert "Tags" not in read_header_titles(tree)  # tab A's own explicit choice survived
+
+        tabs.select(1)
+        wait_until(lambda: read_header_titles(tree) or None)
+        assert "Tags" in read_header_titles(tree)  # tab B never touched it -- still on default
+
+        # Tab C, created fresh only after the restart -- it has no restored record at all, so it
+        # must also follow the Settings-dialog default, not tab A's restored choice.
+        self.app.navigation.new_tab.click()
+        wait_until(lambda: tabs.titles() == ["This PC", "This PC", "This PC"])
+        tabs.select(2)
+        wait_until(lambda: read_header_titles(tree) or None)
+        assert "Tags" in read_header_titles(tree)
 
 
 class TestColumnReordering(ExpLorerFreshAppTestCase):

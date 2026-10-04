@@ -7,6 +7,16 @@
 #include "FileListModel.h"
 #include "WorkspaceConfig.h"
 
+// One SidePanelWidget's persisted state (Architecture.md §14.25/§14.41 — previously unpersisted).
+// activeTabIndex/width are only meaningful while expanded; width 0 is the "unset" sentinel (same
+// convention as detailsColumnWidths) -- SidePanelWidget falls back to its own computed default.
+struct SidePanelState
+{
+    bool expanded = false;
+    int activeTabIndex = -1;
+    int width = 0; 
+};
+
 // Qt-dependent persistence-boundary type (Architecture.md §14.14) — unlike WorkspaceConfig, this
 // struct is allowed to reference Qt directly since src/adapters/config is the Qt/JSON boundary,
 // the same posture SQLiteTagRepository/ContextMenuIcon already have at their own boundaries.
@@ -14,6 +24,12 @@ struct AppConfig
 {
     QByteArray windowGeometry;
     WorkspaceConfig workspace;
+
+    // Left panel (Tree/Search) and right panel (Tags/Preview/Monitoring) expand/tab/width state
+    // (Architecture.md §14.14, §14.25/§14.41) -- same save-on-close/restore-on-launch posture as
+    // every other field here.
+    SidePanelState leftPanel;
+    SidePanelState rightPanel;
 
     // Details-view column widths (indexed by FileListModel::Column), shared across every tab/pane
     // rather than captured per-tab like TabConfig's ViewMode/SortCriterion — a column layout is a

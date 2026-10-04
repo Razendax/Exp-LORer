@@ -48,7 +48,7 @@ from .manage_favorites_dialog import ManageFavoritesDialog
 from .modal_dialog import connect_by_handle, find_control
 from .tag_chip import TagChip, chip_names, find_chip, find_chip_label
 from .tag_manager_dialog import TagManagerDialog, open_tag_manager_dialog
-from .testcase import ExpLorerFreshAppTestCase, ExpLorerTestCase
+from .testcase import ExpLorerFreshAppTestCase, ExpLorerRestartableTestCase, ExpLorerTestCase
 from .wait import wait_until
 
 __all__ = [
@@ -85,5 +85,6 @@ __all__ = [
     "ManageFavoritesDialog",
     "ExpLorerTestCase",
     "ExpLorerFreshAppTestCase",
+    "ExpLorerRestartableTestCase",
     "wait_until",
 ]

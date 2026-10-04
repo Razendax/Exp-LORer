@@ -567,6 +567,9 @@ Like the bottom panel, expanded/collapsed state is not persisted across restarts
 *Superseded in part by §14.41:* `RightPanelWidget` was generalized into `SidePanelWidget(Edge)`,
 which now serves both this panel and the new left panel; its behavior here is unchanged.
 
+*Superseded in part by §14.48:* this panel's expanded/collapsed state, active tab, and width are
+now persisted across restarts, alongside the left panel's.
+
 ### 14.26 Right-Panel File Preview (Preview Tab)
 
 A second `RightPanelWidget` tab, "Preview" (§14.25's panel already supports more than one tab with
@@ -622,6 +625,7 @@ do background-thread Port dispatch (§5).
   second `RightPanelWidget` tab next to "Tags" — no change needed to `RightPanelWidget` itself.
 * **Not built:** video playback; a recursive/multi-level folder tree; animated-GIF playback beyond
   a static first frame (goes through the image path); full-content display beyond the byte cap
-  (syntax highlighting of the shown prefix is covered by §14.27); persisting the Preview tab's
-  expanded/collapsed state (matches §14.24/§14.25's existing unpersisted posture); a Linux
-  media-decoding backend.
+  (syntax highlighting of the shown prefix is covered by §14.27); a Linux media-decoding backend.
+  Persisting which panel tab (including this one) is active and expanded is covered by §14.48,
+  superseding the "matches §14.24's existing unpersisted posture" note this bullet previously had
+  for the Preview tab specifically — the bottom panel (§14.24) itself remains unpersisted.
