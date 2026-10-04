@@ -18,12 +18,38 @@ window.
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import win32gui
 from pywinauto.application import Application
 
 from .wait import wait_until
+
+
+def visible_top_level_window_handles() -> List[int]:
+    """A snapshot of every currently visible top-level window handle (raw Win32 enumeration, not
+    UI Automation) -- pair with `wait_for_new_top_level_window` to detect a window that just
+    appeared (e.g. an externally-launched default-app window opened via "Open with default
+    application") without depending on a known title or process name.
+    """
+    handles: List[int] = []
+    win32gui.EnumWindows(
+        lambda hwnd, _: handles.append(hwnd) if win32gui.IsWindowVisible(hwnd) else None, None
+    )
+    return handles
+
+
+def wait_for_new_top_level_window(before: List[int], timeout: float = 5) -> int:
+    """Polls for a visible top-level window handle not present in `before` (a prior
+    `visible_top_level_window_handles()` snapshot), returning its HWND once found. Raises on
+    timeout via `wait_until`.
+    """
+
+    def _find() -> Optional[int]:
+        new = [hwnd for hwnd in visible_top_level_window_handles() if hwnd not in before]
+        return new[0] if new else None
+
+    return wait_until(_find, timeout=timeout)
 
 
 def wait_for_window_handle(title: str, timeout: float = 5) -> int:

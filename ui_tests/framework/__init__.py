@@ -30,22 +30,45 @@ from .app import ExpLorerApp
 from .automation_id import AutomationID, find
 from .bottom_panel import BottomPanel, FolderSizePanel
 from .config import THIS_PC, ExpLorerConfig, SplitLayout, WorkspacePaneId
+from .context_menu import ContextMenu, open_context_menu
 from .details_view import (
     TOGGLEABLE_COLUMN_TITLES,
     DetailsRow,
+    activate_selection_with_enter,
+    begin_rename,
+    cancel_rename,
+    commit_rename,
+    confirm_delete_dialog,
+    copy_selection,
+    cut_selection,
+    delete_selection,
+    double_click_row,
     drag_header,
     find_header,
     find_row,
+    paste_clipboard,
     read_details_rows,
     read_header_titles,
+    read_name_column,
+    rename,
+    row_item,
+    select_all,
     select_row,
+    selected_names,
     toggle_column_visibility,
 )
 from .element import Element
 from .favorites_menu import FavoritesMenu
 from .left_panel import FolderTree, LeftPanel
 from .manage_favorites_dialog import ManageFavoritesDialog
-from .modal_dialog import connect_by_handle, find_control
+from .modal_dialog import (
+    connect_by_handle,
+    find_control,
+    visible_top_level_window_handles,
+    wait_for_new_top_level_window,
+    wait_for_window_handle,
+)
+from .notification_overlay import NotificationOverlay
 from .tag_chip import TagChip, chip_names, find_chip, find_chip_label
 from .tag_manager_dialog import TagManagerDialog, open_tag_manager_dialog
 from .testcase import ExpLorerFreshAppTestCase, ExpLorerRestartableTestCase, ExpLorerTestCase
@@ -64,7 +87,9 @@ __all__ = [
     "read_details_rows",
     "find_row",
     "select_row",
+    "selected_names",
     "read_header_titles",
+    "read_name_column",
     "find_header",
     "drag_header",
     "toggle_column_visibility",
@@ -73,6 +98,25 @@ __all__ = [
     "FolderSizePanel",
     "connect_by_handle",
     "find_control",
+    "wait_for_window_handle",
+    "visible_top_level_window_handles",
+    "wait_for_new_top_level_window",
+    "row_item",
+    "double_click_row",
+    "activate_selection_with_enter",
+    "select_all",
+    "copy_selection",
+    "cut_selection",
+    "paste_clipboard",
+    "delete_selection",
+    "confirm_delete_dialog",
+    "begin_rename",
+    "commit_rename",
+    "cancel_rename",
+    "rename",
+    "ContextMenu",
+    "open_context_menu",
+    "NotificationOverlay",
     "TagChip",
     "find_chip",
     "find_chip_label",

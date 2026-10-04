@@ -39,11 +39,11 @@ class TestDetailsView(ExpLorerTestCase):
 
         txt_row = find_row(rows, "notes.txt")
         assert txt_row.type == "TXT File"
-        assert txt_row.size == "5"
+        assert txt_row.size == "5 B"
 
         bin_row = find_row(rows, "data.bin")
         assert bin_row.type == "BIN File"
-        assert bin_row.size == "1234"
+        assert bin_row.size == "1.2 KB"  # 1234 B, FileSizeFormat::format
 
         no_ext_row = find_row(rows, "README")
         assert no_ext_row.type == "File"

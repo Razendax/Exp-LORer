@@ -21,6 +21,42 @@ class PaneNavigation:
         self.view_mode = Element(container, AutomationID.PANE_VIEW_MODE_BUTTON)
         self.new_tab = Element(container, AutomationID.PANE_NEW_TAB_BUTTON)
         self.address_bar = Element(container, AutomationID.PANE_ADDRESS_BAR)
+        self._address_bar_popup = Element(container, AutomationID.PANE_ADDRESS_BAR_POPUP)
+
+    def type_partial(self, text: str) -> None:
+        """Clicks the address bar and types `text` via real keystrokes, without pressing Enter --
+        for exercising the folder-suggestion popup (`AddressBarWidget`, Architecture.md §14.21),
+        which is driven by `QLineEdit::textEdited` specifically. Like `SearchPanel.type_query`
+        (see its docstring), `Element.set_text`'s UIA `SetValue` path only emits `textChanged`,
+        never `textEdited`, so it would silently never show the popup.
+        """
+        self.address_bar.click()
+        self.address_bar.raw.type_keys("^a{DELETE}" + text, with_spaces=True)
+
+    def popup_suggestions(self) -> List[str]:
+        """Folder names currently listed in the address bar's autocomplete popup
+        (`PANE_ADDRESS_BAR_POPUP`, a `QListWidget`), top to bottom. Empty if the popup isn't
+        showing.
+
+        Confirmed against a real build: this is currently unable to see the popup's actual rows
+        even while it's genuinely visible on screen. `AddressBarWidget` gives the popup
+        `Qt::ToolTip | Qt::FramelessWindowHint` plus `WA_ShowWithoutActivating`, which makes it a
+        separate native top-level, non-activating window rather than a normal child widget --
+        reachable by automation id (unlike `modal_dialog.py`'s dialogs, this needs no HWND-diff
+        trick, `find()` locates it fine among the main window's siblings), but it reports zero UI
+        Automation descendants no matter how long the wait (ruled out the "brand-new top-level
+        window populates its accessibility tree lazily" lag `modal_dialog.py` documents -- still
+        empty after a 5s poll). Prefer asserting on the address bar's own inline-ghost-completion
+        text (`address_bar.text`) and on where Enter/Tab/Down+Enter actually land instead of on
+        this method's return value.
+        """
+        if not self._address_bar_popup.exists(timeout=0.5) or not self._address_bar_popup.raw.is_visible():
+            return []
+        return [
+            item.window_text()
+            for item in self._address_bar_popup.raw.children()
+            if item.element_info.control_type == "ListItem"
+        ]
 
     def navigate_to(self, path: str, timeout: float = 5) -> None:
         """Types `path` into the address bar and presses Enter, then waits for the address bar to
@@ -78,6 +114,85 @@ class PaneStatusBar:
         self.quick_select_edit = Element(container, AutomationID.PANE_STATUS_QUICK_SELECT_EDIT)
 
 
+class AdvancedSearchPanel:
+    """The Advanced (criteria) Search pane (`SearchCriteriaPanel` + its results, wrapped together
+    as `SearchResultsPane`, Architecture.md §14.19) -- one of this pane's current tab's two
+    `QStackedWidget` pages (page 0 is plain browsing, page 1 is this), swapped in by
+    `SearchPanelWidget`'s "Advanced Search..." button (`LeftPanel.search.click_advanced_search()`)
+    or by clicking a tag chip (§14.20). Scoped through the *pane's* own container, not the left
+    panel's -- despite the entry-point button living in the left panel's Search tab, the pane
+    itself (its own per-tab content) is where the criteria fields and results actually render.
+
+    Results render in the same `FILE_TREE_VIEW`/`FILE_LIST_VIEW` ids as normal browsing (reused
+    per the per-tab-content id convention, automation_id.py); read them with `result_names()`
+    below rather than `details_view.read_details_rows` -- confirmed against a real build that at
+    this app's default window size, every one of `FileListModel::ColumnCount` (8) columns is
+    visible but the results tree itself is narrower than their combined width, so trailing
+    columns (Date created/Percent) are scrolled out of the viewport and contribute no cell at
+    all, breaking `read_details_rows`' fixed 8-cells-per-row assumption.
+    """
+
+    def __init__(self, container: Callable[[], object]):
+        self._panel = Element(container, AutomationID.SEARCH_CRITERIA_PANEL)
+        self.name_edit = Element(container, AutomationID.SEARCH_NAME_EDIT)
+        self.min_size_spin = Element(container, AutomationID.SEARCH_MIN_SIZE_SPIN)
+        self.max_size_spin = Element(container, AutomationID.SEARCH_MAX_SIZE_SPIN)
+        self.submit_button = Element(container, AutomationID.SEARCH_SUBMIT_BUTTON)
+        self.close_button = Element(container, AutomationID.ADVANCED_SEARCH_CLOSE_BUTTON)
+        self.tag_edit = Element(container, AutomationID.SEARCH_TAG_EDIT)
+        self.results_pane = Element(container, AutomationID.ADVANCED_SEARCH_RESULTS_PANE)
+        self._results_tree_view = Element(lambda: self.results_pane.raw, AutomationID.FILE_TREE_VIEW)
+
+    def is_visible(self) -> bool:
+        """Whether this pane's per-tab stack is currently showing the Advanced Search page
+        (vs. plain browsing), without triggering it.
+        """
+        try:
+            return self._panel.exists(timeout=0.5) and bool(self._panel.raw.is_visible())
+        except LookupError:
+            return False
+
+    def set_name(self, text: str) -> None:
+        """Replaces the Name field's text -- selects everything and deletes it first (rather than
+        relying on typing-over-a-selection to replace it) so clearing the field (`text=""`)
+        actually works too.
+        """
+        self.name_edit.click()
+        self.name_edit.raw.type_keys("^a{DELETE}" + text, with_spaces=True)
+
+    def set_min_size_kb(self, value: int) -> None:
+        self.min_size_spin.click()
+        self.min_size_spin.raw.type_keys("^a{DELETE}" + str(value))
+
+    def set_max_size_kb(self, value: int) -> None:
+        self.max_size_spin.click()
+        self.max_size_spin.raw.type_keys("^a{DELETE}" + str(value))
+
+    def submit(self) -> None:
+        self.submit_button.click()
+
+    def is_searching(self) -> bool:
+        """Whether the Search button currently reads "Searching..." (`setSearching(true)`,
+        Architecture.md §14.38) rather than its idle "Search" label.
+        """
+        return self.submit_button.text != "Search"
+
+    def close(self) -> None:
+        self.close_button.click()
+
+    def result_names(self) -> List[str]:
+        """Display names of every currently shown result row, top to bottom. Reads only the Name
+        column (`details_view.read_name_column`) rather than the full 8-column
+        `read_details_rows` shape -- confirmed against a real build that at this app's default
+        window size, the results tree is narrower than its own 8 columns' combined width, so
+        trailing columns (Date created/Percent) can be scrolled out of view and contribute no
+        cell at all, which would otherwise misalign a fixed-stride row reader.
+        """
+        from .details_view import read_name_column
+
+        return read_name_column(self._results_tree_view)
+
+
 class WorkspacePane:
     """One of the 4 WorkspacePaneWidget instances. Only the pane container id is per-instance;
     everything it owns (toolbar, address bar, tab content, status bar) reuses one fixed id across
@@ -93,6 +208,7 @@ class WorkspacePane:
         self.file_list_view = Element(self._container, AutomationID.FILE_LIST_VIEW)
         self.file_tree_view = Element(self._container, AutomationID.FILE_TREE_VIEW)
         self.bottom_panel = BottomPanel(self._container)
+        self.advanced_search = AdvancedSearchPanel(self._container)
 
     def _container(self) -> Any:
         return self._pane.raw

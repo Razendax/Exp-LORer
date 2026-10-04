@@ -143,6 +143,18 @@ void FileOperationsController::pasteInto(const std::filesystem::path& destinatio
         }
 
         const std::filesystem::path source(url.toLocalFile().toStdWString());
+
+        // Pasting a cut item back into the very folder it was cut from is a no-op (matches
+        // Explorer): without this check, uniqueDestinationName sees the item colliding with
+        // itself and "moves" it sideways to e.g. "name (2).ext" instead of leaving it alone. A
+        // copy-paste into the same folder is unaffected -- producing a "(2)" duplicate there is
+        // the correct, intentional behavior.
+        if (isMove && pathsEqualCaseInsensitive(source.parent_path(), destinationDirectory))
+        {
+            sourceParents.push_back(source.parent_path());
+            continue;
+        }
+
         const std::filesystem::path candidate = uniqueDestinationName(destinationDirectory, source.filename());
 
         if (isMove)

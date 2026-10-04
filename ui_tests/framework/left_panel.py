@@ -89,6 +89,7 @@ class SearchPanel:
         self.whole_word_button = Element(container, AutomationID.SEARCH_WHOLE_WORD_BUTTON)
         self.exact_name_button = Element(container, AutomationID.SEARCH_EXACT_NAME_BUTTON)
         self.regex_button = Element(container, AutomationID.SEARCH_REGEX_BUTTON)
+        self.skip_git_ignored_button = Element(container, AutomationID.SEARCH_SKIP_GIT_IGNORED_BUTTON)
         self._list_results = Element(container, AutomationID.SEARCH_LIST_RESULTS_VIEW)
         self._tree_results = Element(container, AutomationID.SEARCH_TREE_RESULTS_VIEW)
 
@@ -96,12 +97,28 @@ class SearchPanel:
         return self._list_results.raw
 
     def type_query(self, text: str) -> None:
-        """Clicks the search bar and types `text` -- live-as-you-type, no Enter needed."""
+        """Clicks the search bar and types `text` via real keystrokes -- live-as-you-type, no
+        Enter needed.
+
+        Deliberately uses `raw.type_keys` rather than `Element.set_text` -- confirmed against a
+        real build that `set_text`'s UIA `ValuePattern.SetValue` path ends up calling plain
+        `QLineEdit::setText()`, which only emits Qt's `textChanged`, never `textEdited`,  while
+        `SearchPanelWidget` wires its live search (and its debounce timer, Architecture.md
+        §14.46) to `textEdited` specifically -- a `set_text`-driven query silently never searches
+        at all.
+        """
         self.search_bar.click()
-        self.search_bar.set_text(text)
+        self.search_bar.raw.type_keys(text, with_spaces=True)
 
     def click_refresh(self) -> None:
         self.refresh_button.click()
+
+    def press_enter(self) -> None:
+        """Presses Enter in the search bar -- forces a fresh disk scan rooted at the tab's
+        current folder (`SearchPanelWidget`'s `returnPressed` handler), the same as clicking
+        Refresh, regardless of whether a search is already active (Architecture.md §14.43).
+        """
+        self.search_bar.raw.type_keys("{ENTER}")
 
     def click_clear(self) -> None:
         self.clear_button.click()
@@ -124,35 +141,61 @@ class SearchPanel:
     def result_names(self) -> List[str]:
         """Display names of every currently shown result, top to bottom -- reads whichever of the
         list/tree pages is currently active (list is a Details-view FileBrowserView with every
-        column but Name hidden; tree is a plain 1-column QTreeView). pywinauto/UIA exposes row
-        text but not the delegate's bold/highlight styling, so "highlighted part" itself isn't
-        assertable here -- only that the right names appear/are filtered.
+        column but Name hidden -- `SearchPanelWidget`'s constructor hides them explicitly; tree is
+        a plain 1-column QTreeView). pywinauto/UIA exposes row text but not the delegate's
+        bold/highlight styling, so "highlighted part" itself isn't assertable here -- only that
+        the right names appear/are filtered.
+
+        Reads the list view's `TreeItem` children directly rather than going through
+        `details_view.read_details_rows` -- that helper assumes every one of
+        `FileListModel::ColumnCount` (8) columns is visible and groups the flat cell stream into
+        chunks of 8 accordingly (confirmed against a real build: with only Name visible, each row
+        contributes exactly 1 cell, so an 8-wide grouping silently discards every row as a short,
+        incomplete trailing chunk).
         """
         if self.is_tree_view():
             return [item.window_text() for item in self._tree_items()]
 
-        from .details_view import read_details_rows
-
         inner_tree_view = Element(self._list_results_container, AutomationID.FILE_TREE_VIEW)
-        return [row.name for row in read_details_rows(inner_tree_view)]
+        return [
+            child.window_text()
+            for child in inner_tree_view.raw.children()
+            if child.element_info.control_type == "TreeItem"
+        ]
 
-    def double_click(self, name: str) -> None:
-        """Double-clicks a result row by name, in whichever of list/tree mode is currently active
-        -- navigates via SearchPanelWidget::resultActivated.
-        """
+    def _result_item(self, name: str) -> Any:
         if self.is_tree_view():
             for item in self._tree_items():
                 if item.window_text() == name:
-                    item.double_click_input()
-                    return
+                    return item
             raise LookupError(f"No search tree result named {name!r} among {self.result_names()}")
 
         inner_tree_view = Element(self._list_results_container, AutomationID.FILE_TREE_VIEW)
         for child in inner_tree_view.raw.children():
             if child.element_info.control_type == "TreeItem" and child.window_text() == name:
-                child.double_click_input()
-                return
+                return child
         raise LookupError(f"No search result named {name!r} among {self.result_names()}")
+
+    def select(self, name: str) -> None:
+        """Single-clicks a result row by name, in whichever of list/tree mode is currently active
+        -- bubbles `SearchPanelWidget::selectionChanged`, syncing the main pane's right panel
+        (tags/preview) to this result (Architecture.md §14.43).
+        """
+        self._result_item(name).click_input()
+
+    def double_click(self, name: str) -> None:
+        """Double-clicks a result row by name, in whichever of list/tree mode is currently active
+        -- navigates via SearchPanelWidget::resultActivated.
+
+        Uses a raw-Win32 double-click at the row's screen coordinates, after re-forcing the main
+        window to the foreground -- same fix, and same reason, as `details_view.double_click_row`.
+        """
+        from .focus import bring_to_foreground, double_click_at
+
+        item = self._result_item(name)
+        bring_to_foreground(item)
+        rect = item.rectangle()
+        double_click_at((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
 
 
 class LeftPanel:

@@ -23,9 +23,11 @@ from .element import Element
 from .favorites_menu import FavoritesMenu
 from .layout import LayoutToolbar
 from .left_panel import LeftPanel
+from .notification_overlay import NotificationOverlay
 from .pane import PaneNavigation, WorkspacePanes
 from .right_panel import RightPanel
 from .status_bar import MainStatusBar
+from .view_menu import ViewMenu
 
 WINDOW_TITLE = "Exp-LORer"
 PROCESS_NAME = "Exp-LORer.exe"
@@ -52,7 +54,9 @@ class ExpLorerApp:
         self.layout = LayoutToolbar(self._container)
         self.status_bar = MainStatusBar(self._container)
         self.favorites = FavoritesMenu(self)
+        self.view_menu = ViewMenu(self)
         self.advanced_search_button = Element(self._container, AutomationID.ADVANCED_SEARCH_BUTTON)
+        self.notifications = NotificationOverlay(self._container)
 
     def _container(self) -> Any:
         return self.window
@@ -93,6 +97,21 @@ class ExpLorerApp:
         )
         window = application.window(title=WINDOW_TITLE)
         window.wait("visible", timeout=timeout)
+
+        # Force the new window to the OS foreground. Confirmed by hand that without this,
+        # double-click/Enter-based activation (QAbstractItemView::activated -- double_click_row,
+        # activate_selection_with_enter, SearchPanel.double_click, ...) can silently never fire at
+        # all in this environment even though a plain single click still lands fine: a freshly
+        # `Application.start()`-launched window isn't guaranteed to actually be the foreground
+        # window the moment it becomes visible, and double-click *registration* (unlike a
+        # SelectionItem-pattern single click) depends on the real OS input focus/activation state.
+        try:
+            import win32gui
+
+            win32gui.SetForegroundWindow(window.handle)
+        except Exception:  # noqa: BLE001 -- best-effort; a failure here shouldn't abort startup
+            pass
+
         return cls(application, window)
 
     def close(self) -> None:

@@ -88,6 +88,7 @@ class AutomationID:
     SEARCH_WHOLE_WORD_BUTTON = "searchWholeWordButton"
     SEARCH_EXACT_NAME_BUTTON = "searchExactNameButton"
     SEARCH_REGEX_BUTTON = "searchRegexButton"
+    SEARCH_SKIP_GIT_IGNORED_BUTTON = "searchSkipGitIgnoredButton"
     TAG_PANEL = "tagPanelWidget"
     PREVIEW_PANEL = "previewPanelWidget"
     MONITORING_PANEL = "monitoringPanelWidget"
@@ -154,6 +155,14 @@ class AutomationID:
     MONITORING_PIN_BUTTON = "monitoringPinButton"
     MONITORING_LOG_VIEW = "monitoringLogView"
     MONITORING_TOTAL_LABEL = "monitoringTotalLabel"
+
+    # --- Notification Overlay (NotificationOverlayWidget.cpp, singleton, Architecture.md §14.37) ---
+    # Toast/progress cards are dynamic -- any number can stack concurrently -- so, like tag chips,
+    # NOTIFICATION_OVERLAY is the one stable anchor; locate a specific card among its children by
+    # control type/text (see `framework/notification_overlay.py`) rather than by id.
+    NOTIFICATION_OVERLAY = "notificationOverlayWidget"
+    PROGRESS_NOTIFICATION = "progressNotificationWidget"
+    TOAST_NOTIFICATION = "toastNotificationWidget"
 
     # --- Settings Dialog (SettingsDialog.cpp, modal, never more than one open) ---
     SETTINGS_DIALOG = "settingsDialog"

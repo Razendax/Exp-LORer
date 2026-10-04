@@ -44,6 +44,17 @@ def _make_three_files_with_non_monotonic_name_order(target: Path) -> None:
     (target / "c_medium.txt").write_bytes(b"x" * 500)
 
 
+# FileListModel's Size column is always human-readable-formatted (FileSizeFormat::format, e.g.
+# "10 B"/"4.9 KB"), never a bare byte count -- parse it back to compare order across differing
+# units.
+_SIZE_UNIT_MULTIPLIERS = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
+
+
+def _parse_formatted_size(formatted: str) -> float:
+    value, unit = formatted.split()
+    return float(value) * _SIZE_UNIT_MULTIPLIERS[unit]
+
+
 def test_clicking_size_header_sorts_rows_by_size(app: ExpLorerApp, tmp_path: Path) -> None:
     target = tmp_path / "sort_by_size"
     _make_three_files_with_non_monotonic_name_order(target)
@@ -54,7 +65,7 @@ def test_clicking_size_header_sorts_rows_by_size(app: ExpLorerApp, tmp_path: Pat
     _click_header(app.panes.a.file_tree_view, "Size")
 
     rows = _wait_for_row_count(app.panes.a.file_tree_view, 3)
-    sizes = [int(row.size) for row in rows]
+    sizes = [_parse_formatted_size(row.size) for row in rows]
     assert sizes == sorted(sizes) or sizes == sorted(sizes, reverse=True)
 
 
@@ -90,13 +101,13 @@ def test_sort_order_persists_when_navigating_to_another_folder(app: ExpLorerApp,
     _click_header(app.panes.a.file_tree_view, "Size")
 
     first_rows = _wait_for_row_count(app.panes.a.file_tree_view, 3)
-    first_sizes = [int(row.size) for row in first_rows]
+    first_sizes = [_parse_formatted_size(row.size) for row in first_rows]
     ascending = first_sizes == sorted(first_sizes)
     assert ascending or first_sizes == sorted(first_sizes, reverse=True)
 
     app.navigation.navigate_to(str(second_dir))
     second_rows = _wait_for_row_count(app.panes.a.file_tree_view, 3)
-    second_sizes = [int(row.size) for row in second_rows]
+    second_sizes = [_parse_formatted_size(row.size) for row in second_rows]
 
     # No header click here -- the *same* sort criterion/direction set on `first_dir` must already
     # apply to `second_dir`'s listing, without the test re-clicking "Size".

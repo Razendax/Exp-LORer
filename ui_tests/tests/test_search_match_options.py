@@ -1,7 +1,8 @@
-"""Coverage for the quick Search tab's Match Case/Whole Word/Exact Name/Match Regex toggles
-(SearchPanelWidget, Architecture.md §14.44): Match Case narrowing/widening which results show up
-for a differently-cased query, and the ExclusiveOptional behavior of the Whole Word/Exact Name/
-Regex group -- clicking the already-active one again reverts to the default (Contains) behavior.
+"""Coverage for the quick Search tab's Match Case/Whole Word/Exact Name/Match Regex/Skip
+Git-Ignored toggles (SearchPanelWidget, Architecture.md §14.44/§14.45): Match Case narrowing/
+widening which results show up for a differently-cased query, the ExclusiveOptional behavior of
+the Whole Word/Exact Name/Regex group -- clicking the already-active one again reverts to the
+default (Contains) behavior -- and Skip Git-Ignored excluding/including `.gitignore`d entries.
 
 Uses `ExpLorerFreshAppTestCase`: the search panel's toggle state is window-wide state a shared
 instance would carry from one test method into the next.
@@ -9,6 +10,7 @@ instance would carry from one test method into the next.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 from framework import ExpLorerFreshAppTestCase
@@ -78,3 +80,27 @@ class TestSearchMatchModeExclusiveOptional(ExpLorerFreshAppTestCase):
         search.regex_button.click()
         wait_until(lambda: search.regex_button.is_checked())
         assert not search.exact_name_button.is_checked()
+
+
+class TestSearchSkipGitIgnoredToggle(ExpLorerFreshAppTestCase):
+    def test_skip_git_ignored_excludes_and_reincludes_ignored_entries(self, tmp_path: Path) -> None:
+        root = tmp_path / "skip_git_ignored_root"
+        root.mkdir()
+        subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
+        (root / ".gitignore").write_text("ignored_match.txt\n")
+        (root / "ignored_match.txt").write_text("x")
+        (root / "kept_match.txt").write_text("x")
+
+        self.app.navigation.navigate_to(str(root))
+        search = self.app.left_panel.search
+        search.type_query("match")
+
+        wait_until(lambda: set(search.result_names()) == {"ignored_match.txt", "kept_match.txt"})
+
+        search.skip_git_ignored_button.click()
+        wait_until(lambda: search.result_names() == ["kept_match.txt"])
+        assert search.skip_git_ignored_button.is_checked()
+
+        search.skip_git_ignored_button.click()
+        wait_until(lambda: set(search.result_names()) == {"ignored_match.txt", "kept_match.txt"})
+        assert not search.skip_git_ignored_button.is_checked()
