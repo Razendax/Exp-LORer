@@ -5,6 +5,7 @@
 #include <string_view>
 #include <utility>
 
+#include "Logging.h"
 #include "PathUtf8.h"
 
 namespace
@@ -26,6 +27,8 @@ namespace
 
     Error libgit2Error(const std::string& fallback)
     {
+        // Never log git_error_last()->message -- it can embed the repository path (Architecture.md §14.23).
+        Logging::warn("LibGit2Repository operation failed: " + std::string(toLogString(ErrorCode::IoError)));
         const git_error* error = git_error_last();
         return Error(ErrorCode::IoError, error && error->message ? std::string(error->message) : fallback);
     }
@@ -160,9 +163,11 @@ Result<LibGit2Repository> LibGit2Repository::open(const std::filesystem::path& s
     const int rc = git_repository_open_ext(&handle, startDirectoryUtf8.c_str(), 0, nullptr);
     if (rc != 0)
     {
+        Logging::debug("LibGit2Repository: no repository found");
         return Result<LibGit2Repository>::failure(Error(ErrorCode::NotFound, "No git repository found at or above " + startDirectoryUtf8));
     }
 
+    Logging::debug("LibGit2Repository: repository opened");
     return Result<LibGit2Repository>::success(LibGit2Repository(handle));
 }
 
@@ -222,6 +227,8 @@ Result<std::vector<LibGit2Repository::StatusEntry>> LibGit2Repository::statusFor
         entries.push_back(StatusEntry{ std::move(relativePath), classify(entry->status) });
     }
 
+    Logging::debug("LibGit2Repository: status computed (" + std::to_string(entries.size()) + " entr" +
+                    (entries.size() == 1 ? "y" : "ies") + ")");
     return Result<std::vector<StatusEntry>>::success(std::move(entries));
 }
 
@@ -327,6 +334,7 @@ Result<std::string> LibGit2Repository::headDisplayName(bool& isDetachedOut) cons
         }
         char shortId[16] = {};
         git_oid_tostr(shortId, sizeof(shortId), oid);
+        Logging::debug("LibGit2Repository: HEAD resolved (isDetached=true)");
         return Result<std::string>::success(std::string(shortId));
     }
 
@@ -337,6 +345,7 @@ Result<std::string> LibGit2Repository::headDisplayName(bool& isDetachedOut) cons
         return Result<std::string>::failure(libgit2Error("Failed to resolve branch name"));
     }
 
+    Logging::debug(std::string("LibGit2Repository: HEAD resolved (isDetached=") + (isDetachedOut ? "true)" : "false)"));
     return Result<std::string>::success(std::string(branchName));
 }
 
@@ -390,6 +399,7 @@ Result<std::vector<std::string>> LibGit2Repository::listLocalBranches() const
         return Result<std::vector<std::string>>::failure(libgit2Error("Failed while iterating branches"));
     }
 
+    Logging::debug("LibGit2Repository: branches listed (" + std::to_string(names.size()) + ")");
     return Result<std::vector<std::string>>::success(std::move(names));
 }
 
@@ -428,5 +438,6 @@ Result<void> LibGit2Repository::checkoutBranch(const std::string& branchName) co
         return Result<void>::failure(libgit2Error("Checkout succeeded but failed to update HEAD"));
     }
 
+    Logging::info("LibGit2Repository: checkout succeeded");
     return Result<void>::success();
 }

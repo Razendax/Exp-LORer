@@ -1,5 +1,6 @@
 #include "CachingMediaDecoder.h"
 
+#include "Logging.h"
 #include "WindowsLongPath.h"
 
 CachingMediaDecoder::CachingMediaDecoder(IMediaDecoder& inner, ThumbnailCache& cache)
@@ -36,9 +37,11 @@ Result<std::vector<std::byte>> CachingMediaDecoder::generateThumbnail(const std:
 
     if (auto cached = m_cache.get(key))
     {
+        Logging::debug("CachingMediaDecoder: thumbnail cache hit");
         return Result<std::vector<std::byte>>::success(std::move(*cached));
     }
 
+    Logging::debug("CachingMediaDecoder: thumbnail cache miss");
     auto generated = m_inner.generateThumbnail(mediaFile, maxWidth, maxHeight);
     if (generated)
     {

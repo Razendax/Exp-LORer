@@ -8,6 +8,8 @@
 #include <QSqlQuery>
 #include <QVariant>
 
+#include "Logging.h"
+
 namespace
 {
     namespace fs = std::filesystem;
@@ -24,6 +26,8 @@ namespace
 
     Error toError(const QSqlError& sqlError, ErrorCode fallback = ErrorCode::IoError)
     {
+        // Never log sqlError.text() -- it can echo bound values (Architecture.md §14.23).
+        Logging::warn("SQLiteDiskUsageRepository query failed: " + std::string(toLogString(fallback)));
         return Error(fallback, sqlError.text().toStdString());
     }
 
@@ -99,6 +103,8 @@ void SQLiteDiskUsageRepository::runMigrations()
         )
     )"));
     migration.exec(QStringLiteral("CREATE INDEX IF NOT EXISTS idx_filesystem_index_parent ON filesystem_index(parent_id)"));
+
+    Logging::info("SQLiteDiskUsageRepository: migration applied");
 }
 
 Result<void> SQLiteDiskUsageRepository::saveScan(const std::filesystem::path& scanRoot, const std::vector<DiskUsageNode>& nodes)
@@ -200,6 +206,7 @@ Result<void> SQLiteDiskUsageRepository::saveScan(const std::filesystem::path& sc
         return Result<void>::failure(std::move(error));
     }
 
+    Logging::info("SQLiteDiskUsageRepository: scan saved (" + std::to_string(nodes.size()) + " node(s))");
     return Result<void>::success();
 }
 
@@ -229,5 +236,6 @@ Result<std::vector<DiskUsageNode>> SQLiteDiskUsageRepository::childrenOf(const s
         nodes.push_back(std::move(node));
     }
 
+    Logging::debug("SQLiteDiskUsageRepository: childrenOf returned " + std::to_string(nodes.size()) + " node(s)");
     return Result<std::vector<DiskUsageNode>>::success(std::move(nodes));
 }

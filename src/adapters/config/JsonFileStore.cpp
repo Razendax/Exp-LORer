@@ -1,10 +1,11 @@
 #include "JsonFileStore.h"
 
-#include <QDebug>
 #include <QFile>
 #include <QJsonDocument>
 #include <QSaveFile>
 #include <QString>
+
+#include "Logging.h"
 
 namespace
 {
@@ -28,11 +29,13 @@ namespace JsonFileStore
         const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
         if (parseError.error != QJsonParseError::NoError || !document.isObject())
         {
-            qWarning().noquote() << QStringLiteral("%1: failed to parse %2: %3")
-                                         .arg(QString::fromLatin1(storeName), file.fileName(), parseError.errorString());
+            // Never log file.fileName() (a path) -- storeName is a safe static string, and
+            // parseError.errorString() is a generic Qt parser message with no file content in it.
+            Logging::warn(std::string(storeName) + ": failed to parse (" + parseError.errorString().toStdString() + ")");
             return std::nullopt;
         }
 
+        Logging::debug(std::string(storeName) + ": loaded");
         return document.object();
     }
 
@@ -44,8 +47,7 @@ namespace JsonFileStore
         QSaveFile file(pathToQString(path));
         if (!file.open(QIODevice::WriteOnly))
         {
-            qWarning().noquote()
-                << QStringLiteral("%1: failed to open %2 for writing").arg(QString::fromLatin1(storeName), file.fileName());
+            Logging::warn(std::string(storeName) + ": failed to open for writing");
             return false;
         }
 
@@ -53,10 +55,11 @@ namespace JsonFileStore
 
         if (!file.commit())
         {
-            qWarning().noquote() << QStringLiteral("%1: failed to save %2").arg(QString::fromLatin1(storeName), file.fileName());
+            Logging::warn(std::string(storeName) + ": write failed");
             return false;
         }
 
+        Logging::debug(std::string(storeName) + ": saved");
         return true;
     }
 }

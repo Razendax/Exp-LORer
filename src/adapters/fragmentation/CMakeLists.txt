@@ -10,3 +10,4 @@ target_link_libraries(explorer_adapters_fragmentation PUBLIC explorer_applicatio
 
 find_package(Qt6 COMPONENTS Sql REQUIRED)
 target_link_libraries(explorer_adapters_fragmentation PRIVATE Qt6::Sql)
+target_link_libraries(explorer_adapters_fragmentation PRIVATE explorer_adapters_logging)

@@ -90,6 +90,7 @@ int main(int argc, char* argv[])
     // but keeps ordering simple).
     Logging::init(appDataDir / "logs");
     Logging::info("Exp-LORer starting");
+    Logging::info(std::string("--data-dir override: ") + (dataDirOverride ? "true" : "false"));
 
     ExpLorerApplication app(argc, argv);
 

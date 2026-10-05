@@ -6,6 +6,7 @@
 #include <QPointer>
 
 #include "FileTagsWorker.h"
+#include "Logging.h"
 
 FileTagsService::FileTagsService(IFileSystemRepository& fileSystemRepository, const std::filesystem::path& databasePath, QObject* parent)
     : QObject(parent)
@@ -33,6 +34,11 @@ void FileTagsService::requestTags(QObject* context, const std::vector<FileNode>&
         m_worker,
         [this, guard, files, callback = std::move(callback)]() {
             Result<TagsByPathMap> result = m_worker->fetchTags(files);
+
+            if (result.hasError())
+            {
+                Logging::warn("FileTagsService: fetchTags failed: " + std::string(toLogString(result.error().code)));
+            }
 
             QMetaObject::invokeMethod(
                 this,

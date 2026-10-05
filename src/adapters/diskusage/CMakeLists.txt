@@ -10,3 +10,4 @@ target_link_libraries(explorer_adapters_diskusage PUBLIC explorer_application)
 
 find_package(Qt6 COMPONENTS Sql REQUIRED)
 target_link_libraries(explorer_adapters_diskusage PRIVATE Qt6::Sql)
+target_link_libraries(explorer_adapters_diskusage PRIVATE explorer_adapters_logging)

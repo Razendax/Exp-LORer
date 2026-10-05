@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <system_error>
 
+#include "Logging.h"
+
 Result<std::vector<LibArchiveReader::Entry>> ArchiveIndexCache::entriesFor(const std::filesystem::path& archiveFile)
 {
     namespace fs = std::filesystem;
@@ -22,11 +24,14 @@ Result<std::vector<LibArchiveReader::Entry>> ArchiveIndexCache::entriesFor(const
     const auto it = std::find_if(m_entries.begin(), m_entries.end(), [&key](const CacheEntry& cached) { return cached.key == key; });
     if (it != m_entries.end())
     {
+        Logging::debug("ArchiveIndexCache: cache hit");
         CacheEntry hit = std::move(*it);
         m_entries.erase(it);
         m_entries.push_back(std::move(hit));
         return Result<std::vector<LibArchiveReader::Entry>>::success(m_entries.back().entries);
     }
+
+    Logging::debug("ArchiveIndexCache: cache miss");
 
     // listEntries() re-reads the archive from disk -- deliberately done while still holding
     // m_mutex (rather than only locking around the m_entries mutation below) so two threads

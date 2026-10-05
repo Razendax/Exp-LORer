@@ -6,6 +6,8 @@
 #include <QMutexLocker>
 #include <QPointer>
 
+#include "Logging.h"
+
 DuplicateFinderService::DuplicateFinderService(DuplicateFinderUseCase& useCase, IFileSystemRepository& fileSystemRepository,
                                                 QObject* parent)
     : QObject(parent)
@@ -57,6 +59,21 @@ void DuplicateFinderService::requestScan(QObject* context, int requestId, const 
             };
 
             Result<std::vector<DuplicateGroupInfo>> result = m_worker->runScan(root, minFileSizeBytes, cancelFlag, onProgress);
+
+            if (result.hasError())
+            {
+                Logging::warn("DuplicateFinderService: scan failed: " + std::string(toLogString(result.error().code)));
+            }
+            else
+            {
+                std::size_t totalFiles = 0;
+                for (const DuplicateGroupInfo& groupInfo : result.value())
+                {
+                    totalFiles += groupInfo.files.size();
+                }
+                Logging::info("DuplicateFinderService: scan finished (" + std::to_string(result.value().size()) +
+                               " group(s), " + std::to_string(totalFiles) + " file(s))");
+            }
 
             {
                 QMutexLocker locker(&m_cancelFlagsMutex);

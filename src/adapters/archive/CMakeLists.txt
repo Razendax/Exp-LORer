@@ -15,3 +15,4 @@ find_package(LibArchive REQUIRED)
 # that authors zip fixtures via libarchive's own write API -- is included directly by test .cpp
 # files, which need libarchive's headers/link dependency to come along transitively.
 target_link_libraries(explorer_adapters_archive PUBLIC LibArchive::LibArchive)
+target_link_libraries(explorer_adapters_archive PRIVATE explorer_adapters_logging)

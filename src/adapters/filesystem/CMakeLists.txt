@@ -25,3 +25,5 @@ target_link_libraries(explorer_adapters_filesystem PRIVATE Qt6::Core)
 if(WIN32)
     target_link_libraries(explorer_adapters_filesystem PRIVATE Shell32 Ole32)
 endif()
+
+target_link_libraries(explorer_adapters_filesystem PRIVATE explorer_adapters_logging)

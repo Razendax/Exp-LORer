@@ -8,6 +8,8 @@
 #include <QSqlQuery>
 #include <QVariant>
 
+#include "Logging.h"
+
 namespace
 {
     namespace fs = std::filesystem;
@@ -24,6 +26,8 @@ namespace
 
     Error toError(const QSqlError& sqlError, ErrorCode fallback = ErrorCode::IoError)
     {
+        // Never log sqlError.text() -- it can echo bound values (Architecture.md §14.23).
+        Logging::warn("SQLiteFragmentationRepository query failed: " + std::string(toLogString(fallback)));
         return Error(fallback, sqlError.text().toStdString());
     }
 
@@ -88,6 +92,8 @@ void SQLiteFragmentationRepository::runMigrations()
             scanned_at      INTEGER NOT NULL
         )
     )"));
+
+    Logging::info("SQLiteFragmentationRepository: migration applied");
 }
 
 Result<void> SQLiteFragmentationRepository::saveScan(const std::filesystem::path& scanRoot, std::uintmax_t minFileSizeBytes,
@@ -157,6 +163,7 @@ Result<void> SQLiteFragmentationRepository::saveScan(const std::filesystem::path
         return Result<void>::failure(std::move(error));
     }
 
+    Logging::info("SQLiteFragmentationRepository: scan saved (" + std::to_string(files.size()) + " file(s))");
     return Result<void>::success();
 }
 
@@ -185,5 +192,6 @@ Result<std::vector<FileFragmentationInfo>> SQLiteFragmentationRepository::filesU
         files.push_back(std::move(file));
     }
 
+    Logging::debug("SQLiteFragmentationRepository: filesUnder returned " + std::to_string(files.size()) + " file(s)");
     return Result<std::vector<FileFragmentationInfo>>::success(std::move(files));
 }

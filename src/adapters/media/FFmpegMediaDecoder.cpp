@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstring>
 
+#include "Logging.h"
 #include "PathUtf8.h"
 #include "WindowsLongPath.h"
 
@@ -87,6 +88,7 @@ Result<MediaMetadata> FFmpegMediaDecoder::extractMetadata(const std::filesystem:
     OpenedVideo opened;
     if (auto openResult = openVideo(url, opened); !openResult)
     {
+        Logging::warn("FFmpegMediaDecoder::extractMetadata failed: " + std::string(toLogString(openResult.error().code)));
         return Result<MediaMetadata>::failure(std::move(openResult).error());
     }
 
@@ -102,6 +104,8 @@ Result<MediaMetadata> FFmpegMediaDecoder::extractMetadata(const std::filesystem:
 
     const std::string codecName = opened.decoder != nullptr ? opened.decoder->name : "unknown";
 
+    Logging::debug("FFmpegMediaDecoder::extractMetadata succeeded: " + std::to_string(width) + "x" +
+                    std::to_string(height) + " codec=" + codecName);
     return MediaMetadata::create(width, height, duration, codecName);
 }
 
@@ -113,10 +117,12 @@ Result<std::vector<std::byte>> FFmpegMediaDecoder::generateThumbnail(const std::
     OpenedVideo opened;
     if (auto openResult = openVideo(url, opened); !openResult)
     {
+        Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(openResult.error().code)));
         return Result<std::vector<std::byte>>::failure(std::move(openResult).error());
     }
     if (auto decoderResult = openDecoder(opened, url); !decoderResult)
     {
+        Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(decoderResult.error().code)));
         return Result<std::vector<std::byte>>::failure(std::move(decoderResult).error());
     }
 
@@ -152,6 +158,7 @@ Result<std::vector<std::byte>> FFmpegMediaDecoder::generateThumbnail(const std::
     if (!gotFrame)
     {
         av_frame_free(&decodedFrame);
+        Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(ErrorCode::IoError)));
         return Result<std::vector<std::byte>>::failure(Error(ErrorCode::IoError, "FFmpeg failed to decode a frame from " + url));
     }
 
@@ -167,6 +174,7 @@ Result<std::vector<std::byte>> FFmpegMediaDecoder::generateThumbnail(const std::
     if (swsContext == nullptr)
     {
         av_frame_free(&decodedFrame);
+        Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(ErrorCode::Unknown)));
         return Result<std::vector<std::byte>>::failure(Error(ErrorCode::Unknown, "Failed to create a scaling context for " + url));
     }
 
@@ -235,6 +243,16 @@ Result<std::vector<std::byte>> FFmpegMediaDecoder::generateThumbnail(const std::
 
     avcodec_free_context(&encoderContext);
     av_frame_free(&scaledFrame);
+
+    if (result.hasValue())
+    {
+        Logging::debug("FFmpegMediaDecoder::generateThumbnail succeeded: " + std::to_string(targetWidth) + "x" +
+                        std::to_string(targetHeight));
+    }
+    else
+    {
+        Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(result.error().code)));
+    }
 
     return result;
 }

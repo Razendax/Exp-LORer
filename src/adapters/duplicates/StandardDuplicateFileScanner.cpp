@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "IFileSystemRepository.h"
+#include "Logging.h"
 #include "StandardFileHasher.h"
 #include "WindowsLongPath.h"
 
@@ -67,9 +68,12 @@ Result<std::vector<DuplicateFileGroup>> StandardDuplicateFileScanner::scan(
     const std::function<void(std::size_t hashed, std::size_t totalCandidates)>& onProgress,
     const std::atomic<bool>& cancelRequested) const
 {
+    Logging::info("StandardDuplicateFileScanner: scan started (minFileSizeBytes=" + std::to_string(minFileSizeBytes) + ")");
+
     auto listed = m_fileSystemRepository.listDirectoryRecursive(root, nullptr, nullptr);
     if (listed.hasError())
     {
+        Logging::warn("StandardDuplicateFileScanner: scan failed: " + std::string(toLogString(listed.error().code)));
         return Result<std::vector<DuplicateFileGroup>>::failure(std::move(listed).error());
     }
 
@@ -94,8 +98,11 @@ Result<std::vector<DuplicateFileGroup>> StandardDuplicateFileScanner::scan(
         }
     }
 
+    Logging::debug("StandardDuplicateFileScanner: " + std::to_string(totalCandidates) + " candidate(s) to hash");
+
     std::vector<DuplicateFileGroup> groups;
     std::size_t hashedSoFar = 0;
+    std::size_t skippedUnreadable = 0;
 
     for (auto& [size, paths] : bySize)
     {
@@ -125,6 +132,7 @@ Result<std::vector<DuplicateFileGroup>> StandardDuplicateFileScanner::scan(
                 // Unreadable file: skip it from duplicate consideration rather than failing the
                 // whole scan, same tolerance posture as listDirectoryRecursive's own per-entry
                 // skip-unreadable-subtrees behavior.
+                ++skippedUnreadable;
                 continue;
             }
 
@@ -173,5 +181,17 @@ Result<std::vector<DuplicateFileGroup>> StandardDuplicateFileScanner::scan(
         }
     }
 
+    if (skippedUnreadable > 0)
+    {
+        Logging::warn("StandardDuplicateFileScanner: skipped " + std::to_string(skippedUnreadable) + " unreadable file(s)");
+    }
+
+    std::size_t totalDuplicateFiles = 0;
+    for (const DuplicateFileGroup& group : groups)
+    {
+        totalDuplicateFiles += group.paths.size();
+    }
+    Logging::info("StandardDuplicateFileScanner: scan finished (" + std::to_string(groups.size()) + " group(s), " +
+                   std::to_string(totalDuplicateFiles) + " file(s))");
     return Result<std::vector<DuplicateFileGroup>>::success(std::move(groups));
 }

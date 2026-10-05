@@ -19,6 +19,7 @@
 #include "ArchivePathResolver.h"
 #include "DriveLabel.h"
 #include "LibArchiveReader.h"
+#include "Logging.h"
 #include "PathUtf8.h"
 #include "VirtualPaths.h"
 #include "WindowsLongPath.h"
@@ -248,6 +249,7 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectory(const 
     std::error_code ec;
     if (!fs::is_directory(target, ec))
     {
+        Logging::warn("listDirectory failed: " + std::string(toLogString(ErrorCode::NotFound)));
         return Result<std::vector<FileNode>>::failure(
             Error(ErrorCode::NotFound, PathUtf8::toUtf8(directory) + " is not a directory"));
     }
@@ -266,9 +268,13 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectory(const 
     }
     catch (const fs::filesystem_error& e)
     {
-        return Result<std::vector<FileNode>>::failure(toError(e));
+        const Error error = toError(e);
+        Logging::warn("listDirectory failed: " + std::string(toLogString(error.code)));
+        return Result<std::vector<FileNode>>::failure(error);
     }
 
+    Logging::debug("listDirectory succeeded: " + std::to_string(files.size()) + " entr" +
+                    (files.size() == 1 ? "y" : "ies"));
     return Result<std::vector<FileNode>>::success(std::move(files));
 }
 
@@ -293,6 +299,7 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursi
     std::error_code ec;
     if (!fs::is_directory(target, ec))
     {
+        Logging::warn("listDirectoryRecursive failed: " + std::string(toLogString(ErrorCode::NotFound)));
         return Result<std::vector<FileNode>>::failure(Error(ErrorCode::NotFound, PathUtf8::toUtf8(root) + " is not a directory"));
     }
 
@@ -300,6 +307,7 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursi
     // Throttled to ~once/second (Architecture.md §14.37) so a caller reporting progress back to a
     // Qt UI thread doesn't flood it with a signal/model-refresh per file discovered.
     auto lastProgressTime = std::chrono::steady_clock::now();
+    const auto scanStart = std::chrono::steady_clock::now();
     try
     {
         // Explicit-iterator loop (rather than a range-based for) so disable_recursion_pending() is
@@ -347,9 +355,15 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursi
     }
     catch (const fs::filesystem_error& e)
     {
-        return Result<std::vector<FileNode>>::failure(toError(e));
+        const Error error = toError(e);
+        Logging::warn("listDirectoryRecursive failed: " + std::string(toLogString(error.code)));
+        return Result<std::vector<FileNode>>::failure(error);
     }
 
+    const auto elapsedMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - scanStart).count();
+    Logging::info("listDirectoryRecursive succeeded: " + std::to_string(files.size()) + " entries in " +
+                   std::to_string(elapsedMs) + "ms");
     return Result<std::vector<FileNode>>::success(std::move(files));
 }
 
@@ -411,9 +425,12 @@ Result<FileNode> StandardFileSystemRepository::move(const std::filesystem::path&
     }
     catch (const fs::filesystem_error& e)
     {
-        return Result<FileNode>::failure(toError(e));
+        const Error error = toError(e);
+        Logging::warn("move failed: " + std::string(toLogString(error.code)));
+        return Result<FileNode>::failure(error);
     }
 
+    Logging::debug("move succeeded");
     return buildFileNode(destination, makeDirectoryEntry(withPrefix(destination)));
 }
 
@@ -443,9 +460,12 @@ Result<FileNode> StandardFileSystemRepository::copy(const std::filesystem::path&
     }
     catch (const fs::filesystem_error& e)
     {
-        return Result<FileNode>::failure(toError(e));
+        const Error error = toError(e);
+        Logging::warn("copy failed: " + std::string(toLogString(error.code)));
+        return Result<FileNode>::failure(error);
     }
 
+    Logging::debug("copy succeeded");
     return buildFileNode(destination, makeDirectoryEntry(withPrefix(destination)));
 }
 
@@ -460,9 +480,11 @@ Result<void> StandardFileSystemRepository::deletePermanently(const std::filesyst
     fs::remove_all(withPrefix(path), ec);
     if (ec)
     {
+        Logging::warn("deletePermanently failed: " + std::string(toLogString(ErrorCode::IoError)));
         return Result<void>::failure(Error(ErrorCode::IoError, ec.message()));
     }
 
+    Logging::debug("deletePermanently succeeded");
     return Result<void>::success();
 }
 
@@ -571,9 +593,11 @@ Result<void> StandardFileSystemRepository::createDirectory(const std::filesystem
     ec.clear();
     if (!fs::create_directory(target, ec) || ec)
     {
+        Logging::warn("createDirectory failed: " + std::string(toLogString(ErrorCode::IoError)));
         return Result<void>::failure(Error(ErrorCode::IoError, ec.message()));
     }
 
+    Logging::debug("createDirectory succeeded");
     return Result<void>::success();
 }
 
@@ -949,10 +973,20 @@ Result<void> StandardFileSystemRepository::extractArchive(const std::filesystem:
     auto resolution = ArchivePathResolver::resolve(archiveFile);
     if (!resolution)
     {
+        Logging::warn("extractArchive failed: " + std::string(toLogString(ErrorCode::InvalidArgument)));
         return Result<void>::failure(Error(ErrorCode::InvalidArgument, PathUtf8::toUtf8(archiveFile) + " is not inside a known archive"));
     }
 
-    return LibArchiveReader::extractEntries(resolution->archiveFile, resolution->entryPathInArchive, destinationDirectory);
+    auto result = LibArchiveReader::extractEntries(resolution->archiveFile, resolution->entryPathInArchive, destinationDirectory);
+    if (!result)
+    {
+        Logging::warn("extractArchive failed: " + std::string(toLogString(result.error().code)));
+    }
+    else
+    {
+        Logging::debug("extractArchive succeeded");
+    }
+    return result;
 }
 
 Result<DriveSpaceInfo> StandardFileSystemRepository::driveSpaceInfo(const std::filesystem::path& path) const
@@ -1000,6 +1034,7 @@ Result<DriveSpaceInfo> StandardFileSystemRepository::driveSpaceInfo(const std::f
     ULARGE_INTEGER totalBytes{};
     if (!GetDiskFreeSpaceExW(rootWide.c_str(), &freeBytes, &totalBytes, nullptr))
     {
+        Logging::warn("driveSpaceInfo failed: " + std::string(toLogString(ErrorCode::IoError)));
         return Result<DriveSpaceInfo>::failure(Error(ErrorCode::IoError, "Failed to query free space for " + PathUtf8::toUtf8(root)));
     }
 
@@ -1031,9 +1066,12 @@ Result<FileNode> StandardFileSystemRepository::copyFileWithProgress(
     const BOOL ok = CopyFileExW(src.c_str(), dst.c_str(), copyProgressTrampoline, progressContext, nullptr, 0);
     if (!ok)
     {
-        return Result<FileNode>::failure(win32CopyError(GetLastError()));
+        const Error error = win32CopyError(GetLastError());
+        Logging::warn("copyFileWithProgress failed: " + std::string(toLogString(error.code)));
+        return Result<FileNode>::failure(error);
     }
 
+    Logging::debug("copyFileWithProgress succeeded");
     return buildFileNode(destination, makeDirectoryEntry(dst));
 #else
     std::ifstream input(src, std::ios::binary);

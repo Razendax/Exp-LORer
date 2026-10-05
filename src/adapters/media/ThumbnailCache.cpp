@@ -8,6 +8,7 @@
 
 #include <xxhash.h>
 
+#include "Logging.h"
 #include "PathUtf8.h"
 
 namespace
@@ -203,6 +204,8 @@ void ThumbnailCache::pruneIfOverCap()
     std::sort(entries.begin(), entries.end(),
               [](const auto& a, const auto& b) { return a.second.lastWrite < b.second.lastWrite; });
 
+    int evictedCount = 0;
+    std::uintmax_t evictedBytes = 0;
     for (const auto& [fileName, entry] : entries)
     {
         if (m_currentTotalBytes <= m_maxTotalBytes)
@@ -215,6 +218,14 @@ void ThumbnailCache::pruneIfOverCap()
         {
             m_currentTotalBytes -= entry.size;
             m_diskIndex.erase(fileName);
+            ++evictedCount;
+            evictedBytes += entry.size;
         }
+    }
+
+    if (evictedCount > 0)
+    {
+        Logging::debug("ThumbnailCache: evicted " + std::to_string(evictedCount) + " entr" +
+                        (evictedCount == 1 ? "y" : "ies") + " (" + std::to_string(evictedBytes) + " byte(s) freed)");
     }
 }

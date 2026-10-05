@@ -8,6 +8,8 @@
 #include <QSqlQuery>
 #include <QVariant>
 
+#include "Logging.h"
+
 namespace
 {
     QString toQString(const std::filesystem::path& path)
@@ -34,6 +36,8 @@ namespace
 
     Error toError(const QSqlError& sqlError, ErrorCode fallback = ErrorCode::IoError)
     {
+        // Never log sqlError.text() -- it can echo bound values (Architecture.md §14.23).
+        Logging::warn("SQLiteTagRepository query failed: " + std::string(toLogString(fallback)));
         return Error(fallback, sqlError.text().toStdString());
     }
 
@@ -117,6 +121,8 @@ void SQLiteTagRepository::runMigrations()
         )
     )"));
     migration.exec(QStringLiteral("PRAGMA user_version = 1"));
+
+    Logging::info("SQLiteTagRepository: migration applied (version 1)");
 }
 
 Result<Tag> SQLiteTagRepository::createTag(const std::string& name, const std::string& hexColor)
@@ -137,6 +143,7 @@ Result<Tag> SQLiteTagRepository::createTag(const std::string& name, const std::s
     }
 
     const Tag::Id id = query.lastInsertId().toLongLong();
+    Logging::debug("SQLiteTagRepository: tag created");
     return Tag::create(id, name, hexColor);
 }
 
@@ -162,6 +169,7 @@ Result<void> SQLiteTagRepository::updateTag(const Tag& tag)
         return Result<void>::failure(Error(ErrorCode::NotFound, "No tag with this id"));
     }
 
+    Logging::debug("SQLiteTagRepository: tag updated");
     return Result<void>::success();
 }
 
@@ -181,6 +189,7 @@ Result<void> SQLiteTagRepository::deleteTag(Tag::Id id)
         return Result<void>::failure(Error(ErrorCode::NotFound, "No tag with this id"));
     }
 
+    Logging::debug("SQLiteTagRepository: tag deleted");
     return Result<void>::success();
 }
 
@@ -298,6 +307,7 @@ Result<void> SQLiteTagRepository::assignTag(const FileTagAssociation& associatio
         return Result<void>::failure(toError(query.lastError()));
     }
 
+    Logging::debug("SQLiteTagRepository: tag assigned to file");
     return Result<void>::success();
 }
 
@@ -331,6 +341,7 @@ Result<void> SQLiteTagRepository::unassignTag(const std::filesystem::path& fileP
         return Result<void>::failure(Error(ErrorCode::NotFound, "File does not have this tag"));
     }
 
+    Logging::debug("SQLiteTagRepository: tag unassigned from file");
     return Result<void>::success();
 }
 

@@ -10,6 +10,7 @@ add_executable(explorer_domain_tests
     MediaMetadataTest.cpp
     FileTagAssociationTest.cpp
     FilePreviewTest.cpp
+    ErrorTest.cpp
 )
 
 target_link_libraries(explorer_domain_tests PRIVATE explorer_domain GTest::gtest GTest::gtest_main)

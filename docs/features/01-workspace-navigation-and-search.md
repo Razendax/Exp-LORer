@@ -442,9 +442,25 @@ attribute-detection cases (the rest is UI/ViewModel glue, same posture as §14.1
 
 A `Logging` module (`adapters/logging`) wraps spdlog behind `Logging::init/shutdown/log` (Debug/
 Info/Warning/Error, timestamped, rotating file sink under `%LOCALAPPDATA%/Exp-LORer/logs/` plus a
-console sink in debug builds) — the sole spdlog call site (§6). At this stage it is called only
-from `main.cpp`, logging one line at startup (after `init()`) and one at clean exit (before
-`shutdown()`); no call sites exist yet elsewhere in the app.
+console sink in debug builds) — the sole spdlog call site (§6). `main.cpp` logs one line at startup
+(after `init()`) and one at clean exit (before `shutdown()`); `ExceptionHandler` logs every fatal
+exception (below). Beyond that, call sites span every module under `src/adapters/*` and
+`src/adapters/viewmodels` — each failure/operation boundary identified in those modules (scan
+start/finish, DB migration, cache hit/miss, decode/checkout/transfer success or failure, etc.) gets
+an Info/Debug line on success and a Warning/Error line on failure. Domain/Application are
+deliberately not call sites (see the "Not built" paragraph below) — logging is confined to the outer
+layers, same posture as `Logging` having no Port of its own.
+
+**Hard rule, enforced at every one of those call sites:** a log line may never contain a specific
+file/folder path, filename, or anything derived from one (no `std::filesystem::path`, no
+`PathUtf8::toUtf8(path)` output, no `QString::fileName()`, no raw `fs::filesystem_error::what()` /
+libgit2 `git_error_last()->message` / libarchive `archive_error_string()` / `QSqlError::text()` text —
+all of these embed the actual path(s) involved in the failure). Only `Error.code` (logged via
+`toLogString(ErrorCode)`, a small `constexpr` helper next to the enum in `src/domain/Error.h` — kept
+there rather than in `adapters/logging` since it's a pure enum-to-name mapping with no Qt/spdlog
+dependency) plus counts, durations, byte sizes, and enum values are logged; `Error.message` itself is
+never logged. `JsonFileStore` and `ShellContextMenuProvider` previously leaked a path into a log line
+each (`qWarning()`/`e.what()`) and were fixed to this same rule as part of establishing it.
 
 Any uncaught C++ exception is caught, logged at Error level, and shown to the user in a modal
 dialog (title, exception message, a single "Exit" button) before the process terminates —
@@ -456,9 +472,11 @@ events, queued slot invocations — while `app.exec()` is running).
 
 **Scope:** main-thread exceptions only, consistent with all Port calls still being synchronous on
 the UI thread in v1 (§5) — there is no second thread whose exceptions would need separate handling
-yet. **Not built:** call-site logging beyond the two startup/exit lines above; an `ILogger` Port for
-Domain/Application to log through (deferred until those layers actually need to log — `Logging` is
-plain infrastructure, not wired through the composition root); native/SEH crash handling for
+yet. **Not built:** an `ILogger` Port for Domain/Application to log through (deferred until those
+layers actually need to log — `Logging` is plain infrastructure, not wired through the composition
+root, so `CompositionRoot`'s own constructor has no dedicated log call either — a construction-time
+failure there is still just a thrown exception caught by `main.cpp`'s existing try/catch, already
+logged by `ExceptionHandler`); native/SEH crash handling for
 non-C++-exception crashes (e.g. access violations); per-thread exception handling for a future
 background-dispatch thread (§5's deferred background-dispatch work would need its own try/catch at
 each thread's entry point, since exceptions can't cross threads). `ExceptionHandler`/

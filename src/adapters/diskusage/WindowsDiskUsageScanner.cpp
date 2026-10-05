@@ -6,6 +6,7 @@
 #include <Windows.h>
 #endif
 
+#include "Logging.h"
 #include "PathUtf8.h"
 #include "WindowsLongPath.h"
 
@@ -39,7 +40,8 @@ namespace
     // would. Returns the aggregate size of `nativeDir` itself. onProgress is throttled to roughly
     // once/second, mirroring StandardFileSystemRepository::listDirectoryRecursive.
     std::uintmax_t walkDirectory(const fs::path& nativeDir, const fs::path& outwardDir, std::vector<DiskUsageNode>& results,
-                                  const std::function<void()>& onProgress, std::chrono::steady_clock::time_point& lastProgressTime)
+                                  const std::function<void()>& onProgress, std::chrono::steady_clock::time_point& lastProgressTime,
+                                  std::size_t& unreadableDirCount, std::size_t& reparsePointSkipCount)
     {
         std::uintmax_t total = 0;
 
@@ -48,6 +50,7 @@ namespace
         HANDLE handle = FindFirstFileW(searchPattern.c_str(), &findData);
         if (handle == INVALID_HANDLE_VALUE)
         {
+            ++unreadableDirCount;
             return 0;
         }
 
@@ -72,13 +75,15 @@ namespace
                     // a reparse point itself (see buildFileNode's identical rationale in
                     // StandardFileSystemRepository.cpp).
                     results.push_back(DiskUsageNode{ childOutward, PathUtf8::toUtf8(fs::path(name)), 0, true });
+                    ++reparsePointSkipCount;
                     continue;
                 }
 
                 const std::size_t placeholderIndex = results.size();
                 results.push_back(DiskUsageNode{ childOutward, PathUtf8::toUtf8(fs::path(name)), 0, true });
 
-                const std::uintmax_t subtreeSize = walkDirectory(childNative, childOutward, results, onProgress, lastProgressTime);
+                const std::uintmax_t subtreeSize =
+                    walkDirectory(childNative, childOutward, results, onProgress, lastProgressTime, unreadableDirCount, reparsePointSkipCount);
                 results[placeholderIndex].size = subtreeSize;
                 total += subtreeSize;
             }
@@ -116,12 +121,19 @@ Result<std::vector<DiskUsageNode>> WindowsDiskUsageScanner::scan(const std::file
     std::error_code ec;
     if (!fs::is_directory(target, ec))
     {
+        Logging::warn("WindowsDiskUsageScanner: scan failed: " + std::string(toLogString(ErrorCode::NotFound)));
         return Result<std::vector<DiskUsageNode>>::failure(Error(ErrorCode::NotFound, PathUtf8::toUtf8(root) + " is not a directory"));
     }
 
+    Logging::info("WindowsDiskUsageScanner: scan started");
+    const auto scanStart = std::chrono::steady_clock::now();
+
     std::vector<DiskUsageNode> results;
     auto lastProgressTime = std::chrono::steady_clock::now();
-    const std::uintmax_t totalSize = walkDirectory(target, root, results, onProgress, lastProgressTime);
+    std::size_t unreadableDirCount = 0;
+    std::size_t reparsePointSkipCount = 0;
+    const std::uintmax_t totalSize =
+        walkDirectory(target, root, results, onProgress, lastProgressTime, unreadableDirCount, reparsePointSkipCount);
 
     // Root itself, aggregate size. filename() is empty for a drive root ("C:\"), so fall back to
     // the full root text in that case (same quirk StandardFileSystemRepository::buildDriveNode
@@ -133,6 +145,19 @@ Result<std::vector<DiskUsageNode>> WindowsDiskUsageScanner::scan(const std::file
     }
     results.insert(results.begin(), DiskUsageNode{ root, rootName, totalSize, true });
 
+    if (unreadableDirCount > 0)
+    {
+        Logging::debug("WindowsDiskUsageScanner: " + std::to_string(unreadableDirCount) + " unreadable director(y/ies) tolerated");
+    }
+    if (reparsePointSkipCount > 0)
+    {
+        Logging::debug("WindowsDiskUsageScanner: " + std::to_string(reparsePointSkipCount) + " reparse point(s) skipped");
+    }
+
+    const auto elapsedMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - scanStart).count();
+    Logging::info("WindowsDiskUsageScanner: scan finished (" + std::to_string(results.size()) + " node(s), " +
+                   std::to_string(totalSize) + " byte(s) in " + std::to_string(elapsedMs) + "ms)");
     return Result<std::vector<DiskUsageNode>>::success(std::move(results));
 #else
     (void)root;

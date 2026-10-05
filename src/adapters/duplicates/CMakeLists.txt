@@ -10,3 +10,4 @@ target_link_libraries(explorer_adapters_duplicates PUBLIC explorer_application)
 
 find_package(xxHash CONFIG REQUIRED)
 target_link_libraries(explorer_adapters_duplicates PRIVATE xxHash::xxhash)
+target_link_libraries(explorer_adapters_duplicates PRIVATE explorer_adapters_logging)

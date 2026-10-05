@@ -5,6 +5,7 @@
 #include <QFileSystemWatcher>
 #include <QString>
 
+#include "Logging.h"
 #include "VirtualPaths.h"
 
 StandardDirectoryWatcher::StandardDirectoryWatcher(QObject* parent)
@@ -29,6 +30,7 @@ Result<DirectoryWatchId> StandardDirectoryWatcher::watch(const std::filesystem::
     if (outcome.shouldStartOsWatch && !m_watcher->addPath(QString::fromStdWString(pathKey)))
     {
         m_registry.removeWatch(outcome.id);
+        Logging::warn("directory watch failed: " + std::string(toLogString(ErrorCode::NotFound)));
         return Result<DirectoryWatchId>::failure(Error(ErrorCode::NotFound, "Directory does not exist or cannot be watched"));
     }
 

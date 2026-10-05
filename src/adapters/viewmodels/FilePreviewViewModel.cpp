@@ -8,6 +8,7 @@
 #include "FilePreviewUseCase.h"
 #include "FilePreviewWorker.h"
 #include "IFileSystemRepository.h"
+#include "Logging.h"
 #include "TabViewModel.h"
 #include "VirtualPaths.h"
 
@@ -171,10 +172,12 @@ void FilePreviewViewModel::onWorkerFinished(int generation, Result<FilePreview> 
 
     if (!result)
     {
+        Logging::warn("FilePreviewViewModel: preview generation failed: " + std::string(toLogString(result.error().code)));
         emit previewFailed(QString::fromStdString(result.error().message));
         return;
     }
 
+    Logging::debug("FilePreviewViewModel: preview generation succeeded");
     FilePreview preview = std::move(result).value();
 
     if (preview.kind() == FilePreviewKind::Folder || preview.kind() == FilePreviewKind::Text)

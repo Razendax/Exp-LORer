@@ -7,6 +7,8 @@
 #include <set>
 #include <string>
 
+#include "Logging.h"
+
 #ifdef _WIN32
 #include <Windows.h>
 
@@ -983,6 +985,8 @@ Result<std::vector<ContextMenuEntry>> ShellContextMenuProvider::buildItemMenu(co
         collectOpenWithSubmenu(extLower, paths, entries, m_staticCommands, m_nextEntryId);
     }
 
+    const std::size_t staticVerbCount = m_staticCommands.size();
+
     if (mode == ContextMenuSourceMode::StaticAndShellExtensions)
     {
         IShellFolder* desktop = nullptr;
@@ -1047,6 +1051,9 @@ Result<std::vector<ContextMenuEntry>> ShellContextMenuProvider::buildItemMenu(co
         }
     }
 
+    Logging::debug("ShellContextMenuProvider: item context menu built (" + std::to_string(staticVerbCount) +
+                    " static verb(s), " + std::to_string(m_dynamicCommands.size()) + " dynamic shell extension entr" +
+                    (m_dynamicCommands.size() == 1 ? "y" : "ies") + ")");
     return Result<std::vector<ContextMenuEntry>>::success(std::move(entries));
 }
 
@@ -1063,6 +1070,8 @@ Result<std::vector<ContextMenuEntry>> ShellContextMenuProvider::buildBackgroundM
     }
 
     collectShellNewSubmenu(folder, entries, m_shellNewCommands, m_nextEntryId);
+
+    const std::size_t staticVerbCount = m_staticCommands.size();
 
     if (mode == ContextMenuSourceMode::StaticAndShellExtensions)
     {
@@ -1088,6 +1097,9 @@ Result<std::vector<ContextMenuEntry>> ShellContextMenuProvider::buildBackgroundM
         }
     }
 
+    Logging::debug("ShellContextMenuProvider: background context menu built (" + std::to_string(staticVerbCount) +
+                    " static verb(s), " + std::to_string(m_dynamicCommands.size()) + " dynamic shell extension entr" +
+                    (m_dynamicCommands.size() == 1 ? "y" : "ies") + ")");
     return Result<std::vector<ContextMenuEntry>>::success(std::move(entries));
 }
 
@@ -1096,6 +1108,8 @@ Result<void> ShellContextMenuProvider::invoke(std::uint32_t entryId, NativeWindo
     if (auto it = m_staticCommands.find(entryId); it != m_staticCommands.end())
     {
         const StaticCommand& command = it->second;
+        // Never log the expanded command line -- it contains the target path(s) (Architecture.md §14.23).
+        Logging::debug("ShellContextMenuProvider: command invoked (category=static)");
         const std::wstring expanded = expandCommandArguments(command.commandTemplate, command.targetPaths);
         const fs::path fallbackTarget = command.targetPaths.empty() ? fs::path() : command.targetPaths.front();
         return launchCommandLine(expanded, ownerWindow, fallbackTarget);
@@ -1112,9 +1126,11 @@ Result<void> ShellContextMenuProvider::invoke(std::uint32_t entryId, NativeWindo
         info.lpVerbW = MAKEINTRESOURCEW(command.commandOffset);
         info.nShow = SW_SHOWNORMAL;
 
+        Logging::debug("ShellContextMenuProvider: command invoked (category=dynamic)");
         const HRESULT hr = command.handler->InvokeCommand(reinterpret_cast<LPCMINVOKECOMMANDINFO>(&info));
         if (FAILED(hr))
         {
+            Logging::warn("ShellContextMenuProvider: dynamic command invocation failed: " + std::string(toLogString(ErrorCode::IoError)));
             return Result<void>::failure(Error(ErrorCode::IoError, "Failed to invoke the shell extension command"));
         }
         return Result<void>::success();
@@ -1150,9 +1166,13 @@ Result<void> ShellContextMenuProvider::invoke(std::uint32_t entryId, NativeWindo
         }
         catch (const fs::filesystem_error& e)
         {
+            // Never log e.what() -- it embeds both the source template and destination paths
+            // (Architecture.md §14.23).
+            Logging::warn("ShellContextMenuProvider: ShellNew file create failed: " + std::string(toLogString(ErrorCode::IoError)));
             return Result<void>::failure(Error(ErrorCode::IoError, e.what()));
         }
 
+        Logging::debug("ShellContextMenuProvider: command invoked (category=ShellNew)");
         return Result<void>::success();
     }
 

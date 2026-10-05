@@ -6,6 +6,7 @@
 #include <QPointer>
 
 #include "DiskUsageWorker.h"
+#include "Logging.h"
 
 DiskUsageService::DiskUsageService(IDiskUsageScanner& scanner, const std::filesystem::path& databasePath, QObject* parent)
     : QObject(parent)
@@ -34,6 +35,15 @@ void DiskUsageService::requestScan(QObject* context, const std::filesystem::path
         [this, guard, root, callback = std::move(callback)]() {
             Result<void> result = m_worker->scanAndPersist(root);
 
+            if (result.hasError())
+            {
+                Logging::warn("DiskUsageService: scan failed: " + std::string(toLogString(result.error().code)));
+            }
+            else
+            {
+                Logging::debug("DiskUsageService: scan finished");
+            }
+
             QMetaObject::invokeMethod(
                 this,
                 [guard, callback, result = std::move(result)]() mutable {
@@ -57,6 +67,15 @@ void DiskUsageService::requestChildren(QObject* context, const std::filesystem::
         m_worker,
         [this, guard, folder, callback = std::move(callback)]() {
             Result<std::vector<DiskUsageNode>> result = m_worker->childrenFor(folder);
+
+            if (result.hasError())
+            {
+                Logging::warn("DiskUsageService: childrenFor failed: " + std::string(toLogString(result.error().code)));
+            }
+            else
+            {
+                Logging::debug("DiskUsageService: childrenFor returned " + std::to_string(result.value().size()) + " node(s)");
+            }
 
             QMetaObject::invokeMethod(
                 this,

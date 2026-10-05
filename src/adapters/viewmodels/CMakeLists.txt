@@ -83,3 +83,4 @@ target_include_directories(explorer_adapters_viewmodels PUBLIC ${CMAKE_CURRENT_S
 # precedent its own SQLiteTagRepository connection already set -- this is the one place the
 # viewmodels layer reaches past IGitStatusProvider into a concrete git adapter.
 target_link_libraries(explorer_adapters_viewmodels PUBLIC explorer_application explorer_adapters_decoration explorer_adapters_notifications explorer_adapters_persistence explorer_adapters_diskusage explorer_adapters_duplicates explorer_adapters_fragmentation explorer_adapters_git Qt6::Core Qt6::Widgets)
+target_link_libraries(explorer_adapters_viewmodels PRIVATE explorer_adapters_logging)

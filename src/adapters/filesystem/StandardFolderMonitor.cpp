@@ -1,6 +1,7 @@
 #include "StandardFolderMonitor.h"
 
 #include "Error.h"
+#include "Logging.h"
 #include "VirtualPaths.h"
 
 #ifdef _WIN32
@@ -168,6 +169,7 @@ void StandardFolderMonitor::startMonitoring(const std::filesystem::path& rootDir
                                      FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr);
         if (handle == INVALID_HANDLE_VALUE)
         {
+            Logging::warn("folder monitor failed to start: " + std::string(toLogString(ErrorCode::NotFound)));
             QMetaObject::invokeMethod(
                 owner,
                 [owner, id, onStarted]() {
@@ -182,6 +184,7 @@ void StandardFolderMonitor::startMonitoring(const std::filesystem::path& rootDir
         if (stopEvent == nullptr)
         {
             CloseHandle(handle);
+            Logging::warn("folder monitor failed to start: " + std::string(toLogString(ErrorCode::IoError)));
             QMetaObject::invokeMethod(
                 owner,
                 [owner, id, onStarted]() {
@@ -204,6 +207,7 @@ void StandardFolderMonitor::startMonitoring(const std::filesystem::path& rootDir
             return;
         }
 
+        Logging::debug("folder monitor started");
         QMetaObject::invokeMethod(
             owner, [onStarted, id]() { onStarted(Result<FolderMonitorId>::success(id)); }, Qt::QueuedConnection);
 
@@ -253,6 +257,7 @@ void StandardFolderMonitor::startMonitoring(const std::filesystem::path& rootDir
                 // signal that the fixed-size buffer overflowed -- too many changes arrived in one
                 // cycle to fit. Some changes were lost, but the watch itself is still healthy; just
                 // re-issue the read instead of tearing the monitor down.
+                Logging::warn("folder monitor change buffer overflowed; some changes were lost");
                 continue;
             }
 
@@ -261,6 +266,22 @@ void StandardFolderMonitor::startMonitoring(const std::filesystem::path& rootDir
             {
                 continue;
             }
+
+            int added = 0;
+            int removed = 0;
+            int modified = 0;
+            for (const FolderChangeEvent& event : events)
+            {
+                switch (event.kind)
+                {
+                    case FolderChangeKind::Added: ++added; break;
+                    case FolderChangeKind::Removed: ++removed; break;
+                    case FolderChangeKind::Modified: ++modified; break;
+                }
+            }
+            Logging::debug("folder monitor dispatching " + std::to_string(events.size()) + " change(s) (added=" +
+                            std::to_string(added) + " removed=" + std::to_string(removed) + " modified=" +
+                            std::to_string(modified) + ")");
 
             QMetaObject::invokeMethod(
                 owner, [onChangedCopy = statePtr->onChanged, events = std::move(events)]() { onChangedCopy(events); }, Qt::QueuedConnection);
@@ -369,6 +390,7 @@ void StandardFolderMonitor::startMonitoring(const std::filesystem::path&,
                                              std::function<void(const std::vector<FolderChangeEvent>&)>,
                                              std::function<void(Result<FolderMonitorId>)> onStarted)
 {
+    Logging::warn("folder monitor failed to start: " + std::string(toLogString(ErrorCode::IoError)));
     onStarted(Result<FolderMonitorId>::failure(Error(ErrorCode::IoError, "Not supported on this platform")));
 }
 

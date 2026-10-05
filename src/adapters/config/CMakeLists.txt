@@ -35,3 +35,4 @@ target_include_directories(explorer_adapters_config PUBLIC ${CMAKE_CURRENT_SOURC
 # Qt6::Gui is needed for QColor (HighlightThemeViewModel's public API), on top of Qt6::Core for
 # QByteArray/QJsonDocument.
 target_link_libraries(explorer_adapters_config PUBLIC explorer_adapters_viewmodels explorer_adapters_highlighting explorer_adapters_decoration explorer_adapters_favorites explorer_adapters_notifications Qt6::Core Qt6::Gui)
+target_link_libraries(explorer_adapters_config PRIVATE explorer_adapters_logging)

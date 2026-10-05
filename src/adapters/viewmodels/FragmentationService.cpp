@@ -7,6 +7,7 @@
 #include <QPointer>
 
 #include "FragmentationWorker.h"
+#include "Logging.h"
 
 FragmentationService::FragmentationService(IFragmentationScanner& scanner, const std::filesystem::path& databasePath,
                                              QObject* parent)
@@ -67,6 +68,15 @@ void FragmentationService::requestScan(
 
             Result<void> result = m_worker->scanAndPersist(root, minFileSizeBytes, cancelFlag, boundProgress);
 
+            if (result.hasError())
+            {
+                Logging::warn("FragmentationService: scan failed: " + std::string(toLogString(result.error().code)));
+            }
+            else
+            {
+                Logging::debug("FragmentationService: scan finished");
+            }
+
             {
                 QMutexLocker locker(&m_cancelFlagsMutex);
                 m_cancelFlags.remove(requestId);
@@ -104,6 +114,15 @@ void FragmentationService::requestFilesUnder(QObject* context, const std::filesy
         m_worker,
         [this, guard, folder, callback = std::move(callback)]() {
             Result<std::vector<FileFragmentationInfo>> result = m_worker->filesUnder(folder);
+
+            if (result.hasError())
+            {
+                Logging::warn("FragmentationService: filesUnder failed: " + std::string(toLogString(result.error().code)));
+            }
+            else
+            {
+                Logging::debug("FragmentationService: filesUnder returned " + std::to_string(result.value().size()) + " file(s)");
+            }
 
             QMetaObject::invokeMethod(
                 this,

@@ -8,6 +8,7 @@
 #include <optional>
 #include <system_error>
 
+#include "Logging.h"
 #include "PathUtf8.h"
 #include "WindowsLongPath.h"
 
@@ -23,6 +24,8 @@ namespace
 
     Error archiveError(archive* a, const std::string& fallback)
     {
+        // Never log archive_error_string() -- it can embed the archive's path (Architecture.md §14.23).
+        Logging::warn("LibArchiveReader operation failed: " + std::string(toLogString(ErrorCode::IoError)));
         const char* message = archive_error_string(a);
         return Error(ErrorCode::IoError, message ? message : fallback);
     }
@@ -122,6 +125,7 @@ Result<std::vector<LibArchiveReader::Entry>> LibArchiveReader::listEntries(const
     ReaderGuard guard{ a };
 
     std::vector<Entry> entries;
+    int rejectedCount = 0;
     archive_entry* entry = nullptr;
     int rc;
     while ((rc = archive_read_next_header(a, &entry)) == ARCHIVE_OK)
@@ -134,6 +138,10 @@ Result<std::vector<LibArchiveReader::Entry>> LibArchiveReader::listEntries(const
             const auto modTime = std::chrono::system_clock::from_time_t(archive_entry_mtime(entry));
             entries.push_back(Entry{ relativePath, size, modTime, isDir });
         }
+        else
+        {
+            ++rejectedCount;
+        }
 
         archive_read_data_skip(a);
     }
@@ -143,6 +151,13 @@ Result<std::vector<LibArchiveReader::Entry>> LibArchiveReader::listEntries(const
         return Result<std::vector<Entry>>::failure(archiveError(a, "Failed to read archive entries"));
     }
 
+    if (rejectedCount > 0)
+    {
+        Logging::warn("LibArchiveReader::listEntries rejected " + std::to_string(rejectedCount) + " unsafe entr" +
+                       (rejectedCount == 1 ? "y" : "ies"));
+    }
+    Logging::debug("LibArchiveReader::listEntries succeeded: " + std::to_string(entries.size()) + " entr" +
+                    (entries.size() == 1 ? "y" : "ies"));
     return Result<std::vector<Entry>>::success(std::move(entries));
 }
 
@@ -164,11 +179,15 @@ Result<void> LibArchiveReader::extractEntries(const std::filesystem::path& archi
     archive_entry* entry = nullptr;
     int rc;
     bool matchedPrefix = false;
+    int rejectedCount = 0;
+    int extractedCount = 0;
+    std::uintmax_t extractedBytes = 0;
     while ((rc = archive_read_next_header(a, &entry)) == ARCHIVE_OK)
     {
         const fs::path relativePath = normalizedEntryPath(entry);
         if (!isSafeRelativePath(relativePath))
         {
+            ++rejectedCount;
             archive_read_data_skip(a);
             continue;
         }
@@ -245,6 +264,7 @@ Result<void> LibArchiveReader::extractEntries(const std::filesystem::path& archi
             {
                 return Result<void>::failure(Error(ErrorCode::IoError, "Failed to write " + PathUtf8::toUtf8(*destPath)));
             }
+            extractedBytes += size;
         }
         if (readRc != ARCHIVE_EOF)
         {
@@ -256,6 +276,7 @@ Result<void> LibArchiveReader::extractEntries(const std::filesystem::path& archi
         {
             return Result<void>::failure(Error(ErrorCode::IoError, "Failed to finalize " + PathUtf8::toUtf8(*destPath)));
         }
+        ++extractedCount;
     }
 
     if (rc != ARCHIVE_EOF)
@@ -268,5 +289,12 @@ Result<void> LibArchiveReader::extractEntries(const std::filesystem::path& archi
         return Result<void>::failure(Error(ErrorCode::NotFound, PathUtf8::toUtf8(entryPrefix) + " does not exist in archive"));
     }
 
+    if (rejectedCount > 0)
+    {
+        Logging::warn("LibArchiveReader::extractEntries rejected " + std::to_string(rejectedCount) + " unsafe entr" +
+                       (rejectedCount == 1 ? "y" : "ies"));
+    }
+    Logging::info("LibArchiveReader::extractEntries succeeded: " + std::to_string(extractedCount) + " file(s), " +
+                   std::to_string(extractedBytes) + " byte(s)");
     return Result<void>::success();
 }

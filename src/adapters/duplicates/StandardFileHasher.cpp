@@ -5,6 +5,7 @@
 
 #include <xxhash.h>
 
+#include "Logging.h"
 #include "WindowsLongPath.h"
 
 Result<std::uint64_t> StandardFileHasher::hashFileContent(const std::filesystem::path& path)
@@ -14,6 +15,7 @@ Result<std::uint64_t> StandardFileHasher::hashFileContent(const std::filesystem:
     std::ifstream stream(target, std::ios::binary);
     if (!stream)
     {
+        Logging::debug("StandardFileHasher: failed to open file for hashing");
         return Result<std::uint64_t>::failure(Error(ErrorCode::IoError, "Failed to open file for hashing"));
     }
 

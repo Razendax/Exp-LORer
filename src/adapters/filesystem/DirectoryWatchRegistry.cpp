@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <type_traits>
 
+#include "Logging.h"
 #include "UnicodeCaseFold.h"
 
 namespace
@@ -36,6 +37,11 @@ DirectoryWatchRegistry::AddOutcome DirectoryWatchRegistry::addWatch(const std::w
     const DirectoryWatchId id = m_nextId++;
     m_entries.push_back(Entry{ id, pathKey, normalizedKey, std::move(callback) });
 
+    if (isFirstForPath)
+    {
+        Logging::debug("directory watch registry: first watcher for a path (watch " + std::to_string(id) + ")");
+    }
+
     return AddOutcome{ id, isFirstForPath };
 }
 
@@ -65,6 +71,7 @@ DirectoryWatchRegistry::RemoveOutcome DirectoryWatchRegistry::removeWatch(Direct
     const std::wstring canonicalPathKey = canonicalIt != m_canonicalPathKeys.end() ? canonicalIt->second : std::wstring{};
     m_canonicalPathKeys.erase(normalizedKey);
 
+    Logging::debug("directory watch registry: last watcher removed for a path (watch " + std::to_string(id) + ")");
     return RemoveOutcome{ true, true, canonicalPathKey };
 }
 

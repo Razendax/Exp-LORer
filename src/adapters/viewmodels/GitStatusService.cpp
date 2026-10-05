@@ -6,6 +6,7 @@
 #include <QPointer>
 
 #include "GitStatusWorker.h"
+#include "Logging.h"
 
 GitStatusService::GitStatusService(GitStatusUseCase& gitStatusUseCase, GitBranchUseCase& gitBranchUseCase, QObject* parent)
     : QObject(parent)
@@ -34,6 +35,10 @@ void GitStatusService::requestStatus(QObject* context, const std::filesystem::pa
         m_worker,
         [this, guard, directory, callback = std::move(callback)]() {
             Result<GitDirectoryStatus> result = m_worker->compute(directory);
+            if (result.hasError())
+            {
+                Logging::debug("GitStatusService: status computation failed: " + std::string(toLogString(result.error().code)));
+            }
 
             QMetaObject::invokeMethod(
                 this,
@@ -106,6 +111,15 @@ void GitStatusService::requestCheckout(QObject* context, const std::filesystem::
         m_worker,
         [this, guard, directory, branchName, callback = std::move(callback)]() {
             Result<void> result = m_worker->computeCheckout(directory, branchName);
+            // Never log branchName -- Architecture.md §14.23 explicitly calls this out.
+            if (result.hasError())
+            {
+                Logging::warn("GitStatusService: checkout failed: " + std::string(toLogString(result.error().code)));
+            }
+            else
+            {
+                Logging::info("GitStatusService: checkout succeeded");
+            }
 
             QMetaObject::invokeMethod(
                 this,

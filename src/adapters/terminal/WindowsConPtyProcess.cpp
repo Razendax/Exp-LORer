@@ -1,6 +1,7 @@
 #include "WindowsConPtyProcess.h"
 
 #include "Error.h"
+#include "Logging.h"
 
 #ifdef _WIN32
 
@@ -47,6 +48,7 @@ Result<void> WindowsConPtyProcess::start(const std::filesystem::path& cwd, int c
     HANDLE outputWrite = nullptr;
     if (!CreatePipe(&inputRead, &inputWrite, nullptr, 0) || !CreatePipe(&outputRead, &outputWrite, nullptr, 0))
     {
+        Logging::warn("WindowsConPtyProcess: start failed: " + std::string(toLogString(ErrorCode::IoError)));
         return Result<void>::failure(Error(ErrorCode::IoError, "Failed to create pipes for the terminal process"));
     }
 
@@ -64,6 +66,7 @@ Result<void> WindowsConPtyProcess::start(const std::filesystem::path& cwd, int c
     {
         CloseHandle(inputWrite);
         CloseHandle(outputRead);
+        Logging::warn("WindowsConPtyProcess: start failed: " + std::string(toLogString(ErrorCode::IoError)));
         return Result<void>::failure(Error(ErrorCode::IoError, "Failed to create the pseudoconsole"));
     }
 
@@ -82,6 +85,7 @@ Result<void> WindowsConPtyProcess::start(const std::filesystem::path& cwd, int c
         ClosePseudoConsole(pseudoConsole);
         CloseHandle(inputWrite);
         CloseHandle(outputRead);
+        Logging::warn("WindowsConPtyProcess: start failed: " + std::string(toLogString(ErrorCode::IoError)));
         return Result<void>::failure(Error(ErrorCode::IoError, "Failed to initialize the process attribute list"));
     }
 
@@ -102,6 +106,7 @@ Result<void> WindowsConPtyProcess::start(const std::filesystem::path& cwd, int c
         ClosePseudoConsole(pseudoConsole);
         CloseHandle(inputWrite);
         CloseHandle(outputRead);
+        Logging::warn("WindowsConPtyProcess: start failed: " + std::string(toLogString(ErrorCode::IoError)));
         return Result<void>::failure(Error(ErrorCode::IoError, "Failed to launch the command shell"));
     }
 
@@ -115,6 +120,7 @@ Result<void> WindowsConPtyProcess::start(const std::filesystem::path& cwd, int c
 
     m_readerThread = std::thread(&WindowsConPtyProcess::readLoop, this);
 
+    Logging::info("WindowsConPtyProcess: process started (" + std::to_string(size.X) + "x" + std::to_string(size.Y) + ")");
     return Result<void>::success();
 }
 
@@ -136,6 +142,8 @@ void WindowsConPtyProcess::readLoop()
         WaitForSingleObject(asHandle(m_processHandle), INFINITE);
         GetExitCodeProcess(asHandle(m_processHandle), &exitCode);
     }
+
+    Logging::info("WindowsConPtyProcess: process exited (code " + std::to_string(exitCode) + ")");
 
     // Posted rather than done inline: terminate() joins this very thread, which would deadlock if
     // called from within readLoop() itself. Queuing it onto the UI thread lets readLoop() return
@@ -169,6 +177,7 @@ void WindowsConPtyProcess::resize(int columns, int rows)
 
     const COORD size{ static_cast<SHORT>(columns), static_cast<SHORT>(rows) };
     ResizePseudoConsole(asPseudoConsole(m_pseudoConsole), size);
+    Logging::debug("WindowsConPtyProcess: resized (" + std::to_string(columns) + "x" + std::to_string(rows) + ")");
 }
 
 void WindowsConPtyProcess::terminate()
@@ -219,6 +228,7 @@ WindowsConPtyProcess::~WindowsConPtyProcess() = default;
 
 Result<void> WindowsConPtyProcess::start(const std::filesystem::path&, int, int)
 {
+    Logging::warn("WindowsConPtyProcess: start failed: " + std::string(toLogString(ErrorCode::IoError)));
     return Result<void>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
 }
 

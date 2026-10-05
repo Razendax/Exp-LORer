@@ -5,6 +5,7 @@
 
 #include <vips/vips.h>
 
+#include "Logging.h"
 #include "PathUtf8.h"
 #include "WindowsLongPath.h"
 
@@ -133,6 +134,7 @@ Result<MediaMetadata> VipsImageDecoder::extractMetadata(const std::filesystem::p
     auto bytesResult = readWholeFile(mediaFile);
     if (!bytesResult)
     {
+        Logging::warn("VipsImageDecoder::extractMetadata failed: " + std::string(toLogString(bytesResult.error().code)));
         return Result<MediaMetadata>::failure(bytesResult.error());
     }
     const std::vector<std::byte>& bytes = bytesResult.value();
@@ -140,6 +142,7 @@ Result<MediaMetadata> VipsImageDecoder::extractMetadata(const std::filesystem::p
     VipsImage* image = vips_image_new_from_buffer(bytes.data(), bytes.size(), "", nullptr);
     if (image == nullptr)
     {
+        Logging::warn("VipsImageDecoder::extractMetadata failed: " + std::string(toLogString(ErrorCode::IoError)));
         return Result<MediaMetadata>::failure(
             Error(ErrorCode::IoError, "libvips failed to decode " + PathUtf8::toUtf8(mediaFile)));
     }
@@ -148,6 +151,7 @@ Result<MediaMetadata> VipsImageDecoder::extractMetadata(const std::filesystem::p
     const int height = vips_image_get_height(image);
     g_object_unref(image);
 
+    Logging::debug("VipsImageDecoder::extractMetadata succeeded: " + std::to_string(width) + "x" + std::to_string(height));
     return MediaMetadata::create(width, height, std::chrono::milliseconds(0), "image");
 }
 
@@ -159,6 +163,7 @@ Result<std::vector<std::byte>> VipsImageDecoder::generateThumbnail(const std::fi
     auto bytesResult = readWholeFile(mediaFile);
     if (!bytesResult)
     {
+        Logging::warn("VipsImageDecoder::generateThumbnail failed: " + std::string(toLogString(bytesResult.error().code)));
         return Result<std::vector<std::byte>>::failure(bytesResult.error());
     }
     const std::vector<std::byte>& sourceBytes = bytesResult.value();
@@ -169,6 +174,7 @@ Result<std::vector<std::byte>> VipsImageDecoder::generateThumbnail(const std::fi
                                                     nullptr);
     if (thumbnailRc != 0 || thumbnail == nullptr)
     {
+        Logging::warn("VipsImageDecoder::generateThumbnail failed: " + std::string(toLogString(ErrorCode::IoError)));
         return Result<std::vector<std::byte>>::failure(
             Error(ErrorCode::IoError, "libvips failed to generate a thumbnail for " + PathUtf8::toUtf8(mediaFile)));
     }
@@ -198,6 +204,7 @@ Result<std::vector<std::byte>> VipsImageDecoder::generateThumbnail(const std::fi
 
     if (saveRc != 0 || jpegBuffer == nullptr)
     {
+        Logging::warn("VipsImageDecoder::generateThumbnail failed: " + std::string(toLogString(ErrorCode::IoError)));
         return Result<std::vector<std::byte>>::failure(
             Error(ErrorCode::IoError, "libvips failed to JPEG-encode the thumbnail for " + PathUtf8::toUtf8(mediaFile)));
     }
@@ -206,5 +213,6 @@ Result<std::vector<std::byte>> VipsImageDecoder::generateThumbnail(const std::fi
     std::memcpy(encoded.data(), jpegBuffer, jpegLength);
     g_free(jpegBuffer);
 
+    Logging::debug("VipsImageDecoder::generateThumbnail succeeded: " + std::to_string(encoded.size()) + " byte(s)");
     return Result<std::vector<std::byte>>::success(std::move(encoded));
 }

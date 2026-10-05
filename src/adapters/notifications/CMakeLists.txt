@@ -7,3 +7,4 @@ add_library(explorer_adapters_notifications STATIC
 
 target_include_directories(explorer_adapters_notifications PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(explorer_adapters_notifications PUBLIC explorer_domain Qt6::Core)
+target_link_libraries(explorer_adapters_notifications PRIVATE explorer_adapters_logging)

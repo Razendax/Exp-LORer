@@ -41,3 +41,5 @@ target_link_libraries(explorer_adapters_media PRIVATE PkgConfig::VIPS)
 
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswscale)
 target_link_libraries(explorer_adapters_media PRIVATE PkgConfig::FFMPEG)
+
+target_link_libraries(explorer_adapters_media PRIVATE explorer_adapters_logging)

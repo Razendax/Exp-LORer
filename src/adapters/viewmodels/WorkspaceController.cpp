@@ -6,6 +6,7 @@
 #include "FileOperationsController.h"
 #include "FilePreviewViewModel.h"
 #include "FolderTreeModel.h"
+#include "Logging.h"
 #include "MonitoringPanelViewModel.h"
 #include "PathContainment.h"
 #include "TabViewModel.h"
@@ -113,6 +114,7 @@ WorkspaceConfig WorkspaceController::captureConfig() const
 bool WorkspaceController::restoreFromConfig(const WorkspaceConfig& config)
 {
     bool restoredAny = false;
+    int restoredTabCount = 0;
 
     for (WorkspacePaneId id : { WorkspacePaneId::PaneA, WorkspacePaneId::PaneB, WorkspacePaneId::PaneC, WorkspacePaneId::PaneD })
     {
@@ -131,6 +133,7 @@ bool WorkspaceController::restoreFromConfig(const WorkspaceConfig& config)
             tab->setSortCriterion(tabConfig.sortCriterion, tabConfig.sortAscending);
             tab->setHiddenColumns(tabConfig.hiddenColumns);
             restoredAny = true;
+            ++restoredTabCount;
         }
 
         paneViewModel->setActiveTab(paneConfig.activeTabIndex);
@@ -142,6 +145,7 @@ bool WorkspaceController::restoreFromConfig(const WorkspaceConfig& config)
         setFocusedPane(config.focusedPane);
     }
 
+    Logging::info("workspace restore: " + std::to_string(restoredTabCount) + " tab(s) restored");
     return restoredAny;
 }
 

@@ -17,3 +17,4 @@ find_package(libgit2 CONFIG REQUIRED)
 # vcpkg's libgit2 port exports the target as libgit2::libgit2package (verified against the
 # installed port's generated libgit2Targets.cmake), not the more predictable libgit2::libgit2.
 target_link_libraries(explorer_adapters_git PUBLIC libgit2::libgit2package)
+target_link_libraries(explorer_adapters_git PRIVATE explorer_adapters_logging)

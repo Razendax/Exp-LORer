@@ -7,6 +7,7 @@
 #include <QPointer>
 
 #include "FileTransferWorker.h"
+#include "Logging.h"
 
 FileTransferService::FileTransferService(IFileSystemRepository& fileSystemRepository, QObject* parent)
     : QObject(parent)
@@ -62,6 +63,8 @@ void FileTransferService::requestTransfer(QObject* context, int requestId,
 
             auto onInsufficientSpace = [this, guard, callback = callbacks.onInsufficientSpace](std::uintmax_t requiredBytes,
                                                                                                   std::uintmax_t availableBytes) {
+                Logging::warn("FileTransferService: insufficient disk space (required=" + std::to_string(requiredBytes) +
+                               " available=" + std::to_string(availableBytes) + ")");
                 if (!callback)
                 {
                     return;
@@ -115,6 +118,15 @@ void FileTransferService::requestTransfer(QObject* context, int requestId,
 
             Result<void> result = m_worker->runTransfer(topLevelRoots, isMove, cancelFlag, onEstimateProgress,
                                                           onInsufficientSpace, onFileStarted, onBytesProgress);
+
+            if (result.hasError())
+            {
+                Logging::warn("FileTransferService: transfer failed: " + std::string(toLogString(result.error().code)));
+            }
+            else
+            {
+                Logging::info(std::string("FileTransferService: transfer finished (") + (isMove ? "move" : "copy") + ")");
+            }
 
             {
                 QMutexLocker locker(&m_cancelFlagsMutex);

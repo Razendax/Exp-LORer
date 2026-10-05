@@ -6,7 +6,10 @@
 #endif
 
 #include "IFileSystemRepository.h"
+#include "Logging.h"
 #include "WindowsLongPath.h"
+
+#include <chrono>
 
 #ifdef _WIN32
 namespace
@@ -98,6 +101,9 @@ Result<std::vector<FileFragmentationInfo>> WindowsFragmentationScanner::scan(
     const std::atomic<bool>& cancelRequested) const
 {
 #ifdef _WIN32
+    Logging::info("WindowsFragmentationScanner: scan started (minFileSizeBytes=" + std::to_string(minFileSizeBytes) + ")");
+    const auto scanStart = std::chrono::steady_clock::now();
+
     // totalCandidates == 0 signals the listing phase to onProgress -- the eventual candidate
     // count isn't known until this enumeration finishes, so this is reported as indeterminate
     // progress rather than a fake total. listDirectoryRecursive already throttles this callback
@@ -112,6 +118,7 @@ Result<std::vector<FileFragmentationInfo>> WindowsFragmentationScanner::scan(
     auto listed = m_fileSystemRepository.listDirectoryRecursive(root, listingProgress, nullptr);
     if (listed.hasError())
     {
+        Logging::warn("WindowsFragmentationScanner: scan failed: " + std::string(toLogString(listed.error().code)));
         return Result<std::vector<FileFragmentationInfo>>::failure(std::move(listed).error());
     }
 
@@ -128,10 +135,12 @@ Result<std::vector<FileFragmentationInfo>> WindowsFragmentationScanner::scan(
     results.reserve(candidates.size());
 
     std::size_t scanned = 0;
+    std::size_t skippedCount = 0;
     for (const FileNode& candidate : candidates)
     {
         if (cancelRequested.load(std::memory_order_relaxed))
         {
+            Logging::info("WindowsFragmentationScanner: scan cancelled");
             return Result<std::vector<FileFragmentationInfo>>::failure(Error(ErrorCode::Cancelled, "Fragmentation scan cancelled"));
         }
 
@@ -148,9 +157,17 @@ Result<std::vector<FileFragmentationInfo>> WindowsFragmentationScanner::scan(
             {
                 results.push_back(FileFragmentationInfo{ candidate.path(), candidate.size(), extentResult.fragmentCount });
             }
-            // Unsupported (non-NTFS volume) -- skip this file from the report, not the whole scan.
+            else
+            {
+                // Unsupported (non-NTFS volume) -- skip this file from the report, not the whole scan.
+                ++skippedCount;
+            }
         }
-        // Unopenable (e.g. permission denied) -- same per-file skip tolerance.
+        else
+        {
+            // Unopenable (e.g. permission denied) -- same per-file skip tolerance.
+            ++skippedCount;
+        }
 
         ++scanned;
         if (onProgress)
@@ -159,6 +176,15 @@ Result<std::vector<FileFragmentationInfo>> WindowsFragmentationScanner::scan(
         }
     }
 
+    if (skippedCount > 0)
+    {
+        Logging::debug("WindowsFragmentationScanner: skipped " + std::to_string(skippedCount) + " file(s)");
+    }
+
+    const auto elapsedMs =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - scanStart).count();
+    Logging::info("WindowsFragmentationScanner: scan finished (" + std::to_string(candidates.size()) + " candidate(s), " +
+                   std::to_string(results.size()) + " result(s) in " + std::to_string(elapsedMs) + "ms)");
     return Result<std::vector<FileFragmentationInfo>>::success(std::move(results));
 #else
     (void)root;
