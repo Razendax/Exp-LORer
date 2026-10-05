@@ -76,7 +76,7 @@ namespace
     constexpr std::array<FileListModel::Column, FileListModel::ColumnCount - 1> kAllVisibilityColumns = {
         FileListModel::SizeColumn,      FileListModel::TypeColumn,   FileListModel::DateModifiedColumn,
         FileListModel::GitStatusColumn, FileListModel::TagsColumn,   FileListModel::DateCreatedColumn,
-        FileListModel::PercentColumn,
+        FileListModel::PercentColumn,   FileListModel::FragmentsColumn,
     };
 
     // Mirrors FileListModel::headerData()'s own labels for these columns.
@@ -98,6 +98,8 @@ namespace
                 return QObject::tr("Date created");
             case FileListModel::PercentColumn:
                 return QObject::tr("Percent");
+            case FileListModel::FragmentsColumn:
+                return QObject::tr("Fragments");
             default:
                 return QString();
         }

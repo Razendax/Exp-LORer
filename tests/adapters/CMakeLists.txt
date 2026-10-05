@@ -36,6 +36,7 @@ add_executable(explorer_adapters_tests
     SQLiteDiskUsageRepositoryTest.cpp
     StandardFileHasherTest.cpp
     StandardDuplicateFileScannerTest.cpp
+    SQLiteFragmentationRepositoryTest.cpp
 )
 
 target_link_libraries(explorer_adapters_tests PRIVATE
@@ -53,6 +54,7 @@ target_link_libraries(explorer_adapters_tests PRIVATE
     explorer_adapters_favorites
     explorer_adapters_diskusage
     explorer_adapters_duplicates
+    explorer_adapters_fragmentation
     Qt6::Core
     GTest::gtest
     GTest::gmock

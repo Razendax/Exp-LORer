@@ -11,6 +11,8 @@ add_executable(explorer_application_tests
     MockDiskUsageScanner.h
     MockDiskUsageRepository.h
     MockDuplicateFileScanner.h
+    MockFragmentationScanner.h
+    MockFragmentationRepository.h
     FileNavigationUseCaseTest.cpp
     TagManagementUseCaseTest.cpp
     MediaProcessingUseCaseTest.cpp
@@ -22,6 +24,7 @@ add_executable(explorer_application_tests
     DiskUsageUseCaseTest.cpp
     FileTransferUseCaseTest.cpp
     DuplicateFinderUseCaseTest.cpp
+    FragmentationUseCaseTest.cpp
 )
 
 target_link_libraries(explorer_application_tests PRIVATE

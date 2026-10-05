@@ -10,6 +10,8 @@ add_library(explorer_application STATIC
     IDiskUsageScanner.h
     IDiskUsageRepository.h
     IDuplicateFileScanner.h
+    IFragmentationScanner.h
+    IFragmentationRepository.h
     FolderChangeEvent.h
     MediaExtensions.h
     ArchiveExtensions.h
@@ -23,6 +25,9 @@ add_library(explorer_application STATIC
     FileTagsByPath.h
     FolderSizesByPath.h
     DuplicateFileGroup.h
+    FileFragmentationInfo.h
+    FragmentationSummary.h
+    FragmentCountsByPath.h
     FileNavigationUseCase.h
     FileNavigationUseCase.cpp
     TagManagementUseCase.h
@@ -46,6 +51,8 @@ add_library(explorer_application STATIC
     FileTransferUseCase.cpp
     DuplicateFinderUseCase.h
     DuplicateFinderUseCase.cpp
+    FragmentationUseCase.h
+    FragmentationUseCase.cpp
 )
 
 target_include_directories(explorer_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

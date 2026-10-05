@@ -31,6 +31,7 @@
 #include "FileItemContextMenu.h"
 #include "FileOperationsController.h"
 #include "FolderSizeWidget.h"
+#include "FragmentationWidget.h"
 #include "IContextMenuProvider.h"
 #include "PathContainment.h"
 #include "SearchCriteriaPanel.h"
@@ -138,7 +139,8 @@ namespace
 
 WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOperationsController* fileOperationsController,
                                           ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
-                                          DiskUsageService& diskUsageService, UiThemeChangeNotifier& uiThemeChangeNotifier,
+                                          DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
+                                          NotificationCenter& notificationCenter, UiThemeChangeNotifier& uiThemeChangeNotifier,
                                           const std::array<int, FileListModel::ColumnCount>& initialColumnWidths,
                                           const std::array<int, FileListModel::ColumnCount>& initialColumnOrder,
                                           QWidget* parent)
@@ -147,6 +149,8 @@ WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOpera
     , m_fileOperationsController(fileOperationsController)
     , m_columnVisibilitySettingsViewModel(columnVisibilitySettingsViewModel)
     , m_diskUsageService(diskUsageService)
+    , m_fragmentationService(fragmentationService)
+    , m_notificationCenter(notificationCenter)
     , m_uiThemeChangeNotifier(uiThemeChangeNotifier)
     , m_initialColumnWidths(initialColumnWidths)
     , m_initialColumnOrder(initialColumnOrder)
@@ -472,6 +476,12 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     // Second bottom-panel tab, right after Terminal (Architecture.md §14.39).
     auto* folderSizeWidget = new FolderSizeWidget(m_diskUsageService, tab, bottomPanel);
     bottomPanel->addPanelTab(tr("Folder Size"), folderSizeWidget);
+
+    // Third bottom-panel tab, right after Folder Size (Architecture.md §14.52).
+    auto* fragmentationWidget = new FragmentationWidget(m_fragmentationService, m_notificationCenter, tab, bottomPanel);
+    bottomPanel->addPanelTab(tr("Fragmentation"), fragmentationWidget);
+    connect(fragmentationWidget, &FragmentationWidget::openContainingFolderRequested, this,
+            [this](const std::filesystem::path& path) { navigateAndSelect(path.parent_path(), path); });
 
     auto* splitter = new QSplitter(Qt::Vertical, m_tabWidget);
     splitter->addWidget(stack);

@@ -13,6 +13,8 @@ class WorkspaceController;
 class WorkspacePaneWidget;
 class ColumnVisibilitySettingsViewModel;
 class DiskUsageService;
+class FragmentationService;
+class NotificationCenter;
 class UiThemeChangeNotifier;
 
 // Owns all 4 WorkspacePaneWidget instances up front, created once, never destroyed.
@@ -29,7 +31,8 @@ class WorkspaceLayoutWidget : public QWidget
 public:
     explicit WorkspaceLayoutWidget(WorkspaceController* controller,
                                     ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
-                                    DiskUsageService& diskUsageService, UiThemeChangeNotifier& uiThemeChangeNotifier,
+                                    DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
+                                    NotificationCenter& notificationCenter, UiThemeChangeNotifier& uiThemeChangeNotifier,
                                     const std::array<int, FileListModel::ColumnCount>& initialColumnWidths = {},
                                     const std::array<int, FileListModel::ColumnCount>& initialColumnOrder = {},
                                     QWidget* parent = nullptr);

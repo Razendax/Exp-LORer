@@ -15,6 +15,7 @@
 #include "FileNode.h"
 #include "FileTagsByPath.h"
 #include "FolderSizesByPath.h"
+#include "FragmentCountsByPath.h"
 #include "GitDirectoryStatus.h"
 #include "Tag.h"
 
@@ -44,6 +45,7 @@ public:
         TagsColumn,
         DateCreatedColumn,
         PercentColumn,
+        FragmentsColumn,
         ColumnCount,
     };
 
@@ -144,6 +146,15 @@ public slots:
     // "Scan Drive" scan -- keeps showing a blank Size cell, same as before this existed.
     void setFolderSizes(const FolderSizesByPathMap& sizesByPath);
 
+    // Sets the cached NTFS fragment counts shown in FragmentsColumn for file rows (Architecture.md
+    // §14.53), keyed by each file's absolute path. Called by TabViewModel::requestFragmentCounts
+    // right after a directory listing, from a read-only FragmentationService::requestFilesUnder
+    // lookup (never triggers a scan). A file absent from the map -- never covered by a "Scan
+    // Folder"/"Scan Drive" scan in the Fragmentation tab, or on a non-NTFS volume -- shows a blank
+    // Fragments cell, same posture as an uncovered directory's Size cell. Directories always show
+    // blank regardless of this map (fragmentation is tracked per file only).
+    void setFragmentCounts(const FragmentCountsByPathMap& countsByPath);
+
 signals:
     void sortOrderChanged(SortCriterion criterion, bool ascending);
 
@@ -181,6 +192,7 @@ private:
     GitStatusByPathMap m_gitStatusByPath;
     TagsByPathMap m_fileTagsByPath;
     FolderSizesByPathMap m_folderSizesByPath;
+    FragmentCountsByPathMap m_fragmentCountsByPath;
     std::uintmax_t m_totalKnownSize = 0;
 
     // Dimmed (QStyle::generatedIconPixmap) variant of a hidden entry's icon, cached per icon

@@ -238,7 +238,8 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
                          FavoritesViewModel& favoritesViewModel, NotificationCenter& notificationCenter,
                          NotificationSettingsViewModel& notificationSettingsViewModel,
                          ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, DiskUsageService& diskUsageService,
-                         DuplicateFinderService& duplicateFinderService, const AppConfig& initialConfig, QWidget* parent)
+                         DuplicateFinderService& duplicateFinderService, FragmentationService& fragmentationService,
+                         const AppConfig& initialConfig, QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceController(workspaceController)
     , m_configStore(configStore)
@@ -254,6 +255,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_columnVisibilitySettingsViewModel(columnVisibilitySettingsViewModel)
     , m_diskUsageService(diskUsageService)
     , m_duplicateFinderService(duplicateFinderService)
+    , m_fragmentationService(fragmentationService)
     , m_columnWidths(initialConfig.detailsColumnWidths)
     , m_columnOrder(initialConfig.detailsColumnOrder)
     , m_initialLeftPanelState(initialConfig.leftPanel)
@@ -479,8 +481,8 @@ void MainWindow::createLayoutToolBar()
 void MainWindow::createWorkspace()
 {
     m_workspaceLayoutWidget = new WorkspaceLayoutWidget(m_workspaceController, m_columnVisibilitySettingsViewModel,
-                                                          m_diskUsageService, m_uiThemeChangeNotifier, m_columnWidths,
-                                                          m_columnOrder, this);
+                                                          m_diskUsageService, m_fragmentationService, m_notificationCenter,
+                                                          m_uiThemeChangeNotifier, m_columnWidths, m_columnOrder, this);
     m_workspaceLayoutWidget->setObjectName(QStringLiteral("workspaceLayoutWidget"));
 
     // Right panel (Architecture.md §14.25): a collapsible side-panel tab strip wrapping the tag UI,

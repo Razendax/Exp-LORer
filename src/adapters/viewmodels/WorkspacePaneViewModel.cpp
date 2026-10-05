@@ -7,8 +7,8 @@ WorkspacePaneViewModel::WorkspacePaneViewModel(FileNavigationUseCase& fileNaviga
                                                 QObject& fileDecorationsChangeSource, GitStatusService& gitStatusService,
                                                 FolderMonitorUseCase& folderMonitorUseCase,
                                                 AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
-                                                DiskUsageService& diskUsageService, TagChangeNotifier& tagChangeNotifier,
-                                                WorkspacePaneId id, QObject* parent)
+                                                DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
+                                                TagChangeNotifier& tagChangeNotifier, WorkspacePaneId id, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagManagementUseCase(tagManagementUseCase)
@@ -19,6 +19,7 @@ WorkspacePaneViewModel::WorkspacePaneViewModel(FileNavigationUseCase& fileNaviga
     , m_advancedSearchService(advancedSearchService)
     , m_fileTagsService(fileTagsService)
     , m_diskUsageService(diskUsageService)
+    , m_fragmentationService(fragmentationService)
     , m_tagChangeNotifier(tagChangeNotifier)
     , m_id(id)
 {
@@ -43,7 +44,8 @@ TabViewModel* WorkspacePaneViewModel::addTab()
 {
     auto* tab = new TabViewModel(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
                                   m_fileDecorationsChangeSource, m_gitStatusService, m_folderMonitorUseCase,
-                                  m_advancedSearchService, m_fileTagsService, m_diskUsageService, m_tagChangeNotifier, this);
+                                  m_advancedSearchService, m_fileTagsService, m_diskUsageService, m_fragmentationService,
+                                  m_tagChangeNotifier, this);
     m_tabs.push_back(tab);
 
     const int index = static_cast<int>(m_tabs.size()) - 1;

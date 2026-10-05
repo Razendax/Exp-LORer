@@ -54,14 +54,17 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 * **Sort order:** Directory contents can be sorted by Name, Size, Type, or Date modified, ascending or descending, via a "Sort by" submenu under the View menu (Architecture.md §14.12) or by clicking a column header in Details view. The chosen sort applies uniformly across all seven view modes and is preserved per tab across navigation within that tab; a newly opened tab starts at the default (Name, ascending) rather than inheriting another tab's choice.
 * **Customizable Details-view columns (Architecture.md §14.39):** right-clicking a Details-view
   column header opens a menu listing every available column — Name, Size, Type, Date Modified,
-  Git Status, Tags, Date created, and Percent — each checked when currently shown; clicking one
-  toggles its visibility. This applies to the current tab only, leaving other open tabs unaffected.
-  Name is always shown and isn't offered in the menu. The Tags column shows each file/folder's tags
-  as small colored chips, live-updating as tags are assigned/removed; Date created shows the
-  filesystem creation timestamp; Percent shows a blue-ish bar, filled left-to-right in proportion to
-  the item's share of its folder's total size, with the percentage centered in the bar as text.
-  `Settings > General > Columns` (see below) controls which columns a newly opened tab starts with;
-  it doesn't change any tab already open.
+  Git Status, Tags, Date created, Percent, and Fragments — each checked when currently shown;
+  clicking one toggles its visibility. This applies to the current tab only, leaving other open tabs
+  unaffected. Name is always shown and isn't offered in the menu. The Tags column shows each
+  file/folder's tags as small colored chips, live-updating as tags are assigned/removed; Date created
+  shows the filesystem creation timestamp; Percent shows a blue-ish bar, filled left-to-right in
+  proportion to the item's share of its folder's total size, with the percentage centered in the bar
+  as text; Fragments shows a file's cached NTFS fragment count from the last Fragmentation-tab scan
+  that covered its folder (Architecture.md §14.53) — blank if that folder was never scanned, and
+  always blank for folders themselves, since fragmentation is tracked per file only; it never
+  triggers a scan on its own. `Settings > General > Columns` (see below) controls which columns a
+  newly opened tab starts with; it doesn't change any tab already open.
 * **Hidden files/folders:** A "Show hidden files" toggle under the View menu (Architecture.md
   §14.22) controls visibility of OS-hidden entries app-wide and persists across restarts. When on,
   hidden files/folders appear in every view mode and in search results with grayed-out text so
@@ -112,10 +115,10 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   name and the changed-file count are hidden when the current folder isn't inside a git repository,
   and refresh on navigation, not live.
 * **Integrated terminal (Architecture.md §14.24):** Each tab has its own collapsible panel at the
-  bottom, collapsed by default, showing a strip of panel tabs ("Terminal" and "Folder Size" in v1).
-  Clicking "Terminal" the first time expands the panel and opens a `cmd.exe` session already in that
-  tab's current folder; collapsing and re-expanding the panel leaves that session running. Closing
-  the tab ends its terminal session.
+  bottom, collapsed by default, showing a strip of panel tabs ("Terminal", "Folder Size", and
+  "Fragmentation" in v1). Clicking "Terminal" the first time expands the panel and opens a `cmd.exe`
+  session already in that tab's current folder; collapsing and re-expanding the panel leaves that
+  session running. Closing the tab ends its terminal session.
 * **Disk usage / folder size (Architecture.md §14.40):** the bottom panel's "Folder Size" tab shows a
   pie chart of the current folder's largest subfolders/files (up to 10 segments, each labeled with
   name, percentage of the folder's total size, and size, color-coded, and clickable to navigate into
@@ -129,6 +132,16 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   view's Percent column (see above) uses the same per-folder cached sizes: each row's bar is that
   item's size divided by the sum of all its siblings' sizes in the current folder, so a subfolder
   that has never been scanned has no size to contribute and shows no bar of its own until scanned.
+* **Disk fragmentation viewer (Architecture.md §14.52):** a third bottom-panel tab, "Fragmentation",
+  next to "Folder Size" — scans the tab's current folder or its drive and reports NTFS file
+  fragmentation; viewing only, no defragmentation action. A summary (files scanned, total size
+  scanned, how many files are fragmented, total fragment count) sits above a sortable per-file list
+  (name, folder, size, fragment count, and a contiguous/fragmented state), filterable to fragmented
+  files only. Unlike the duplicate file finder below, scan results persist to their own local
+  database table — navigating away and back (or restarting the app) redisplays the last scan for a
+  folder instantly, without rescanning; rescanning refreshes it. Once a folder has been scanned, its
+  files' cached fragment counts also appear in the Details view's Fragments column (see above),
+  the same cache-only posture as Folder Size's Size-column integration described above it.
 * **Settings dialog (Architecture.md §14.27):** `File > Settings...` opens a dialog with a
   hierarchical category tree on the left and that category's settings on the right; in v1 this
   holds five categories: Highlight > Languages, listing the languages with syntax highlighting

@@ -30,6 +30,8 @@ class BottomPanelWidget;
 class StatusBarWidget;
 class ColumnVisibilitySettingsViewModel;
 class DiskUsageService;
+class FragmentationService;
+class NotificationCenter;
 class UiThemeChangeNotifier;
 
 // One pane's full self-contained UI: its own toolbar (back/forward/up/refresh QActions, address
@@ -47,7 +49,8 @@ class WorkspacePaneWidget : public QWidget
 public:
     explicit WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOperationsController* fileOperationsController,
                                   ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
-                                  DiskUsageService& diskUsageService, UiThemeChangeNotifier& uiThemeChangeNotifier,
+                                  DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
+                                  NotificationCenter& notificationCenter, UiThemeChangeNotifier& uiThemeChangeNotifier,
                                   const std::array<int, FileListModel::ColumnCount>& initialColumnWidths = {},
                                   const std::array<int, FileListModel::ColumnCount>& initialColumnOrder = {},
                                   QWidget* parent = nullptr);
@@ -183,6 +186,8 @@ private:
     FileOperationsController* m_fileOperationsController = nullptr;
     ColumnVisibilitySettingsViewModel& m_columnVisibilitySettingsViewModel;
     DiskUsageService& m_diskUsageService;
+    FragmentationService& m_fragmentationService;
+    NotificationCenter& m_notificationCenter;
     UiThemeChangeNotifier& m_uiThemeChangeNotifier;
     TabViewModel* m_boundTab = nullptr;
 

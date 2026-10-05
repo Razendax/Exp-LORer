@@ -36,6 +36,7 @@ class AdvancedSearchService;
 class FileTagsService;
 class TagChangeNotifier;
 class DiskUsageService;
+class FragmentationService;
 
 // Binds address-bar/navigation-toolbar UI to FileNavigationUseCase and NavigationHistory for a
 // single tab. Owns the FileListModel that backs that tab's FileBrowserView, wiring
@@ -53,7 +54,8 @@ public:
                  const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                  GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
                  AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
-                 DiskUsageService& diskUsageService, TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
+                 DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
+                 TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
 
     ~TabViewModel() override;
 
@@ -363,6 +365,14 @@ private:
     // reply for a path that's no longer current the same way requestGitStatus does.
     void requestFolderSizes(const std::filesystem::path& path, const std::vector<FileNode>& entries);
 
+    // Wired into the same directoryContentsChanged funnel as requestFolderSizes (Architecture.md
+    // §14.53). A read-only cached lookup -- never triggers a scan -- via
+    // FragmentationService::requestFilesUnder, the same cache-only lookup the Fragmentation
+    // bottom-panel tab uses for its own cache-only redisplay; a no-op fast path skips the round
+    // trip entirely when `entries` has no plain files. Dropping a reply for a path that's no
+    // longer current the same way requestFolderSizes does.
+    void requestFragmentCounts(const std::filesystem::path& path, const std::vector<FileNode>& entries);
+
     // Fetches tags for every file in `candidates` and, once they arrive (discarded if
     // `generation` no longer matches m_searchGeneration), caches them into m_searchSnapshotTags and
     // applies them to m_searchResultsModel. Used whenever the search candidate set itself changes
@@ -442,6 +452,7 @@ private:
     AdvancedSearchService& m_advancedSearchService;
     FileTagsService& m_fileTagsService;
     DiskUsageService& m_diskUsageService;
+    FragmentationService& m_fragmentationService;
     TagChangeNotifier& m_tagChangeNotifier;
     NavigationHistory m_history;
     ViewMode m_viewMode = ViewMode::Details;

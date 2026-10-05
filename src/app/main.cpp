@@ -114,7 +114,8 @@ int main(int argc, char* argv[])
                               compositionRoot.highlightThemeViewModel(), compositionRoot.fileDecorationsViewModel(),
                               compositionRoot.favoritesViewModel(), compositionRoot.notificationCenter(),
                               compositionRoot.notificationSettingsViewModel(), compositionRoot.columnVisibilitySettingsViewModel(),
-                              compositionRoot.diskUsageService(), compositionRoot.duplicateFinderService(), initialConfig);
+                              compositionRoot.diskUsageService(), compositionRoot.duplicateFinderService(),
+                              compositionRoot.fragmentationService(), initialConfig);
         mainWindow.show();
 
         if (!restored)

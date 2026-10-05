@@ -45,6 +45,14 @@ if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
         exit 1
     }
     $vcvarsall = Join-Path $vsInstallPath "VC\Auxiliary\Build\vcvarsall.bat"
+    # Some vcvarsall.bat versions shell out to a bare "vswhere.exe" internally; without its
+    # directory on PATH that fails with a harmless stderr line ("'vswhere.exe' is not recognized"),
+    # which $ErrorActionPreference = "Stop" would otherwise turn into a fatal NativeCommandError
+    # here even though vcvarsall.bat itself still succeeds.
+    $vswhereDir = Split-Path $vswhere -Parent
+    if (";$env:PATH;" -notlike "*;$vswhereDir;*") {
+        $env:PATH = "$vswhereDir;$env:PATH"
+    }
     $envDump = cmd.exe /c "`"$vcvarsall`" x64 && set" | Out-String
     foreach ($line in ($envDump -split "`r`n")) {
         if ($line -match '^([^=]+)=(.*)$') {

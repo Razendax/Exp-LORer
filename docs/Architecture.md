@@ -147,8 +147,8 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
 | Layer | Representative components |
 | --- | --- |
 | Domain | `FileNode`, `Tag`, `MediaMetadata`, `FileTagAssociation` |
-| Application | `FileNavigationUseCase`, `TagManagementUseCase`, `MediaProcessingUseCase`, `DiskUsageUseCase` (§14.40), `FileTransferUseCase` (§14.47), `DuplicateFinderUseCase` (§14.51), and their Ports (§2.2) |
-| Adapters | `SQLiteTagRepository`, `StandardFileSystemRepository`, `ShellContextMenuProvider`, `AppConfigStore`, `WindowsDiskUsageScanner`/`SQLiteDiskUsageRepository` (§14.40), `StandardDuplicateFileScanner` (§14.51), plus the ViewModels listed in §2.3 |
+| Application | `FileNavigationUseCase`, `TagManagementUseCase`, `MediaProcessingUseCase`, `DiskUsageUseCase` (§14.40), `FileTransferUseCase` (§14.47), `DuplicateFinderUseCase` (§14.51), `FragmentationUseCase` (§14.52), and their Ports (§2.2) |
+| Adapters | `SQLiteTagRepository`, `StandardFileSystemRepository`, `ShellContextMenuProvider`, `AppConfigStore`, `WindowsDiskUsageScanner`/`SQLiteDiskUsageRepository` (§14.40), `StandardDuplicateFileScanner` (§14.51), `WindowsFragmentationScanner` (§14.52), plus the ViewModels listed in §2.3 |
 | UI (Widgets) | `MainWindow`, `WorkspaceLayoutWidget`, `WorkspacePaneWidget`, `FileBrowserView`, `SidePanelWidget` (left/right panels), `FolderTreeView`, `TagPanelWidget`, `ContextMenuBuilder`/`FileItemContextMenu`, dialogs |
 | UI (QML) | Media viewer (not yet implemented) |
 
@@ -267,6 +267,13 @@ CREATE TABLE filesystem_index (
     scanned_at    INTEGER NOT NULL
 );
 CREATE INDEX idx_filesystem_index_parent ON filesystem_index(parent_id);
+
+CREATE TABLE file_fragmentation (
+    path            TEXT PRIMARY KEY,
+    size            INTEGER NOT NULL,
+    fragment_count  INTEGER NOT NULL,
+    scanned_at      INTEGER NOT NULL
+);
 ```
 
 * **`filesystem_index`** backs Disk Usage / Folder Size (§14.40) — one row per scanned file/folder,
@@ -275,6 +282,15 @@ CREATE INDEX idx_filesystem_index_parent ON filesystem_index(parent_id);
   `PRAGMA user_version` check above — that counter belongs to the Tags/Files/FileTags schema, owned
   by a different repository class/connection; this table's migration is a standalone
   `CREATE TABLE IF NOT EXISTS`, sufficient since it has no evolving schema yet (§14.40).
+
+* **`file_fragmentation`** backs the Fragmentation bottom-panel tab (§14.52) — one row per scanned
+  file, `fragment_count` the number of NTFS extents the file is split into. Written/read by
+  `SQLiteFragmentationRepository` over its own connection, separate from `SQLiteTagRepository`'s and
+  `SQLiteDiskUsageRepository`'s. Like `filesystem_index`, **not** gated by `PRAGMA user_version`; a
+  standalone `CREATE TABLE IF NOT EXISTS`. Unlike `filesystem_index`, stores files only — never a row
+  for a scanned folder/drive root itself — so a "files under this folder" lookup matches rows strictly
+  *under* a path via a LIKE-prefix-with-escaped-wildcards query, the same idiom
+  `SQLiteDiskUsageRepository::saveScan`'s own stale-row cleanup already established (§14.39).
 
 * **Path resolution:** `TagManagementUseCase` looks up by `path` first; if missing/changed, falls
   back to `file_hash` (+ `size`) to relocate the row and update `path`.
@@ -456,7 +472,7 @@ walkthrough; see git history and the code's own comments (many cite these subsec
 directly) for the detail.
 
 The log grew too large for one document and is split across three files under `docs/features/`.
-Section numbers (§14.1–§14.50) are continuous across all three:
+Section numbers (§14.1–§14.53) are continuous across all three:
 
 * **[features/01-workspace-navigation-and-search.md](features/01-workspace-navigation-and-search.md)**
   — §14.1–§14.26: split-window layout/tabs/panes, tag panel, clipboard file operations,
@@ -468,9 +484,10 @@ Section numbers (§14.1–§14.50) are continuous across all three:
   browsing/preview/extraction, per-file/folder font & color decoration, window-wide status bar, git
   status badges, live directory update.
 * **[features/03-monitoring-git-and-productivity.md](features/03-monitoring-git-and-productivity.md)**
-  — §14.34–§14.51: recursive folder monitoring, git branch status/checkout, favorites,
+  — §14.34–§14.53: recursive folder monitoring, git branch status/checkout, favorites,
   notification system, async advanced search, customizable Details-view columns, disk usage/folder
   size, left panel with folder tree, unified search tab, search tab follow-up fixes, quick-search
   match options, quick-search skip-git-ignored toggle, custom copy/move progress, left/right panel
-  state persistence, per-tab column visibility persistence, Light/Dark theme, duplicate file finder.
+  state persistence, per-tab column visibility persistence, Light/Dark theme, duplicate file finder,
+  disk fragmentation viewer, Details-view fragments column.
 

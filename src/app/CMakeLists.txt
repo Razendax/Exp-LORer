@@ -21,6 +21,7 @@ target_link_libraries(Exp-LORer PRIVATE
     explorer_adapters_git
     explorer_adapters_diskusage
     explorer_adapters_duplicates
+    explorer_adapters_fragmentation
     explorer_application
     Qt6::Widgets
 )

@@ -411,6 +411,15 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
             const int percent = static_cast<int>(100.0 * static_cast<double>(*size) / static_cast<double>(m_totalKnownSize) + 0.5);
             return QVariant(QStringLiteral("%1%").arg(percent));
         }
+        case FragmentsColumn:
+        {
+            if (entry.isDirectory())
+            {
+                return QVariant();
+            }
+            const auto countIt = m_fragmentCountsByPath.find(entry.path());
+            return countIt == m_fragmentCountsByPath.end() ? QVariant() : QVariant(static_cast<qulonglong>(countIt->second));
+        }
         default:
             return {};
     }
@@ -461,6 +470,8 @@ QVariant FileListModel::headerData(int section, Qt::Orientation orientation, int
             return tr("Date created");
         case PercentColumn:
             return tr("Percent");
+        case FragmentsColumn:
+            return tr("Fragments");
         default:
             return {};
     }
@@ -498,6 +509,7 @@ void FileListModel::setEntries(const std::filesystem::path& directory, const std
     m_gitStatusByPath.clear();
     m_fileTagsByPath.clear();
     m_folderSizesByPath.clear();
+    m_fragmentCountsByPath.clear();
     recomputeTotalSize();
     rebuildVisibleRows();
     endResetModel();
@@ -593,6 +605,19 @@ void FileListModel::setFolderSizes(const FolderSizesByPathMap& sizesByPath)
     // the SizeColumn one above.
     emit dataChanged(index(0, PercentColumn), index(static_cast<int>(m_visibleRows.size()) - 1, PercentColumn),
                       { Qt::DisplayRole, PercentRole });
+}
+
+void FileListModel::setFragmentCounts(const FragmentCountsByPathMap& countsByPath)
+{
+    m_fragmentCountsByPath = countsByPath;
+
+    if (m_visibleRows.empty())
+    {
+        return;
+    }
+
+    emit dataChanged(index(0, FragmentsColumn), index(static_cast<int>(m_visibleRows.size()) - 1, FragmentsColumn),
+                      { Qt::DisplayRole });
 }
 
 std::optional<FileDecorationRule> FileListModel::resolveDecoration(const FileNode& entry) const

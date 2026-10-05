@@ -9,11 +9,14 @@
 #include "ArchiveExtensions.h"
 #include "DiskUsageNode.h"
 #include "DiskUsageService.h"
+#include "FileFragmentationInfo.h"
 #include "FileListModel.h"
 #include "FileNavigationUseCase.h"
 #include "FileTagsByPath.h"
 #include "FileTagsService.h"
 #include "FolderSizesByPath.h"
+#include "FragmentCountsByPath.h"
+#include "FragmentationService.h"
 #include "GitDirectoryStatus.h"
 #include "GitStatusService.h"
 #include "TagChangeNotifier.h"
@@ -34,7 +37,8 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
                            const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                            GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
                            AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
-                           DiskUsageService& diskUsageService, TagChangeNotifier& tagChangeNotifier, QObject* parent)
+                           DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
+                           TagChangeNotifier& tagChangeNotifier, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagManagementUseCase(tagManagementUseCase)
@@ -43,6 +47,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     , m_advancedSearchService(advancedSearchService)
     , m_fileTagsService(fileTagsService)
     , m_diskUsageService(diskUsageService)
+    , m_fragmentationService(fragmentationService)
     , m_tagChangeNotifier(tagChangeNotifier)
     , m_fileListModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_searchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
@@ -60,6 +65,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
                 requestGitRepositorySummary(path);
                 requestFileTags(path, entries);
                 requestFolderSizes(path, entries);
+                requestFragmentCounts(path, entries);
             });
 
     // Architecture.md §14.x: a tag assigned/removed/renamed/deleted anywhere re-fetches this tab's
@@ -871,6 +877,34 @@ void TabViewModel::requestFolderSizes(const std::filesystem::path& path, const s
             }
         }
         m_fileListModel->setFolderSizes(sizes);
+    });
+}
+
+void TabViewModel::requestFragmentCounts(const std::filesystem::path& path, const std::vector<FileNode>& entries)
+{
+    const bool hasFiles = std::any_of(entries.begin(), entries.end(), [](const FileNode& entry) { return !entry.isDirectory(); });
+    if (!hasFiles)
+    {
+        m_fileListModel->setFragmentCounts({});
+        return;
+    }
+
+    m_fragmentationService.requestFilesUnder(this, path, [this, path](Result<std::vector<FileFragmentationInfo>> result) {
+        if (path != currentPath())
+        {
+            // A newer navigation has since happened; this reply is stale.
+            return;
+        }
+
+        FragmentCountsByPathMap counts;
+        if (result)
+        {
+            for (const FileFragmentationInfo& info : result.value())
+            {
+                counts.emplace(info.path, info.fragmentCount);
+            }
+        }
+        m_fileListModel->setFragmentCounts(counts);
     });
 }
 

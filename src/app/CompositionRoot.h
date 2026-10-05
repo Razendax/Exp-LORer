@@ -24,6 +24,7 @@
 #include "FileTagsService.h"
 #include "FileTransferService.h"
 #include "FolderMonitorUseCase.h"
+#include "FragmentationService.h"
 #include "GitBranchUseCase.h"
 #include "GitStatusService.h"
 #include "GitStatusUseCase.h"
@@ -49,6 +50,7 @@
 #include "ThumbnailCache.h"
 #include "UiThemeChangeNotifier.h"
 #include "WindowsDiskUsageScanner.h"
+#include "WindowsFragmentationScanner.h"
 #include "WorkspacePaneId.h"
 
 class TabViewModel;
@@ -84,6 +86,7 @@ public:
     ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel() noexcept { return m_columnVisibilitySettingsViewModel; }
     DiskUsageService& diskUsageService() noexcept { return m_diskUsageService; }
     DuplicateFinderService& duplicateFinderService() noexcept { return m_duplicateFinderService; }
+    FragmentationService& fragmentationService() noexcept { return m_fragmentationService; }
     FileNavigationUseCase& fileNavigationUseCase() noexcept { return m_fileNavigationUseCase; }
 
 private:
@@ -202,4 +205,13 @@ private:
     StandardDuplicateFileScanner m_duplicateFileScanner;
     DuplicateFinderUseCase m_duplicateFinderUseCase;
     DuplicateFinderService m_duplicateFinderService;
+
+    // Architecture.md §14.52: the Fragmentation bottom-panel tab's scan/lookup requests, off the Qt
+    // UI thread -- same "own dedicated thread + own SQLite connection" shape as m_diskUsageService,
+    // grouped here with the other shared background-work services. Scanner before service
+    // (construction order matches declaration order); no FragmentationUseCase/
+    // SQLiteFragmentationRepository member at this level -- those live only inside
+    // FragmentationWorker, lazily, same as Disk Usage's pattern.
+    WindowsFragmentationScanner m_fragmentationScanner;
+    FragmentationService m_fragmentationService;
 };

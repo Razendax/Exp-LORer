@@ -7,7 +7,7 @@ redesign of either layer's existing shape) — and is recorded as a decision log
 implementation walkthrough; see git history and the code's own comments (many cite these subsection
 numbers directly) for the detail.
 
-Covers §14.34–§14.50. Preceded by
+Covers §14.34–§14.52. Preceded by
 [01-workspace-navigation-and-search.md](01-workspace-navigation-and-search.md) (§14.1–§14.26)
 and [02-preview-decoration-and-status.md](02-preview-decoration-and-status.md) (§14.27–§14.33).
 
@@ -1315,3 +1315,197 @@ touch `FileNode`, `FileListModel`, tagging, Preview, or any existing use case be
   content case that exercises the byte-for-byte verification step) get ordinary GTest coverage under
   `tests/adapters`, and `DuplicateFinderUseCase`'s pure helpers get mocked-Port coverage under
   `tests/application`.
+
+### 14.52 Disk Fragmentation Viewer
+
+A third bottom-panel tab, "Fragmentation" (§14.24's `BottomPanelWidget`), right after "Folder Size"
+(§14.40) — a read-only, per-tab viewer of NTFS file fragmentation, not a defragmentation tool.
+Deliberately an isolated vertical slice, same posture as Disk Usage/Duplicate Finder — no
+`FileNode`/`FileListModel`/tagging/Preview change, reusing only
+`IFileSystemRepository::listDirectoryRecursive` for enumeration and `navigateAndSelect` for one
+context-menu convenience.
+
+* **Viewing only, by design.** The product ask is to see fragmentation state, not fix it. Actually
+  moving extents (`FSCTL_MOVE_FILE`) is a materially larger, riskier API surface that interacts with
+  the OS's own "Optimize Drives" scheduler — explicitly out of scope; a user who wants to defragment
+  uses that existing OS tool.
+* **Persisted, closer to Disk Usage's posture than Duplicate Finder's.** Scan results are saved to a
+  new `file_fragmentation` table (§7), not re-read live every time. Unlike Duplicate Finder, this
+  feature drives no delete action, so a stale cached fragment count is harmless to redisplay — the
+  same reasoning Disk Usage's `filesystem_index` already relies on, not Duplicate Finder's
+  never-cache rule (which exists specifically because that output feeds a destructive delete).
+  Practical effect: navigating a tab back to an already-scanned folder redisplays the last scan
+  instantly; a scan survives the tab navigating away mid-scan (it still finishes and persists) and
+  survives an app restart.
+* **Windows/NTFS-only in practice.** `FSCTL_GET_RETRIEVAL_POINTERS` (the same primitive `defrag.exe`/
+  "Optimize Drives" use internally) is an NTFS volume primitive with no portable equivalent reused
+  here. Scoped per-file, not scan-wide: a file on a non-NTFS volume (FAT32/exFAT) or any other
+  unexpected per-file `DeviceIoControl` failure is skipped from the report ("fragmentation unknown for
+  this file") rather than aborting the whole scan — only a `root` whose drive itself can't be
+  enumerated at all fails the call. Non-Windows builds fail every call with `ErrorCode::IoError`, same
+  posture as `WindowsDiskUsageScanner`/`IFolderMonitor`.
+* **Application:** `FileFragmentationInfo` (`src/application`, plain struct, Application-layer like
+  `DuplicateFileGroup`/`DiskUsageNode`): `{ path, sizeBytes, fragmentCount }` — `fragmentCount <= 1` is
+  contiguous; a file with zero allocated extents (small enough to be resident in its own MFT record)
+  is reported as `1`, not `0`, since that's the most-contiguous case, not an unknown one.
+  `FragmentationSummary` (`{ filesScanned, totalBytesScanned, fragmentedFileCount, totalFragments }`)
+  is always computed on demand from a file list, never persisted itself — one source of truth.
+  `IFragmentationScanner::scan(root, minFileSizeBytes, onProgress, cancelRequested)` (new Port, mirrors
+  `IDuplicateFileScanner`'s shape exactly, including a real per-file progress callback and a real
+  `std::atomic<bool>` cancel flag). `onProgress(scanned, totalCandidates, currentPath)` fires during
+  both scan phases: the initial recursive listing (`totalCandidates == 0`, since the eventual
+  candidate count isn't known until it finishes — treated as indeterminate progress) and the
+  per-candidate extent-counting pass that follows it (`totalCandidates` == the final count);
+  `currentPath` is the entry just discovered (listing) or examined (extent-counting), surfaced by
+  `FragmentationViewModel` as the progress card's live "which path is this touching right now" text
+  alongside the running/total count. `IFragmentationRepository` (new Port, mirrors
+  `IDiskUsageRepository`): `saveScan(scanRoot, minFileSizeBytes, files)` (batched upsert in one
+  transaction; rows previously recorded under `scanRoot` with `size >= minFileSizeBytes` but absent
+  from `files` this time are deleted — rows *below* that threshold are left untouched, since a later
+  scan with a smaller threshold must not make every bigger file look removed) and `filesUnder(folder)`
+  (every persisted row strictly under `folder`, empty — not an error — if nothing there was ever
+  scanned). `FragmentationUseCase` (new, stateless, depends on **both** Ports — the
+  "orchestrates scanning + persistence" shape `DiskUsageUseCase` already established, not Duplicate
+  Finder's scanner-only shape): `scanAndPersist(...)` scans and persists only on success (a cancelled
+  or failed scan is never persisted, so an interrupted scan can't delete stale rows for files it never
+  got to re-examine); `filesUnder(folder)` passthrough, for cache-only redisplay; pure
+  `summarize(files)` and `sortedByFragmentCount(files)`.
+* **`src/adapters/fragmentation`** (new module, `explorer_adapters_fragmentation`, links
+  `explorer_application` + `Qt6::Sql` for the repository half): `WindowsFragmentationScanner`
+  implements `IFragmentationScanner`. Enumerates via the existing `listDirectoryRecursive` (giving
+  `totalCandidates` up front, same shape as Duplicate Finder's size-bucketing pre-pass), then per
+  candidate file: opens a handle via the existing `WindowsLongPath::withPrefix()` helper, loops
+  `DeviceIoControl(FSCTL_GET_RETRIEVAL_POINTERS, ...)` advancing the starting VCN while the call
+  reports `ERROR_MORE_DATA`, and sums `ExtentCount` across calls as the fragment count directly (NTFS
+  already reports the minimal extent set — no adjacency/merging logic needed). `cancelRequested`
+  polled between files, same file-boundary granularity as
+  `StandardDuplicateFileScanner`/`WindowsDiskUsageScanner`. `SQLiteFragmentationRepository` implements
+  `IFragmentationRepository` against the new `file_fragmentation` table (§7) over its **own**
+  `QSqlDatabase` connection to the same `explorer.db` file, same `PRAGMA busy_timeout` rationale as
+  `SQLiteDiskUsageRepository`. Its stale-row delete and its `filesUnder` lookup both match rows
+  strictly under a path via the same LIKE-prefix-with-escaped-`%`/`_` idiom
+  `SQLiteDiskUsageRepository::saveScan` already established and proved (reused verbatim, since the
+  escaping behavior is correctness-critical) — simplified from that precedent by dropping its
+  `path = scanRoot` exact-match branch, since this table never stores a row for the scanned
+  folder/drive root itself (files only).
+* **Threading:** `FragmentationService`/`FragmentationWorker` (`adapters/viewmodels`, new) — a
+  synthesis of two existing patterns, since this feature needs both: the lazy own-thread SQLite
+  connection `DiskUsageWorker`/`DiskUsageService` establish (`SQLiteFragmentationRepository` wraps a
+  thread-affine connection, constructed lazily on the worker thread, not in a constructor that still
+  runs on whatever thread constructs the service), and the real per-request
+  `std::atomic<bool>` cancel flag + live progress callback `DuplicateFinderService`/
+  `DuplicateFinderWorker` establish (needed because the per-file `DeviceIoControl` cost is real,
+  unlike Disk Usage's plain `FindFirstFileW` walk, which has no cancel in v1). `requestId` is
+  caller-supplied (each per-tab `FragmentationViewModel` uses the `NotificationCenter` `ProgressId` it
+  creates for its own scan), so **multiple tabs can each have a scan in flight concurrently** —
+  different tabs' requests carry different `requestId`s and simply queue on the one worker thread,
+  the same "single dedicated thread serializes concurrent per-tab requests" posture
+  `DiskUsageService`/`AdvancedSearchWorker` already accept. `requestScan`'s own result is
+  success/failure only — the (potentially huge) scanned list is never marshaled back over the scan
+  path, same "persist, then issue a separate cheap lookup for just what you want to show" posture
+  `DiskUsageService` established; a caller issues a separate `requestFilesUnder` call afterward, the
+  same call a plain navigation-triggered cache lookup uses — one code path renders results either way.
+  Owned long-lived by `CompositionRoot`, same lifetime as `DiskUsageService`; `CompositionRoot` holds
+  only the scanner + service members (no use case/repository member at that level), mirroring Disk
+  Usage's existing wiring exactly.
+* **`FragmentationViewModel`** (`adapters/viewmodels`, new) — one per tab, same lazy-start lifetime as
+  `FolderSizeViewModel`/`TerminalWidget`. Tracks the bound tab's current path read-only (via
+  `TabViewModel::currentPathChanged`) and holds a `NotificationCenter&` it uses directly to
+  create/update/terminate its own cancellable progress-bar card per scan — the same "ViewModel calls
+  into `NotificationCenter` directly" posture §14.37 established for `TagListViewModel`/
+  `WorkspaceController`. `scanFolder(minFileSizeBytes)`/`scanDrive(minFileSizeBytes)` scan the tab's
+  current path (or its drive root) as captured when clicked; a no-op while this tab's own scan is
+  already in flight (a different tab's concurrent scan doesn't block it). `refreshForCurrentPath()` —
+  cache-only redisplay via `requestFilesUnder`, called on construction and on the bound tab's
+  `currentPathChanged`, the same posture `FolderSizeViewModel::refreshForCurrentPath` established
+  (an unscanned folder returns empty, not an error, in both features alike — no special-casing
+  needed). `onScanFinished` just calls `refreshForCurrentPath()` unconditionally on success: correct
+  whether or not the tab is still on the scanned root, since it always shows whatever the tab's
+  *current* path's cached data now is — no generation/stale-result bookkeeping needed, unlike
+  Advanced Search's async scans (§14.38), since persistence makes every completed scan's effect valid
+  to show whenever it's next looked at.
+* **UI:** `FragmentationWidget` (`src/ui/widgets`, new), mirrors `FolderSizeWidget`'s per-tab
+  ownership shape, registered via a third `bottomPanel->addPanelTab(tr("Fragmentation"),
+  fragmentationWidget)` call in `WorkspacePaneWidget::addPageForTab`, right after the existing Folder
+  Size registration. Layout: a toolbar row (`Scan Folder`/`Scan Drive` buttons — text flips to
+  "Scanning..." and both disable for the duration of *this tab's* scan only — plus a minimum-file-size
+  spinbox, default 64 KB, higher than Duplicate Finder's 4 KB since a file at or below one NTFS
+  cluster can never be fragmented, and a "Show only fragmented files" checkbox, default checked);
+  a summary label row (files scanned, total size scanned, fragmented file count/percentage, total
+  fragments — answers "how many files and sizes"), refreshed on every `resultsChanged` whether from a
+  fresh scan or a cache redisplay; a flat, sortable `FragmentationResultsModel` (new
+  `QAbstractTableModel`, simpler than `DuplicateGroupsModel` — no group/member hierarchy, one row per
+  file: Name/Folder/Size/Fragments/State) inside a plain `QTreeView` filling the remaining space,
+  default-sorted by Fragments descending (answers "what exact files and their fragmentation state").
+  Progress reuses the existing cancellable `NotificationCenter` progress-bar mechanism as-is.
+  Right-click a row for "Open Containing Folder" — the ViewModel emits a plain path-carrying signal
+  that `WorkspacePaneWidget` (which already owns `this` at the wiring site) connects straight to its
+  own `navigateAndSelect(path.parent_path(), path)`, the same "emit and let the owning widget call
+  back into the pane" posture `FolderSizeViewModel::navigationRequested` established. No rename/tag/
+  preview/delete actions — read-only by nature.
+* **Not built:** any defragmentation/consolidation action (see above); multi-root/whole-PC scanning
+  (one root per scan — the tab's current folder or its drive); SSD detection/warning (fragmentation is
+  largely irrelevant on SSDs — out of scope for this pass, the tab reports whatever drive it's
+  pointed at regardless of media type); a cluster-size display (dropped — surfacing it consistently
+  across both a fresh scan and a cache-only redisplay isn't worth the bookkeeping for a purely
+  informational label); a Linux implementation (no portable equivalent reused here, deferred until
+  Linux support is actually built, same posture as `IFolderMonitor`); any *live-scanning*
+  integration with the Details view — the one addition is §14.53's cached-only Fragments column,
+  which reads this feature's persisted results exactly like Disk Usage's own cached sizes (§14.40)
+  but never triggers a scan of its own; persisting which bottom-panel tab was last active across restart (unchanged from
+  §14.24/§14.40's existing posture — the scan *data* itself persisting is the point of this feature).
+  No CTest coverage for `WindowsFragmentationScanner` itself beyond §11's existing OS-shell carve-out
+  — reliably producing a genuinely fragmented file inside a test fixture would need either a
+  multi-gigabyte churn workload or filesystem-internal trickery, and the IOCTL's behavior is itself
+  live, per-volume NTFS state, the same reasoning `WindowsDiskUsageScanner`'s walk already uses this
+  carve-out for; smoke-tested manually instead. `FragmentationUseCase`'s logic (including that a
+  cancelled/failed scan never calls `saveScan`) gets mocked-Port coverage under `tests/application`;
+  `SQLiteFragmentationRepository` gets a real `:memory:`-SQLite adapter test under `tests/adapters`,
+  same shape as `SQLiteDiskUsageRepositoryTest`. No automated coverage for
+  `FragmentationViewModel`/`FragmentationWidget`/the `WorkspacePaneWidget` wiring, per the existing
+  §11 UI/ViewModel-glue carve-out (same as `FolderSizeViewModel`/`FolderSizeWidget`).
+
+### 14.53 Details-View Fragments Column
+
+A `FragmentsColumn` added to `FileListModel` (§14.39's customizable-columns mechanism), showing each
+file's NTFS fragment count from §14.52's persisted scan results. **Cache-only, same posture as
+§14.40's Size-column integration, not a live scan**: it reads whatever `FragmentationService`
+already has on disk from a prior "Scan Folder"/"Scan Drive" run in the Fragmentation tab, via the
+same `FragmentationService::requestFilesUnder` cache lookup that tab's own cache-only redisplay uses
+— the main Details view never triggers a fragmentation scan of its own. A file never scanned (or
+skipped by the scanner, e.g. non-NTFS) shows a blank cell, never a 0; directories always show blank,
+since `FileFragmentationInfo` is file-only.
+
+* **`FragmentCountsByPathMap`** (`src/application/FragmentCountsByPath.h`, new) —
+  `std::unordered_map<std::filesystem::path, std::uint32_t, PathHash>`, the same shape as
+  `FolderSizesByPathMap`. `FileListModel::setFragmentCounts(const FragmentCountsByPathMap&)` (new
+  slot, mirrors `setFolderSizes`) stores it and emits `dataChanged` for just `FragmentsColumn`'s
+  rows — simpler than `setFolderSizes`, since Fragments isn't a sort criterion (see below), so there
+  is no resort branch to mirror.
+* **No new `SortCriterion`.** Clicking the Fragments header falls through to
+  `criterionForColumn`'s existing `default: SortCriterion::Name` case, exactly like
+  `DateCreatedColumn`/`GitStatusColumn`/`TagsColumn` already do — none of those three map to a real
+  sort criterion either, so this is existing precedent rather than a new gap.
+* **Wiring**: `TabViewModel` gains a `FragmentationService&` constructor dependency (next to its
+  existing `DiskUsageService&` one) and a new `requestFragmentCounts(path, entries)`, wired into the
+  same `directoryContentsChanged` funnel as `requestFolderSizes`, right after it. Same stale-reply
+  guard (`path != currentPath()`) and same "no subdirectories → skip the round trip" shaped fast
+  path as `requestFolderSizes`, but keyed on "no plain files" instead (a folder containing only
+  subfolders has nothing a fragmentation scan would have recorded). `FragmentationService` — already
+  owned long-lived by `CompositionRoot` for §14.52's bottom-panel tab — is threaded through the same
+  three call sites `DiskUsageService&` already flows through: `WorkspacePaneViewModel`'s `addTab()`,
+  `WorkspaceController`'s four pane constructions, and `CompositionRoot`'s
+  `createTabViewModel`/`createWorkspacePaneViewModel`/`createWorkspaceController` factories.
+* **Column visibility**: `FragmentsColumn` is appended as `FileListModel::ColumnCount`'s new last
+  entry (not inserted — every other column's numeric index must stay unchanged so existing users'
+  persisted column-width/order/visibility arrays, which are positional, don't silently shift). Most
+  of the visibility/width/order plumbing (`ColumnVisibilitySettings`, `AppConfig::detailsColumnWidths`/
+  `detailsColumnOrder`, `FileBrowserView`'s header right-click menu) is already generic over
+  `ColumnCount` and needed no change; `SettingsDialog`'s `kAllVisibilityColumns`/`columnDisplayName()`
+  and `ColumnVisibilitySettingsStore`'s `kAllColumns`/`toString()` are the two explicit per-column
+  label tables that each gained a `FragmentsColumn` entry.
+* **Not built:** no on-demand scanning triggered from the Details view; no change to §14.52's own
+  `FragmentationResultsModel`/`FragmentationWidget` (that tab already has its own Fragments column).
+  No new CTest coverage — `FileListModel`/`TabViewModel`/`WorkspacePaneViewModel`/`WorkspaceController`
+  are UI/ViewModel-glue, already under §11's existing carve-out, same posture as the Size/Percent
+  column wiring; verified by manual smoke test instead.
