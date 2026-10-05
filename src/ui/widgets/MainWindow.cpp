@@ -32,6 +32,7 @@
 
 #include "AppConfigStore.h"
 #include "DriveSpaceInfoWorker.h"
+#include "DuplicateFinderDialog.h"
 #include "FavoritesViewModel.h"
 #include "FileDecorationsViewModel.h"
 #include "FileItemContextMenu.h"
@@ -237,7 +238,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
                          FavoritesViewModel& favoritesViewModel, NotificationCenter& notificationCenter,
                          NotificationSettingsViewModel& notificationSettingsViewModel,
                          ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, DiskUsageService& diskUsageService,
-                         const AppConfig& initialConfig, QWidget* parent)
+                         DuplicateFinderService& duplicateFinderService, const AppConfig& initialConfig, QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceController(workspaceController)
     , m_configStore(configStore)
@@ -252,6 +253,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_notificationSettingsViewModel(notificationSettingsViewModel)
     , m_columnVisibilitySettingsViewModel(columnVisibilitySettingsViewModel)
     , m_diskUsageService(diskUsageService)
+    , m_duplicateFinderService(duplicateFinderService)
     , m_columnWidths(initialConfig.detailsColumnWidths)
     , m_columnOrder(initialConfig.detailsColumnOrder)
     , m_initialLeftPanelState(initialConfig.leftPanel)
@@ -429,7 +431,8 @@ void MainWindow::createMenuBar()
     viewMenu->addAction(m_showHiddenFilesAction);
 
     createFavoritesMenu();
-    menuBar()->addMenu(tr("&Tools"));
+    QMenu* toolsMenu = menuBar()->addMenu(tr("&Tools"));
+    toolsMenu->addAction(tr("Find &Duplicate Files..."), this, &MainWindow::showDuplicateFinderDialog);
     menuBar()->addMenu(tr("&Help"));
 }
 
@@ -704,6 +707,25 @@ void MainWindow::showManageFavoritesDialog()
 {
     ManageFavoritesDialog dialog(&m_favoritesViewModel, this);
     dialog.exec();
+}
+
+void MainWindow::showDuplicateFinderDialog()
+{
+    if (m_duplicateFinderDialog == nullptr)
+    {
+        TabViewModel* tab = m_workspaceController->focusedTab();
+        const std::filesystem::path initialPath = tab != nullptr ? tab->currentPath() : std::filesystem::path();
+
+        m_duplicateFinderDialog =
+            new DuplicateFinderDialog(m_duplicateFinderService, m_workspaceController->fileNavigationUseCase(),
+                                       m_notificationCenter, initialPath, this);
+        connect(m_duplicateFinderDialog, &DuplicateFinderDialog::openContainingFolderRequested, this,
+                [this](const std::filesystem::path& path) { onSearchResultActivated(path, false); });
+    }
+
+    m_duplicateFinderDialog->show();
+    m_duplicateFinderDialog->raise();
+    m_duplicateFinderDialog->activateWindow();
 }
 
 void MainWindow::showSettingsDialog()

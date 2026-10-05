@@ -10,6 +10,7 @@ add_executable(explorer_application_tests
     MockFolderMonitor.h
     MockDiskUsageScanner.h
     MockDiskUsageRepository.h
+    MockDuplicateFileScanner.h
     FileNavigationUseCaseTest.cpp
     TagManagementUseCaseTest.cpp
     MediaProcessingUseCaseTest.cpp
@@ -20,6 +21,7 @@ add_executable(explorer_application_tests
     FolderMonitorUseCaseTest.cpp
     DiskUsageUseCaseTest.cpp
     FileTransferUseCaseTest.cpp
+    DuplicateFinderUseCaseTest.cpp
 )
 
 target_link_libraries(explorer_application_tests PRIVATE

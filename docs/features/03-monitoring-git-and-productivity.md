@@ -1241,3 +1241,77 @@ state (one new `QSettings` key), no Domain/Application/Port/schema change.
   named semantic accents beyond re-tuning their existing hex values for dark-background contrast.
   Covered by `ui_tests/tests/test_theme_setting.py` (switches to Dark, asserts it round-trips
   after a restart, switches back) — UI is otherwise outside CTest's scope per §11.
+
+### 14.51 Duplicate File Finder
+
+`Tools > Find Duplicate Files...` opens a non-modal `DuplicateFinderDialog` that recursively scans a
+chosen folder or drive for files with byte-identical content and lets the user delete the redundant
+copies. Deliberately an isolated vertical slice, same posture as Disk Usage (§14.40) — it does not
+touch `FileNode`, `FileListModel`, tagging, Preview, or any existing use case beyond reusing
+`IFileSystemRepository::listDirectoryRecursive` and the existing trash-delete path.
+
+* **Not the existing identity hash.** `FileNode`'s identity hash (§8) mixes `mtime` into
+  `size + first/last 64KB`, which is exactly wrong for content-equality: two files with identical
+  bytes but different modification times would hash differently, and two different-content files
+  that happen to share size/mtime/edge-bytes would hash the same. This feature computes its own
+  full-content hash (no `mtime`, no truncation to 64KB) instead, kept entirely local to the new
+  `adapters/duplicates` module rather than changing `StandardFileSystemRepository`'s existing
+  `hash()` or its callers.
+* **No persistence, unlike Disk Usage.** `IDiskUsageScanner`'s results get cached in
+  `filesystem_index` (§7) because redisplaying a stale size is harmless. A stale duplicate group is
+  not harmless — it feeds a delete action — so this feature has no repository/SQLite involvement at
+  all and always re-scans the live filesystem from scratch.
+* **Domain/Application:** `DuplicateFileGroup` (`src/application`, plain struct — Application-layer
+  like `GitFileStatus`/`DriveSpaceInfo`, not Domain, since it's a derived result rather than a
+  fundamental per-file entity): `{ contentHash, fileSize, paths }`. `IDuplicateFileScanner::scan(root,
+  minFileSizeBytes, onProgress, cancelRequested)` (new Port, mirrors `IDiskUsageScanner`, but with a
+  real per-file progress callback and a real `std::atomic<bool>` cancel flag rather than Disk Usage's
+  "no progress bar, no cancel" posture — a full-content hash pass is slow enough to need both).
+  `DuplicateFinderUseCase` (new, stateless, depends only on `IDuplicateFileScanner`, same "never call
+  another use case" posture as `FilePreviewUseCase`): `scan(...)` passthrough, plus pure
+  `totalWastedBytes(groups)`/`groupsSortedByWaste(groups)`.
+* **`src/adapters/duplicates`** (new module, `explorer_adapters_duplicates`, links only
+  `explorer_application` + `Qt6::Core` — no `Qt6::Sql`, unlike `adapters/diskusage`, since there is
+  no repository class here): `StandardFileHasher` (free function, streamed xxHash64 over a file's
+  full content, long-path-safe via the existing `WindowsLongPath::withPrefix()` helper).
+  `StandardDuplicateFileScanner` implements `IDuplicateFileScanner`, portable (no OS-specific API,
+  unlike `WindowsDiskUsageScanner`): enumerate via the existing
+  `IFileSystemRepository::listDirectoryRecursive` → bucket by exact size (drop singleton buckets
+  before any hashing) → full-content hash each remaining candidate, checking `cancelRequested`
+  between files (file-boundary granularity — same accepted "not interruptible mid-call" posture as
+  `WindowsDiskUsageScanner`'s walk, §5) → sub-bucket by `(size, hash)` → **byte-for-byte verification**
+  of every remaining sub-bucket (buffered compare against its first file, early-exit on the first
+  differing byte), splitting off a mismatch into its own confirmed group instead of dropping it — the
+  one extra safety step this feature takes beyond the identity hash's accepted-collision posture
+  (§8), because this output drives deletion. Returns every confirmed group of size >= 2.
+* **Threading:** `DuplicateFinderService`/`DuplicateFinderWorker` (`adapters/viewmodels`, new), same
+  dedicated-`QThread`-owned-worker shape as `AdvancedSearchService`/`DiskUsageService`/
+  `FileTransferService`. Cancellation is a real `std::atomic<bool>` per request (like
+  `FileTransferService`, not Advanced Search's "discard a stale result") — a whole-drive scan can run
+  long enough that Cancel needs to actually stop it. Only one scan in flight; both Scan buttons
+  disable for its duration, same as `FolderSizeWidget`.
+* **UI:** `DuplicateFinderDialog` (`src/ui/widgets`, new, non-modal — shown via `show()`, not
+  `exec()`, so a long scan never blocks browsing in the main window), opened from the previously-empty
+  `Tools` menu. Root path field + "Browse..." (pre-filled once from the focused tab's current path at
+  the moment the dialog opens — a one-time snapshot, same "fixed at first use" posture as the
+  Terminal's cwd, §14.24) plus a minimum-file-size spinbox (default 4 KB, skips trivial/empty files)
+  and two buttons, `Scan Folder`/`Scan Drive`, mirroring `FolderSizeWidget`'s existing two-button
+  convention exactly (§14.40). Progress reuses the existing cancellable `NotificationCenter`
+  progress-bar mechanism as-is (§14.37/§14.47) rather than a bespoke indicator. Results render in
+  `DuplicateGroupsModel` (new `QAbstractItemModel` — not a reused `FileListModel`, since
+  grouped/checkable rows don't fit its per-folder-listing shape) inside a plain `QTreeView`: one
+  top-level row per group with its wasted-space total, expandable to per-file checkbox rows.
+  "Check All but Newest/Oldest in Each Group" buttons cover the common keep-one-delete-rest workflow.
+  "Delete Checked" confirms (count + bytes freed) then routes through the existing
+  `IFileSystemRepository`-backed trash delete — no permanent-delete option in this dialog, so an
+  accidental miscall stays recoverable; deleted rows disappear live, and a group that drops to one
+  remaining member collapses out of the results. Right-click a row for "Open Containing Folder"
+  (reuses existing navigation, same convenience as a search-result double-click, §14.42).
+* **Not built:** persistence/caching of results (see above); multi-root/whole-PC scanning (one root
+  per scan); a "Move to..." action (trash delete only); any Linux-specific carve-out (this feature has
+  no OS-specific code of its own, unlike `WindowsDiskUsageScanner`). No CTest coverage for the dialog/
+  model/service beyond §11's existing UI/ViewModel-glue carve-out; `StandardFileHasher` and
+  `StandardDuplicateFileScanner` (real temp-directory fixtures, including a same-size-different-
+  content case that exercises the byte-for-byte verification step) get ordinary GTest coverage under
+  `tests/adapters`, and `DuplicateFinderUseCase`'s pure helpers get mocked-Port coverage under
+  `tests/application`.

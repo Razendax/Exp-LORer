@@ -9,6 +9,7 @@ add_library(explorer_application STATIC
     IFolderMonitor.h
     IDiskUsageScanner.h
     IDiskUsageRepository.h
+    IDuplicateFileScanner.h
     FolderChangeEvent.h
     MediaExtensions.h
     ArchiveExtensions.h
@@ -21,6 +22,7 @@ add_library(explorer_application STATIC
     GitRepositorySummary.h
     FileTagsByPath.h
     FolderSizesByPath.h
+    DuplicateFileGroup.h
     FileNavigationUseCase.h
     FileNavigationUseCase.cpp
     TagManagementUseCase.h
@@ -42,6 +44,8 @@ add_library(explorer_application STATIC
     FileTransferTypes.h
     FileTransferUseCase.h
     FileTransferUseCase.cpp
+    DuplicateFinderUseCase.h
+    DuplicateFinderUseCase.cpp
 )
 
 target_include_directories(explorer_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

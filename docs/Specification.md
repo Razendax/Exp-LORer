@@ -194,6 +194,15 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   the parent folder and ArrowRight opens a selected folder (no effect on a selected file). Ctrl+C/
   X/V read and write the real OS clipboard, so cut/copy/paste interoperate with File Explorer and
   other applications, not just within Exp-LORer.
+* **Duplicate file finder (Architecture.md §14.51):** `Tools > Find Duplicate Files...` opens a
+  dialog that recursively scans a chosen folder or drive for files with byte-identical content —
+  grouped by size, then a full-content hash, then a byte-for-byte confirmation pass, deliberately
+  not the fast heuristic identity hash used elsewhere (§8) since that one mixes in modification time
+  and would misclassify both identical and genuinely different files. Results list each duplicate
+  group with per-file checkboxes ("keep newest/oldest" helpers included) and a "Delete Checked"
+  action that sends the chosen copies to the Recycle Bin. No duplicate index is cached — every scan
+  reads the live filesystem, since pairing a stale result with a delete action would be a
+  correctness risk.
 * **Right-click context menu** on a file, a folder, or empty space within a directory view, drawn
   as the app's own custom menu rather than the OS's native popup (Architecture.md §14.13). Content
   is still sourced from the Windows Registry, so it varies by file type and differs between a file,

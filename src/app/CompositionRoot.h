@@ -11,6 +11,8 @@
 #include "ColumnVisibilitySettingsViewModel.h"
 #include "DirectoryWatchUseCase.h"
 #include "DiskUsageService.h"
+#include "DuplicateFinderService.h"
+#include "DuplicateFinderUseCase.h"
 #include "Favorites.h"
 #include "FavoritesStore.h"
 #include "FavoritesViewModel.h"
@@ -38,6 +40,7 @@
 #include "SQLiteTagRepository.h"
 #include "ShellContextMenuProvider.h"
 #include "StandardDirectoryWatcher.h"
+#include "StandardDuplicateFileScanner.h"
 #include "StandardFileSystemRepository.h"
 #include "StandardFolderMonitor.h"
 #include "SyntaxHighlightEngine.h"
@@ -80,6 +83,8 @@ public:
     UiThemeChangeNotifier& uiThemeChangeNotifier() noexcept { return m_uiThemeChangeNotifier; }
     ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel() noexcept { return m_columnVisibilitySettingsViewModel; }
     DiskUsageService& diskUsageService() noexcept { return m_diskUsageService; }
+    DuplicateFinderService& duplicateFinderService() noexcept { return m_duplicateFinderService; }
+    FileNavigationUseCase& fileNavigationUseCase() noexcept { return m_fileNavigationUseCase; }
 
 private:
     StandardFileSystemRepository m_fileSystemRepository;
@@ -188,4 +193,13 @@ private:
     // order).
     WindowsDiskUsageScanner m_diskUsageScanner;
     DiskUsageService m_diskUsageService;
+
+    // Architecture.md §14.51: Tools > Find Duplicate Files... scan requests, off the Qt UI thread --
+    // same "own dedicated thread" shape as m_diskUsageService, grouped here with the other
+    // shared background-work services. Scanner before use case before service (construction order
+    // matches declaration order). Unlike disk usage, there is no persistence repository here by
+    // design -- see the feature's decision log.
+    StandardDuplicateFileScanner m_duplicateFileScanner;
+    DuplicateFinderUseCase m_duplicateFinderUseCase;
+    DuplicateFinderService m_duplicateFinderService;
 };

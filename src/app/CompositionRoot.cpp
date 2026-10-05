@@ -40,6 +40,9 @@ CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir)
     , m_columnVisibilitySettings(m_columnVisibilitySettingsStore.load())
     , m_columnVisibilitySettingsViewModel(m_columnVisibilitySettings, m_columnVisibilitySettingsStore)
     , m_diskUsageService(m_diskUsageScanner, appDataDir / "explorer.db")
+    , m_duplicateFileScanner(m_fileSystemRepository)
+    , m_duplicateFinderUseCase(m_duplicateFileScanner)
+    , m_duplicateFinderService(m_duplicateFinderUseCase, m_fileSystemRepository)
 {
 }
 

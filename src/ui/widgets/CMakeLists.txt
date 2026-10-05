@@ -61,6 +61,8 @@ add_library(explorer_ui_widgets STATIC
     PieChartWidget.cpp
     FolderSizeWidget.h
     FolderSizeWidget.cpp
+    DuplicateFinderDialog.h
+    DuplicateFinderDialog.cpp
     PreviewPanelWidget.h
     PreviewPanelWidget.cpp
     FolderPreviewListModel.h

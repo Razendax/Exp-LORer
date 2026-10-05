@@ -44,6 +44,8 @@ class TabViewModel;
 class MainStatusBarWidget;
 class DriveSpaceInfoWorker;
 class DiskUsageService;
+class DuplicateFinderService;
+class DuplicateFinderDialog;
 
 // Application shell: menu bar (File/Edit/View/Favorites/Tools/Help), a small Layout toolbar, and
 // a WorkspaceLayoutWidget as central widget hosting up to 4 independent WorkspacePaneWidget
@@ -61,7 +63,7 @@ public:
                FavoritesViewModel& favoritesViewModel, NotificationCenter& notificationCenter,
                NotificationSettingsViewModel& notificationSettingsViewModel,
                ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, DiskUsageService& diskUsageService,
-               const AppConfig& initialConfig, QWidget* parent = nullptr);
+               DuplicateFinderService& duplicateFinderService, const AppConfig& initialConfig, QWidget* parent = nullptr);
     ~MainWindow() override;
 
 protected:
@@ -88,6 +90,7 @@ private:
     void showTagManagerDialog();
     void showSettingsDialog();
     void showManageFavoritesDialog();
+    void showDuplicateFinderDialog();
 
     void onLayoutChanged(SplitLayout layout);
     void onStatusMessage(const QString& message);
@@ -128,6 +131,8 @@ private:
     NotificationSettingsViewModel& m_notificationSettingsViewModel;
     ColumnVisibilitySettingsViewModel& m_columnVisibilitySettingsViewModel;
     DiskUsageService& m_diskUsageService;
+    DuplicateFinderService& m_duplicateFinderService;
+    DuplicateFinderDialog* m_duplicateFinderDialog = nullptr;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;
     PreviewPanelWidget* m_previewPanelWidget = nullptr;
