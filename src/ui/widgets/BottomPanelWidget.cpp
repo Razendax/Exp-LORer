@@ -7,8 +7,9 @@
 #include <QVBoxLayout>
 
 #include "UiColors.h"
+#include "UiThemeChangeNotifier.h"
 
-BottomPanelWidget::BottomPanelWidget(QWidget* parent)
+BottomPanelWidget::BottomPanelWidget(UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent)
     : QWidget(parent)
 {
     setObjectName(QStringLiteral("bottomPanelWidget"));
@@ -19,7 +20,6 @@ BottomPanelWidget::BottomPanelWidget(QWidget* parent)
 
     m_headerStrip = new QWidget(this);
     m_headerStrip->setAttribute(Qt::WA_StyledBackground, true);
-    m_headerStrip->setStyleSheet(QString("background-color: %1;").arg(QLatin1String(UiColors::kBottomPanelBackground)));
     auto* headerLayout = new QHBoxLayout(m_headerStrip);
     headerLayout->setContentsMargins(4, 2, 4, 2);
     headerLayout->setSpacing(2);
@@ -30,6 +30,14 @@ BottomPanelWidget::BottomPanelWidget(QWidget* parent)
 
     layout->addWidget(m_headerStrip);
     layout->addWidget(m_stack, 1);
+
+    applyThemeColors();
+    connect(&uiThemeChangeNotifier, &UiThemeChangeNotifier::themeChanged, this, &BottomPanelWidget::applyThemeColors);
+}
+
+void BottomPanelWidget::applyThemeColors()
+{
+    m_headerStrip->setStyleSheet(QString("background-color: %1;").arg(QLatin1String(UiColors::current().bottomPanelBackground)));
 }
 
 int BottomPanelWidget::addPanelTab(const QString& label, QWidget* content)

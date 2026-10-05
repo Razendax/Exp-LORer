@@ -455,7 +455,7 @@ walkthrough; see git history and the code's own comments (many cite these subsec
 directly) for the detail.
 
 The log grew too large for one document and is split across three files under `docs/features/`.
-Section numbers (§14.1–§14.45) are continuous across all three:
+Section numbers (§14.1–§14.50) are continuous across all three:
 
 * **[features/01-workspace-navigation-and-search.md](features/01-workspace-navigation-and-search.md)**
   — §14.1–§14.26: split-window layout/tabs/panes, tag panel, clipboard file operations,
@@ -467,8 +467,9 @@ Section numbers (§14.1–§14.45) are continuous across all three:
   browsing/preview/extraction, per-file/folder font & color decoration, window-wide status bar, git
   status badges, live directory update.
 * **[features/03-monitoring-git-and-productivity.md](features/03-monitoring-git-and-productivity.md)**
-  — §14.34–§14.45: recursive folder monitoring, git branch status/checkout, favorites,
+  — §14.34–§14.50: recursive folder monitoring, git branch status/checkout, favorites,
   notification system, async advanced search, customizable Details-view columns, disk usage/folder
   size, left panel with folder tree, unified search tab, search tab follow-up fixes, quick-search
-  match options, quick-search skip-git-ignored toggle.
+  match options, quick-search skip-git-ignored toggle, custom copy/move progress, left/right panel
+  state persistence, per-tab column visibility persistence, Light/Dark theme.
 

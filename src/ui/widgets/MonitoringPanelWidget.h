@@ -10,6 +10,7 @@ class QPushButton;
 class QToolButton;
 class QListView;
 class QLabel;
+class UiThemeChangeNotifier;
 
 // The Monitoring right-panel tab (Architecture.md §14.24): a Start/Stop button plus a pin button
 // (enabled only while monitoring is active), an autoscrolling log of the displayed tab's recursive
@@ -21,7 +22,7 @@ class MonitoringPanelWidget : public QWidget
     Q_OBJECT
 
 public:
-    explicit MonitoringPanelWidget(MonitoringPanelViewModel* viewModel, QWidget* parent = nullptr);
+    MonitoringPanelWidget(MonitoringPanelViewModel* viewModel, UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent = nullptr);
 
 signals:
     // Bubbled up so MainWindow can report it via its transient status bar, same posture as

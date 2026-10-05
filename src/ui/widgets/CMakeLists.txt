@@ -80,6 +80,10 @@ add_library(explorer_ui_widgets STATIC
     NotificationOverlayWidget.h
     NotificationOverlayWidget.cpp
     UiColors.h
+    UiTheme.h
+    UiTheme.cpp
+    UiThemeChangeNotifier.h
+    UiThemeChangeNotifier.cpp
 )
 
 target_include_directories(explorer_ui_widgets PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

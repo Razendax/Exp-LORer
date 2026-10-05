@@ -69,6 +69,7 @@ from .modal_dialog import (
     wait_for_window_handle,
 )
 from .notification_overlay import NotificationOverlay
+from .settings_dialog import SettingsDialog, open_settings_dialog
 from .tag_chip import TagChip, chip_names, find_chip, find_chip_label
 from .tag_manager_dialog import TagManagerDialog, open_tag_manager_dialog
 from .testcase import ExpLorerFreshAppTestCase, ExpLorerRestartableTestCase, ExpLorerTestCase
@@ -127,6 +128,8 @@ __all__ = [
     "LeftPanel",
     "FolderTree",
     "ManageFavoritesDialog",
+    "SettingsDialog",
+    "open_settings_dialog",
     "ExpLorerTestCase",
     "ExpLorerFreshAppTestCase",
     "ExpLorerRestartableTestCase",

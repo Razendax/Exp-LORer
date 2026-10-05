@@ -30,6 +30,7 @@ class BottomPanelWidget;
 class StatusBarWidget;
 class ColumnVisibilitySettingsViewModel;
 class DiskUsageService;
+class UiThemeChangeNotifier;
 
 // One pane's full self-contained UI: its own toolbar (back/forward/up/refresh QActions, address
 // QLineEdit, view-mode QToolButton+menu — the per-pane counterpart of MainWindow's former
@@ -46,7 +47,7 @@ class WorkspacePaneWidget : public QWidget
 public:
     explicit WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOperationsController* fileOperationsController,
                                   ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
-                                  DiskUsageService& diskUsageService,
+                                  DiskUsageService& diskUsageService, UiThemeChangeNotifier& uiThemeChangeNotifier,
                                   const std::array<int, FileListModel::ColumnCount>& initialColumnWidths = {},
                                   const std::array<int, FileListModel::ColumnCount>& initialColumnOrder = {},
                                   QWidget* parent = nullptr);
@@ -103,6 +104,11 @@ private:
     void createViewModeActions();
     QToolBar* createToolBar();
     void createTabArea();
+
+    // Re-applies m_toolBar's and m_tabWidget's UiColors::current()-based stylesheets -- extracted
+    // out of createToolBar()/createTabArea() so it can be re-invoked on
+    // UiThemeChangeNotifier::themeChanged without rebuilding either widget (Architecture.md §14.50).
+    void applyThemeColors();
 
     void addPageForTab(TabViewModel* tab, int index);
     void wireBrowserView(FileBrowserView* browserView, TabViewModel* tab);
@@ -177,6 +183,7 @@ private:
     FileOperationsController* m_fileOperationsController = nullptr;
     ColumnVisibilitySettingsViewModel& m_columnVisibilitySettingsViewModel;
     DiskUsageService& m_diskUsageService;
+    UiThemeChangeNotifier& m_uiThemeChangeNotifier;
     TabViewModel* m_boundTab = nullptr;
 
     QTabWidget* m_tabWidget = nullptr;

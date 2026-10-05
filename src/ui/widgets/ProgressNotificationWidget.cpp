@@ -12,7 +12,9 @@ ProgressNotificationWidget::ProgressNotificationWidget(const QString& title, int
 {
     setAttribute(Qt::WA_StyledBackground);
     setObjectName(QStringLiteral("progressNotificationWidget"));
-    setStyleSheet(QStringLiteral("#progressNotificationWidget { background-color: #FFFFFF; border: 1px solid #A0A0A0; }"));
+    // palette(...) roles rather than literal hex -- see ToastNotificationWidget's equivalent line
+    // for why this needs no UiThemeChangeNotifier wiring (Architecture.md §14.50).
+    setStyleSheet(QStringLiteral("#progressNotificationWidget { background-color: palette(base); border: 1px solid palette(mid); }"));
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(8, 6, 8, 6);
@@ -33,11 +35,11 @@ ProgressNotificationWidget::ProgressNotificationWidget(const QString& title, int
         layout->addWidget(progressBar);
 
         auto* progressLabel = new QLabel(this);
-        progressLabel->setStyleSheet(QStringLiteral("color: #707070; font-size: 9px;"));
+        progressLabel->setStyleSheet(QStringLiteral("color: palette(mid); font-size: 9px;"));
         layout->addWidget(progressLabel);
 
         auto* belowLabel = new QLabel(this);
-        belowLabel->setStyleSheet(QStringLiteral("color: #707070; font-size: 9px;"));
+        belowLabel->setStyleSheet(QStringLiteral("color: palette(mid); font-size: 9px;"));
         layout->addWidget(belowLabel);
 
         m_bars.push_back(BarRow{ aboveLabel, progressBar, progressLabel, belowLabel });

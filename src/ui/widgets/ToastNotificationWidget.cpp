@@ -13,14 +13,15 @@ namespace
 {
     QString headerColorFor(NotificationType type)
     {
+        const UiColors::UiColorSet& colors = UiColors::current();
         switch (type)
         {
             case NotificationType::Info:
-                return QString::fromLatin1(UiColors::kNotificationInfoBlue);
+                return QString::fromLatin1(colors.notificationInfoBlue);
             case NotificationType::Warning:
-                return QString::fromLatin1(UiColors::kNotificationWarningYellow);
+                return QString::fromLatin1(colors.notificationWarningYellow);
             case NotificationType::Error:
-                return QString::fromLatin1(UiColors::kNotificationErrorRed);
+                return QString::fromLatin1(colors.notificationErrorRed);
         }
         return QString();
     }
@@ -60,7 +61,11 @@ ToastNotificationWidget::ToastNotificationWidget(NotificationType type, const QS
 {
     setAttribute(Qt::WA_StyledBackground);
     setObjectName(QStringLiteral("toastNotificationWidget"));
-    setStyleSheet(QStringLiteral("#toastNotificationWidget { background-color: #FFFFFF; border: 1px solid #A0A0A0; }"));
+    // palette(...) roles rather than literal hex -- Light/Dark need no notifier wiring here since
+    // this card is short-lived (auto-dismissed or closed by the user) and its colors are re-read
+    // from the QPalette QApplication::setPalette() last installed on every paint (Architecture.md
+    // §14.50).
+    setStyleSheet(QStringLiteral("#toastNotificationWidget { background-color: palette(base); border: 1px solid palette(mid); }"));
 
     auto* outerLayout = new QVBoxLayout(this);
     outerLayout->setContentsMargins(0, 0, 0, 0);

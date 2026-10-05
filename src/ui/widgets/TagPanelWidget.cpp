@@ -9,15 +9,15 @@
 #include "FlowLayout.h"
 #include "TagChipWidget.h"
 #include "TagListViewModel.h"
-#include "UiColors.h"
+#include "UiThemeChangeNotifier.h"
 
-TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, QWidget* parent)
+TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent)
     : QWidget(parent)
     , m_viewModel(viewModel)
 {
     auto* mainLayout = new QVBoxLayout(this);
 
-    m_folderTagsLayout = addChipSection(mainLayout, tr("Folder tags"), UiColors::kFolderTagsBackground,
+    m_folderTagsLayout = addChipSection(mainLayout, tr("Folder tags"), &UiColors::UiColorSet::folderTagsBackground,
                                          QStringLiteral("tagPanelFolderTagsSection"));
 
     m_searchEdit = new QLineEdit(this);
@@ -25,7 +25,7 @@ TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, QWidget* parent)
     m_searchEdit->setPlaceholderText(tr("Search tags..."));
     mainLayout->addWidget(m_searchEdit);
 
-    m_searchResultsLayout = addChipSection(mainLayout, tr("Matching tags"), UiColors::kMatchingTagsBackground,
+    m_searchResultsLayout = addChipSection(mainLayout, tr("Matching tags"), &UiColors::UiColorSet::matchingTagsBackground,
                                             QStringLiteral("tagPanelSearchMatchesSection"));
 
     m_createTagButton = new QPushButton(this);
@@ -33,7 +33,7 @@ TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, QWidget* parent)
     m_createTagButton->hide();
     mainLayout->addWidget(m_createTagButton);
 
-    m_selectedItemTagsLayout = addChipSection(mainLayout, tr("Tags on selection"), UiColors::kSelectedItemTagsBackground,
+    m_selectedItemTagsLayout = addChipSection(mainLayout, tr("Tags on selection"), &UiColors::UiColorSet::selectedItemTagsBackground,
                                                QStringLiteral("tagPanelSelectedItemTagsSection"));
 
     connect(m_searchEdit, &QLineEdit::textChanged, m_viewModel, &TagListViewModel::setSearchQuery);
@@ -48,9 +48,12 @@ TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, QWidget* parent)
     rebuildSearchResults(m_viewModel->searchResults());
     rebuildSelectedItemTags(m_viewModel->selectedItemTags());
     updateCreateTagAffordance(m_viewModel->canCreateTagFromQuery());
+
+    applyThemeColors();
+    connect(&uiThemeChangeNotifier, &UiThemeChangeNotifier::themeChanged, this, &TagPanelWidget::applyThemeColors);
 }
 
-FlowLayout* TagPanelWidget::addChipSection(QVBoxLayout* mainLayout, const QString& title, const char* backgroundHex,
+FlowLayout* TagPanelWidget::addChipSection(QVBoxLayout* mainLayout, const QString& title, ColorRole colorRole,
                                             const QString& sectionObjectName)
 {
     mainLayout->addWidget(new QLabel(title, this));
@@ -58,7 +61,6 @@ FlowLayout* TagPanelWidget::addChipSection(QVBoxLayout* mainLayout, const QStrin
     auto* content = new QWidget;
     content->setObjectName(sectionObjectName);
     content->setAttribute(Qt::WA_StyledBackground, true);
-    content->setStyleSheet(QString("background-color: %1;").arg(QLatin1String(backgroundHex)));
     auto* contentLayout = new FlowLayout(content);
 
     auto* scrollArea = new QScrollArea(this);
@@ -67,10 +69,22 @@ FlowLayout* TagPanelWidget::addChipSection(QVBoxLayout* mainLayout, const QStrin
     scrollArea->setWidgetResizable(true);
     scrollArea->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     scrollArea->setStyleSheet(QStringLiteral("QScrollArea { border: none; }"));
-    scrollArea->viewport()->setStyleSheet(QString("background-color: %1;").arg(QLatin1String(backgroundHex)));
     mainLayout->addWidget(scrollArea);
 
+    m_themedSections.push_back(ThemedSection{ content, scrollArea->viewport(), colorRole });
+
     return contentLayout;
+}
+
+void TagPanelWidget::applyThemeColors()
+{
+    const UiColors::UiColorSet& colors = UiColors::current();
+    for (const ThemedSection& section : m_themedSections)
+    {
+        const QString style = QString("background-color: %1;").arg(QLatin1String(colors.*section.colorRole));
+        section.content->setStyleSheet(style);
+        section.viewport->setStyleSheet(style);
+    }
 }
 
 void TagPanelWidget::clearLayout(FlowLayout* layout)

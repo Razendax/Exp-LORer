@@ -51,7 +51,6 @@
 #include "SearchPanelWidget.h"
 #include "SidePanelWidget.h"
 #include "TagPanelWidget.h"
-#include "UiColors.h"
 #include "VirtualPaths.h"
 #include "WorkspaceController.h"
 #include "WorkspaceLayoutWidget.h"
@@ -233,7 +232,7 @@ namespace
 
 MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore,
                          TagManagementUseCase& tagManagementUseCase, TagChangeNotifier& tagChangeNotifier,
-                         SyntaxHighlightEngine& syntaxHighlightEngine,
+                         UiThemeChangeNotifier& uiThemeChangeNotifier, SyntaxHighlightEngine& syntaxHighlightEngine,
                          HighlightThemeViewModel& highlightThemeViewModel, FileDecorationsViewModel& fileDecorationsViewModel,
                          FavoritesViewModel& favoritesViewModel, NotificationCenter& notificationCenter,
                          NotificationSettingsViewModel& notificationSettingsViewModel,
@@ -244,6 +243,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_configStore(configStore)
     , m_tagManagementUseCase(tagManagementUseCase)
     , m_tagChangeNotifier(tagChangeNotifier)
+    , m_uiThemeChangeNotifier(uiThemeChangeNotifier)
     , m_syntaxHighlightEngine(syntaxHighlightEngine)
     , m_highlightThemeViewModel(highlightThemeViewModel)
     , m_fileDecorationsViewModel(fileDecorationsViewModel)
@@ -476,13 +476,14 @@ void MainWindow::createLayoutToolBar()
 void MainWindow::createWorkspace()
 {
     m_workspaceLayoutWidget = new WorkspaceLayoutWidget(m_workspaceController, m_columnVisibilitySettingsViewModel,
-                                                          m_diskUsageService, m_columnWidths, m_columnOrder, this);
+                                                          m_diskUsageService, m_uiThemeChangeNotifier, m_columnWidths,
+                                                          m_columnOrder, this);
     m_workspaceLayoutWidget->setObjectName(QStringLiteral("workspaceLayoutWidget"));
 
     // Right panel (Architecture.md §14.25): a collapsible side-panel tab strip wrapping the tag UI,
     // file preview and folder monitoring log.
-    m_rightPanelWidget = new SidePanelWidget(SidePanelWidget::Edge::Right, QStringLiteral("rightPanel"), this);
-    m_tagPanelWidget = new TagPanelWidget(m_workspaceController->tagListViewModel(), m_rightPanelWidget);
+    m_rightPanelWidget = new SidePanelWidget(SidePanelWidget::Edge::Right, QStringLiteral("rightPanel"), m_uiThemeChangeNotifier, this);
+    m_tagPanelWidget = new TagPanelWidget(m_workspaceController->tagListViewModel(), m_uiThemeChangeNotifier, m_rightPanelWidget);
     m_tagPanelWidget->setObjectName(QStringLiteral("tagPanelWidget"));
     m_rightPanelWidget->addPanelTab(tr("Tags"), m_tagPanelWidget, QStringLiteral("rightPanelTagsButton"));
 
@@ -491,14 +492,15 @@ void MainWindow::createWorkspace()
     m_previewPanelWidget->setObjectName(QStringLiteral("previewPanelWidget"));
     m_rightPanelWidget->addPanelTab(tr("Preview"), m_previewPanelWidget, QStringLiteral("rightPanelPreviewButton"));
 
-    m_monitoringPanelWidget = new MonitoringPanelWidget(m_workspaceController->monitoringPanelViewModel(), m_rightPanelWidget);
+    m_monitoringPanelWidget =
+        new MonitoringPanelWidget(m_workspaceController->monitoringPanelViewModel(), m_uiThemeChangeNotifier, m_rightPanelWidget);
     m_monitoringPanelWidget->setObjectName(QStringLiteral("monitoringPanelWidget"));
     m_rightPanelWidget->addPanelTab(tr("Monitoring"), m_monitoringPanelWidget, QStringLiteral("rightPanelMonitoringButton"));
     connect(m_monitoringPanelWidget, &MonitoringPanelWidget::monitoringFailed, this, &MainWindow::onStatusMessage);
 
     // Left panel (Architecture.md §14.41/§14.42): same side-panel mechanics, mirrored, with "Tree"
     // and "Search" tabs.
-    m_leftPanelWidget = new SidePanelWidget(SidePanelWidget::Edge::Left, QStringLiteral("leftPanel"), this);
+    m_leftPanelWidget = new SidePanelWidget(SidePanelWidget::Edge::Left, QStringLiteral("leftPanel"), m_uiThemeChangeNotifier, this);
     createFolderTree();
     m_leftPanelWidget->addPanelTab(tr("Tree"), m_folderTreeView, QStringLiteral("leftPanelTreeButton"));
     createSearchPanel();
@@ -603,7 +605,7 @@ void MainWindow::createFolderTree()
 void MainWindow::createSearchPanel()
 {
     m_searchPanelWidget = new SearchPanelWidget(m_fileDecorationsViewModel.decorationRules(), m_fileDecorationsViewModel,
-                                                 m_leftPanelWidget);
+                                                 m_uiThemeChangeNotifier, m_leftPanelWidget);
 
     connect(m_searchPanelWidget, &SearchPanelWidget::queryChanged, this, [this](const QString& query) {
         if (TabViewModel* tab = m_workspaceController->focusedTab())
@@ -707,7 +709,7 @@ void MainWindow::showManageFavoritesDialog()
 void MainWindow::showSettingsDialog()
 {
     SettingsDialog dialog(m_syntaxHighlightEngine, m_highlightThemeViewModel, m_fileDecorationsViewModel,
-                          m_notificationSettingsViewModel, m_columnVisibilitySettingsViewModel, this);
+                          m_notificationSettingsViewModel, m_columnVisibilitySettingsViewModel, m_uiThemeChangeNotifier, this);
 
     connect(&dialog, &SettingsDialog::showTabCloseButtonsChanged, this, [this](bool visible) {
         for (WorkspacePaneId id : kAllPanes)

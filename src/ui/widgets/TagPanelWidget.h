@@ -5,12 +5,14 @@
 #include <QWidget>
 
 #include "Tag.h"
+#include "UiColors.h"
 
 class FlowLayout;
 class QLineEdit;
 class QPushButton;
 class QVBoxLayout;
 class TagListViewModel;
+class UiThemeChangeNotifier;
 
 // The right-hand tag panel (Architecture.md §14.9, Specification.md "Tag Panel"): (1.1) a
 // scrollable list of read-only chips for the active folder + its ancestors, (1.2) a search box,
@@ -22,15 +24,20 @@ class TagPanelWidget : public QWidget
     Q_OBJECT
 
 public:
-    explicit TagPanelWidget(TagListViewModel* viewModel, QWidget* parent = nullptr);
+    TagPanelWidget(TagListViewModel* viewModel, UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent = nullptr);
 
 private:
+    // Pointer-to-member into UiColors::UiColorSet, naming which role tints a given chip section --
+    // resolved against UiColors::current() both at construction and again on every themeChanged
+    // (Architecture.md §14.50), rather than a literal hex baked in once.
+    using ColorRole = const char* UiColors::UiColorSet::*;
+
     // Appends a titled, scrollable chip-flow section to `mainLayout` and returns the (empty)
-    // layout chips get added to. backgroundHex tints the section so the three sections read as
-    // visually distinct (UiColors.h). sectionObjectName is the UI Automation id for the section's
-    // container widget (Architecture.md §11).
-    FlowLayout* addChipSection(QVBoxLayout* mainLayout, const QString& title, const char* backgroundHex,
-                                const QString& sectionObjectName);
+    // layout chips get added to. colorRole selects which UiColorSet member tints the section so
+    // the three sections read as visually distinct (UiColors.h); the section is recorded in
+    // m_themedSections so applyThemeColors() can re-tint it later. sectionObjectName is the UI
+    // Automation id for the section's container widget (Architecture.md §11).
+    FlowLayout* addChipSection(QVBoxLayout* mainLayout, const QString& title, ColorRole colorRole, const QString& sectionObjectName);
 
     void rebuildFolderTags(const std::vector<Tag>& tags);
     void rebuildSearchResults(const std::vector<Tag>& tags);
@@ -39,6 +46,10 @@ private:
     void onTagChipClicked(Tag::Id tagId);
     static void clearLayout(FlowLayout* layout);
 
+    // Re-applies every recorded chip section's tint from UiColors::current() (Architecture.md
+    // §14.50).
+    void applyThemeColors();
+
     TagListViewModel* m_viewModel = nullptr;
 
     FlowLayout* m_folderTagsLayout = nullptr;
@@ -46,4 +57,12 @@ private:
     FlowLayout* m_searchResultsLayout = nullptr;
     QPushButton* m_createTagButton = nullptr;
     FlowLayout* m_selectedItemTagsLayout = nullptr;
+
+    struct ThemedSection
+    {
+        QWidget* content = nullptr;
+        QWidget* viewport = nullptr;
+        ColorRole colorRole = nullptr;
+    };
+    std::vector<ThemedSection> m_themedSections;
 };

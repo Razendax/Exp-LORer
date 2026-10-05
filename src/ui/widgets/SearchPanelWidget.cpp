@@ -20,6 +20,7 @@
 #include "SearchResultDelegate.h"
 #include "SearchResultsTreeModel.h"
 #include "UiColors.h"
+#include "UiThemeChangeNotifier.h"
 
 namespace
 {
@@ -29,7 +30,7 @@ namespace
 }
 
 SearchPanelWidget::SearchPanelWidget(const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
-                                      QWidget* parent)
+                                      UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent)
     : QWidget(parent)
 {
     setObjectName(QStringLiteral("searchPanelWidget"));
@@ -168,11 +169,6 @@ SearchPanelWidget::SearchPanelWidget(const FileDecorationRules& fileDecorationRu
 
     m_advancedSearchButton = new QPushButton(tr("Advanced Search..."), this);
     m_advancedSearchButton->setObjectName(QStringLiteral("advancedSearchButton"));
-    m_advancedSearchButton->setStyleSheet(QStringLiteral(
-        "QPushButton#advancedSearchButton { background: %1; border: 1px solid %2; border-radius: 3px; }"
-        "QPushButton#advancedSearchButton:hover { background: %3; }")
-        .arg(QLatin1String(UiColors::kAdvancedSearchButtonBackground), QLatin1String(UiColors::kAccentBlue),
-             QLatin1String(UiColors::kAdvancedSearchButtonHoverBackground)));
     connect(m_advancedSearchButton, &QPushButton::clicked, this, &SearchPanelWidget::advancedSearchRequested);
 
     m_listModel = new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this);
@@ -224,6 +220,19 @@ SearchPanelWidget::SearchPanelWidget(const FileDecorationRules& fileDecorationRu
     layout->addWidget(m_resultsStack);
 
     clearForNoTab();
+
+    applyThemeColors();
+    connect(&uiThemeChangeNotifier, &UiThemeChangeNotifier::themeChanged, this, &SearchPanelWidget::applyThemeColors);
+}
+
+void SearchPanelWidget::applyThemeColors()
+{
+    const UiColors::UiColorSet& colors = UiColors::current();
+    m_advancedSearchButton->setStyleSheet(QStringLiteral(
+        "QPushButton#advancedSearchButton { background: %1; border: 1px solid %2; border-radius: 3px; }"
+        "QPushButton#advancedSearchButton:hover { background: %3; }")
+        .arg(QLatin1String(colors.advancedSearchButtonBackground), QLatin1String(colors.accentBlue),
+             QLatin1String(colors.advancedSearchButtonHoverBackground)));
 }
 
 void SearchPanelWidget::setViewAsTree(bool tree)

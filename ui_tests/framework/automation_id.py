@@ -169,6 +169,7 @@ class AutomationID:
     SETTINGS_CATEGORY_TREE = "settingsCategoryTree"
     SETTINGS_PAGE_STACK = "settingsPageStack"
     SETTINGS_SHOW_TAB_CLOSE_BUTTONS_CHECKBOX = "settingsShowTabCloseButtonsCheckBox"
+    SETTINGS_THEME_COMBO_BOX = "settingsThemeComboBox"
     SETTINGS_DECORATIONS_TABLE = "settingsDecorationsTable"
     SETTINGS_ADD_DECORATION_RULE_BUTTON = "settingsAddDecorationRuleButton"
     # Settings > General > Columns page (SettingsDialog::buildColumnsPage) -- "Default visibility

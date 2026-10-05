@@ -8,6 +8,7 @@
 class QResizeEvent;
 class QStackedWidget;
 class QToolButton;
+class UiThemeChangeNotifier;
 
 // Side-panel counterpart of BottomPanelWidget (Architecture.md §14.25, §14.41): a header strip of
 // checkable panel-tab buttons next to a QStackedWidget of panel-tab content, starting collapsed, but
@@ -32,7 +33,7 @@ public:
     // `idPrefix` names this widget "<idPrefix>Widget" and its page stack "<idPrefix>Stack"
     // (Architecture.md §11's UI-Automation-id convention), e.g. "rightPanel" -> rightPanelWidget /
     // rightPanelStack.
-    SidePanelWidget(Edge edge, const QString& idPrefix, QWidget* parent = nullptr);
+    SidePanelWidget(Edge edge, const QString& idPrefix, UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent = nullptr);
 
     // Registers one panel-tab page whose header button gets `buttonObjectName`. Does not switch to
     // it or expand the panel. Returns the page's index (0-based, in registration order).
@@ -74,6 +75,9 @@ protected:
 
 private:
     void onPanelTabButtonClicked(int index);
+
+    // Re-applies m_headerStrip's UiColors::current()-based stylesheet (Architecture.md §14.50).
+    void applyThemeColors();
 
     QWidget* m_headerStrip = nullptr;
     QStackedWidget* m_stack = nullptr;

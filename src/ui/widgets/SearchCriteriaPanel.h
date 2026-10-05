@@ -12,6 +12,7 @@ class QSpinBox;
 class QPushButton;
 class QToolButton;
 class FlowLayout;
+class UiThemeChangeNotifier;
 
 // Name / Min size / Max size fields plus a Search button, a tag-search box with its
 // live matching-tag chip row, and a removable tag-criteria chip row, for the advanced (criteria)
@@ -22,7 +23,7 @@ class SearchCriteriaPanel : public QWidget
     Q_OBJECT
 
 public:
-    explicit SearchCriteriaPanel(QWidget* parent = nullptr);
+    SearchCriteriaPanel(UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent = nullptr);
 
     // Repopulates the fields without emitting searchRequested/criteriaEdited, e.g. when a tab
     // regains focus (mirrors MainWindow::onFocusedTabChanged's resync of the quick-search box).
@@ -61,6 +62,9 @@ private:
     SearchCriteria currentCriteria() const;
     void onAnyFieldEdited();
     static void clearLayout(FlowLayout* layout);
+
+    // Re-applies m_closeButton's UiColors::current()-based stylesheet (Architecture.md §14.50).
+    void applyThemeColors();
 
     QLineEdit* m_nameEdit = nullptr;
     QSpinBox* m_minSizeKbSpin = nullptr;

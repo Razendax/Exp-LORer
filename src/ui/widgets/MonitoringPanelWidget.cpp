@@ -18,11 +18,12 @@
 #include "TabViewModel.h"
 #include "VirtualPaths.h"
 
-MonitoringPanelWidget::MonitoringPanelWidget(MonitoringPanelViewModel* viewModel, QWidget* parent)
+MonitoringPanelWidget::MonitoringPanelWidget(MonitoringPanelViewModel* viewModel, UiThemeChangeNotifier& uiThemeChangeNotifier,
+                                              QWidget* parent)
     : QWidget(parent)
     , m_viewModel(viewModel)
 {
-    m_logModel = new MonitoringLogModel(this);
+    m_logModel = new MonitoringLogModel(uiThemeChangeNotifier, this);
 
     auto* mainLayout = new QVBoxLayout(this);
 

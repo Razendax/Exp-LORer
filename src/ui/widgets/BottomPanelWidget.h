@@ -8,6 +8,7 @@
 class QResizeEvent;
 class QStackedWidget;
 class QToolButton;
+class UiThemeChangeNotifier;
 
 // Generic VS Code-style collapsible bottom panel (Architecture.md §14.23): a header strip of
 // checkable panel-tab buttons over a QStackedWidget of panel-tab content, starting collapsed. Only
@@ -19,7 +20,7 @@ class BottomPanelWidget : public QWidget
     Q_OBJECT
 
 public:
-    explicit BottomPanelWidget(QWidget* parent = nullptr);
+    explicit BottomPanelWidget(UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent = nullptr);
 
     // Registers one panel-tab page. Does not switch to it or expand the panel. Returns the page's
     // index (0-based, in registration order).
@@ -49,6 +50,9 @@ protected:
 
 private:
     void onPanelTabButtonClicked(int index);
+
+    // Re-applies m_headerStrip's UiColors::current()-based stylesheet (Architecture.md §14.50).
+    void applyThemeColors();
 
     QWidget* m_headerStrip = nullptr;
     QStackedWidget* m_stack = nullptr;

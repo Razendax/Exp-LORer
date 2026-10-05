@@ -7,6 +7,7 @@
 #include <QAbstractItemView>
 #include <QCheckBox>
 #include <QColorDialog>
+#include <QComboBox>
 #include <QFont>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -31,6 +32,8 @@
 #include "HighlightThemeViewModel.h"
 #include "NotificationSettingsViewModel.h"
 #include "SyntaxHighlightEngine.h"
+#include "UiTheme.h"
+#include "UiThemeChangeNotifier.h"
 #include "WorkspacePaneWidget.h"
 
 namespace
@@ -104,13 +107,15 @@ namespace
 SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeViewModel& themeViewModel,
                                FileDecorationsViewModel& fileDecorationsViewModel,
                                NotificationSettingsViewModel& notificationSettingsViewModel,
-                               ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, QWidget* parent)
+                               ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
+                               UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent)
     : QDialog(parent)
     , m_engine(engine)
     , m_themeViewModel(themeViewModel)
     , m_fileDecorationsViewModel(fileDecorationsViewModel)
     , m_notificationSettingsViewModel(notificationSettingsViewModel)
     , m_columnVisibilitySettingsViewModel(columnVisibilitySettingsViewModel)
+    , m_uiThemeChangeNotifier(uiThemeChangeNotifier)
     , m_decorationRules(fileDecorationsViewModel.rules())
     , m_hiddenFilesRule(fileDecorationsViewModel.hiddenFilesRule())
     , m_hiddenFoldersRule(fileDecorationsViewModel.hiddenFoldersRule())
@@ -245,13 +250,34 @@ QWidget* SettingsDialog::buildGeneralUiPage()
     m_showTabCloseButtonsCheckBox->setObjectName(QStringLiteral("settingsShowTabCloseButtonsCheckBox"));
     m_showTabCloseButtonsCheckBox->setChecked(WorkspacePaneWidget::tabCloseButtonsEnabled());
     layout->addWidget(m_showTabCloseButtonsCheckBox);
-    layout->addStretch(1);
 
     connect(m_showTabCloseButtonsCheckBox, &QCheckBox::toggled, this, [this](bool checked) {
         QSettings settings;
         settings.setValue(QLatin1String(WorkspacePaneWidget::kShowTabCloseButtonsSettingsKey), checked);
         emit showTabCloseButtonsChanged(checked);
     });
+
+    // Light/Dark theme (Architecture.md §14.50): applies and persists immediately, same posture as
+    // every other control in this dialog -- UiTheme::setTheme() itself emits themeChanged() on the
+    // shared notifier, so no signal needs to round-trip through MainWindow the way
+    // showTabCloseButtonsChanged does.
+    auto* themeRow = new QHBoxLayout();
+    themeRow->addWidget(new QLabel(tr("Theme:"), page));
+    m_themeComboBox = new QComboBox(page);
+    m_themeComboBox->setObjectName(QStringLiteral("settingsThemeComboBox"));
+    m_themeComboBox->addItem(tr("Light"), static_cast<int>(UiTheme::Theme::Light));
+    m_themeComboBox->addItem(tr("Dark"), static_cast<int>(UiTheme::Theme::Dark));
+    m_themeComboBox->setCurrentIndex(UiTheme::currentTheme() == UiTheme::Theme::Dark ? 1 : 0);
+    themeRow->addWidget(m_themeComboBox);
+    themeRow->addStretch(1);
+    layout->addLayout(themeRow);
+
+    connect(m_themeComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+        const auto theme = static_cast<UiTheme::Theme>(m_themeComboBox->itemData(index).toInt());
+        UiTheme::setTheme(theme, m_uiThemeChangeNotifier);
+    });
+
+    layout->addStretch(1);
 
     return page;
 }

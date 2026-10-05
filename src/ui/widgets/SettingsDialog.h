@@ -21,6 +21,8 @@ class QStackedWidget;
 class QTableWidget;
 class QTreeWidget;
 class QTreeWidgetItem;
+class QComboBox;
+class UiThemeChangeNotifier;
 
 // File > Settings... dialog (Architecture.md §14.26): a QTreeWidget category tree on the left
 // (Highlight > Languages > one entry per Language, General > UI) and a QStackedWidget on the right.
@@ -37,7 +39,8 @@ class SettingsDialog : public QDialog
 public:
     SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeViewModel& themeViewModel,
                    FileDecorationsViewModel& fileDecorationsViewModel, NotificationSettingsViewModel& notificationSettingsViewModel,
-                   ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, QWidget* parent = nullptr);
+                   ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
+                   UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent = nullptr);
 
 signals:
     // General > UI "Show close button on tabs" checkbox toggled -- MainWindow propagates this to
@@ -94,6 +97,7 @@ private:
     FileDecorationsViewModel& m_fileDecorationsViewModel;
     NotificationSettingsViewModel& m_notificationSettingsViewModel;
     ColumnVisibilitySettingsViewModel& m_columnVisibilitySettingsViewModel;
+    UiThemeChangeNotifier& m_uiThemeChangeNotifier;
     QTableWidget* m_decorationsTable = nullptr;
     std::vector<FileDecorationRule> m_decorationRules;
     FileDecorationRule m_hiddenFilesRule;
@@ -102,6 +106,7 @@ private:
     QTreeWidget* m_categoryTree = nullptr;
     QStackedWidget* m_pageStack = nullptr;
     QCheckBox* m_showTabCloseButtonsCheckBox = nullptr;
+    QComboBox* m_themeComboBox = nullptr;
     // Parallel to kAllLanguages -- null until ensureLanguagePageBuilt() replaces that index's
     // placeholder with the real page.
     std::vector<QWidget*> m_languagePages;

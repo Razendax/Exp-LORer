@@ -39,6 +39,7 @@
 #include "TabViewModel.h"
 #include "TerminalWidget.h"
 #include "UiColors.h"
+#include "UiThemeChangeNotifier.h"
 #include "VirtualPaths.h"
 #include "WorkspacePaneId.h"
 #include "WorkspacePaneViewModel.h"
@@ -137,7 +138,7 @@ namespace
 
 WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOperationsController* fileOperationsController,
                                           ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
-                                          DiskUsageService& diskUsageService,
+                                          DiskUsageService& diskUsageService, UiThemeChangeNotifier& uiThemeChangeNotifier,
                                           const std::array<int, FileListModel::ColumnCount>& initialColumnWidths,
                                           const std::array<int, FileListModel::ColumnCount>& initialColumnOrder,
                                           QWidget* parent)
@@ -146,6 +147,7 @@ WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOpera
     , m_fileOperationsController(fileOperationsController)
     , m_columnVisibilitySettingsViewModel(columnVisibilitySettingsViewModel)
     , m_diskUsageService(diskUsageService)
+    , m_uiThemeChangeNotifier(uiThemeChangeNotifier)
     , m_initialColumnWidths(initialColumnWidths)
     , m_initialColumnOrder(initialColumnOrder)
 {
@@ -154,6 +156,8 @@ WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOpera
     createViewModeActions();
     QToolBar* toolBar = createToolBar();
     createTabArea();
+    applyThemeColors();
+    connect(&m_uiThemeChangeNotifier, &UiThemeChangeNotifier::themeChanged, this, &WorkspacePaneWidget::applyThemeColors);
 
     m_statusBar = new StatusBarWidget(this);
     m_statusBar->setObjectName(QStringLiteral("paneStatusBar"));
@@ -233,10 +237,6 @@ QToolBar* WorkspacePaneWidget::createToolBar()
     toolBar->setObjectName(QStringLiteral("paneToolBar"));
     toolBar->setAttribute(Qt::WA_StyledBackground, true);
     toolBar->setProperty("paneActive", false);
-    toolBar->setStyleSheet(QStringLiteral("QToolBar#paneToolBar { background: %1; } "
-                                           "QToolBar#paneToolBar[paneActive=\"true\"] { background: %2; }")
-                                .arg(QLatin1String(UiColors::kNavigationPanelBackground),
-                                     QLatin1String(UiColors::kActivePaneAccentBackground)));
 
     m_backAction = toolBar->addAction(style()->standardIcon(QStyle::SP_ArrowBack), tr("Back"));
     m_forwardAction = toolBar->addAction(style()->standardIcon(QStyle::SP_ArrowForward), tr("Forward"));
@@ -297,14 +297,6 @@ void WorkspacePaneWidget::createTabArea()
 {
     m_tabWidget = new QTabWidget(this);
     m_tabWidget->setObjectName(QStringLiteral("paneTabWidget"));
-    m_tabWidget->setStyleSheet(QStringLiteral(
-        // The selected-tab rule below adds a 2px bottom border; giving every tab (not just the
-        // selected one) that same border width -- transparent when unselected -- reserves the
-        // space up front so switching tabs doesn't change tab height/width and jitter the tab bar.
-        "QTabWidget#paneTabWidget::pane { border-top: 1px solid palette(mid); }"
-        "QTabWidget#paneTabWidget QTabBar::tab { border-bottom: 2px solid transparent; min-width: 80px; max-width: 220px; }"
-        "QTabWidget#paneTabWidget QTabBar::tab:selected { background: %1; border-bottom: 2px solid %2; }")
-        .arg(QLatin1String(UiColors::kActiveTabBackground), QLatin1String(UiColors::kAccentBlue)));
     m_tabWidget->setTabsClosable(tabCloseButtonsEnabled());
     m_tabWidget->setMovable(false);
     m_tabWidget->tabBar()->installEventFilter(this);
@@ -343,6 +335,24 @@ void WorkspacePaneWidget::createTabArea()
     connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, &WorkspacePaneWidget::onTabCloseRequested);
 }
 
+void WorkspacePaneWidget::applyThemeColors()
+{
+    const UiColors::UiColorSet& colors = UiColors::current();
+
+    m_toolBar->setStyleSheet(QStringLiteral("QToolBar#paneToolBar { background: %1; } "
+                                             "QToolBar#paneToolBar[paneActive=\"true\"] { background: %2; }")
+                                  .arg(QLatin1String(colors.navigationPanelBackground), QLatin1String(colors.activePaneAccentBackground)));
+
+    m_tabWidget->setStyleSheet(QStringLiteral(
+        // The selected-tab rule below adds a 2px bottom border; giving every tab (not just the
+        // selected one) that same border width -- transparent when unselected -- reserves the
+        // space up front so switching tabs doesn't change tab height/width and jitter the tab bar.
+        "QTabWidget#paneTabWidget::pane { border-top: 1px solid palette(mid); }"
+        "QTabWidget#paneTabWidget QTabBar::tab { border-bottom: 2px solid transparent; min-width: 80px; max-width: 220px; }"
+        "QTabWidget#paneTabWidget QTabBar::tab:selected { background: %1; border-bottom: 2px solid %2; }")
+        .arg(QLatin1String(colors.activeTabBackground), QLatin1String(colors.accentBlue)));
+}
+
 void WorkspacePaneWidget::updateNewTabButtonGeometry()
 {
     QTabBar* tabBar = m_tabWidget->tabBar();
@@ -374,7 +384,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     wireBrowserView(browserView, tab);
     stack->addWidget(browserView); // page 0: normal browsing
 
-    auto* advancedSearchPane = new SearchResultsPane(tab->advancedSearchResultsModel(), stack);
+    auto* advancedSearchPane = new SearchResultsPane(tab->advancedSearchResultsModel(), m_uiThemeChangeNotifier, stack);
     advancedSearchPane->setCriteria(tab->advancedSearchCriteria(), tab->resolveTagCriteria());
     advancedSearchPane->browserView()->setColumnWidths(m_initialColumnWidths);
     advancedSearchPane->browserView()->setColumnOrder(m_initialColumnOrder);
@@ -454,7 +464,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     // Bottom panel (Architecture.md §14.23): a splitter over the existing browse/search/
     // advanced-search stack and a collapsible BottomPanelWidget with a single "Terminal" tab, wrapped
     // as the actual tab page instead of inserting `stack` directly.
-    auto* bottomPanel = new BottomPanelWidget(m_tabWidget);
+    auto* bottomPanel = new BottomPanelWidget(m_uiThemeChangeNotifier, m_tabWidget);
     auto* terminalWidget = new TerminalWidget(bottomPanel);
     terminalWidget->setObjectName(QStringLiteral("terminalWidget"));
     bottomPanel->addPanelTab(tr("Terminal"), terminalWidget);

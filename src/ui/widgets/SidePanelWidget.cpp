@@ -8,8 +8,9 @@
 #include <QVBoxLayout>
 
 #include "UiColors.h"
+#include "UiThemeChangeNotifier.h"
 
-SidePanelWidget::SidePanelWidget(Edge edge, const QString& idPrefix, QWidget* parent)
+SidePanelWidget::SidePanelWidget(Edge edge, const QString& idPrefix, UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent)
     : QWidget(parent)
 {
     setObjectName(idPrefix + QStringLiteral("Widget"));
@@ -20,7 +21,6 @@ SidePanelWidget::SidePanelWidget(Edge edge, const QString& idPrefix, QWidget* pa
 
     m_headerStrip = new QWidget(this);
     m_headerStrip->setAttribute(Qt::WA_StyledBackground, true);
-    m_headerStrip->setStyleSheet(QString("background-color: %1;").arg(QLatin1String(UiColors::kSidePanelBackground)));
     auto* headerLayout = new QVBoxLayout(m_headerStrip);
     headerLayout->setContentsMargins(2, 4, 2, 4);
     headerLayout->setSpacing(2);
@@ -42,6 +42,14 @@ SidePanelWidget::SidePanelWidget(Edge edge, const QString& idPrefix, QWidget* pa
         layout->addWidget(m_stack, 1);
         layout->addWidget(m_headerStrip);
     }
+
+    applyThemeColors();
+    connect(&uiThemeChangeNotifier, &UiThemeChangeNotifier::themeChanged, this, &SidePanelWidget::applyThemeColors);
+}
+
+void SidePanelWidget::applyThemeColors()
+{
+    m_headerStrip->setStyleSheet(QString("background-color: %1;").arg(QLatin1String(UiColors::current().sidePanelBackground)));
 }
 
 int SidePanelWidget::addPanelTab(const QString& label, QWidget* content, const QString& buttonObjectName)

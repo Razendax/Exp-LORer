@@ -12,6 +12,7 @@
 #include "FlowLayout.h"
 #include "TagChipWidget.h"
 #include "UiColors.h"
+#include "UiThemeChangeNotifier.h"
 
 namespace
 {
@@ -19,7 +20,7 @@ namespace
     constexpr std::uintmax_t kBytesPerKb = 1024;
 }
 
-SearchCriteriaPanel::SearchCriteriaPanel(QWidget* parent)
+SearchCriteriaPanel::SearchCriteriaPanel(UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent)
     : QWidget(parent)
 {
     setObjectName(QStringLiteral("searchCriteriaPanel"));
@@ -47,10 +48,6 @@ SearchCriteriaPanel::SearchCriteriaPanel(QWidget* parent)
     m_closeButton->setText(QStringLiteral("×"));
     m_closeButton->setToolTip(tr("Close advanced search"));
     m_closeButton->setObjectName(QStringLiteral("advancedSearchCloseButton"));
-    m_closeButton->setStyleSheet(QStringLiteral(
-        "QToolButton#advancedSearchCloseButton { color: white; background: %1; border: none; border-radius: 3px; padding: 2px 6px; }"
-        "QToolButton#advancedSearchCloseButton:hover { background: %2; }")
-        .arg(QLatin1String(UiColors::kCloseButtonRed), QLatin1String(UiColors::kCloseButtonRedHover)));
 
     auto* fieldsRow = new QHBoxLayout();
     fieldsRow->addWidget(new QLabel(tr("Name:"), this));
@@ -90,6 +87,18 @@ SearchCriteriaPanel::SearchCriteriaPanel(QWidget* parent)
     connect(m_maxSizeKbSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, &SearchCriteriaPanel::onAnyFieldEdited);
 
     connect(m_tagSearchEdit, &QLineEdit::textChanged, this, &SearchCriteriaPanel::tagSearchQueryRequested);
+
+    applyThemeColors();
+    connect(&uiThemeChangeNotifier, &UiThemeChangeNotifier::themeChanged, this, &SearchCriteriaPanel::applyThemeColors);
+}
+
+void SearchCriteriaPanel::applyThemeColors()
+{
+    const UiColors::UiColorSet& colors = UiColors::current();
+    m_closeButton->setStyleSheet(QStringLiteral(
+        "QToolButton#advancedSearchCloseButton { color: white; background: %1; border: none; border-radius: 3px; padding: 2px 6px; }"
+        "QToolButton#advancedSearchCloseButton:hover { background: %2; }")
+        .arg(QLatin1String(colors.closeButtonRed), QLatin1String(colors.closeButtonRedHover)));
 }
 
 void SearchCriteriaPanel::setCriteria(const SearchCriteria& criteria, const std::vector<Tag>& criteriaTags)

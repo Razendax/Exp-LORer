@@ -4,6 +4,7 @@
 #include "Logging.h"
 #include "MainWindow.h"
 #include "TabViewModel.h"
+#include "UiTheme.h"
 #include "VirtualPaths.h"
 #include "WorkspaceController.h"
 #include "WorkspacePaneViewModel.h"
@@ -92,16 +93,24 @@ int main(int argc, char* argv[])
 
     ExpLorerApplication app(argc, argv);
 
+    // Architecture.md §14.50: Fusion is the app's style for both Light and Dark themes (set once,
+    // never re-set on a theme toggle); applying the persisted theme's QPalette here, before
+    // MainWindow is constructed, means the very first paint is already correct.
+    UiTheme::installFusionStyle();
+
     try
     {
         CompositionRoot compositionRoot(appDataDir);
+        UiTheme::setTheme(UiTheme::currentTheme(), compositionRoot.uiThemeChangeNotifier());
+
         const AppConfig initialConfig = compositionRoot.appConfigStore().load();
 
         auto workspaceController = compositionRoot.createWorkspaceController();
         const bool restored = workspaceController->restoreFromConfig(initialConfig.workspace);
 
         MainWindow mainWindow(workspaceController.get(), compositionRoot.appConfigStore(), compositionRoot.tagManagementUseCase(),
-                              compositionRoot.tagChangeNotifier(), compositionRoot.syntaxHighlightEngine(),
+                              compositionRoot.tagChangeNotifier(), compositionRoot.uiThemeChangeNotifier(),
+                              compositionRoot.syntaxHighlightEngine(),
                               compositionRoot.highlightThemeViewModel(), compositionRoot.fileDecorationsViewModel(),
                               compositionRoot.favoritesViewModel(), compositionRoot.notificationCenter(),
                               compositionRoot.notificationSettingsViewModel(), compositionRoot.columnVisibilitySettingsViewModel(),

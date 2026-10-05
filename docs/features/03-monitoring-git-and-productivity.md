@@ -7,7 +7,7 @@ redesign of either layer's existing shape) — and is recorded as a decision log
 implementation walkthrough; see git history and the code's own comments (many cite these subsection
 numbers directly) for the detail.
 
-Covers §14.34–§14.45. Preceded by
+Covers §14.34–§14.50. Preceded by
 [01-workspace-navigation-and-search.md](01-workspace-navigation-and-search.md) (§14.1–§14.26)
 and [02-preview-decoration-and-status.md](02-preview-decoration-and-status.md) (§14.27–§14.33).
 
@@ -1175,3 +1175,69 @@ whole point of this feature existing, so a global override would defeat it.
 * **Not built:** any change to `ColumnVisibilitySettingsStore`/the Settings dialog default itself;
   cross-tab/cross-pane visibility syncing (deliberately per-tab, per §14.39); any Domain/
   Application/Port/schema change.
+
+### 14.50 Light/Dark Theme
+
+Formalizes the app's existing look as a "Light" theme and adds a "Dark" counterpart, selectable
+from Settings → General → UI and applied immediately, persisted across launches — pure UI/Adapters
+state (one new `QSettings` key), no Domain/Application/Port/schema change.
+
+* The whole app runs under Qt's **Fusion** style (`UiTheme::installFusionStyle()`, set once at
+  startup in `main.cpp`, never re-set on a theme toggle) rather than the native Windows style:
+  native style mostly ignores `QPalette` for menus/scrollbars/combo popups, so it can't go fully
+  dark. The cost is that Light's native controls (buttons/scrollbars/menus) render in Fusion's
+  flatter look instead of Windows-native bevels — colors are unchanged, only that chrome style.
+* `UiTheme` (`src/ui/widgets/UiTheme.h/.cpp`): `Theme{Light, Dark}`, `currentTheme()` (lazily reads
+  `QSettings` key `UI/Theme`, `"Light"`/`"Dark"`, default `"Light"` — same mechanism/key-namespace
+  precedent as `WorkspacePaneWidget::kShowTabCloseButtonsSettingsKey`), `paletteFor(Theme)` (Light
+  returns Fusion's own stock light palette; Dark is a hand-tuned dark `QPalette`, `QPalette::
+  Highlight` kept close to the app's own accent-blue hue rather than Fusion's default blue), and
+  `setTheme(Theme, UiThemeChangeNotifier&)` (persists, calls `qApp->setPalette(...)`, then emits
+  the notifier's `themeChanged()`).
+* `UiThemeChangeNotifier` (`src/ui/widgets/UiThemeChangeNotifier.h/.cpp`): a plain `QObject` with
+  one `themeChanged()` signal, same shape and one-shared-instance-owned-by-`CompositionRoot`
+  posture as `TagChangeNotifier`. Every widget whose own stylesheet embeds a `UiColors::current()`
+  value takes a `UiThemeChangeNotifier&` in its constructor, connects `themeChanged()` to a private
+  `applyThemeColors()` method it already needs to call once from its own constructor, and is
+  threaded the shared instance down from `CompositionRoot`/`main.cpp` through `MainWindow` ->
+  `WorkspaceLayoutWidget`/`SidePanelWidget`/`TagPanelWidget`/`SearchPanelWidget`/
+  `MonitoringPanelWidget` -> `WorkspacePaneWidget` -> `BottomPanelWidget`/`SearchResultsPane` ->
+  `SearchCriteriaPanel`, and into `SettingsDialog` for the combo box itself.
+* `UiColors.h` (previously a flat set of `constexpr const char*` light-mode literals) is now a
+  `UiColorSet` struct of the same members, two `constexpr` instances (`kLightColors` — today's
+  exact unchanged hex values — and `kDarkColors` — muted-but-legible tints against the dark
+  `QPalette`'s backgrounds, hand-tuned rather than inverting hue), and an inline `current()`
+  returning whichever is active. Every call site switched from `UiColors::kFoo` to
+  `UiColors::current().foo`.
+* `MonitoringLogModel` (not a widget) already computes its log-row colors live from
+  `UiColors::current()` on every `data()` call rather than caching a `QColor`, so flipping the
+  theme only needs the already-fetched rows repainted: it takes the notifier and emits
+  `dataChanged(..., {Qt::ForegroundRole})` across the whole model on `themeChanged()`.
+* `ToastNotificationWidget`/`ProgressNotificationWidget`'s card chrome (background/border, and the
+  latter's secondary labels) switched from literal `#FFFFFF`/`#A0A0A0`/`#707070` to
+  `palette(base)`/`palette(mid)` QSS roles instead — these two cards are always short-lived
+  (auto-dismissed or user-closed/worker-terminated), so a QSS palette role (which Qt re-evaluates
+  against the widget's current `QPalette` at paint time, no reconnection needed) was simpler than
+  threading the notifier into them too. The toast header strip's own saturated accent colors
+  (`UiColors::current().notification*`) are unaffected, still a non-goal to re-theme (see below).
+* Settings → General → UI (`SettingsDialog::buildGeneralUiPage`) gains a `QComboBox` ("Light"/
+  "Dark") directly below the existing "Show close button on tabs" checkbox, initialized from
+  `UiTheme::currentTheme()`; on change it calls `UiTheme::setTheme(...)` directly. No new signal
+  round-trips through `MainWindow` the way `showTabCloseButtonsChanged` does — `setTheme()` itself
+  broadcasts via the shared notifier, which reaches every subscribed widget directly, including
+  ones `MainWindow` has no handle to (e.g. a dynamically-created `SearchCriteriaPanel` deep inside
+  a pane's advanced-search tab).
+* `CompositionRoot` owns the shared `UiThemeChangeNotifier`; `main.cpp` calls
+  `UiTheme::installFusionStyle()` right after constructing `QApplication`, then
+  `UiTheme::setTheme(UiTheme::currentTheme(), ...)` right after constructing `CompositionRoot` —
+  before `MainWindow` is built — so the very first paint already has the right palette, no flash
+  of the wrong theme.
+* **Not built:** a "follow Windows system theme" option (just an explicit Light/Dark choice, per
+  what was asked — easy to add a third "System" option later without reshaping the mechanism
+  above); re-theming `TagColorPalette` (tag chip colors), `HighlightTheme` (syntax highlighting),
+  or `FileDecorationRules` (per-pattern font/colors) — these already have their own
+  user-configurable colors unrelated to app chrome, out of scope, not guaranteed legible against a
+  dark background; restructuring Git status badge colors or the Monitoring/Toast/close-button
+  named semantic accents beyond re-tuning their existing hex values for dark-background contrast.
+  Covered by `ui_tests/tests/test_theme_setting.py` (switches to Dark, asserts it round-trips
+  after a restart, switches back) — UI is otherwise outside CTest's scope per §11.

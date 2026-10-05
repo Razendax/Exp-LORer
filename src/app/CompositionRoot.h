@@ -44,6 +44,7 @@
 #include "TagChangeNotifier.h"
 #include "TagManagementUseCase.h"
 #include "ThumbnailCache.h"
+#include "UiThemeChangeNotifier.h"
 #include "WindowsDiskUsageScanner.h"
 #include "WorkspacePaneId.h"
 
@@ -76,6 +77,7 @@ public:
     NotificationCenter& notificationCenter() noexcept { return m_notificationCenter; }
     NotificationSettingsViewModel& notificationSettingsViewModel() noexcept { return m_notificationSettingsViewModel; }
     TagChangeNotifier& tagChangeNotifier() noexcept { return m_tagChangeNotifier; }
+    UiThemeChangeNotifier& uiThemeChangeNotifier() noexcept { return m_uiThemeChangeNotifier; }
     ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel() noexcept { return m_columnVisibilitySettingsViewModel; }
     DiskUsageService& diskUsageService() noexcept { return m_diskUsageService; }
 
@@ -166,6 +168,11 @@ private:
     // tag is assigned/removed/renamed/deleted anywhere, without TagListViewModel/TagManagerViewModel
     // needing a direct dependency on every TabViewModel that might care.
     TagChangeNotifier m_tagChangeNotifier;
+
+    // Architecture.md §14.50: decoupling point letting every open widget whose stylesheet embeds a
+    // UiColors::current() value re-apply it live when the Light/Dark theme flips, without UiTheme
+    // needing a direct dependency on any of them -- same posture as m_tagChangeNotifier above.
+    UiThemeChangeNotifier m_uiThemeChangeNotifier;
 
     // Architecture.md §14.x: "Default visibility for new tab" per Details-view column (Settings >
     // General > Columns), presentation-only, same posture as the file-decoration/favorites blocks

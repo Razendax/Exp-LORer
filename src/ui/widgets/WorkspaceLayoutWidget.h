@@ -13,6 +13,7 @@ class WorkspaceController;
 class WorkspacePaneWidget;
 class ColumnVisibilitySettingsViewModel;
 class DiskUsageService;
+class UiThemeChangeNotifier;
 
 // Owns all 4 WorkspacePaneWidget instances up front, created once, never destroyed.
 // applyLayout(SplitLayout) tears down and rebuilds nested QSplitters from
@@ -28,7 +29,7 @@ class WorkspaceLayoutWidget : public QWidget
 public:
     explicit WorkspaceLayoutWidget(WorkspaceController* controller,
                                     ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
-                                    DiskUsageService& diskUsageService,
+                                    DiskUsageService& diskUsageService, UiThemeChangeNotifier& uiThemeChangeNotifier,
                                     const std::array<int, FileListModel::ColumnCount>& initialColumnWidths = {},
                                     const std::array<int, FileListModel::ColumnCount>& initialColumnOrder = {},
                                     QWidget* parent = nullptr);
@@ -40,7 +41,7 @@ private:
     QWidget* buildContent(SplitLayout layout);
     void onFocusChanged(QWidget* old, QWidget* now);
 
-    // Bluish accent on the focused pane's toolbar (UiColors::kActivePaneAccentBackground), but only
+    // Bluish accent on the focused pane's toolbar (UiColors::current().activePaneAccentBackground), but only
     // when more than one pane is visible -- nothing to distinguish it from in the default
     // single-pane layout, so the accent is skipped there.
     void updatePaneActiveStates();

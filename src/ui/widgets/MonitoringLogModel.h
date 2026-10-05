@@ -9,6 +9,8 @@
 
 #include "FolderChangeEvent.h"
 
+class UiThemeChangeNotifier;
+
 // Qt-facing list model backing the Monitoring panel's log view (Architecture.md §14.24). Rebuilt
 // wholesale via setEntries() (the displayed tab's whole ring-buffer log, on
 // MonitoringPanelViewModel::monitoringLogReset), appended-to incrementally via
@@ -21,7 +23,7 @@ class MonitoringLogModel : public QAbstractListModel
     Q_OBJECT
 
 public:
-    explicit MonitoringLogModel(QObject* parent = nullptr);
+    MonitoringLogModel(UiThemeChangeNotifier& uiThemeChangeNotifier, QObject* parent = nullptr);
 
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;
     QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override;

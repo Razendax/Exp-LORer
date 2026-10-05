@@ -23,7 +23,7 @@ namespace
 
 WorkspaceLayoutWidget::WorkspaceLayoutWidget(WorkspaceController* controller,
                                               ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
-                                              DiskUsageService& diskUsageService,
+                                              DiskUsageService& diskUsageService, UiThemeChangeNotifier& uiThemeChangeNotifier,
                                               const std::array<int, FileListModel::ColumnCount>& initialColumnWidths,
                                               const std::array<int, FileListModel::ColumnCount>& initialColumnOrder,
                                               QWidget* parent)
@@ -32,16 +32,20 @@ WorkspaceLayoutWidget::WorkspaceLayoutWidget(WorkspaceController* controller,
 {
     m_paneWidgets[indexOf(WorkspacePaneId::PaneA)] =
         new WorkspacePaneWidget(m_controller->pane(WorkspacePaneId::PaneA), m_controller->fileOperationsController(),
-                                 columnVisibilitySettingsViewModel, diskUsageService, initialColumnWidths, initialColumnOrder, this);
+                                 columnVisibilitySettingsViewModel, diskUsageService, uiThemeChangeNotifier, initialColumnWidths,
+                                 initialColumnOrder, this);
     m_paneWidgets[indexOf(WorkspacePaneId::PaneB)] =
         new WorkspacePaneWidget(m_controller->pane(WorkspacePaneId::PaneB), m_controller->fileOperationsController(),
-                                 columnVisibilitySettingsViewModel, diskUsageService, initialColumnWidths, initialColumnOrder, this);
+                                 columnVisibilitySettingsViewModel, diskUsageService, uiThemeChangeNotifier, initialColumnWidths,
+                                 initialColumnOrder, this);
     m_paneWidgets[indexOf(WorkspacePaneId::PaneC)] =
         new WorkspacePaneWidget(m_controller->pane(WorkspacePaneId::PaneC), m_controller->fileOperationsController(),
-                                 columnVisibilitySettingsViewModel, diskUsageService, initialColumnWidths, initialColumnOrder, this);
+                                 columnVisibilitySettingsViewModel, diskUsageService, uiThemeChangeNotifier, initialColumnWidths,
+                                 initialColumnOrder, this);
     m_paneWidgets[indexOf(WorkspacePaneId::PaneD)] =
         new WorkspacePaneWidget(m_controller->pane(WorkspacePaneId::PaneD), m_controller->fileOperationsController(),
-                                 columnVisibilitySettingsViewModel, diskUsageService, initialColumnWidths, initialColumnOrder, this);
+                                 columnVisibilitySettingsViewModel, diskUsageService, uiThemeChangeNotifier, initialColumnWidths,
+                                 initialColumnOrder, this);
 
     m_layout = new QVBoxLayout(this);
     m_layout->setContentsMargins(0, 0, 0, 0);

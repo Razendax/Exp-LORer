@@ -21,6 +21,7 @@ class FileDecorationRules;
 class FileBrowserView;
 class SearchResultDelegate;
 class SearchResultsTreeModel;
+class UiThemeChangeNotifier;
 
 // Content of the left panel's "Search" tab (Architecture.md §14.42): an async, name-only recursive
 // search over the focused tab's current folder, rendered as a list or (optionally) a folder tree,
@@ -34,7 +35,8 @@ class SearchPanelWidget : public QWidget
     Q_OBJECT
 
 public:
-    SearchPanelWidget(const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource, QWidget* parent = nullptr);
+    SearchPanelWidget(const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
+                       UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent = nullptr);
 
     // QSignalBlocker-guarded resync of the search bar's text (mirrors the old
     // m_searchBar->setText(...) in MainWindow::onFocusedTabChanged) -- also re-applies `query` as
@@ -81,6 +83,10 @@ private:
     // Shared tail for all 4 toggle buttons: recomputes a NameSearchOptions from current button
     // states and emits searchOptionsChanged.
     void emitSearchOptionsChanged();
+
+    // Re-applies m_advancedSearchButton's UiColors::current()-based stylesheet (Architecture.md
+    // §14.50).
+    void applyThemeColors();
 
     QToolButton* m_refreshButton = nullptr;
     QToolButton* m_clearButton = nullptr;

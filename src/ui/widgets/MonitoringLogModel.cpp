@@ -5,10 +5,24 @@
 #include <QColor>
 
 #include "UiColors.h"
+#include "UiThemeChangeNotifier.h"
 
-MonitoringLogModel::MonitoringLogModel(QObject* parent)
+MonitoringLogModel::MonitoringLogModel(UiThemeChangeNotifier& uiThemeChangeNotifier, QObject* parent)
     : QAbstractListModel(parent)
 {
+    // The colors returned below are computed live from UiColors::current() on every data() call
+    // (no cached QColor), so flipping the theme just needs the view to re-paint already-fetched
+    // rows -- emit dataChanged for ForegroundRole across the whole model rather than resetting it
+    // (Architecture.md §14.50).
+    connect(&uiThemeChangeNotifier, &UiThemeChangeNotifier::themeChanged, this, [this]() {
+        if (m_entries.empty())
+        {
+            return;
+        }
+        const QModelIndex first = index(0);
+        const QModelIndex last = index(static_cast<int>(m_entries.size()) - 1);
+        emit dataChanged(first, last, { Qt::ForegroundRole });
+    });
 }
 
 int MonitoringLogModel::rowCount(const QModelIndex& parent) const
@@ -37,14 +51,15 @@ QVariant MonitoringLogModel::data(const QModelIndex& index, int role) const
 
     if (role == Qt::ForegroundRole)
     {
+        const UiColors::UiColorSet& colors = UiColors::current();
         switch (event.kind)
         {
             case FolderChangeKind::Added:
-                return QColor(QLatin1String(UiColors::kMonitorAddedGreen));
+                return QColor(QLatin1String(colors.monitorAddedGreen));
             case FolderChangeKind::Removed:
-                return QColor(QLatin1String(UiColors::kMonitorRemovedRed));
+                return QColor(QLatin1String(colors.monitorRemovedRed));
             case FolderChangeKind::Modified:
-                return QColor(QLatin1String(UiColors::kMonitorModifiedYellow));
+                return QColor(QLatin1String(colors.monitorModifiedYellow));
         }
     }
 
