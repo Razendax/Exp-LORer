@@ -315,7 +315,7 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursi
         // §14.45): a pruned directory is never descended into, not just filtered out afterwards.
         auto it = fs::recursive_directory_iterator(target, fs::directory_options::skip_permission_denied);
         const auto end = fs::end(it);
-        for (; it != end; ++it)
+        for (; it != end; )
         {
             const auto& entry = *it;
 
@@ -350,6 +350,22 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursi
                     onProgress(files);
                     lastProgressTime = now;
                 }
+            }
+
+            // Non-throwing increment: the entry (or a directory just descended into) can vanish out
+            // from under the walk -- deleted, renamed, or moved by another process mid-scan, which
+            // surfaces as a "path not found" error rather than a permission error, so
+            // skip_permission_denied above doesn't cover it. Stop here and keep whatever was already
+            // found instead of discarding the whole scan over one transient entry (this is what was
+            // throwing filesystem_error into the catch below and turning a long drive scan into a
+            // hard failure).
+            std::error_code incrementEc;
+            it.increment(incrementEc);
+            if (incrementEc)
+            {
+                Logging::warn("listDirectoryRecursive: stopped early (" + incrementEc.message() + ") after " +
+                               std::to_string(files.size()) + " entries");
+                break;
             }
         }
     }
