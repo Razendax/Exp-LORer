@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <unordered_map>
 
 #include <QDateTime>
 #include <QSqlError>
@@ -130,33 +131,64 @@ Result<void> SQLiteDiskUsageRepository::saveScan(const std::filesystem::path& sc
     const qint64 previousMax = maxTimestamp.next() ? maxTimestamp.value(0).toLongLong() : 0;
     const qint64 sessionTimestamp = std::max(QDateTime::currentMSecsSinceEpoch(), previousMax + 1);
 
-    // Pass 1: upsert every node's own row by path.
+    // Pass 1: upsert every node's own row by path, preparing the statement once and reusing it
+    // across all rows -- re-preparing per row (as this used to) re-parses/re-plans identical SQL on
+    // every iteration, pure overhead for what can be millions of rows on a full-drive scan.
+    // RETURNING folder_id captures each row's id straight from the same statement whether it was
+    // just inserted or an existing row was updated (lastInsertId() would only be correct for the
+    // former), so pass 2 below only rarely needs to look a row up again by path.
+    std::unordered_map<fs::path, qint64> folderIdByPath;
+    folderIdByPath.reserve(nodes.size());
+
+    QSqlQuery upsert(m_db);
+    upsert.prepare(QStringLiteral(R"(
+        INSERT INTO filesystem_index(path, name, size, is_directory, scanned_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(path) DO UPDATE SET
+            name = excluded.name,
+            size = excluded.size,
+            is_directory = excluded.is_directory,
+            scanned_at = excluded.scanned_at
+        RETURNING folder_id
+    )"));
     for (const DiskUsageNode& node : nodes)
     {
-        QSqlQuery upsert(m_db);
-        upsert.prepare(QStringLiteral(R"(
-            INSERT INTO filesystem_index(path, name, size, is_directory, scanned_at)
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(path) DO UPDATE SET
-                name = excluded.name,
-                size = excluded.size,
-                is_directory = excluded.is_directory,
-                scanned_at = excluded.scanned_at
-        )"));
-        upsert.addBindValue(toQString(node.path));
-        upsert.addBindValue(QString::fromStdString(node.name));
-        upsert.addBindValue(static_cast<qint64>(node.size));
-        upsert.addBindValue(node.isDirectory ? 1 : 0);
-        upsert.addBindValue(sessionTimestamp);
-        if (!upsert.exec())
+        upsert.bindValue(0, toQString(node.path));
+        upsert.bindValue(1, QString::fromStdString(node.name));
+        upsert.bindValue(2, static_cast<qint64>(node.size));
+        upsert.bindValue(3, node.isDirectory ? 1 : 0);
+        upsert.bindValue(4, sessionTimestamp);
+        if (!upsert.exec() || !upsert.next())
         {
             Error error = toError(upsert.lastError());
             m_db.rollback();
             return Result<void>::failure(std::move(error));
         }
+        folderIdByPath.emplace(node.path, upsert.value(0).toLongLong());
+
+        // RETURNING leaves the statement mid-stream after one next() (SQLite only reaches
+        // SQLITE_DONE, releasing its lock, on a further step) -- finish() drains/resets it so the
+        // last iteration's statement doesn't block this transaction's COMMIT below.
+        upsert.finish();
     }
 
-    // Pass 2: resolve each row's parent_id now that every node in this scan has a folder_id.
+    // Pass 2: resolve each row's parent_id now that every node in this scan has a folder_id. The
+    // common case -- a node whose parent is also part of this same scan, i.e. every node except the
+    // scan root itself -- resolves straight from folderIdByPath into a primary-key UPDATE, no
+    // lookup needed. The scan root's parent (and, in principle, any node whose parent fell outside
+    // this scan's own subtree) may already have a row from an earlier, broader scan -- e.g. a prior
+    // "Scan Drive" -- so that rare case falls back to the original by-path subquery against the
+    // whole table, preserving cross-scan hierarchy linkage.
+    QSqlQuery updateParentById(m_db);
+    updateParentById.prepare(QStringLiteral("UPDATE filesystem_index SET parent_id = ? WHERE folder_id = ?"));
+
+    QSqlQuery updateParentByLookup(m_db);
+    updateParentByLookup.prepare(QStringLiteral(R"(
+        UPDATE filesystem_index
+        SET parent_id = (SELECT folder_id FROM filesystem_index WHERE path = ?)
+        WHERE folder_id = ?
+    )"));
+
     for (const DiskUsageNode& node : nodes)
     {
         const fs::path parentPath = node.path.parent_path();
@@ -165,19 +197,30 @@ Result<void> SQLiteDiskUsageRepository::saveScan(const std::filesystem::path& sc
             continue; // scan root with no scanned parent -- leave parent_id NULL.
         }
 
-        QSqlQuery updateParent(m_db);
-        updateParent.prepare(QStringLiteral(R"(
-            UPDATE filesystem_index
-            SET parent_id = (SELECT folder_id FROM filesystem_index WHERE path = ?)
-            WHERE path = ?
-        )"));
-        updateParent.addBindValue(toQString(parentPath));
-        updateParent.addBindValue(toQString(node.path));
-        if (!updateParent.exec())
+        const qint64 childId = folderIdByPath.at(node.path);
+        const auto parentIt = folderIdByPath.find(parentPath);
+
+        if (parentIt != folderIdByPath.end())
         {
-            Error error = toError(updateParent.lastError());
-            m_db.rollback();
-            return Result<void>::failure(std::move(error));
+            updateParentById.bindValue(0, parentIt->second);
+            updateParentById.bindValue(1, childId);
+            if (!updateParentById.exec())
+            {
+                Error error = toError(updateParentById.lastError());
+                m_db.rollback();
+                return Result<void>::failure(std::move(error));
+            }
+        }
+        else
+        {
+            updateParentByLookup.bindValue(0, toQString(parentPath));
+            updateParentByLookup.bindValue(1, childId);
+            if (!updateParentByLookup.exec())
+            {
+                Error error = toError(updateParentByLookup.lastError());
+                m_db.rollback();
+                return Result<void>::failure(std::move(error));
+            }
         }
     }
 

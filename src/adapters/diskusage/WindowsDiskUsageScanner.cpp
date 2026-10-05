@@ -45,9 +45,14 @@ namespace
     {
         std::uintmax_t total = 0;
 
+        // FindFirstFileExW with FindExInfoBasic skips 8.3 short-name generation (not needed here)
+        // and FIND_FIRST_EX_LARGE_FETCH requests a larger per-call result buffer from the kernel --
+        // both cut syscall/CPU overhead noticeably over plain FindFirstFileW on directories with
+        // many entries, which is the common case for a whole-drive scan.
         const std::wstring searchPattern = (nativeDir / L"*").wstring();
         WIN32_FIND_DATAW findData{};
-        HANDLE handle = FindFirstFileW(searchPattern.c_str(), &findData);
+        HANDLE handle = FindFirstFileExW(searchPattern.c_str(), FindExInfoBasic, &findData, FindExSearchNameMatch,
+                                          nullptr, FIND_FIRST_EX_LARGE_FETCH);
         if (handle == INVALID_HANDLE_VALUE)
         {
             ++unreadableDirCount;

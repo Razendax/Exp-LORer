@@ -115,21 +115,25 @@ Result<void> SQLiteFragmentationRepository::saveScan(const std::filesystem::path
     const qint64 previousMax = maxTimestamp.next() ? maxTimestamp.value(0).toLongLong() : 0;
     const qint64 sessionTimestamp = std::max(QDateTime::currentMSecsSinceEpoch(), previousMax + 1);
 
+    // Prepared once and reused across every row -- re-preparing per row (as this used to)
+    // re-parses/re-plans identical SQL on every iteration, pure overhead for what can be a large
+    // number of files on a low-threshold whole-drive scan, same fix as
+    // SQLiteDiskUsageRepository::saveScan.
+    QSqlQuery upsert(m_db);
+    upsert.prepare(QStringLiteral(R"(
+        INSERT INTO file_fragmentation(path, size, fragment_count, scanned_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(path) DO UPDATE SET
+            size = excluded.size,
+            fragment_count = excluded.fragment_count,
+            scanned_at = excluded.scanned_at
+    )"));
     for (const FileFragmentationInfo& file : files)
     {
-        QSqlQuery upsert(m_db);
-        upsert.prepare(QStringLiteral(R"(
-            INSERT INTO file_fragmentation(path, size, fragment_count, scanned_at)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(path) DO UPDATE SET
-                size = excluded.size,
-                fragment_count = excluded.fragment_count,
-                scanned_at = excluded.scanned_at
-        )"));
-        upsert.addBindValue(toQString(file.path));
-        upsert.addBindValue(static_cast<qint64>(file.sizeBytes));
-        upsert.addBindValue(static_cast<qint64>(file.fragmentCount));
-        upsert.addBindValue(sessionTimestamp);
+        upsert.bindValue(0, toQString(file.path));
+        upsert.bindValue(1, static_cast<qint64>(file.sizeBytes));
+        upsert.bindValue(2, static_cast<qint64>(file.fragmentCount));
+        upsert.bindValue(3, sessionTimestamp);
         if (!upsert.exec())
         {
             Error error = toError(upsert.lastError());

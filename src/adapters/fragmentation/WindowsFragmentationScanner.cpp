@@ -144,8 +144,12 @@ Result<std::vector<FileFragmentationInfo>> WindowsFragmentationScanner::scan(
             return Result<std::vector<FileFragmentationInfo>>::failure(Error(ErrorCode::Cancelled, "Fragmentation scan cancelled"));
         }
 
+        // FILE_READ_ATTRIBUTES, not GENERIC_READ -- FSCTL_GET_RETRIEVAL_POINTERS only inspects NTFS
+        // metadata, never the file's actual data, so no read-data access is needed. A lighter-weight
+        // open: fewer access checks and less likely to conflict with a file another process holds
+        // open for exclusive write.
         const fs::path nativePath = WindowsLongPath::withPrefix(candidate.path());
-        HANDLE handle = CreateFileW(nativePath.wstring().c_str(), GENERIC_READ,
+        HANDLE handle = CreateFileW(nativePath.wstring().c_str(), FILE_READ_ATTRIBUTES,
                                      FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING,
                                      FILE_FLAG_BACKUP_SEMANTICS, nullptr);
         if (handle != INVALID_HANDLE_VALUE)

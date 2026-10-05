@@ -2,8 +2,10 @@
 
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <fstream>
 #include <map>
+#include <ratio>
 #include <system_error>
 #include <vector>
 
@@ -278,6 +280,150 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectory(const 
     return Result<std::vector<FileNode>>::success(std::move(files));
 }
 
+#ifdef _WIN32
+namespace
+{
+    namespace fs = std::filesystem;
+
+    std::chrono::system_clock::time_point systemClockFromFileTime(const FILETIME& fileTime)
+    {
+        ULARGE_INTEGER wide{};
+        wide.LowPart = fileTime.dwLowDateTime;
+        wide.HighPart = fileTime.dwHighDateTime;
+
+        // FILETIME: 100ns intervals since 1601-01-01; system_clock's epoch is 1970-01-01 -- this is
+        // the well-known difference between the two epochs, in 100ns units.
+        using FileTimeDuration = std::chrono::duration<std::int64_t, std::ratio<1, 10000000>>;
+        constexpr std::int64_t kEpochDifference100ns = 116444736000000000LL;
+        const FileTimeDuration since1970(static_cast<std::int64_t>(wide.QuadPart) - kEpochDifference100ns);
+
+        return std::chrono::system_clock::time_point(
+            std::chrono::duration_cast<std::chrono::system_clock::duration>(since1970));
+    }
+
+    std::uintmax_t sizeFromFindDataRecursive(const WIN32_FIND_DATAW& data)
+    {
+        return (static_cast<std::uintmax_t>(data.nFileSizeHigh) << 32) | data.nFileSizeLow;
+    }
+
+    bool isReparsePointRecursive(const WIN32_FIND_DATAW& data)
+    {
+        return (data.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0;
+    }
+
+    // dwReserved0 carries the reparse tag only when FILE_ATTRIBUTE_REPARSE_POINT is set (documented
+    // WIN32_FIND_DATAW behavior) -- a junction/mount point is a reparse point too but tagged
+    // IO_REPARSE_TAG_MOUNT_POINT, not IO_REPARSE_TAG_SYMLINK.
+    bool isSymlinkReparse(const WIN32_FIND_DATAW& data)
+    {
+        return isReparsePointRecursive(data) && data.dwReserved0 == IO_REPARSE_TAG_SYMLINK;
+    }
+
+    bool isDirectoryEntryRecursive(const WIN32_FIND_DATAW& data)
+    {
+        return (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
+    }
+
+    // Builds a FileNode straight from one WIN32_FIND_DATAW -- every field the Port needs (size,
+    // attributes, last-write time) is already in this struct from the directory enumeration itself,
+    // so unlike buildFileNode() above (which drives fs::directory_entry through several separate
+    // is_symlink/is_regular_file/last_write_time/GetFileAttributesW calls), this needs no further
+    // per-entry syscalls at all -- including the hidden-attribute check, which buildFileNode's
+    // detectHidden() otherwise re-queries via a second GetFileAttributesW per entry.
+    Result<FileNode> buildFileNodeFromFindData(const fs::path& outwardPath, const WIN32_FIND_DATAW& data)
+    {
+        const bool isSymlink = isSymlinkReparse(data);
+        const bool isDirectory = isDirectoryEntryRecursive(data);
+
+        // A symlink's own size (not its target's) is reported, matching Windows Explorer's
+        // treatment of reparse points -- same rationale as buildFileNode() above. Directories report
+        // 0 too, same as buildFileNode()'s is_regular_file()-gated size.
+        const std::uintmax_t size = (!isSymlink && !isDirectory) ? sizeFromFindDataRecursive(data) : 0;
+
+        // Unlike fs::directory_entry::last_write_time (which follows a symlink to its target and can
+        // fail for a dangling one), FindFirstFileW/FindNextFileW never follow reparse points --
+        // ftLastWriteTime is always the entry's own metadata, so there's no dangling-symlink special
+        // case to handle here.
+        const auto modificationTime = systemClockFromFileTime(data.ftLastWriteTime);
+
+        const FileType fileType =
+            isSymlink ? FileType::Symlink : (isDirectory ? FileType::Directory : FileType::Regular);
+        const bool isHidden = (data.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN) != 0;
+
+        return FileNode::create(outwardPath, size, modificationTime, modificationTime, fileType, isHidden);
+    }
+
+    // Recursively walks nativeDir (already \\?\-prefixed as needed), appending a FileNode for every
+    // descendant to `results` -- the native-API counterpart of listDirectory's std::filesystem-based
+    // walk, used here because this one runs over entire subtrees (Fragmentation, Advanced Search,
+    // duplicate detection) where the per-entry syscall savings over recursive_directory_iterator
+    // compound significantly, mirroring the technique WindowsDiskUsageScanner's own walker already
+    // established. FindFirstFileExW's FindExInfoBasic skips 8.3 short-name generation and
+    // FIND_FIRST_EX_LARGE_FETCH requests a larger per-call kernel buffer -- both cut overhead further
+    // over plain FindFirstFileW. A reparse point (symlink or junction) is listed but never descended
+    // into, avoiding reparse-point cycles -- same policy as WindowsDiskUsageScanner. An unreadable
+    // subdirectory (permission denied, or removed from under the scan) is skipped rather than failing
+    // the whole scan, same tolerance the Port's doc comment promises and the same per-subtree
+    // granularity WindowsDiskUsageScanner's walker already uses.
+    void walkDirectoryRecursiveNative(const fs::path& nativeDir, const fs::path& outwardDir, std::vector<FileNode>& results,
+                                       const std::function<bool(const fs::path&)>& shouldPrune,
+                                       const std::function<void(const std::vector<FileNode>&)>& onProgress,
+                                       std::chrono::steady_clock::time_point& lastProgressTime)
+    {
+        const std::wstring searchPattern = (nativeDir / L"*").wstring();
+        WIN32_FIND_DATAW findData{};
+        HANDLE handle = FindFirstFileExW(searchPattern.c_str(), FindExInfoBasic, &findData, FindExSearchNameMatch,
+                                          nullptr, FIND_FIRST_EX_LARGE_FETCH);
+        if (handle == INVALID_HANDLE_VALUE)
+        {
+            return;
+        }
+
+        do
+        {
+            const std::wstring name = findData.cFileName;
+            if (name == L"." || name == L"..")
+            {
+                continue;
+            }
+
+            const fs::path childOutward = outwardDir / name;
+
+            if (shouldPrune && shouldPrune(childOutward))
+            {
+                continue;
+            }
+
+            const bool isDirectory = isDirectoryEntryRecursive(findData);
+
+            auto node = buildFileNodeFromFindData(childOutward, findData);
+            if (node.hasValue())
+            {
+                results.push_back(std::move(node).value());
+            }
+
+            if (onProgress)
+            {
+                const auto now = std::chrono::steady_clock::now();
+                if (now - lastProgressTime >= std::chrono::seconds(1))
+                {
+                    onProgress(results);
+                    lastProgressTime = now;
+                }
+            }
+
+            if (isDirectory && !isReparsePointRecursive(findData))
+            {
+                walkDirectoryRecursiveNative(nativeDir / name, childOutward, results, shouldPrune, onProgress,
+                                              lastProgressTime);
+            }
+        } while (FindNextFileW(handle, &findData));
+
+        FindClose(handle);
+    }
+}
+#endif
+
 Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursive(
     const std::filesystem::path& root, const std::function<void(const std::vector<FileNode>&)>& onProgress,
     const std::function<bool(const std::filesystem::path&)>& shouldPrune) const
@@ -308,6 +454,16 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursi
     // Qt UI thread doesn't flood it with a signal/model-refresh per file discovered.
     auto lastProgressTime = std::chrono::steady_clock::now();
     const auto scanStart = std::chrono::steady_clock::now();
+#ifdef _WIN32
+    // Native FindFirstFileExW-based walk (see walkDirectoryRecursiveNative above) instead of
+    // std::filesystem::recursive_directory_iterator -- this call runs over entire subtrees
+    // (Fragmentation, Advanced Search, duplicate detection) where the per-entry overhead difference
+    // compounds significantly. An unreadable or vanished subdirectory is tolerated per-subtree by
+    // walkDirectoryRecursiveNative itself (it simply returns without descending further), the same
+    // posture the pre-existing std::filesystem fallback below achieves via skip_permission_denied
+    // plus its own vanish-mid-scan tolerance.
+    walkDirectoryRecursiveNative(target, root, files, shouldPrune, onProgress, lastProgressTime);
+#else
     try
     {
         // Explicit-iterator loop (rather than a range-based for) so disable_recursion_pending() is
@@ -375,6 +531,7 @@ Result<std::vector<FileNode>> StandardFileSystemRepository::listDirectoryRecursi
         Logging::warn("listDirectoryRecursive failed: " + std::string(toLogString(error.code)));
         return Result<std::vector<FileNode>>::failure(error);
     }
+#endif
 
     const auto elapsedMs =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - scanStart).count();
