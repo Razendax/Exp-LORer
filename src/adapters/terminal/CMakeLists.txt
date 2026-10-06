@@ -1,6 +1,7 @@
 add_library(explorer_adapters_terminal STATIC
     AnsiTerminalBuffer.h
     AnsiTerminalBuffer.cpp
+    TerminalShellType.h
     WindowsConPtyProcess.h
     WindowsConPtyProcess.cpp
 )

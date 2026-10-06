@@ -35,7 +35,7 @@ WindowsConPtyProcess::~WindowsConPtyProcess()
     terminate();
 }
 
-Result<void> WindowsConPtyProcess::start(const std::filesystem::path& cwd, int columns, int rows)
+Result<void> WindowsConPtyProcess::start(const std::filesystem::path& cwd, int columns, int rows, TerminalShellType shellType)
 {
     if (m_running)
     {
@@ -89,9 +89,20 @@ Result<void> WindowsConPtyProcess::start(const std::filesystem::path& cwd, int c
         return Result<void>::failure(Error(ErrorCode::IoError, "Failed to initialize the process attribute list"));
     }
 
-    wchar_t comSpecBuffer[MAX_PATH]{};
-    std::wstring commandLine =
-        (GetEnvironmentVariableW(L"ComSpec", comSpecBuffer, MAX_PATH) != 0) ? comSpecBuffer : L"cmd.exe";
+    std::wstring commandLine;
+    if (shellType == TerminalShellType::PowerShell)
+    {
+        // Bare executable name with lpApplicationName == nullptr below resolves through the
+        // standard CreateProcessW search order, which includes PATH; Windows PowerShell ships with
+        // Windows and is on PATH by default. Deliberately not pwsh.exe (PowerShell 7), which isn't
+        // guaranteed installed.
+        commandLine = L"powershell.exe";
+    }
+    else
+    {
+        wchar_t comSpecBuffer[MAX_PATH]{};
+        commandLine = (GetEnvironmentVariableW(L"ComSpec", comSpecBuffer, MAX_PATH) != 0) ? comSpecBuffer : L"cmd.exe";
+    }
 
     const std::wstring cwdString = cwd.wstring();
     PROCESS_INFORMATION processInfo{};
@@ -226,7 +237,7 @@ WindowsConPtyProcess::WindowsConPtyProcess(QObject* parent)
 
 WindowsConPtyProcess::~WindowsConPtyProcess() = default;
 
-Result<void> WindowsConPtyProcess::start(const std::filesystem::path&, int, int)
+Result<void> WindowsConPtyProcess::start(const std::filesystem::path&, int, int, TerminalShellType)
 {
     Logging::warn("WindowsConPtyProcess: start failed: " + std::string(toLogString(ErrorCode::IoError)));
     return Result<void>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));

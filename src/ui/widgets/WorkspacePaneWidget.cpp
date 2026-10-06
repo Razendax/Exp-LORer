@@ -38,6 +38,7 @@
 #include "SearchResultsPane.h"
 #include "StatusBarWidget.h"
 #include "TabViewModel.h"
+#include "TerminalSessionsWidget.h"
 #include "TerminalWidget.h"
 #include "UiColors.h"
 #include "UiThemeChangeNotifier.h"
@@ -465,13 +466,15 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     connect(tab, &TabViewModel::advancedSearchFailed, advancedSearchPane,
             [advancedSearchPane](const QString&) { advancedSearchPane->criteriaPanel()->setSearching(false); });
 
-    // Bottom panel (Architecture.md §14.23): a splitter over the existing browse/search/
-    // advanced-search stack and a collapsible BottomPanelWidget with a single "Terminal" tab, wrapped
-    // as the actual tab page instead of inserting `stack` directly.
+    // Bottom panel (Architecture.md §14.24): a splitter over the existing browse/search/
+    // advanced-search stack and a collapsible BottomPanelWidget with a "Terminal" tab, wrapped
+    // as the actual tab page instead of inserting `stack` directly. The Terminal tab's content is
+    // TerminalSessionsWidget, which can hold several concurrent cmd/PowerShell sessions rather than
+    // the single always-cmd TerminalWidget this used to be.
     auto* bottomPanel = new BottomPanelWidget(m_uiThemeChangeNotifier, m_tabWidget);
-    auto* terminalWidget = new TerminalWidget(bottomPanel);
-    terminalWidget->setObjectName(QStringLiteral("terminalWidget"));
-    bottomPanel->addPanelTab(tr("Terminal"), terminalWidget);
+    auto* terminalSessions = new TerminalSessionsWidget(m_uiThemeChangeNotifier, bottomPanel);
+    terminalSessions->setObjectName(QStringLiteral("terminalSessionsWidget"));
+    const int terminalPanelTabIndex = bottomPanel->addPanelTab(tr("Terminal"), terminalSessions);
 
     // Second bottom-panel tab, right after Terminal (Architecture.md §14.39).
     auto* folderSizeWidget = new FolderSizeWidget(m_diskUsageService, m_notificationCenter, tab, bottomPanel);
@@ -495,23 +498,29 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
         splitter->setSizes({ total - bottomHeight, bottomHeight });
     });
 
-    connect(bottomPanel, &BottomPanelWidget::panelTabFirstActivated, terminalWidget, [terminalWidget, tab](int) {
+    auto resolveTerminalCwd = [tab]() {
         auto cwd = tab->currentPath();
         if (cwd == VirtualPaths::ThisPC || cwd.empty() || ArchiveExtensions::archiveAncestorInPath(cwd))
         {
             cwd = std::filesystem::path(QDir::homePath().toStdWString());
         }
-        terminalWidget->start(cwd);
-    });
+        return cwd;
+    };
 
-    connect(terminalWidget, &TerminalWidget::restartRequested, terminalWidget, [terminalWidget, tab]() {
-        auto cwd = tab->currentPath();
-        if (cwd == VirtualPaths::ThisPC || cwd.empty() || ArchiveExtensions::archiveAncestorInPath(cwd))
-        {
-            cwd = std::filesystem::path(QDir::homePath().toStdWString());
-        }
-        terminalWidget->start(cwd);
-    });
+    connect(terminalSessions, &TerminalSessionsWidget::sessionCreated, terminalSessions,
+            [resolveTerminalCwd](TerminalWidget* widget) {
+                widget->start(resolveTerminalCwd());
+                connect(widget, &TerminalWidget::restartRequested, widget,
+                        [widget, resolveTerminalCwd]() { widget->start(resolveTerminalCwd()); });
+            });
+
+    connect(bottomPanel, &BottomPanelWidget::panelTabFirstActivated, terminalSessions,
+            [terminalSessions, terminalPanelTabIndex](int index) {
+                if (index == terminalPanelTabIndex)
+                {
+                    terminalSessions->activateDefaultSession();
+                }
+            });
 
     m_tabWidget->insertTab(index, splitter, tabLabelFor(tab->currentPath()));
 }

@@ -490,10 +490,12 @@ expected content.
 A VS Code-style collapsible panel at the bottom of every tab's own page (this app's tab, i.e. one
 page of a pane's `QTabWidget` — not a top-level window), showing a strip of "panel tabs"; only
 "Terminal" exists in v1, built so more (e.g. Problems/Output) can be added later without new
-plumbing. Collapsed by default; the first time a tab's Terminal panel tab is clicked, a `cmd.exe`
-session is lazily spawned in that tab's current folder at that moment — it does not follow later
-navigation in the same tab, and is not restarted by later clicks (collapsing/re-expanding just
-hides/shows the still-running session). Closing the tab kills the process.
+plumbing. Collapsed by default; the first time a tab's Terminal panel tab is clicked, a default
+`cmd.exe` session is lazily spawned in that tab's current folder at that moment — it does not
+follow later navigation in the same tab. A right-side list inside the Terminal panel tab (see
+`TerminalSessionsWidget` below) lets the user open further sessions, of either shell, switch
+between them, and close any one independently; collapsing/re-expanding the panel just hides/shows
+all still-running sessions. Closing the tab kills every one of its sessions' processes.
 
 * **No Application-layer Port.** Like `Logging` (§14.23), this has no Domain/Application business
   logic to abstract behind an interface, so it's plain UI-adjacent infrastructure with no
@@ -506,22 +508,30 @@ hides/shows the still-running session). Closing the tab kills the process.
   rewriting the whole line), 16-color SGR) — no 256-color/truecolor. The one piece of this feature
   that's pure and GTest-covered (`tests/adapters/AnsiTerminalBufferTest.cpp`), same posture as
   `DriveLabel`/
-  `WorkspaceLayoutTopology`. `WindowsConPtyProcess` (Windows-only, same "Windows first" posture as
-  `ShellContextMenuProvider`) — a `QObject` wrapping ConPTY (`CreatePseudoConsole` + `CreateProcessW`
-  of `%ComSpec%`); runs one background `std::thread` blocking on `ReadFile` of the output pipe,
-  posting each chunk back to the UI thread via `QMetaObject::invokeMethod(..., Qt::QueuedConnection)`
-  as `dataReceived(QByteArray)` — the only cross-thread hop, keeping ConPTY's blocking I/O off the UI
-  thread (§5); emits `processExited(int)` when the pipe closes. `writeInput`/`resize` are synchronous
-  UI-thread calls (`WriteFile`/`ResizePseudoConsole`), the same accepted posture as `ShellExecuteW`
-  (§14.11). No `IPtyProcess` interface: Qt doesn't support pure-virtual signals, and nothing outside
-  the UI layer needs to mock this (§11 already excludes UI from CTest) — a future Linux
-  `PosixPtyProcess` is deferred until Linux support is actually built, at which point an interface
-  can be introduced alongside it.
-* **`src/ui/widgets`**: `TerminalWidget` — owns one `AnsiTerminalBuffer` + one `WindowsConPtyProcess`,
-  paints the grid with a monospace font, translates key events to VT byte sequences, and resizes the
-  pty on `resizeEvent`. On process exit, shows an inline restart prompt rather than auto-restarting.
-  It also owns keyboard-only text selection and clipboard state — an anchor/active pair of
-  `{logicalRow, column}` (logical row spanning scrollback + live grid, the same indexing
+  `WorkspaceLayoutTopology`. `TerminalShellType` — a plain `Cmd`/`PowerShell` enum (plus a
+  `terminalShellDisplayName()` helper) shared between the UI's shell-picker and
+  `WindowsConPtyProcess`; no abstraction beyond that (not a Port — see "No Application-layer Port"
+  above). `WindowsConPtyProcess` (Windows-only, same "Windows first" posture as
+  `ShellContextMenuProvider`) — a `QObject` wrapping ConPTY (`CreatePseudoConsole` + `CreateProcessW`);
+  `start()` takes a `TerminalShellType` and resolves the command line accordingly — `Cmd` reads
+  `%ComSpec%` (falling back to `cmd.exe`), `PowerShell` passes the literal `powershell.exe` and lets
+  `CreateProcessW`'s standard search order resolve it off `PATH` (Windows PowerShell ships with
+  Windows and is on `PATH` by default — no `ComSpec`-equivalent env var needed; this is Windows
+  PowerShell, not PowerShell 7's `pwsh.exe`, which isn't guaranteed installed). Runs one background
+  `std::thread` blocking on `ReadFile` of the output pipe, posting each chunk back to the UI thread
+  via `QMetaObject::invokeMethod(..., Qt::QueuedConnection)` as `dataReceived(QByteArray)` — the only
+  cross-thread hop, keeping ConPTY's blocking I/O off the UI thread (§5); emits `processExited(int)`
+  when the pipe closes. `writeInput`/`resize` are synchronous UI-thread calls (`WriteFile`/
+  `ResizePseudoConsole`), the same accepted posture as `ShellExecuteW` (§14.11). No `IPtyProcess`
+  interface: Qt doesn't support pure-virtual signals, and nothing outside the UI layer needs to mock
+  this (§11 already excludes UI from CTest) — a future Linux `PosixPtyProcess` is deferred until
+  Linux support is actually built, at which point an interface can be introduced alongside it.
+* **`src/ui/widgets`**: `TerminalWidget` — owns one `AnsiTerminalBuffer` + one `WindowsConPtyProcess`
+  for a single shell session (its `TerminalShellType`, fixed at construction and reused on
+  restart), paints the grid with a monospace font, translates key events to VT byte sequences, and
+  resizes the pty on `resizeEvent`. On process exit, shows an inline restart prompt rather than
+  auto-restarting. It also owns keyboard-only text selection and clipboard state — an anchor/active
+  pair of `{logicalRow, column}` (logical row spanning scrollback + live grid, the same indexing
   `paintEvent` already uses to address either) tracked entirely in `TerminalWidget`, not
   `AnsiTerminalBuffer`, since it's interaction/rendering state rather than terminal emulation state:
   Shift+Left/Right extends a character selection, Ctrl+Shift+Left/Right a word selection (word
@@ -544,20 +554,38 @@ hides/shows the still-running session). Closing the tab kills the process.
   via `QGuiApplication::clipboard()`, and Ctrl+Left/Right (no Shift) forwards the same word-jump
   sequence without touching any local selection (clearing one if active). Deliberately
   keyboard-only — no mouse drag-to-select.
+  `TerminalSessionsWidget` — the Terminal panel tab's actual content (replacing a bare
+  `TerminalWidget`): a `QStackedWidget` of per-session `TerminalWidget`s (plus a permanent
+  empty-state page shown when no session is open) next to a fixed-width right-side column listing
+  every open session. The column's `+` button (`terminalAddSessionButton`) pops an on-demand `QMenu`
+  (same convention as `StatusBarWidget::showBranchMenu`) offering "Command Prompt"/"PowerShell";
+  choosing one creates and activates a new session. Each session gets one row (a select button
+  showing its label, e.g. "cmd 1"/"PowerShell 1" — a per-shell-type counter that only increments,
+  never renumbering existing rows — plus a close button styled like `SearchCriteriaPanel`'s, `"×"`
+  on `UiColors::closeButtonRed`/`closeButtonRedHover`); clicking the select button switches the
+  stack to that session, clicking close tears its process down and removes the row, falling back to
+  another remaining session or the empty-state page. Exposes `activateDefaultSession()` (creates the
+  first, `cmd`, session — called from `panelTabFirstActivated`, below) and `sessionCreated
+  (TerminalWidget*)` (fired for every session, first or later, so the owner can `start()` it with a
+  concrete cwd).
   `BottomPanelWidget` — the generic collapsible panel shell: a header strip of checkable panel-tab
   buttons over a `QStackedWidget` of panel-tab content, starting collapsed; emits `expansionChanged`
   (for the owning splitter to resize) and `panelTabFirstActivated` (for lazy terminal start), staying
   itself splitter-agnostic. `WorkspacePaneWidget::addPageForTab` wraps its existing per-tab
   browse/search/advanced-search `QStackedWidget` and a `BottomPanelWidget` in a vertical `QSplitter`
   as the actual tab page; `onViewModeChanged`/`currentColumnWidths` unwrap `splitter->widget(0)`
-  instead of assuming the tab page is the `QStackedWidget` directly.
-* **Not built:** a Linux backend; mouse drag-to-select (selection is keyboard-only, see above);
-  multiple terminal instances per tab; 256-color/truecolor; persisting panel open/closed state or
-  size across restart (no `WorkspaceConfig`/§14.14 involvement — resets every launch); the
-  terminal's directory following subsequent navigation in its tab (only the directory at
-  first-expand time). No automated coverage beyond `AnsiTerminalBuffer` — ConPTY spawning and the
-  painting/input/selection/clipboard widget code fall under the existing §11 UI/OS-shell carve-out,
-  smoke-tested manually.
+  instead of assuming the tab page is the `QStackedWidget` directly. The `panelTabFirstActivated`
+  connection is scoped to the Terminal panel tab's own registered index (from `addPanelTab`'s return
+  value) before calling `activateDefaultSession()` — needed now that the signal can arrive for any
+  panel tab's first activation, not just Terminal's.
+* **Not built:** a Linux backend; a shell/command picker beyond cmd and PowerShell (e.g. WSL,
+  PowerShell 7, arbitrary executables); mouse drag-to-select (selection is keyboard-only, see
+  above); 256-color/truecolor; persisting the open-sessions list, active session, chosen shells, or
+  panel open/closed state/size across restart (no `WorkspaceConfig`/§14.14 involvement — resets
+  every launch); a session's directory following subsequent navigation in its tab (only the
+  directory at creation time). No automated coverage beyond `AnsiTerminalBuffer` — ConPTY spawning
+  and the painting/input/selection/clipboard/session-list widget code fall under the existing §11
+  UI/OS-shell carve-out, smoke-tested manually.
 
 ### 14.25 Right Panel (Tabbed, Collapsible)
 

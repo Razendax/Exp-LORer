@@ -6,6 +6,7 @@
 #include <QObject>
 
 #include "Result.h"
+#include "TerminalShellType.h"
 
 #ifdef _WIN32
 #include <thread>
@@ -27,9 +28,11 @@ public:
     explicit WindowsConPtyProcess(QObject* parent = nullptr);
     ~WindowsConPtyProcess() override;
 
-    // Spawns %ComSpec% (falling back to cmd.exe) with working directory cwd and an initial pty
-    // size of columns x rows. Fails if a process is already running.
-    Result<void> start(const std::filesystem::path& cwd, int columns, int rows);
+    // Spawns the requested shell (Cmd: %ComSpec%, falling back to cmd.exe; PowerShell:
+    // powershell.exe resolved via the standard PATH search) with working directory cwd and an
+    // initial pty size of columns x rows. Fails if a process is already running.
+    Result<void> start(const std::filesystem::path& cwd, int columns, int rows,
+                        TerminalShellType shellType = TerminalShellType::Cmd);
 
     bool isRunning() const noexcept { return m_running; }
 

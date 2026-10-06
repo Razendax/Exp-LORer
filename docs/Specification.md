@@ -116,9 +116,12 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   and refresh on navigation, not live.
 * **Integrated terminal (Architecture.md §14.24):** Each tab has its own collapsible panel at the
   bottom, collapsed by default, showing a strip of panel tabs ("Terminal", "Folder Size", and
-  "Fragmentation" in v1). Clicking "Terminal" the first time expands the panel and opens a `cmd.exe`
-  session already in that tab's current folder; collapsing and re-expanding the panel leaves that
-  session running. Closing the tab ends its terminal session.
+  "Fragmentation" in v1). Clicking "Terminal" the first time expands the panel and opens a default
+  `cmd.exe` session already in that tab's current folder. A right-side list inside the Terminal
+  panel tab lets the user open further sessions — choosing Command Prompt or PowerShell from a '+'
+  dropdown — switch between them, and close any one independently; collapsing and re-expanding the
+  panel leaves all still-running sessions in place. Closing the tab ends every one of its terminal
+  sessions.
 * **Disk usage / folder size (Architecture.md §14.40):** the bottom panel's "Folder Size" tab shows a
   pie chart of the current folder's largest subfolders/files (up to 10 segments, each labeled with
   name, percentage of the folder's total size, and size, color-coded, and clickable to navigate into
@@ -425,10 +428,11 @@ The following are explicitly out of scope for the initial release (v1), pending 
   exists outside the v1 CTest suite, Architecture.md §11; comprehensive automated UI coverage
   remains excluded).
 * Internationalization/localization — UI strings are English-only for v1.
-* Integrated terminal (Architecture.md §14.24) limitations: Windows-only (`cmd.exe` via ConPTY, no
-  Linux shell backend); keyboard-only selection (character/word via Shift/Ctrl+Shift+Left/Right,
-  select-all via Ctrl+A) and clipboard (Ctrl+Shift+C/V) — no mouse drag-to-select; only one terminal
-  instance per tab; no 256-color/truecolor rendering; panel open/closed state and size are not
-  persisted across restarts; the terminal's working directory is fixed at first use and does not
-  follow later navigation within that tab.
+* Integrated terminal (Architecture.md §14.24) limitations: Windows-only (`cmd.exe` and
+  `powershell.exe` via ConPTY, no Linux shell backend, no other shells/arbitrary commands); keyboard-
+  only selection (character/word via Shift/Ctrl+Shift+Left/Right, select-all via Ctrl+A) and
+  clipboard (Ctrl+Shift+C/V) — no mouse drag-to-select; no 256-color/truecolor rendering; the open-
+  sessions list, active session, chosen shells, and panel open/closed state/size are not persisted
+  across restarts; each session's working directory is fixed at creation and does not follow later
+  navigation within that tab.
 

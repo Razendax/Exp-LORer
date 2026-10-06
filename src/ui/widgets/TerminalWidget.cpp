@@ -21,8 +21,9 @@ namespace
     constexpr int kScrollLinesPerNotch = 3;
 }
 
-TerminalWidget::TerminalWidget(QWidget* parent)
+TerminalWidget::TerminalWidget(TerminalShellType shellType, QWidget* parent)
     : QWidget(parent)
+    , m_shellType(shellType)
     , m_buffer(new AnsiTerminalBuffer(this))
     , m_process(new WindowsConPtyProcess(this))
 {
@@ -50,7 +51,7 @@ void TerminalWidget::start(const std::filesystem::path& workingDirectory)
     recomputeGridSize();
     m_exitMessage.clear();
 
-    const auto result = m_process->start(workingDirectory, m_currentColumns, m_currentRows);
+    const auto result = m_process->start(workingDirectory, m_currentColumns, m_currentRows, m_shellType);
     if (!result)
     {
         m_exitMessage = QString::fromStdString(result.error().message) + tr(" — click to restart");

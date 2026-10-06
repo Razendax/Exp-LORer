@@ -49,6 +49,8 @@ add_library(explorer_ui_widgets STATIC
     FolderTreeView.cpp
     TerminalWidget.h
     TerminalWidget.cpp
+    TerminalSessionsWidget.h
+    TerminalSessionsWidget.cpp
     BottomPanelWidget.h
     BottomPanelWidget.cpp
     SidePanelWidget.h

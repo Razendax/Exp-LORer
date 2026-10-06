@@ -9,20 +9,22 @@
 #include <QWidget>
 
 #include "AnsiTerminalBuffer.h"
+#include "TerminalShellType.h"
 
 class WindowsConPtyProcess;
 
-// One ConPTY-backed cmd.exe session rendered as a VT/ANSI terminal (Architecture.md §14.23): owns
-// one AnsiTerminalBuffer (parsed grid state) and one WindowsConPtyProcess (the child process),
-// created but not started until start() is called. Self-contained like AddressBarWidget -- no
-// TabViewModel/use-case dependency; the owning WorkspacePaneWidget supplies the working directory
-// to start() and, on restartRequested(), the tab's *current* directory at restart time.
+// One ConPTY-backed shell session (cmd.exe or powershell.exe, Architecture.md §14.24) rendered as
+// a VT/ANSI terminal: owns one AnsiTerminalBuffer (parsed grid state) and one WindowsConPtyProcess
+// (the child process), created but not started until start() is called. Self-contained like
+// AddressBarWidget -- no TabViewModel/use-case dependency; the owning TerminalSessionsWidget
+// supplies the working directory to start() and, on restartRequested(), the tab's *current*
+// directory at restart time.
 class TerminalWidget : public QWidget
 {
     Q_OBJECT
 
 public:
-    explicit TerminalWidget(QWidget* parent = nullptr);
+    explicit TerminalWidget(TerminalShellType shellType, QWidget* parent = nullptr);
 
     // No-op if a session is already running. On failure to spawn, shows the same inline
     // "click to restart" state as a process that exited on its own.
@@ -94,6 +96,7 @@ private:
     QString selectedText() const;
     static bool isWordChar(QChar ch);
 
+    TerminalShellType m_shellType;
     AnsiTerminalBuffer* m_buffer = nullptr;
     WindowsConPtyProcess* m_process = nullptr;
 

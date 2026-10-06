@@ -130,7 +130,9 @@ class AutomationID:
     # Folder Size (Architecture.md §14.39) is tab 1.
     BOTTOM_PANEL_TERMINAL_BUTTON = "bottomPanelTabButton_0"
     BOTTOM_PANEL_FOLDER_SIZE_BUTTON = "bottomPanelTabButton_1"
-    TERMINAL_WIDGET = "terminalWidget"
+    # Per-session, not a fixed widget (TerminalSessionsWidget): "terminalWidget_<id>", id starting
+    # at 1 in creation order. Unused by any test today.
+    TERMINAL_WIDGET = "terminalWidget_1"
     FOLDER_SIZE_PIE_CHART = "pieChartWidget"
     FOLDER_SIZE_SCAN_FOLDER_BUTTON = "folderSizeScanFolderButton"
     FOLDER_SIZE_SCAN_DRIVE_BUTTON = "folderSizeScanDriveButton"
