@@ -711,3 +711,17 @@ TEST(FileNavigationUseCase, DriveSpaceInfoPropagatesError)
 
     EXPECT_TRUE(result.hasError());
 }
+
+TEST(FileNavigationUseCase, ExpandEnvironmentVariablesDelegatesToRepository)
+{
+    MockFileSystemRepository repository;
+    MockContextMenuProvider contextMenuProvider;
+
+    EXPECT_CALL(repository, expandEnvironmentVariables(std::filesystem::path("%appdata%")))
+        .WillOnce(Return(std::filesystem::path("C:/Users/Ravil/AppData/Roaming")));
+
+    FileNavigationUseCase useCase(repository, contextMenuProvider);
+    auto result = useCase.expandEnvironmentVariables("%appdata%");
+
+    EXPECT_EQ(result, std::filesystem::path("C:/Users/Ravil/AppData/Roaming"));
+}

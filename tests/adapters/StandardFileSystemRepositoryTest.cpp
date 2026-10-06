@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <fstream>
 
 #ifdef _WIN32
@@ -680,4 +681,40 @@ TEST_F(StandardFileSystemRepositoryTest, ComputeFileHashIsDeterministic)
     ASSERT_TRUE(first.hasValue());
     ASSERT_TRUE(second.hasValue());
     EXPECT_EQ(first.value(), second.value());
+}
+
+TEST_F(StandardFileSystemRepositoryTest, ExpandEnvironmentVariablesSubstitutesKnownVariableMidPath)
+{
+    _wputenv_s(L"EXP_LORER_TEST_VAR", L"C:\\SomeDir");
+
+    const auto result = m_repository.expandEnvironmentVariables(fs::path(L"%EXP_LORER_TEST_VAR%\\Sub"));
+
+    EXPECT_EQ(result, fs::path(L"C:\\SomeDir\\Sub"));
+}
+
+TEST_F(StandardFileSystemRepositoryTest, ExpandEnvironmentVariablesLeavesUnknownVariableLiteral)
+{
+    _wputenv_s(L"EXP_LORER_TEST_UNSET_VAR", L"");
+
+    const auto result = m_repository.expandEnvironmentVariables(fs::path(L"%EXP_LORER_TEST_NO_SUCH_VAR%\\Sub"));
+
+    EXPECT_EQ(result, fs::path(L"%EXP_LORER_TEST_NO_SUCH_VAR%\\Sub"));
+}
+
+TEST_F(StandardFileSystemRepositoryTest, ExpandEnvironmentVariablesSubstitutesMultipleVariables)
+{
+    _wputenv_s(L"EXP_LORER_TEST_VAR_A", L"C:\\A");
+    _wputenv_s(L"EXP_LORER_TEST_VAR_B", L"B");
+
+    const auto result =
+        m_repository.expandEnvironmentVariables(fs::path(L"%EXP_LORER_TEST_VAR_A%\\%EXP_LORER_TEST_VAR_B%"));
+
+    EXPECT_EQ(result, fs::path(L"C:\\A\\B"));
+}
+
+TEST_F(StandardFileSystemRepositoryTest, ExpandEnvironmentVariablesLeavesPlainTextUnchanged)
+{
+    const auto result = m_repository.expandEnvironmentVariables(fs::path(L"C:\\Users\\Someone\\Desktop"));
+
+    EXPECT_EQ(result, fs::path(L"C:\\Users\\Someone\\Desktop"));
 }

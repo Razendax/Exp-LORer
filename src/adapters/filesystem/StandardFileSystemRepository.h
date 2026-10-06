@@ -51,6 +51,8 @@ public:
     Result<FileNode> copyFileWithProgress(const std::filesystem::path& source, const std::filesystem::path& destination,
                                            const std::function<bool(std::uint64_t bytesCopiedSoFar)>& onChunk) override;
 
+    std::filesystem::path expandEnvironmentVariables(const std::filesystem::path& input) const override;
+
 private:
     // Synthesizes the "This PC" listing (quick-access folders + drives) instead of touching disk.
     // Windows-only; see Architecture.md §14.15. Non-Windows returns an IoError "Not supported on

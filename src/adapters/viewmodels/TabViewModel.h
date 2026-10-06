@@ -101,6 +101,10 @@ public:
     // "no suggestions" rather than a navigation failure.
     QStringList suggestFolders(const std::filesystem::path& directory) const;
 
+    // Pure query, no history/state side effects. Delegates to
+    // FileNavigationUseCase::expandEnvironmentVariables (Architecture.md §14.54).
+    std::filesystem::path expandEnvironmentVariables(const std::filesystem::path& input) const;
+
     // Delegates to TagManagementUseCase::searchTags; empty vector on repository failure.
     std::vector<Tag> searchTagsForCriteria(const QString& query) const;
 

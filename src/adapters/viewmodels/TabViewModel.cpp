@@ -157,7 +157,13 @@ QStringList TabViewModel::suggestFolders(const std::filesystem::path& directory)
     }
 
     names.sort(Qt::CaseInsensitive);
+
     return names;
+}
+
+std::filesystem::path TabViewModel::expandEnvironmentVariables(const std::filesystem::path& input) const
+{
+    return m_fileNavigationUseCase.expandEnvironmentVariables(input);
 }
 
 void TabViewModel::navigateTo(const std::filesystem::path& path)

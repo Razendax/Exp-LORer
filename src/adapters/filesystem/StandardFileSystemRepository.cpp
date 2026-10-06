@@ -1288,3 +1288,29 @@ Result<FileNode> StandardFileSystemRepository::copyFileWithProgress(
     return buildFileNode(destination, makeDirectoryEntry(dst));
 #endif
 }
+
+std::filesystem::path StandardFileSystemRepository::expandEnvironmentVariables(const std::filesystem::path& input) const
+{
+#ifdef _WIN32
+    const std::wstring source = input.wstring();
+
+    const DWORD requiredSize = ExpandEnvironmentStringsW(source.c_str(), nullptr, 0);
+    if (requiredSize == 0)
+    {
+        return input;
+    }
+
+    std::wstring expanded(requiredSize, L'\0');
+    const DWORD writtenSize = ExpandEnvironmentStringsW(source.c_str(), expanded.data(), requiredSize);
+    if (writtenSize == 0 || writtenSize > requiredSize)
+    {
+        return input;
+    }
+
+    // ExpandEnvironmentStringsW's returned size includes the terminating null.
+    expanded.resize(writtenSize - 1);
+    return fs::path(expanded);
+#else
+    return input;
+#endif
+}

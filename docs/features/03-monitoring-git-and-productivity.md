@@ -1528,3 +1528,42 @@ since `FileFragmentationInfo` is file-only.
   No new CTest coverage — `FileListModel`/`TabViewModel`/`WorkspacePaneViewModel`/`WorkspaceController`
   are UI/ViewModel-glue, already under §11's existing carve-out, same posture as the Size/Percent
   column wiring; verified by manual smoke test instead.
+
+### 14.54 Address Bar Environment Variable Expansion
+
+Typing a Windows-style `%NAME%` reference into a pane's address bar (e.g. `%appdata%`,
+`%USERPROFILE%\Documents`, `C:\Users\%USERNAME%\Desktop`) and pressing Enter navigates to the
+expanded real path. Expansion happens only at commit time, inside `WorkspacePaneWidget::
+onAddressBarEdited()` — right after trimming and before the existing `"this pc"` comparison and
+`newPath` construction — never live while typing; §14.21's folder-autocomplete popup is unaffected.
+This mirrors Explorer's own address bar, which likewise only resolves `%...%` on navigate, not
+while typing.
+
+`IFileSystemRepository` gains one new Port method, `expandEnvironmentVariables(const
+std::filesystem::path& input) const`, implemented by `StandardFileSystemRepository` as a direct
+call to Win32 `ExpandEnvironmentStringsW` (the standard two-call size-then-fill pattern) over
+`input.wstring()` — never `.string()`/`.generic_string()`, per `PathUtf8.h`'s rule, since the
+expanded value itself may contain non-ASCII (e.g. a non-English Windows username under
+`%USERPROFILE%`). Reusing the OS call's own semantics, rather than a hand-rolled parser, means a
+`%NAME%` for a set variable is substituted, an unset/unknown `%NAME%` (or a lone `%` not part of a
+well-formed pair) is left in the output unchanged — so a folder literally named `100% Done` is
+untouched, and a typo'd variable name simply fails navigation the normal way via the existing
+`navigationFailed` signal, with no dedicated error message needed. Multiple variables in one string,
+and a variable embedded mid-path, both work for free since the whole string is handed to the OS in
+one call. `FileNavigationUseCase::expandEnvironmentVariables` is a thin passthrough (same shape as
+`driveSpaceInfo`); `TabViewModel::expandEnvironmentVariables` is a pure, side-effect-free query
+placed next to `suggestFolders`, called once by `WorkspacePaneWidget` per commit.
+
+Deliberate convention deviation: the Port method returns a plain `std::filesystem::path`, not
+`Result<T>` — expanding environment variables can't fail (worst case is "no change"), so wrapping it
+in a failure channel would be error handling for a scenario that can't happen.
+
+Windows-only for now (Specification.md §1.2): the Port method's non-Windows branch returns `input`
+unchanged. A real Linux implementation (POSIX `$VAR`/`${VAR}`, a different convention from Windows'
+`%VAR%`) is deferred along with the rest of the Linux backend. Tested with mocked-Port coverage in
+`tests/application` (passthrough) and real, test-controlled environment variables (set via
+`_wputenv_s`/`SetEnvironmentVariableW` within the test process — deterministic and assertable, not
+the §11 "no assertable return" carve-out) in `tests/adapters/StandardFileSystemRepositoryTest.cpp`:
+known variable substituted, unknown variable left literal, two variables in one string, plain text
+unchanged. No new CTest coverage for the `WorkspacePaneWidget` wiring itself — UI/ViewModel glue,
+same posture as §14.21/§14.22; verified by manual smoke test instead.

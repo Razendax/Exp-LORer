@@ -112,4 +112,10 @@ public:
     virtual Result<FileNode> copyFileWithProgress(const std::filesystem::path& source,
                                                    const std::filesystem::path& destination,
                                                    const std::function<bool(std::uint64_t bytesCopiedSoFar)>& onChunk) = 0;
+
+    // Expands %NAME% environment-variable references in `input` to their current process-
+    // environment values (Win32 ExpandEnvironmentStringsW semantics -- see Architecture.md §14.54
+    // for the exact unset/unmatched-%% behavior). Pure text substitution, never touches disk; has
+    // no failure case, so it returns a plain path rather than Result<T>.
+    virtual std::filesystem::path expandEnvironmentVariables(const std::filesystem::path& input) const = 0;
 };

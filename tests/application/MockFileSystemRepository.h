@@ -34,4 +34,5 @@ public:
                 (const std::filesystem::path& source, const std::filesystem::path& destination,
                  const std::function<bool(std::uint64_t bytesCopiedSoFar)>& onChunk),
                 (override));
+    MOCK_METHOD(std::filesystem::path, expandEnvironmentVariables, (const std::filesystem::path& input), (const, override));
 };

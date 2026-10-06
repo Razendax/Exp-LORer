@@ -889,7 +889,11 @@ void WorkspacePaneWidget::onAddressBarEdited()
     }
 
     const QString trimmed = m_addressBar->text().trimmed();
-    if (trimmed.compare(QStringLiteral("this pc"), Qt::CaseInsensitive) == 0)
+    const std::filesystem::path expanded =
+        m_boundTab->expandEnvironmentVariables(std::filesystem::path(trimmed.toStdWString()));
+    const QString expandedText = QString::fromStdWString(expanded.wstring());
+
+    if (expandedText.compare(QStringLiteral("this pc"), Qt::CaseInsensitive) == 0)
     {
         if (!confirmLeavingMonitoredScope(m_boundTab, VirtualPaths::ThisPC))
         {
@@ -900,7 +904,7 @@ void WorkspacePaneWidget::onAddressBarEdited()
         return;
     }
 
-    std::filesystem::path newPath(trimmed.toStdWString());
+    std::filesystem::path newPath(expandedText.toStdWString());
     newPath.make_preferred();
 
     if (!confirmLeavingMonitoredScope(m_boundTab, newPath))

@@ -102,6 +102,9 @@ public:
 
     Result<DriveSpaceInfo> driveSpaceInfo(const std::filesystem::path& path) const;
 
+    // Thin passthrough to IFileSystemRepository::expandEnvironmentVariables (Architecture.md §14.54).
+    std::filesystem::path expandEnvironmentVariables(const std::filesystem::path& input) const;
+
 private:
     IFileSystemRepository& m_fileSystemRepository;
     IContextMenuProvider& m_contextMenuProvider;

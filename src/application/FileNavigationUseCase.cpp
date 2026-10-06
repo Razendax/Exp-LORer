@@ -266,3 +266,8 @@ Result<DriveSpaceInfo> FileNavigationUseCase::driveSpaceInfo(const std::filesyst
 {
     return m_fileSystemRepository.driveSpaceInfo(path);
 }
+
+std::filesystem::path FileNavigationUseCase::expandEnvironmentVariables(const std::filesystem::path& input) const
+{
+    return m_fileSystemRepository.expandEnvironmentVariables(input);
+}

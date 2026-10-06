@@ -35,6 +35,9 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 * **Path bar folder autocomplete** (Architecture.md §14.21): as the user types, a popup lists only
   the matching folders (never files) under the implied parent directory, navigable with the
   keyboard or mouse, with inline autocompletion of an unambiguous match.
+* **Path bar environment variable expansion** (Architecture.md §14.54): typing a Windows-style
+  `%NAME%` reference (e.g. `%appdata%`, `%USERPROFILE%\Documents`) and pressing Enter navigates to
+  the expanded real path; an unset/unknown variable is left as-is, same as Explorer.
 * **"This PC" virtual location** (Architecture.md §14.15): lists all local and remote drives, plus
   quick access to the Downloads, Documents, Pictures, Videos, Music, and Desktop folders. Reached
   by pressing Up (or Backspace) from any drive's root directory — the point where a regular folder
