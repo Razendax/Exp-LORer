@@ -6,15 +6,17 @@
 
 #include "ArchiveExtensions.h"
 #include "FolderSizeViewModel.h"
+#include "NotificationCenter.h"
 #include "PieChartWidget.h"
 #include "TabViewModel.h"
 #include "VirtualPaths.h"
 
-FolderSizeWidget::FolderSizeWidget(DiskUsageService& service, TabViewModel* tab, QWidget* parent)
+FolderSizeWidget::FolderSizeWidget(DiskUsageService& service, NotificationCenter& notificationCenter, TabViewModel* tab,
+                                    QWidget* parent)
     : QWidget(parent)
     , m_tab(tab)
 {
-    m_viewModel = new FolderSizeViewModel(service, tab, this);
+    m_viewModel = new FolderSizeViewModel(service, notificationCenter, tab, this);
 
     auto* mainLayout = new QHBoxLayout(this);
 
@@ -41,6 +43,12 @@ FolderSizeWidget::FolderSizeWidget(DiskUsageService& service, TabViewModel* tab,
     connect(m_viewModel, &FolderSizeViewModel::dataChanged, this, &FolderSizeWidget::onDataChanged);
     connect(m_viewModel, &FolderSizeViewModel::navigationRequested, tab, &TabViewModel::navigateTo);
     connect(m_pieChart, &PieChartWidget::segmentClicked, m_viewModel, &FolderSizeViewModel::onSegmentClicked);
+    // Previously unconnected -- a scan failure (e.g. an I/O error partway through a whole-drive
+    // recursive walk) silently left the pie chart exactly as it was, with no indication anything
+    // went wrong. Mirrors FragmentationWidget's identical fix.
+    connect(m_viewModel, &FolderSizeViewModel::scanFailed, this, [&notificationCenter](const QString& message) {
+        notificationCenter.showPopup(NotificationType::Error, tr("Folder Size Scan Failed"), message);
+    });
 
     connect(m_tab, &TabViewModel::currentPathChanged, this, [this](const std::filesystem::path&) { updateButtonsEnabled(); });
 

@@ -573,15 +573,31 @@ existing use case, aside from reusing `TabViewModel::navigateTo` for segment-cli
   `SQLiteTagRepository` connection.
 * **Threading:** `DiskUsageService`/`DiskUsageWorker` (`src/adapters/viewmodels`), the same
   "dedicated `QThread` + lazily-opened own SQLite connection" shape as `AdvancedSearchService`/
-  `AdvancedSearchWorker` and `FileTagsService`/`FileTagsWorker`. `requestScan(tabId, root)` is queued
-  to the worker thread; `scanFinished(tabId, Result<vector<DiskUsageNode>>)` marshals back to the UI
-  thread, `tabId` letting a stale result from an abandoned/replaced tab be discarded on arrival. No
-  cancellation in v1 — the `FindFirstFileW` walk isn't interruptible mid-call, same accepted posture
-  as Advanced Search's recursive scan (§5). Only one scan in flight per tab; both buttons disable for
+  `AdvancedSearchWorker` and `FileTagsService`/`FileTagsWorker`. `requestScan(context, requestId,
+  root, onProgress, onFinished)` is queued to the worker thread via `QMetaObject::invokeMethod`;
+  both callbacks are bounced back to `context`'s thread the same way, guarded by a `QPointer` so
+  neither fires after `context` is destroyed — same shape §14.52's `FragmentationService` later
+  established. **Cancellable, same mechanism as §14.52**: `requestId` is caller-supplied (each
+  `FolderSizeViewModel` passes the `NotificationCenter` `ProgressId` it creates for its own scan), a
+  `QMutex`-guarded `QHash<int, shared_ptr<atomic<bool>>>` holds one real cancel flag per in-flight
+  request, and `cancel(requestId)` flips it; `WindowsDiskUsageScanner::walkDirectory` polls it once
+  per directory entry (coarse, not interruptible mid-syscall, same granularity
+  `WindowsFragmentationScanner` checks at) and a set flag unwinds the whole in-flight recursive walk
+  within one loop iteration per level, surfacing as an `ErrorCode::Cancelled` failure (never
+  persisted). `onProgress(scanned, currentPath)` fires throttled to ~once/sec during the walk — since
+  this scanner has no separate "count candidates first" pass (unlike Fragmentation's two-phase scan),
+  it is always the indeterminate case: a running discovered-count and the entry just visited, never a
+  known total. Multiple tabs' requests queue on the one worker thread, same posture
+  `AdvancedSearchWorker` already accepts. Only one scan in flight per tab; both buttons disable for
   the duration.
 * **ViewModel/UI:** `FolderSizeViewModel` (`adapters/viewmodels`, one per tab, same lazy-start
   lifetime as `TerminalWidget`) tracks the tab's current path (read-only via
-  `TabViewModel::currentPathChanged`) and drives `DiskUsageService`. `PieChartWidget`
+  `TabViewModel::currentPathChanged`) and drives `DiskUsageService`. It also holds a
+  `NotificationCenter&` it calls into directly to create/update/terminate its own cancellable
+  progress-bar card per scan — the same "ViewModel calls into NotificationCenter directly" posture
+  §14.52's `FragmentationViewModel` established — and forwards a scan failure (other than
+  `ErrorCode::Cancelled`) to `FolderSizeWidget` via `scanFailed`, which raises it as an Error popup.
+  `PieChartWidget`
   (`src/ui/widgets`, new, plain `QPainter` — no QtCharts/new vcpkg dependency for one chart) paints
   up to 10 wedges with name/percentage/size labels and emits `segmentClicked(path)` on hit-test.
   Labels form a single legend column on the **right** of the pie — one line each, `<color swatch>
@@ -600,10 +616,13 @@ existing use case, aside from reusing `TabViewModel::navigateTo` for segment-cli
   `BottomPanelWidget::addPanelTab`'s panel-tab button `objectName` becomes index-derived (it was
   hardcoded for the single pre-existing Terminal caller) so each panel tab's button keeps a distinct,
   stable id (§11's UI-Automation-id convention).
-* **Not built:** Linux scanner (Port exists; adapter returns "not supported"); a progress bar (button
-  text only); scan cancellation; auto re-scan on navigation, live directory-change events, or a
-  timer; persisting the bottom panel's expanded/collapsed state (unchanged from §14.24); any
-  integration with tagging/Preview/search.
+* **Not built:** Linux scanner (Port exists; adapter returns "not supported"); auto re-scan on
+  navigation, live directory-change events, or a timer; persisting the bottom panel's
+  expanded/collapsed state (unchanged from §14.24); any integration with tagging/Preview/search.
+  (Progress bar + cancellation *were* initially cut here, per the "Not built" line above as it
+  originally read — reused §14.52's `NotificationCenter`-driven cancellable progress-card mechanism
+  wholesale once Fragmentation established it, with only one bar and always the indeterminate
+  "running count + current path" shape, never Fragmentation's two-phase determinate one.)
 * **Details-view Size column integration:** `TabViewModel` reuses `DiskUsageService::requestChildren`
   (the same cached-lookup call `FolderSizeViewModel` uses, no scan triggered) from its existing
   `directoryContentsChanged` funnel, the same way it already enriches `FileListModel` with git

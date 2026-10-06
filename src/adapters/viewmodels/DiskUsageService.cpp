@@ -3,6 +3,7 @@
 #include <utility>
 
 #include <QMetaObject>
+#include <QMutexLocker>
 #include <QPointer>
 
 #include "DiskUsageWorker.h"
@@ -26,14 +27,42 @@ DiskUsageService::~DiskUsageService()
     m_workerThread.wait();
 }
 
-void DiskUsageService::requestScan(QObject* context, const std::filesystem::path& root, std::function<void(Result<void>)> callback)
+void DiskUsageService::requestScan(QObject* context, int requestId, const std::filesystem::path& root,
+                                    std::function<void(std::size_t, const std::filesystem::path&)> onProgress,
+                                    std::function<void(Result<void>)> onFinished)
 {
+    auto cancelFlag = std::make_shared<std::atomic<bool>>(false);
+    {
+        QMutexLocker locker(&m_cancelFlagsMutex);
+        m_cancelFlags.insert(requestId, cancelFlag);
+    }
+
     QPointer<QObject> guard(context);
 
     QMetaObject::invokeMethod(
         m_worker,
-        [this, guard, root, callback = std::move(callback)]() {
-            Result<void> result = m_worker->scanAndPersist(root);
+        [this, guard, requestId, root, cancelFlag, onProgress = std::move(onProgress), onFinished = std::move(onFinished)]() {
+            // Called synchronously on this worker thread from inside scanAndPersist below -- bounce
+            // the progress callback back to the requesting side the same way the final result is,
+            // so it never runs on the wrong thread and never fires after `context` is gone.
+            auto boundProgress = [this, guard, onProgress](std::size_t scanned, const std::filesystem::path& currentPath) {
+                if (!onProgress)
+                {
+                    return;
+                }
+                QMetaObject::invokeMethod(
+                    this,
+                    [guard, onProgress, scanned, currentPath]() {
+                        if (!guard)
+                        {
+                            return;
+                        }
+                        onProgress(scanned, currentPath);
+                    },
+                    Qt::QueuedConnection);
+            };
+
+            Result<void> result = m_worker->scanAndPersist(root, cancelFlag, boundProgress);
 
             if (result.hasError())
             {
@@ -44,18 +73,32 @@ void DiskUsageService::requestScan(QObject* context, const std::filesystem::path
                 Logging::debug("DiskUsageService: scan finished");
             }
 
+            {
+                QMutexLocker locker(&m_cancelFlagsMutex);
+                m_cancelFlags.remove(requestId);
+            }
+
             QMetaObject::invokeMethod(
                 this,
-                [guard, callback, result = std::move(result)]() mutable {
-                    if (!guard)
+                [guard, onFinished, result = std::move(result)]() mutable {
+                    if (!guard || !onFinished)
                     {
                         return;
                     }
-                    callback(std::move(result));
+                    onFinished(std::move(result));
                 },
                 Qt::QueuedConnection);
         },
         Qt::QueuedConnection);
+}
+
+void DiskUsageService::cancel(int requestId)
+{
+    QMutexLocker locker(&m_cancelFlagsMutex);
+    if (auto it = m_cancelFlags.find(requestId); it != m_cancelFlags.end())
+    {
+        it.value()->store(true, std::memory_order_relaxed);
+    }
 }
 
 void DiskUsageService::requestChildren(QObject* context, const std::filesystem::path& folder,

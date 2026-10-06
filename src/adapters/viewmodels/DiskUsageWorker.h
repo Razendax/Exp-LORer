@@ -1,6 +1,9 @@
 #pragma once
 
+#include <atomic>
+#include <cstddef>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -33,7 +36,8 @@ public:
     // e.g. a whole-drive scan) node list itself is never marshaled back to the UI thread; a caller
     // that wants to display something after a successful scan issues a separate, cheap
     // childrenFor() request for just the folder it wants to show.
-    Result<void> scanAndPersist(const std::filesystem::path& root);
+    Result<void> scanAndPersist(const std::filesystem::path& root, const std::shared_ptr<std::atomic<bool>>& cancelFlag,
+                                 const std::function<void(std::size_t, const std::filesystem::path&)>& onProgress);
 
     // Cached immediate children of `folder` from the most recent scan that covered it.
     Result<std::vector<DiskUsageNode>> childrenFor(const std::filesystem::path& folder);

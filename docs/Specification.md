@@ -123,8 +123,10 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   pie chart of the current folder's largest subfolders/files (up to 10 segments, each labeled with
   name, percentage of the folder's total size, and size, color-coded, and clickable to navigate into
   that subfolder) alongside "Scan Drive" and "Scan Folder" buttons. Scanning runs in the background
-  (button text changes to "Scanning..." while in progress) and, once complete, updates the chart and
-  saves the scanned folder sizes to the local database for reuse without rescanning. Scanning itself
+  (button text changes to "Scanning..." while in progress, and a cancellable progress notification
+  shows a live running count and the path currently being examined — Architecture.md §14.37) and,
+  once complete, updates the chart and saves the scanned folder sizes to the local database for reuse
+  without rescanning. Scanning itself
   is a self-contained tool, not integrated with tagging, search, or the Preview panel — but once a
   folder has been scanned, its cached recursive size also appears in the Details view's Size column
   for that folder (wherever it's listed as a subfolder), instead of staying blank; a folder never

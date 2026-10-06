@@ -8,6 +8,7 @@
 #include <QString>
 
 #include "DiskUsageNode.h"
+#include "NotificationCenter.h"
 
 class DiskUsageService;
 class TabViewModel;
@@ -17,13 +18,16 @@ class TabViewModel;
 // TabViewModel::currentPathChanged) and drives DiskUsageService; never calls back into
 // TabViewModel except navigateTo (indirectly, via navigationRequested -- the owning widget wires
 // that straight to tab->navigateTo, keeping this class itself free of a navigateTo call so its
-// only TabViewModel dependency is read-only).
+// only TabViewModel dependency is read-only). Also holds a NotificationCenter& it uses directly to
+// create/update/terminate its own cancellable progress-bar card per scan -- the same "ViewModel
+// calls into NotificationCenter directly" posture §14.52's FragmentationViewModel established.
 class FolderSizeViewModel : public QObject
 {
     Q_OBJECT
 
 public:
-    FolderSizeViewModel(DiskUsageService& service, TabViewModel* tab, QObject* parent = nullptr);
+    FolderSizeViewModel(DiskUsageService& service, NotificationCenter& notificationCenter, TabViewModel* tab,
+                         QObject* parent = nullptr);
 
     bool isScanning() const noexcept { return m_scanning; }
     const std::filesystem::path& currentPath() const noexcept { return m_currentPath; }
@@ -66,8 +70,10 @@ private:
     void setScanning(bool scanning);
 
     DiskUsageService& m_service;
+    NotificationCenter& m_notificationCenter;
     TabViewModel* m_tab = nullptr;
 
     std::filesystem::path m_currentPath;
     bool m_scanning = false;
+    NotificationCenter::ProgressId m_activeProgressId = 0;
 };

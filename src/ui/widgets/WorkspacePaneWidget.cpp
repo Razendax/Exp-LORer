@@ -474,7 +474,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     bottomPanel->addPanelTab(tr("Terminal"), terminalWidget);
 
     // Second bottom-panel tab, right after Terminal (Architecture.md §14.39).
-    auto* folderSizeWidget = new FolderSizeWidget(m_diskUsageService, tab, bottomPanel);
+    auto* folderSizeWidget = new FolderSizeWidget(m_diskUsageService, m_notificationCenter, tab, bottomPanel);
     bottomPanel->addPanelTab(tr("Folder Size"), folderSizeWidget);
 
     // Third bottom-panel tab, right after Folder Size (Architecture.md §14.52).

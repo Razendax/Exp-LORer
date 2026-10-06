@@ -1,7 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <filesystem>
+#include <functional>
 #include <vector>
 
 #include "DiskUsageNode.h"
@@ -16,9 +18,13 @@ class DiskUsageUseCase
 public:
     DiskUsageUseCase(IDiskUsageScanner& scanner, IDiskUsageRepository& repository);
 
-    // Scans root, persists the result, and returns the full flat node list (root and every
-    // descendant) as the scanner produced it.
-    Result<std::vector<DiskUsageNode>> scanAndPersist(const std::filesystem::path& root);
+    // Scans root and persists the result only on success -- a cancelled or failed scan is never
+    // persisted. Returns the full flat node list (root and every descendant) as the scanner
+    // produced it.
+    Result<std::vector<DiskUsageNode>> scanAndPersist(
+        const std::filesystem::path& root,
+        const std::function<void(std::size_t scanned, const std::filesystem::path& currentPath)>& onProgress,
+        const std::atomic<bool>& cancelRequested);
 
     // Pure, no I/O: sorts descending by size and truncates to `max`. Percentage basis is the
     // caller's concern -- each shown segment's percentage should be computed against the *full*

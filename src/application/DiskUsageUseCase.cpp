@@ -8,9 +8,12 @@ DiskUsageUseCase::DiskUsageUseCase(IDiskUsageScanner& scanner, IDiskUsageReposit
 {
 }
 
-Result<std::vector<DiskUsageNode>> DiskUsageUseCase::scanAndPersist(const std::filesystem::path& root)
+Result<std::vector<DiskUsageNode>> DiskUsageUseCase::scanAndPersist(
+    const std::filesystem::path& root,
+    const std::function<void(std::size_t scanned, const std::filesystem::path& currentPath)>& onProgress,
+    const std::atomic<bool>& cancelRequested)
 {
-    auto scanned = m_scanner.scan(root);
+    auto scanned = m_scanner.scan(root, onProgress, cancelRequested);
     if (scanned.hasError())
     {
         return scanned;

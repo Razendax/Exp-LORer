@@ -38,9 +38,14 @@ namespace
     // patched in place once the recursive call returns (post-order aggregation) -- the index stays
     // valid across any reallocation `results` undergoes while recursing, unlike a pointer/reference
     // would. Returns the aggregate size of `nativeDir` itself. onProgress is throttled to roughly
-    // once/second, mirroring StandardFileSystemRepository::listDirectoryRecursive.
+    // once/second, mirroring StandardFileSystemRepository::listDirectoryRecursive. cancelRequested
+    // is checked once per directory entry, at the top of this loop and at every recursion level, so
+    // a cancellation unwinds the whole in-flight walk within one loop iteration per level (coarse,
+    // not interruptible mid-syscall, same granularity WindowsFragmentationScanner checks at).
     std::uintmax_t walkDirectory(const fs::path& nativeDir, const fs::path& outwardDir, std::vector<DiskUsageNode>& results,
-                                  const std::function<void()>& onProgress, std::chrono::steady_clock::time_point& lastProgressTime,
+                                  std::size_t& scannedCount,
+                                  const std::function<void(std::size_t, const fs::path&)>& onProgress,
+                                  std::chrono::steady_clock::time_point& lastProgressTime, const std::atomic<bool>& cancelRequested,
                                   std::size_t& unreadableDirCount, std::size_t& reparsePointSkipCount)
     {
         std::uintmax_t total = 0;
@@ -61,6 +66,11 @@ namespace
 
         do
         {
+            if (cancelRequested.load(std::memory_order_relaxed))
+            {
+                break;
+            }
+
             const std::wstring name = findData.cFileName;
             if (name == L"." || name == L"..")
             {
@@ -88,7 +98,8 @@ namespace
                 results.push_back(DiskUsageNode{ childOutward, PathUtf8::toUtf8(fs::path(name)), 0, true });
 
                 const std::uintmax_t subtreeSize =
-                    walkDirectory(childNative, childOutward, results, onProgress, lastProgressTime, unreadableDirCount, reparsePointSkipCount);
+                    walkDirectory(childNative, childOutward, results, scannedCount, onProgress, lastProgressTime, cancelRequested,
+                                  unreadableDirCount, reparsePointSkipCount);
                 results[placeholderIndex].size = subtreeSize;
                 total += subtreeSize;
             }
@@ -99,12 +110,13 @@ namespace
                 total += fileSize;
             }
 
+            ++scannedCount;
             if (onProgress)
             {
                 const auto now = std::chrono::steady_clock::now();
                 if (now - lastProgressTime >= std::chrono::seconds(1))
                 {
-                    onProgress();
+                    onProgress(scannedCount, childOutward);
                     lastProgressTime = now;
                 }
             }
@@ -116,8 +128,10 @@ namespace
 }
 #endif
 
-Result<std::vector<DiskUsageNode>> WindowsDiskUsageScanner::scan(const std::filesystem::path& root,
-                                                                   const std::function<void()>& onProgress) const
+Result<std::vector<DiskUsageNode>> WindowsDiskUsageScanner::scan(
+    const std::filesystem::path& root,
+    const std::function<void(std::size_t scanned, const std::filesystem::path& currentPath)>& onProgress,
+    const std::atomic<bool>& cancelRequested) const
 {
 #ifdef _WIN32
     namespace fs = std::filesystem;
@@ -134,11 +148,18 @@ Result<std::vector<DiskUsageNode>> WindowsDiskUsageScanner::scan(const std::file
     const auto scanStart = std::chrono::steady_clock::now();
 
     std::vector<DiskUsageNode> results;
+    std::size_t scannedCount = 0;
     auto lastProgressTime = std::chrono::steady_clock::now();
     std::size_t unreadableDirCount = 0;
     std::size_t reparsePointSkipCount = 0;
-    const std::uintmax_t totalSize =
-        walkDirectory(target, root, results, onProgress, lastProgressTime, unreadableDirCount, reparsePointSkipCount);
+    const std::uintmax_t totalSize = walkDirectory(target, root, results, scannedCount, onProgress, lastProgressTime,
+                                                     cancelRequested, unreadableDirCount, reparsePointSkipCount);
+
+    if (cancelRequested.load(std::memory_order_relaxed))
+    {
+        Logging::info("WindowsDiskUsageScanner: scan cancelled");
+        return Result<std::vector<DiskUsageNode>>::failure(Error(ErrorCode::Cancelled, "Disk usage scan cancelled"));
+    }
 
     // Root itself, aggregate size. filename() is empty for a drive root ("C:\"), so fall back to
     // the full root text in that case (same quirk StandardFileSystemRepository::buildDriveNode
@@ -167,6 +188,7 @@ Result<std::vector<DiskUsageNode>> WindowsDiskUsageScanner::scan(const std::file
 #else
     (void)root;
     (void)onProgress;
+    (void)cancelRequested;
     return Result<std::vector<DiskUsageNode>>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
 #endif
 }

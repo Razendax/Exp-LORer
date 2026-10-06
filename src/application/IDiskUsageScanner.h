@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+#include <cstddef>
 #include <filesystem>
 #include <functional>
 #include <vector>
@@ -18,10 +20,15 @@ public:
     virtual ~IDiskUsageScanner() = default;
 
     // Returns a flat list covering root and every descendant (root itself included), each
-    // directory's size already the recursive aggregate of its own subtree. onProgress is a
-    // lightweight periodic tick with no partial data (v1 has no progress bar, only "Scanning..."
-    // button text) -- mirrors the throttling style of
-    // IFileSystemRepository::listDirectoryRecursive's onProgress, minus the payload.
-    virtual Result<std::vector<DiskUsageNode>> scan(const std::filesystem::path& root,
-                                                      const std::function<void()>& onProgress = nullptr) const = 0;
+    // directory's size already the recursive aggregate of its own subtree. onProgress fires
+    // throttled to ~once/sec during the walk with a running discovered-count and the entry just
+    // visited -- this scanner has no separate "count candidates first" pass (unlike
+    // IFragmentationScanner's two-phase scan), so it is always the indeterminate case, never a
+    // known total. cancelRequested is polled at each directory entry (coarse granularity, same
+    // "not interruptible mid-call" posture as IFragmentationScanner); observing it set returns a
+    // Cancelled error instead of a partial list.
+    virtual Result<std::vector<DiskUsageNode>> scan(
+        const std::filesystem::path& root,
+        const std::function<void(std::size_t scanned, const std::filesystem::path& currentPath)>& onProgress,
+        const std::atomic<bool>& cancelRequested) const = 0;
 };

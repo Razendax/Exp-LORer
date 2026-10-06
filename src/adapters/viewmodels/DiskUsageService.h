@@ -1,9 +1,14 @@
 #pragma once
 
+#include <atomic>
+#include <cstddef>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <vector>
 
+#include <QHash>
+#include <QMutex>
 #include <QObject>
 #include <QThread>
 
@@ -30,9 +35,18 @@ public:
     DiskUsageService(IDiskUsageScanner& scanner, const std::filesystem::path& databasePath, QObject* parent = nullptr);
     ~DiskUsageService() override;
 
-    // Scans `root` and persists the result. Discarded (callback never invoked) if `context` is
-    // destroyed before the scan finishes.
-    void requestScan(QObject* context, const std::filesystem::path& root, std::function<void(Result<void>)> callback);
+    // requestId is caller-supplied (each per-tab FolderSizeViewModel passes the NotificationCenter
+    // ProgressId it creates for its own scan, same "ids line up 1:1" posture as
+    // FragmentationService) so cancel() needs no second map on the caller's side. onProgress/
+    // onFinished are bounced back to `context`'s thread via QMetaObject::invokeMethod, guarded by a
+    // QPointer so neither fires after `context` is destroyed.
+    void requestScan(QObject* context, int requestId, const std::filesystem::path& root,
+                      std::function<void(std::size_t scanned, const std::filesystem::path& currentPath)> onProgress,
+                      std::function<void(Result<void>)> onFinished);
+
+    // Flips the matching cancel flag if `requestId` is still in flight; a no-op otherwise -- safe
+    // to call blindly, same posture as FragmentationService::cancel.
+    void cancel(int requestId);
 
     // Cached immediate children of `folder` from the most recent scan that covered it.
     void requestChildren(QObject* context, const std::filesystem::path& folder,
@@ -41,4 +55,6 @@ public:
 private:
     QThread m_workerThread;
     DiskUsageWorker* m_worker = nullptr;
+    QMutex m_cancelFlagsMutex;
+    QHash<int, std::shared_ptr<std::atomic<bool>>> m_cancelFlags; // guarded by m_cancelFlagsMutex
 };

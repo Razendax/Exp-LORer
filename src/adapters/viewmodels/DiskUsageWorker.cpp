@@ -23,11 +23,12 @@ void DiskUsageWorker::ensureUseCase()
     m_useCase = std::make_unique<DiskUsageUseCase>(m_scanner, *m_repository);
 }
 
-Result<void> DiskUsageWorker::scanAndPersist(const std::filesystem::path& root)
+Result<void> DiskUsageWorker::scanAndPersist(const std::filesystem::path& root, const std::shared_ptr<std::atomic<bool>>& cancelFlag,
+                                              const std::function<void(std::size_t, const std::filesystem::path&)>& onProgress)
 {
     ensureUseCase();
 
-    auto result = m_useCase->scanAndPersist(root);
+    auto result = m_useCase->scanAndPersist(root, onProgress, *cancelFlag);
     if (result.hasError())
     {
         return Result<void>::failure(std::move(result).error());

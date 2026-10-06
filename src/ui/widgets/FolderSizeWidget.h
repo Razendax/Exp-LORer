@@ -9,6 +9,7 @@
 #include "DiskUsageNode.h"
 
 class DiskUsageService;
+class NotificationCenter;
 class TabViewModel;
 class FolderSizeViewModel;
 class PieChartWidget;
@@ -24,7 +25,7 @@ class FolderSizeWidget : public QWidget
     Q_OBJECT
 
 public:
-    FolderSizeWidget(DiskUsageService& service, TabViewModel* tab, QWidget* parent = nullptr);
+    FolderSizeWidget(DiskUsageService& service, NotificationCenter& notificationCenter, TabViewModel* tab, QWidget* parent = nullptr);
 
 private:
     void updateButtonsEnabled();

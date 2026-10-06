@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <fstream>
 #include <optional>
 #include <string>
@@ -13,6 +14,8 @@
 namespace
 {
     namespace fs = std::filesystem;
+
+    std::atomic<bool> kNotCancelled{ false };
 
     void writeFile(const fs::path& path, const std::string& content)
     {
@@ -58,7 +61,7 @@ TEST_F(WindowsDiskUsageScannerTest, ScanAggregatesNestedDirectorySizes)
     fs::create_directory(m_tempDir / "sub" / "nested");
     writeFile(m_tempDir / "sub" / "nested" / "c.txt", std::string(40, 'd'));
 
-    auto result = m_scanner.scan(m_tempDir);
+    auto result = m_scanner.scan(m_tempDir, nullptr, kNotCancelled);
     ASSERT_TRUE(result.hasValue());
 
     const auto& nodes = result.value();
@@ -85,7 +88,7 @@ TEST_F(WindowsDiskUsageScannerTest, ScanAggregatesNestedDirectorySizes)
 
 TEST_F(WindowsDiskUsageScannerTest, ScanFailsForMissingPath)
 {
-    auto result = m_scanner.scan(m_tempDir / "does-not-exist");
+    auto result = m_scanner.scan(m_tempDir / "does-not-exist", nullptr, kNotCancelled);
 
     ASSERT_TRUE(result.hasError());
     EXPECT_EQ(result.error().code, ErrorCode::NotFound);
@@ -98,12 +101,23 @@ TEST_F(WindowsDiskUsageScannerTest, ScanHandlesNonAsciiNamesWithoutThrowing)
     writeFile(nonAsciiDir / fs::path(std::u8string(u8"文件.txt")), std::string(5, 'x'));
 
     Result<std::vector<DiskUsageNode>> result = Result<std::vector<DiskUsageNode>>::failure(Error(ErrorCode::IoError, "unset"));
-    EXPECT_NO_THROW(result = m_scanner.scan(m_tempDir));
+    EXPECT_NO_THROW(result = m_scanner.scan(m_tempDir, nullptr, kNotCancelled));
 
     ASSERT_TRUE(result.hasValue());
     auto dir = findByPath(result.value(), nonAsciiDir);
     ASSERT_TRUE(dir.has_value());
     EXPECT_EQ(dir->size, 5u);
+}
+
+TEST_F(WindowsDiskUsageScannerTest, ScanRespectsCancellation)
+{
+    writeFile(m_tempDir / "a.txt", std::string(10, 'a'));
+
+    std::atomic<bool> cancelled{ true };
+    auto result = m_scanner.scan(m_tempDir, nullptr, cancelled);
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::Cancelled);
 }
 
 #ifdef _WIN32
@@ -119,7 +133,7 @@ TEST_F(WindowsDiskUsageScannerTest, DoesNotRecurseIntoReparsePointDirectories)
         GTEST_SKIP() << "Symlink creation not permitted in this environment";
     }
 
-    auto result = m_scanner.scan(m_tempDir);
+    auto result = m_scanner.scan(m_tempDir, nullptr, kNotCancelled);
     ASSERT_TRUE(result.hasValue());
 
     // "target/hidden.txt" is found normally; a *second* copy reached only by recursing through
