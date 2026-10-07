@@ -41,6 +41,12 @@ Follow it automatically, without being asked each time:
 2. When implementation is complete, rename `.claude/active_work/plan.md` to
    `.claude/active_work/prev_plan.md` (overwrite any existing `prev_plan.md`).
 
+Do not smoke test — don't launch the app yourself to click through or verify a feature/fix after
+implementing it. The user tests manually and will come back with whatever needs fixing. This is
+separate from the automated suites in `## Tests`, which remain fine to build/run. UI blackbox
+coverage (`ui_tests/`) is added as its own later step — don't write or run it as part of a
+feature/fix unless explicitly asked to.
+
 ## Build
 
 Requires `VCPKG_ROOT` set to a vcpkg checkout, and either a Visual Studio Developer PowerShell or MSVC
