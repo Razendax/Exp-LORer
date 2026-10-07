@@ -121,9 +121,19 @@ class AutomationID:
     SEARCH_CRITERIA_PANEL = "searchCriteriaPanel"
     SEARCH_NAME_EDIT = "searchNameEdit"
     SEARCH_MIN_SIZE_SPIN = "searchMinSizeSpin"
+    SEARCH_MIN_SIZE_UNIT_COMBO = "searchMinSizeUnitCombo"
     SEARCH_MAX_SIZE_SPIN = "searchMaxSizeSpin"
+    SEARCH_MAX_SIZE_UNIT_COMBO = "searchMaxSizeUnitCombo"
     SEARCH_SUBMIT_BUTTON = "searchSubmitButton"
     ADVANCED_SEARCH_CLOSE_BUTTON = "advancedSearchCloseButton"
+    # Match Case/Whole Word/Exact Name/Match Regex/Skip Git-Ignored toggles (Architecture.md
+    # §14.56) -- same behavior as the Search tab's own 5 buttons above, but distinct object
+    # names/instances since both panels can be visible at once.
+    ADVANCED_SEARCH_MATCH_CASE_BUTTON = "advancedSearchMatchCaseButton"
+    ADVANCED_SEARCH_WHOLE_WORD_BUTTON = "advancedSearchWholeWordButton"
+    ADVANCED_SEARCH_EXACT_NAME_BUTTON = "advancedSearchExactNameButton"
+    ADVANCED_SEARCH_REGEX_BUTTON = "advancedSearchRegexButton"
+    ADVANCED_SEARCH_SKIP_GIT_IGNORED_BUTTON = "advancedSearchSkipGitIgnoredButton"
     SEARCH_TAG_EDIT = "searchTagEdit"
     BOTTOM_PANEL = "bottomPanelWidget"
     # Index-derived (BottomPanelWidget::addPanelTab), in registration order: Terminal is tab 0,

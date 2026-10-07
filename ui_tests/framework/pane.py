@@ -132,13 +132,26 @@ class AdvancedSearchPanel:
     all, breaking `read_details_rows`' fixed 8-cells-per-row assumption.
     """
 
+    # Fixed display order of SearchCriteriaPanel's size unit combos (addItems() call in the
+    # constructor) -- used by set_min_size/set_max_size's `unit` argument via select_combo_item.
+    _SIZE_UNIT_ORDER = ["KB", "MB", "GB"]
+
     def __init__(self, container: Callable[[], object]):
         self._panel = Element(container, AutomationID.SEARCH_CRITERIA_PANEL)
         self.name_edit = Element(container, AutomationID.SEARCH_NAME_EDIT)
         self.min_size_spin = Element(container, AutomationID.SEARCH_MIN_SIZE_SPIN)
+        self.min_size_unit_combo = Element(container, AutomationID.SEARCH_MIN_SIZE_UNIT_COMBO)
         self.max_size_spin = Element(container, AutomationID.SEARCH_MAX_SIZE_SPIN)
+        self.max_size_unit_combo = Element(container, AutomationID.SEARCH_MAX_SIZE_UNIT_COMBO)
         self.submit_button = Element(container, AutomationID.SEARCH_SUBMIT_BUTTON)
         self.close_button = Element(container, AutomationID.ADVANCED_SEARCH_CLOSE_BUTTON)
+        # Match Case/Whole Word/Exact Name/Match Regex/Skip Git-Ignored toggles (Architecture.md
+        # §14.56) -- same ExclusiveOptional behavior as `LeftPanel.search`'s equivalent 5 buttons.
+        self.match_case_button = Element(container, AutomationID.ADVANCED_SEARCH_MATCH_CASE_BUTTON)
+        self.whole_word_button = Element(container, AutomationID.ADVANCED_SEARCH_WHOLE_WORD_BUTTON)
+        self.exact_name_button = Element(container, AutomationID.ADVANCED_SEARCH_EXACT_NAME_BUTTON)
+        self.regex_button = Element(container, AutomationID.ADVANCED_SEARCH_REGEX_BUTTON)
+        self.skip_git_ignored_button = Element(container, AutomationID.ADVANCED_SEARCH_SKIP_GIT_IGNORED_BUTTON)
         self.tag_edit = Element(container, AutomationID.SEARCH_TAG_EDIT)
         self.results_pane = Element(container, AutomationID.ADVANCED_SEARCH_RESULTS_PANE)
         self._results_tree_view = Element(lambda: self.results_pane.raw, AutomationID.FILE_TREE_VIEW)
@@ -167,6 +180,27 @@ class AdvancedSearchPanel:
     def set_max_size_kb(self, value: int) -> None:
         self.max_size_spin.click()
         self.max_size_spin.raw.type_keys("^a{DELETE}" + str(value))
+
+    def set_min_size(self, value: int, unit: str = "KB") -> None:
+        """Like `set_min_size_kb`, but also switches the Min size unit combo (Architecture.md
+        §14.56) to `unit` ("KB"/"MB"/"GB") first when it isn't already KB -- the combo is
+        sticky UI-only state, so a fresh panel always starts on KB.
+        """
+        if unit != "KB":
+            from .combo_box import select_combo_item
+
+            select_combo_item(self.min_size_unit_combo.raw, unit, self._SIZE_UNIT_ORDER)
+        self.set_min_size_kb(value)
+
+    def set_max_size(self, value: int, unit: str = "KB") -> None:
+        """Like `set_max_size_kb`, but also switches the Max size unit combo to `unit` first --
+        see `set_min_size`.
+        """
+        if unit != "KB":
+            from .combo_box import select_combo_item
+
+            select_combo_item(self.max_size_unit_combo.raw, unit, self._SIZE_UNIT_ORDER)
+        self.set_max_size_kb(value)
 
     def submit(self) -> None:
         self.submit_button.click()

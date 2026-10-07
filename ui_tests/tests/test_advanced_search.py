@@ -1,5 +1,8 @@
 """Coverage for the Advanced (criteria) Search pane (`SearchCriteriaPanel` + its in-place results,
-Architecture.md §14.19/§14.20) and its async scan busy-state (§14.38).
+Architecture.md §14.19/§14.20), its async scan busy-state (§14.38), and its KB/MB/GB size-unit
+combo, live-edit debounce, and empty-criteria-shows-current-folder fix (§14.56). The Match Case/
+Whole Word/Exact Name/Match Regex/Skip Git-Ignored toggles §14.56 also added are covered
+separately in `test_advanced_search_match_options.py`.
 
 Uses `ExpLorerFreshAppTestCase`: the pane's criteria/results state is per-tab but the Search tab's
 own query-box text is window-wide state a shared instance would carry from one test method into
@@ -100,6 +103,96 @@ class TestAdvancedSearchPanel(ExpLorerFreshAppTestCase):
         assert search.search_bar.text == "quickmatch"
         search.press_enter()
         wait_until(lambda: search.result_names() == ["quickmatch.txt"])
+
+
+class TestAdvancedSearchSizeUnit(ExpLorerFreshAppTestCase):
+    """Architecture.md §14.56: the Min/Max size fields are now a plain magnitude plus a KB/MB/GB
+    unit combo (replacing a single fixed-KB spin box) -- confirms the combo's selection actually
+    changes the byte multiplier used for filtering, not just the displayed number.
+    """
+
+    def test_min_max_size_range_narrows_results_with_mb_unit(self, tmp_path: Path) -> None:
+        root = tmp_path / "root"
+        root.mkdir()
+        (root / "small.bin").write_bytes(b"x" * (512 * 1024))  # 0.5 MB
+        (root / "medium.bin").write_bytes(b"x" * (2 * 1024 * 1024))  # 2 MB
+        (root / "large.bin").write_bytes(b"x" * (10 * 1024 * 1024))  # 10 MB
+
+        self.app.navigation.navigate_to(str(root))
+        self.app.left_panel.search.click_advanced_search()
+        adv = self.app.panes.a.advanced_search
+
+        # If the unit combo's selection were ignored (treated as still KB), both medium.bin and
+        # large.bin would pass a "min 1" bound -- this value only excludes small.bin once MB is
+        # actually honored.
+        adv.set_min_size(1, unit="MB")
+        adv.set_max_size(5, unit="MB")
+        adv.submit()
+        wait_until(lambda: adv.result_names() == ["medium.bin"])
+
+
+class TestAdvancedSearchLiveEditDebounce(ExpLorerFreshAppTestCase):
+    """Architecture.md §14.56: editing the Name or size fields now live-refines results after a
+    short debounce, same as the quick Search tab -- without pressing the Search button or Enter.
+    """
+
+    def test_editing_name_field_without_submitting_narrows_results(self, tmp_path: Path) -> None:
+        root = tmp_path / "root"
+        root.mkdir()
+        (root / "alpha.txt").write_text("x")
+        (root / "beta.txt").write_text("x")
+
+        self.app.navigation.navigate_to(str(root))
+        self.app.left_panel.search.click_advanced_search()
+        adv = self.app.panes.a.advanced_search
+
+        adv.set_name("alpha")
+        # Deliberately no adv.submit()/Enter -- the debounce timer alone must trigger the re-scan.
+        wait_until(lambda: adv.result_names() == ["alpha.txt"])
+
+    def test_editing_size_field_without_submitting_narrows_results(self, tmp_path: Path) -> None:
+        root = tmp_path / "root"
+        root.mkdir()
+        (root / "small.bin").write_bytes(b"x" * 100)
+        (root / "large.bin").write_bytes(b"x" * 50000)
+
+        self.app.navigation.navigate_to(str(root))
+        self.app.left_panel.search.click_advanced_search()
+        adv = self.app.panes.a.advanced_search
+
+        adv.set_min_size_kb(10)
+        wait_until(lambda: adv.result_names() == ["large.bin"])
+
+
+class TestAdvancedSearchEmptyCriteriaShowsCurrentFolder(ExpLorerFreshAppTestCase):
+    """Architecture.md §14.56: clearing every field back to empty while the pane is already
+    active must show the current folder's plain, non-recursive listing -- previously this fell
+    through to showing the *entire* cached recursive-scan snapshot instead (every file found
+    while searching, not just the current folder's own direct children).
+    """
+
+    def test_clearing_name_field_after_a_recursive_search_reverts_to_plain_folder_listing(self, tmp_path: Path) -> None:
+        root = tmp_path / "root"
+        root.mkdir()
+        (root / "top.txt").write_text("x")
+        (root / "sub").mkdir()
+        (root / "sub" / "nested.txt").write_text("x")
+
+        self.app.navigation.navigate_to(str(root))
+        self.app.left_panel.search.click_advanced_search()
+        adv = self.app.panes.a.advanced_search
+
+        # Triggers a real recursive scan whose candidate snapshot includes both top.txt and
+        # sub/nested.txt, even though only nested.txt matches the "nested" query.
+        adv.set_name("nested")
+        adv.submit()
+        wait_until(lambda: adv.result_names() == ["nested.txt"])
+
+        # Clearing the field (not closing the panel) must show the current folder's own plain
+        # listing ("sub" the folder, "top.txt") -- not the recursive snapshot's flattened
+        # ["nested.txt", "top.txt"], which would be the pre-fix, buggy result.
+        adv.set_name("")
+        wait_until(lambda: sorted(adv.result_names()) == ["sub", "top.txt"])
 
 
 class TestAdvancedSearchAsync(ExpLorerFreshAppTestCase):
