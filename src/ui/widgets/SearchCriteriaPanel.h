@@ -4,13 +4,16 @@
 
 #include <QWidget>
 
+#include "NameSearchOptions.h"
 #include "SearchCriteria.h"
 #include "Tag.h"
 
 class QLineEdit;
 class QSpinBox;
+class QComboBox;
 class QPushButton;
 class QToolButton;
+class QTimer;
 class FlowLayout;
 class UiThemeChangeNotifier;
 
@@ -60,17 +63,47 @@ signals:
 
 private:
     SearchCriteria currentCriteria() const;
+    // Emits criteriaEdited immediately. Called directly by the toggle buttons (discrete clicks,
+    // like SearchPanelWidget's options row) and by m_criteriaDebounceTimer's timeout for Name/size
+    // field edits (continuous typing/spinning, debounced -- see scheduleCriteriaEdited).
     void onAnyFieldEdited();
+    // Name/size field edits funnel through here instead of onAnyFieldEdited directly: restarts
+    // m_criteriaDebounceTimer (Architecture.md §14.56) so a live re-scan isn't kicked off on every
+    // keystroke/arrow-click, except an empty Name field, which bypasses the debounce so clearing it
+    // reverts to the plain folder listing immediately (matches the Search button/Enter path).
+    void scheduleCriteriaEdited(bool bypassDebounceIfTextEmpty = false);
     static void clearLayout(FlowLayout* layout);
 
     // Re-applies m_closeButton's UiColors::current()-based stylesheet (Architecture.md §14.50).
     void applyThemeColors();
 
+    // Ports SearchPanelWidget::onMatchModeButtonToggled's hand-rolled "exclusive but deselectable"
+    // behavior for Whole Word/Exact Name/Regex (Architecture.md §14.56) -- same vendored-Qt
+    // QButtonGroup limitation (no ExclusionPolicy::ExclusiveOptional).
+    void onMatchModeButtonToggled(QToolButton* button, bool checked);
+
     QLineEdit* m_nameEdit = nullptr;
-    QSpinBox* m_minSizeKbSpin = nullptr;
-    QSpinBox* m_maxSizeKbSpin = nullptr;
+    // Plain magnitude + unit combo (KB/MB/GB) pair, replacing a single fixed-KB spin box
+    // (Architecture.md §14.56) -- currentCriteria()/setCriteria() convert via the combo's
+    // selection. The combo is sticky UI-only state (not carried by SearchCriteria itself): setCriteria
+    // never changes it, only recomputes the spin box's number against whatever unit is selected.
+    QSpinBox* m_minSizeSpin = nullptr;
+    QComboBox* m_minSizeUnitCombo = nullptr;
+    QSpinBox* m_maxSizeSpin = nullptr;
+    QComboBox* m_maxSizeUnitCombo = nullptr;
     QPushButton* m_searchButton = nullptr;
     QToolButton* m_closeButton = nullptr;
+    // Debounces Name/size field edits (Architecture.md §14.56) -- see scheduleCriteriaEdited.
+    QTimer* m_criteriaDebounceTimer = nullptr;
+
+    // Match Case/Whole Word/Exact Name/Match Regex/Skip Git-Ignored toggles (Architecture.md
+    // §14.56) -- same NameSearchOptions-backed behavior as SearchPanelWidget's equivalent 5
+    // buttons, but distinct object names/instances since both can be on screen at once.
+    QToolButton* m_matchCaseButton = nullptr;
+    QToolButton* m_wholeWordButton = nullptr;
+    QToolButton* m_exactNameButton = nullptr;
+    QToolButton* m_regexButton = nullptr;
+    QToolButton* m_skipGitIgnoredButton = nullptr;
 
     QLineEdit* m_tagSearchEdit = nullptr;
     FlowLayout* m_tagMatchesLayout = nullptr;

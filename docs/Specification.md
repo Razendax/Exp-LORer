@@ -276,19 +276,26 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   and Match regex treats the query as a regular expression. **Match case** is independent and
   combines with any of the above, including the default (off by default, so `File` and `file` match
   each other until it's enabled). Toggle state is per-tab and not persisted across restarts, same as
-  View as tree. These toggles apply only to this Search tab; the Advanced Search pane's Name field
-  (below) is unchanged.
-* **Advanced search pane** (Architecture.md §14.19), unchanged in function from before — a
-  dedicated per-tab pane with Name, Min size, and Max size fields plus a Search button, opened by
-  an "Advanced Search..." button now living beside the Search tab's search bar (Architecture.md
-  §14.42/§14.46) instead of on the main toolbar. The Name field supports `*`/`?` wildcards, same as
-  above; there is no separate Extension field — a `*.ext`-style Name query covers that case.
-  Opening the pane shows the focused tab's current folder contents (a plain, non-recursive
-  listing, not a search) so it doesn't open empty; searching recursively only happens once Search
-  is pressed (or Enter in the Name field). Editing any field afterward live-refines the
-  already-fetched results without re-scanning disk. Results render in a dedicated view, in place of
-  the tab's own folder view — always styled like Details view but with taller rows and the
-  matching part of each Name highlighted — regardless of the tab's own chosen view mode.
+  View as tree. The Advanced Search pane (below) has its own copy of these same 5 toggles, applied
+  independently to its own Name field.
+* **Advanced search pane** (Architecture.md §14.19/§14.56) — a dedicated per-tab pane with Name,
+  Min size, and Max size fields plus a Search button, opened by an "Advanced Search..." button now
+  living beside the Search tab's search bar (Architecture.md §14.42/§14.46) instead of on the main
+  toolbar. The Name field supports `*`/`?` wildcards, same as above; there is no separate Extension
+  field — a `*.ext`-style Name query covers that case. Above the fields, the same 5 toggle buttons
+  as the Search tab (Match whole word/Exact name/Match regex mutually exclusive with each other and
+  the default; Match case independent; Skip git-ignored files/folders independent) narrow how the
+  Name field is interpreted; toggling Skip git-ignored re-scans, since it changes what gets scanned
+  rather than just how results are filtered. Opening the pane, or clearing every field (Name, Min
+  size, Max size, and every tag criterion) back to empty while the pane is already open, shows the
+  focused tab's current folder contents (a plain, non-recursive listing, not a search) — so it's
+  never left showing a stale result set or, worse, every file in the subtree; searching recursively
+  only happens once at least one criterion is set and Search is pressed (or Enter in the Name
+  field, or a field is edited live). Editing any field afterward live-refines the already-fetched
+  results without re-scanning disk, except for the Skip git-ignored toggle noted above. Results
+  render in a dedicated view, in place of the tab's own folder view — always styled like Details
+  view but with taller rows and the matching part of each Name highlighted — regardless of the
+  tab's own chosen view mode.
   **Tag criteria** (Architecture.md §14.20) act as a fourth, ANDed criterion alongside Name/Min
   size/Max size: a "search tags" box lists matching tags (same lookup as the Tag Panel's search,
   but clicking a tag adds it straight to the criteria instead of showing a "+"), and a separate,

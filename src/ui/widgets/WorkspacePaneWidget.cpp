@@ -446,7 +446,8 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
 
     connect(tab, &TabViewModel::advancedSearchResultsChanged, advancedSearchPane,
             [advancedSearchPane, tab](const std::vector<FileNode>&) {
-                advancedSearchPane->setHighlightQuery(QString::fromStdString(tab->advancedSearchCriteria().nameQuery));
+                const SearchCriteria& criteria = tab->advancedSearchCriteria();
+                advancedSearchPane->setHighlightQuery(QString::fromStdString(criteria.nameQuery), criteria.nameOptions.caseSensitive);
             });
 
     connect(tab, &TabViewModel::advancedSearchCriteriaChanged, advancedSearchPane,

@@ -188,7 +188,7 @@ std::vector<FileNode> FileNavigationUseCase::filterBySizeRange(std::vector<FileN
 
 std::vector<FileNode> FileNavigationUseCase::filterByCriteria(std::vector<FileNode> files, const SearchCriteria& criteria)
 {
-    files = filterByName(std::move(files), criteria.nameQuery);
+    files = filterByName(std::move(files), criteria.nameQuery, criteria.nameOptions);
     files = filterBySizeRange(std::move(files), criteria.minSizeBytes, criteria.maxSizeBytes);
     return files;
 }

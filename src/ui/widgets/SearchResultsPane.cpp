@@ -20,13 +20,13 @@ SearchResultsPane::SearchResultsPane(FileListModel* resultsModel, UiThemeChangeN
     layout->addWidget(m_browserView);
 }
 
-void SearchResultsPane::setHighlightQuery(const QString& query)
+void SearchResultsPane::setHighlightQuery(const QString& query, bool caseSensitive)
 {
-    m_browserView->setNameHighlightQuery(query);
+    m_browserView->setNameHighlightQuery(query, caseSensitive);
 }
 
 void SearchResultsPane::setCriteria(const SearchCriteria& criteria, const std::vector<Tag>& criteriaTags)
 {
     m_criteriaPanel->setCriteria(criteria, criteriaTags);
-    setHighlightQuery(QString::fromStdString(criteria.nameQuery));
+    setHighlightQuery(QString::fromStdString(criteria.nameQuery), criteria.nameOptions.caseSensitive);
 }

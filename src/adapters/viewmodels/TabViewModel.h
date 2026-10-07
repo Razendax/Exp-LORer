@@ -343,6 +343,17 @@ private:
     void loadAndApply(const std::filesystem::path& path, HistoryUpdate historyUpdate);
     void emitAvailability();
 
+    // Shared by showAdvancedSearchPanel/startAdvancedSearch/updateAdvancedSearchCriteria/
+    // removeTagSearchCriterion for the "criteria is (now) empty" case (Architecture.md §14.56):
+    // shows a plain non-recursive listing of the current folder and resets every cached-scan
+    // member (mirrors exitAdvancedSearch's cleanup) while keeping m_advancedSearchActive true, so
+    // the pane stays open instead of closing. Emits advancedSearchResultsChanged/
+    // advancedSearchCriteriaChanged at the end so the status bar count and the panel's tag-chip
+    // row stay in sync even when reached from a live edit rather than showAdvancedSearchPanel
+    // itself. On a listDirectory failure, emits advancedSearchFailed and leaves prior state
+    // untouched, same as showAdvancedSearchPanel did before this was extracted.
+    void showCurrentFolderNonRecursive();
+
     // Connected to directoryContentsChanged (normal browsing only -- not the search result
     // signals, per the v1 scope cut). Dispatches a background git-status scan for `path` and
     // applies the result to m_fileListModel once it comes back, dropping stale replies for a path

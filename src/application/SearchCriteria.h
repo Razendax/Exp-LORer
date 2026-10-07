@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "NameSearchOptions.h"
 #include "Tag.h"
 
 // Criteria for the advanced (criteria) search pane (Architecture.md §14.19). Plain C++ struct, no
@@ -17,4 +18,9 @@ struct SearchCriteria
 
     // AND semantics, mirrors ITagRepository::findFilesWithAllTags; empty = no tag filter.
     std::vector<Tag::Id> tagIds;
+
+    // Match Case/Whole Word/Exact Name/Match Regex/Skip Git-Ignored toggles for nameQuery
+    // (Architecture.md §14.56), same type the Search tab's NameSearchOptions already uses.
+    // Default-constructed keeps the pre-existing Contains/case-insensitive behavior.
+    NameSearchOptions nameOptions;
 };

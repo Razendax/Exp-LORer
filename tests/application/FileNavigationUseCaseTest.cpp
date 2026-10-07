@@ -481,6 +481,28 @@ TEST(FileNavigationUseCase, FilterByCriteriaComposesBothFilters)
     EXPECT_EQ(filtered[1].name(), "report.txt");
 }
 
+// Regression: Advanced Search's match-mode toggles (Architecture.md §14.56) must take effect via
+// filterByCriteria -> filterByName(..., criteria.nameOptions), not the plain Contains/
+// case-insensitive 2-arg overload it used to call.
+TEST(FileNavigationUseCase, FilterByCriteriaHonorsNameOptionsWholeWordWithSizeBound)
+{
+    std::vector<FileNode> files{
+        makeFile("C:/data/File Name.txt", 50),
+        makeFile("C:/data/FileName.txt", 50),
+        makeFile("C:/data/File Name.txt.small", 5),
+    };
+
+    SearchCriteria criteria;
+    criteria.nameQuery = "File";
+    criteria.minSizeBytes = 10;
+    criteria.nameOptions.mode = NameMatchMode::WholeWord;
+
+    auto filtered = FileNavigationUseCase::filterByCriteria(files, criteria);
+
+    ASSERT_EQ(filtered.size(), 1u);
+    EXPECT_EQ(filtered[0].name(), "File Name.txt");
+}
+
 TEST(FileNavigationUseCase, FilterByCriteriaAllUnsetIsPassthrough)
 {
     std::vector<FileNode> files{ makeFile("C:/data/a.txt", 1), makeFile("C:/data/folder", 0, FileType::Directory) };

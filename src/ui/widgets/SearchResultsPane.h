@@ -26,7 +26,7 @@ public:
     FileBrowserView* browserView() const noexcept { return m_browserView; }
     SearchCriteriaPanel* criteriaPanel() const noexcept { return m_criteriaPanel; }
 
-    void setHighlightQuery(const QString& query);
+    void setHighlightQuery(const QString& query, bool caseSensitive = false);
     void setCriteria(const SearchCriteria& criteria, const std::vector<Tag>& criteriaTags);
 
 private:

@@ -1638,3 +1638,68 @@ current-folder listing.
   coverage — UI/ViewModel glue, the same §11 carve-out already applied to
   `FolderSizeViewModel`/`FolderSizeWidget` and `FragmentationViewModel`/`FragmentationWidget`;
   verified by manual smoke test instead.
+
+### 14.56 Advanced Search: Match-Mode Toggles, Consistent Empty-Criteria Folder View
+
+Two related fixes to §14.19/§14.20's Advanced Search pane, bringing it in line with quick search
+(§14.42/§14.44/§14.45).
+
+* **`SearchCriteria` gains a `NameSearchOptions nameOptions` member** (`src/application/
+  SearchCriteria.h`). `FileNavigationUseCase::filterByCriteria` now calls the options-aware
+  `filterByName(files, query, options)` overload (§14.44) instead of the plain 2-arg one — the
+  only change needed at the pure-filter layer, since that overload already existed for quick
+  search and default-constructs to the historical Contains/case-insensitive behavior.
+* **`SearchCriteriaPanel` gains the same 5 toggle buttons as `SearchPanelWidget`**: Match Case
+  (`Aa`), Whole Word (`ab`), Exact Name (`=`), Match Regex (`.*`), and Skip Git-Ignored (`.gi`),
+  in a new row between the Name/size fields and the tag-search box. Whole Word/Exact Name/Regex
+  are mutually exclusive with each other (and deselectable by re-clicking the active one), Match
+  Case and Skip Git-Ignored are independent — the exact same hand-rolled "exclusive but
+  deselectable" logic `SearchPanelWidget::onMatchModeButtonToggled` uses, for the same reason
+  (this vendored Qt build's `QButtonGroup` has no `ExclusionPolicy::ExclusiveOptional`). Object
+  names are distinct from the Search tab's own 5 buttons (`advancedSearchMatchCaseButton`, etc.)
+  since both panels can be visible at once. No new signal: toggling any of the 5 routes through
+  the existing `onAnyFieldEdited` → `criteriaEdited(currentCriteria())` path, same as editing
+  Name/Min size/Max size — `currentCriteria()` now also reads `nameOptions` from button state, and
+  `setCriteria()` resyncs all 5 buttons' checked state (signal-blocked) alongside the other fields.
+* **Skip Git-Ignored forces a rescan, same as quick search's `setSearchOptions`.**
+  `TabViewModel::updateAdvancedSearchCriteria` compares the incoming `nameOptions.skipGitIgnored`
+  against the previous value and passes `forceRescan=true` to `runAdvancedSearch` when it changed
+  — pruning changes what the recursive walk *visits*, so neither a pruned nor unpruned prior
+  snapshot can serve the other state from memory. `startAdvancedSearch` already force-rescans
+  unconditionally (Search button/Enter), so it needs no extra handling. `runAdvancedSearch`'s
+  non-tag branch now forwards `m_advancedSearchCriteria.nameOptions.skipGitIgnored` as
+  `requestRecursiveScan`'s existing (previously unused here) `skipGitIgnored` argument. The
+  tag-first branch is unaffected — it answers from the tag database, not a folder walk, so
+  Skip Git-Ignored has no effect when tag criteria drive the result set.
+* **Empty criteria now always shows the current folder, never "every file scanned so far."**
+  Previously, only the pane's *initial* open (`showAdvancedSearchPanel`) showed a plain
+  non-recursive listing of the current folder; clearing every field back to empty while already
+  active fell through to `filterByCriteria`'s all-no-op behavior, which surfaced the *entire*
+  cached recursive-scan snapshot instead. `showAdvancedSearchPanel`'s current-folder-listing body
+  is now a shared private `TabViewModel::showCurrentFolderNonRecursive()`, additionally resetting
+  every piece of cached scan state (`m_advancedSearchSnapshot`/`m_advancedSearchPartialSnapshot`/
+  `m_advancedSearchSnapshotTags`/`m_advancedSearchRoot`/`m_advancedSearchCachedTagIds`/
+  `m_advancedSearchFullScanDone`/`m_advancedSearchScanPending`, and bumping
+  `m_advancedSearchGeneration` to discard any scan still in flight) so a later non-empty criteria
+  always triggers a fresh scan rather than reusing a stale one — the same cleanup
+  `exitAdvancedSearch` does, minus flipping `m_advancedSearchActive` off. It emits
+  `advancedSearchResultsChanged`/`advancedSearchCriteriaChanged` at the end, the same tail
+  `applyAdvancedSearchFilter` uses, so the status bar count and the tag-chip row stay correct even
+  when reached via a live edit rather than the pane's initial open. Called (guarded by the
+  existing `isCriteriaEmpty` helper) from `startAdvancedSearch`, `updateAdvancedSearchCriteria`,
+  and `removeTagSearchCriterion` (removing the last tag criterion with nothing else set) in
+  addition to `showAdvancedSearchPanel` itself; `addTagSearchCriterion` needed no change, since
+  adding a tag can never leave criteria empty.
+* **Highlight case-sensitivity**: `SearchResultsPane::setHighlightQuery` gains a
+  `caseSensitive = false` parameter forwarded to `FileBrowserView::setNameHighlightQuery` (which
+  already supported it); `SearchResultsPane::setCriteria` and the `advancedSearchResultsChanged`
+  connection in `WorkspacePaneWidget::addPageForTab` pass `criteria.nameOptions.caseSensitive`
+  through, matching how `SearchPanelWidget` already threads its own Match Case state into quick
+  search's result highlighting.
+* **Not built:** Skip Git-Ignored pruning the tag-first branch (no folder walk happens there to
+  prune); persisting the 5 toggles' state across restarts (matches every other Advanced Search
+  field's existing exclusion, §14.19).
+* **Testing**: `FileNavigationUseCaseTest.cpp` gets a new `filterByCriteria` case asserting
+  `nameOptions` (e.g. `WholeWord`/`ExactName`) combines correctly with a size bound, mirroring the
+  existing options-aware `filterByName` coverage. The `TabViewModel`/`SearchCriteriaPanel` changes
+  stay under the existing §11 UI/ViewModel-glue carve-out — verified by manual smoke test.

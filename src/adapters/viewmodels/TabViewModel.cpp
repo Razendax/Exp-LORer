@@ -505,11 +505,16 @@ void TabViewModel::showAdvancedSearchPanel()
     }
 
     exitSearch();
+    showCurrentFolderNonRecursive();
 
-    // Not a real (recursive) search -- just a non-recursive listing of the current folder so the
-    // pane doesn't open empty. m_advancedSearchRoot/m_advancedSearchSnapshot stay unset, so the
-    // first real search (startAdvancedSearch/updateAdvancedSearchCriteria/addTagSearchCriterion)
-    // still performs its own recursive scan.
+    m_advancedSearchActive = true;
+    setSelectedEntries({});
+    emit advancedSearchModeChanged(true);
+}
+
+void TabViewModel::showCurrentFolderNonRecursive()
+{
+    // Not a real (recursive) search -- just a non-recursive listing of the current folder.
     const std::filesystem::path path = currentPath();
     auto result = m_fileNavigationUseCase.listDirectory(path);
     if (result.hasError())
@@ -518,25 +523,45 @@ void TabViewModel::showAdvancedSearchPanel()
         return;
     }
 
+    // Discards any in-flight/cached scan -- mirrors exitAdvancedSearch's cleanup, but
+    // m_advancedSearchActive/m_advancedSearchCriteria are left untouched by this function (the
+    // pane stays open, and the criteria that led here, e.g. all-empty fields, is still whatever
+    // the caller already set).
+    m_advancedSearchSnapshot.clear();
+    m_advancedSearchPartialSnapshot.clear();
+    m_advancedSearchSnapshotTags.clear();
+    m_advancedSearchRoot.clear();
+    m_advancedSearchCachedTagIds.clear();
+    m_advancedSearchFullScanDone = false;
+    m_advancedSearchScanPending = false;
+    ++m_advancedSearchGeneration;
+
     auto sorted = FileNavigationUseCase::sortBy(std::move(result).value(), SortCriterion::Name, true);
     m_advancedSearchResultsModel->setEntries(path, sorted);
     requestAdvancedSearchResultTags(m_advancedSearchGeneration, sorted);
 
-    m_advancedSearchActive = true;
-    setSelectedEntries({});
-    emit advancedSearchModeChanged(true);
+    emit advancedSearchResultsChanged(sorted);
+    emit advancedSearchCriteriaChanged(m_advancedSearchCriteria);
 }
 
 void TabViewModel::startAdvancedSearch(const SearchCriteria& criteria)
 {
-    if (isCriteriaEmpty(criteria))
-    {
-        return;
-    }
-
     exitSearch();
 
     m_advancedSearchCriteria = criteria;
+
+    if (isCriteriaEmpty(criteria))
+    {
+        if (!m_advancedSearchActive)
+        {
+            m_advancedSearchActive = true;
+            setSelectedEntries({});
+            emit advancedSearchModeChanged(true);
+        }
+        showCurrentFolderNonRecursive();
+        return;
+    }
+
     runAdvancedSearch(/*forceRescan=*/true);
 }
 
@@ -547,8 +572,17 @@ void TabViewModel::updateAdvancedSearchCriteria(const SearchCriteria& criteria)
         return;
     }
 
+    const bool skipGitIgnoredChanged = criteria.nameOptions.skipGitIgnored != m_advancedSearchCriteria.nameOptions.skipGitIgnored;
+
     m_advancedSearchCriteria = criteria;
-    runAdvancedSearch(/*forceRescan=*/false);
+
+    if (isCriteriaEmpty(criteria))
+    {
+        showCurrentFolderNonRecursive();
+        return;
+    }
+
+    runAdvancedSearch(/*forceRescan=*/skipGitIgnoredChanged);
 }
 
 void TabViewModel::exitAdvancedSearch()
@@ -610,7 +644,14 @@ void TabViewModel::removeTagSearchCriterion(Tag::Id tagId)
 
     if (m_advancedSearchActive)
     {
-        runAdvancedSearch(/*forceRescan=*/false);
+        if (isCriteriaEmpty(m_advancedSearchCriteria))
+        {
+            showCurrentFolderNonRecursive();
+        }
+        else
+        {
+            runAdvancedSearch(/*forceRescan=*/false);
+        }
     }
 }
 
@@ -715,7 +756,8 @@ void TabViewModel::runAdvancedSearch(bool forceRescan)
             [this, generation](Result<std::vector<FileNode>> result) {
                 onAdvancedSearchCandidatesReady(generation, std::move(result), /*isNewSnapshot=*/true);
             },
-            [this, generation](std::vector<FileNode> partial) { onAdvancedSearchProgress(generation, std::move(partial)); });
+            [this, generation](std::vector<FileNode> partial) { onAdvancedSearchProgress(generation, std::move(partial)); },
+            m_advancedSearchCriteria.nameOptions.skipGitIgnored);
         return;
     }
 
