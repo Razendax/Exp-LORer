@@ -224,6 +224,16 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   action that sends the chosen copies to the Recycle Bin. No duplicate index is cached — every scan
   reads the live filesystem, since pairing a stale result with a delete action would be a
   correctness risk.
+* **Bulk/batch rename (Architecture.md §14.55):** rename several files/folders at once — find/
+  replace (plain or regex, with optional case-sensitivity), a sequential counter (start value, step,
+  zero-padded digits, prefix or suffix position), a case transform (UPPERCASE/lowercase/Title Case),
+  and an extension override, combined into one pattern and applied to every selected item. A live
+  preview table shows each item's current and proposed name before anything is renamed, flagging any
+  proposed name that's unchanged, invalid, or collides with another item (in the same batch or
+  already on disk); renaming is disabled until every flagged row is resolved. Reached either from the
+  item context menu's "Bulk Rename..." entry (enabled once 2+ items are selected — single-item
+  rename stays F2/"Rename") or from `Tools > Bulk Rename...`, which uses the current selection if 2+
+  items are selected, otherwise the whole current folder's listing.
 * **Right-click context menu** on a file, a folder, or empty space within a directory view, drawn
   as the app's own custom menu rather than the OS's native popup (Architecture.md §14.13). Content
   is still sourced from the Windows Registry, so it varies by file type and differs between a file,

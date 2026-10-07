@@ -103,6 +103,11 @@ signals:
     // §14.34).
     void gitOperationFailed(const QString& message);
 
+    // "Bulk Rename..." on the item context menu (Architecture.md §14.55), bubbled up so MainWindow
+    // can build the transient BulkRenameViewModel/BulkRenameDialog pair -- same bubble-up posture as
+    // navigationFailed.
+    void bulkRenameRequested(TabViewModel* tab, const std::vector<std::filesystem::path>& paths);
+
 private:
     void createViewModeActions();
     QToolBar* createToolBar();

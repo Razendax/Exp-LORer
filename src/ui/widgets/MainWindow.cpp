@@ -31,6 +31,9 @@
 #include <QWidgetAction>
 
 #include "AppConfigStore.h"
+#include "BulkRenameDialog.h"
+#include "BulkRenameUseCase.h"
+#include "BulkRenameViewModel.h"
 #include "DriveSpaceInfoWorker.h"
 #include "DuplicateFinderDialog.h"
 #include "FavoritesViewModel.h"
@@ -239,7 +242,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
                          NotificationSettingsViewModel& notificationSettingsViewModel,
                          ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, DiskUsageService& diskUsageService,
                          DuplicateFinderService& duplicateFinderService, FragmentationService& fragmentationService,
-                         const AppConfig& initialConfig, QWidget* parent)
+                         BulkRenameUseCase& bulkRenameUseCase, const AppConfig& initialConfig, QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceController(workspaceController)
     , m_configStore(configStore)
@@ -256,6 +259,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_diskUsageService(diskUsageService)
     , m_duplicateFinderService(duplicateFinderService)
     , m_fragmentationService(fragmentationService)
+    , m_bulkRenameUseCase(bulkRenameUseCase)
     , m_columnWidths(initialConfig.detailsColumnWidths)
     , m_columnOrder(initialConfig.detailsColumnOrder)
     , m_initialLeftPanelState(initialConfig.leftPanel)
@@ -435,6 +439,7 @@ void MainWindow::createMenuBar()
     createFavoritesMenu();
     QMenu* toolsMenu = menuBar()->addMenu(tr("&Tools"));
     toolsMenu->addAction(tr("Find &Duplicate Files..."), this, &MainWindow::showDuplicateFinderDialog);
+    toolsMenu->addAction(tr("&Bulk Rename..."), this, &MainWindow::showBulkRenameDialogFromMenu);
     menuBar()->addMenu(tr("&Help"));
 }
 
@@ -568,6 +573,8 @@ void MainWindow::createWorkspace()
     {
         connect(m_workspaceLayoutWidget->paneWidget(id), &WorkspacePaneWidget::navigationFailed, this, &MainWindow::onStatusMessage);
         connect(m_workspaceLayoutWidget->paneWidget(id), &WorkspacePaneWidget::gitOperationFailed, this, &MainWindow::onStatusMessage);
+        connect(m_workspaceLayoutWidget->paneWidget(id), &WorkspacePaneWidget::bulkRenameRequested, this,
+                &MainWindow::onBulkRenameRequested);
     }
 
     connect(m_workspaceController->fileOperationsController(), &FileOperationsController::operationFailed, this,
@@ -728,6 +735,57 @@ void MainWindow::showDuplicateFinderDialog()
     m_duplicateFinderDialog->show();
     m_duplicateFinderDialog->raise();
     m_duplicateFinderDialog->activateWindow();
+}
+
+void MainWindow::showBulkRenameDialogFromMenu()
+{
+    TabViewModel* tab = m_workspaceController->focusedTab();
+    if (!tab)
+    {
+        onStatusMessage(tr("No folder is open."));
+        return;
+    }
+
+    if (tab->selectedEntries().size() >= 2)
+    {
+        showBulkRenameDialogFor(tab->selectedEntries());
+        return;
+    }
+
+    auto result = m_workspaceController->fileNavigationUseCase().listDirectory(tab->currentPath());
+    if (result.hasError() || result.value().empty())
+    {
+        onStatusMessage(tr("This folder has nothing to rename."));
+        return;
+    }
+
+    showBulkRenameDialogFor(result.value());
+}
+
+void MainWindow::showBulkRenameDialogFor(const std::vector<FileNode>& selection)
+{
+    if (selection.empty())
+    {
+        return;
+    }
+
+    BulkRenameViewModel viewModel(m_bulkRenameUseCase, *m_workspaceController->fileOperationsController(), selection, this);
+    BulkRenameDialog dialog(&viewModel, this);
+    dialog.exec();
+}
+
+void MainWindow::onBulkRenameRequested(TabViewModel* tab, const std::vector<std::filesystem::path>& paths)
+{
+    // `paths` is already exactly tab->selectedEntries() in path form (WorkspacePaneWidget built it
+    // from that same list) -- resolving back through selectedEntries() avoids a redundant stat() per
+    // path.
+    Q_UNUSED(paths);
+    if (!tab)
+    {
+        return;
+    }
+
+    showBulkRenameDialogFor(tab->selectedEntries());
 }
 
 void MainWindow::showSettingsDialog()

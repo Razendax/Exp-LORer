@@ -53,6 +53,8 @@ add_library(explorer_application STATIC
     DuplicateFinderUseCase.cpp
     FragmentationUseCase.h
     FragmentationUseCase.cpp
+    BulkRenameUseCase.h
+    BulkRenameUseCase.cpp
 )
 
 target_include_directories(explorer_application PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

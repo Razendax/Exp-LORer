@@ -45,6 +45,7 @@ CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir)
     , m_duplicateFinderService(m_duplicateFinderUseCase, m_fileSystemRepository)
     , m_fragmentationScanner(m_fileSystemRepository)
     , m_fragmentationService(m_fragmentationScanner, appDataDir / "explorer.db")
+    , m_bulkRenameUseCase(m_fileSystemRepository)
 {
 }
 

@@ -24,6 +24,11 @@ public:
         std::function<void()> rename;
         std::function<void()> deleteItems;
 
+        // "Bulk Rename..." (Architecture.md §14.55) -- only enabled when 2+ items are selected,
+        // same precedent as Cut/Copy/Delete already acting on the whole selection; null disables it
+        // the same way a null rename/deleteItems does.
+        std::function<void()> bulkRename;
+
         // Receives a failure to build the registry-sourced part of the menu (the fixed actions are
         // still shown).
         std::function<void(const QString&)> reportError;

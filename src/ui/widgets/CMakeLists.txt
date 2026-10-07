@@ -67,6 +67,8 @@ add_library(explorer_ui_widgets STATIC
     FragmentationWidget.cpp
     DuplicateFinderDialog.h
     DuplicateFinderDialog.cpp
+    BulkRenameDialog.h
+    BulkRenameDialog.cpp
     PreviewPanelWidget.h
     PreviewPanelWidget.cpp
     FolderPreviewListModel.h

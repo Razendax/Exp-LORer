@@ -26,6 +26,7 @@ public:
         QAction* paste = nullptr;
         QAction* deleteAction = nullptr;
         QAction* rename = nullptr;
+        QAction* bulkRename = nullptr; // "Bulk Rename..." (Architecture.md §14.55), item menu only.
         QAction* newFolder = nullptr;
         QAction* properties = nullptr;
 

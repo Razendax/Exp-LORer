@@ -147,7 +147,7 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
 | Layer | Representative components |
 | --- | --- |
 | Domain | `FileNode`, `Tag`, `MediaMetadata`, `FileTagAssociation` |
-| Application | `FileNavigationUseCase`, `TagManagementUseCase`, `MediaProcessingUseCase`, `DiskUsageUseCase` (§14.40), `FileTransferUseCase` (§14.47), `DuplicateFinderUseCase` (§14.51), `FragmentationUseCase` (§14.52), and their Ports (§2.2) |
+| Application | `FileNavigationUseCase`, `TagManagementUseCase`, `MediaProcessingUseCase`, `DiskUsageUseCase` (§14.40), `FileTransferUseCase` (§14.47), `DuplicateFinderUseCase` (§14.51), `FragmentationUseCase` (§14.52), `BulkRenameUseCase` (§14.55), and their Ports (§2.2) |
 | Adapters | `SQLiteTagRepository`, `StandardFileSystemRepository`, `ShellContextMenuProvider`, `AppConfigStore`, `WindowsDiskUsageScanner`/`SQLiteDiskUsageRepository` (§14.40), `StandardDuplicateFileScanner` (§14.51), `WindowsFragmentationScanner` (§14.52), plus the ViewModels listed in §2.3 |
 | UI (Widgets) | `MainWindow`, `WorkspaceLayoutWidget`, `WorkspacePaneWidget`, `FileBrowserView`, `SidePanelWidget` (left/right panels), `FolderTreeView`, `TagPanelWidget`, `ContextMenuBuilder`/`FileItemContextMenu`, dialogs |
 | UI (QML) | Media viewer (not yet implemented) |
@@ -484,11 +484,11 @@ Section numbers (§14.1–§14.54) are continuous across all three:
   browsing/preview/extraction, per-file/folder font & color decoration, window-wide status bar, git
   status badges, live directory update.
 * **[features/03-monitoring-git-and-productivity.md](features/03-monitoring-git-and-productivity.md)**
-  — §14.34–§14.54: recursive folder monitoring, git branch status/checkout, favorites,
+  — §14.34–§14.55: recursive folder monitoring, git branch status/checkout, favorites,
   notification system, async advanced search, customizable Details-view columns, disk usage/folder
   size, left panel with folder tree, unified search tab, search tab follow-up fixes, quick-search
   match options, quick-search skip-git-ignored toggle, custom copy/move progress, left/right panel
   state persistence, per-tab column visibility persistence, Light/Dark theme, duplicate file finder,
   disk fragmentation viewer, Details-view fragments column, address bar environment-variable
-  expansion.
+  expansion, bulk/batch rename.
 

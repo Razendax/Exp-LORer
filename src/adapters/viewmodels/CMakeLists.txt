@@ -75,6 +75,8 @@ add_library(explorer_adapters_viewmodels STATIC
     FragmentationViewModel.cpp
     FragmentationResultsModel.h
     FragmentationResultsModel.cpp
+    BulkRenameViewModel.h
+    BulkRenameViewModel.cpp
 )
 
 target_include_directories(explorer_adapters_viewmodels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

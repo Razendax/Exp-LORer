@@ -1567,3 +1567,74 @@ the §11 "no assertable return" carve-out) in `tests/adapters/StandardFileSystem
 known variable substituted, unknown variable left literal, two variables in one string, plain text
 unchanged. No new CTest coverage for the `WorkspacePaneWidget` wiring itself — UI/ViewModel glue,
 same posture as §14.21/§14.22; verified by manual smoke test instead.
+
+### 14.55 Bulk/Batch Rename
+
+A new, self-contained tool (same posture as Duplicate Finder §14.51/Fragmentation §14.52) for
+renaming several files/folders in one action — find/replace (plain or regex), a sequential counter,
+a case transform, and an extension override, combined into one pattern applied to every selected
+item with a live before→after preview before anything touches disk. Reachable two ways: the item
+context menu's new "Bulk Rename..." entry (enabled only once 2+ items are selected, same precedent
+as Cut/Copy/Delete already acting on the whole selection — single-item rename stays F2/"Rename",
+§14.13.6), and a new `Tools > Bulk Rename...` menu entry (next to `Find &Duplicate Files...`) that
+uses the current selection if it's 2+ items, otherwise falls back to the focused tab's whole
+current-folder listing.
+
+* **`BulkRenamePattern`** (`src/domain`, new) — a pure, stateless struct holding the pattern
+  (find/replace text + regex/match-case toggles, case transform, counter start/step/digit-
+  padding/position, optional extension override) plus its own `apply(stem, extension, indexInBatch)`
+  logic, applying four fixed stages in order (find/replace → case transform → counter → extension) —
+  same free-standing, UTF-8-in/out style as `GlobMatch`/`RegexMatch`/`WholeWordMatch`. Regex mode
+  compiles `findText` as a `std::wregex` (ECMAScript, same as `RegexMatch`) and substitutes via
+  `std::regex_replace`, so `replaceText` may use `$1..` backreferences; an invalid pattern returns
+  `Result::failure` rather than propagating, same error boundary `RegexMatch::matches` already uses.
+* **`BulkRenameUseCase`** (`src/application`, new) — stateless, depends only on
+  `IFileSystemRepository` (never on another use case, same rule `FileTransferUseCase`/
+  `FilePreviewUseCase` already follow). `computePreview(selection, pattern)` runs `pattern.apply`
+  per item and classifies each result: `InvalidName` for the same forbidden-character set
+  `FileNameEditDelegate`'s `forbiddenCharsPattern` already blocks client-side; `Unchanged` when the
+  proposed name equals the current one; `CollisionWithinBatch` when two proposed names match
+  (case-insensitive, via `UnicodeCaseFold`, same comparator `GlobMatch` uses); `CollisionWithExisting`
+  when `IFileSystemRepository::stat` finds an unrelated sibling already at that name; otherwise `Ok`.
+  Deliberately does **not** attempt a two-phase/temp-name shuffle for a same-batch name swap — such a
+  case is always flagged as a collision and left for the user to resolve (adjust the pattern, or
+  rename in two passes), the same "refuse rather than get clever" posture as the git-checkout-
+  overwrite refusal (Specification.md §2.1). Has no `execute()`: applying the renames reuses
+  `FileOperationsController` below so the existing per-rename tab/folder-tree repoint machinery
+  (§14.41) keeps firing unchanged.
+* **`FileOperationsController::bulkRename`** (new slot) — applies a list of (source, destination)
+  pairs via the same `FileNavigationUseCase::moveFile` single-item call `renamePath` already uses,
+  emitting `pathRenamed` per successful item and one batched `directoryContentsMayHaveChanged` at the
+  end, same aggregated-error posture `pasteInto` already uses for a multi-item batch.
+* **`BulkRenameViewModel`** (`adapters/viewmodels`, new) — thin ViewModel over the use case, same
+  "thin-dialog-over-a-ViewModel" shape as `TagManagerViewModel`/`ManageFavoritesDialog`'s
+  `FavoritesViewModel`: `updatePattern` recomputes the preview and emits `previewChanged` on every
+  pattern edit; `apply` filters to `Ok` entries and calls `FileOperationsController::bulkRename`.
+  Constructed transiently per dialog show, not owned long-lived by `CompositionRoot` — same posture
+  as `TagManagerViewModel` in `MainWindow::showTagManagerDialog`.
+* **`BulkRenameDialog`** (`src/ui/widgets`, new) — modal, pattern controls above a live preview
+  table (Original Name | New Name) rebuilt on every `previewChanged`, same "rebuild on signal"
+  posture as `TagManagerDialog::rebuildTagChips`. A non-`Ok`/`Unchanged` row gets a warning
+  background and a tooltip naming the reason; "Rename" is disabled while any row has one.
+* **Wiring**: `FileItemContextMenu::Callbacks` gains `bulkRename`; its "Bulk Rename..." `QAction` is
+  enabled when `paths.size() > 1 && callbacks.bulkRename`, same `setEnabled` pattern as
+  `renameAction`/`openAction`. `WorkspacePaneWidget::showItemContextMenu` wires it to a new
+  `bulkRenameRequested` signal bubbled up to `MainWindow` (same style as `navigationFailed`);
+  `FolderTreeView`'s context menu leaves it unset, since that selection is always exactly one folder.
+  `MainWindow::showBulkRenameDialogFromMenu` (the Tools-menu entry point) uses
+  `tab->selectedEntries()` when it has 2+ items, else
+  `m_workspaceController->fileNavigationUseCase().listDirectory(tab->currentPath())` — the same
+  use-case accessor `showDuplicateFinderDialog` already uses — for the whole-folder fallback. Both
+  entry points converge on one private `showBulkRenameDialogFor(selection)`.
+* **`CompositionRoot`** gains one new long-lived member, `BulkRenameUseCase`, constructed next to the
+  other `IFileSystemRepository`-only use cases.
+* **Not built:** no saved/reusable rename patterns across sessions; no recursive bulk rename into
+  subfolders (operates on one folder's listing/selection only, same scope as the multi-selection it
+  extends); no undo (consistent with the existing v1 scope exclusion, Specification.md §5).
+* **Testing**: `BulkRenamePattern` gets plain unit tests (`tests/domain`, no fixtures, per §11) for
+  each stage and the fixed stage order; `BulkRenameUseCase::computePreview` gets mocked-`IFileSystemRepository`
+  coverage (`tests/application`, GoogleMock, no Qt/SQLite/disk) for every `EntryStatus` outcome.
+  `BulkRenameViewModel`/`BulkRenameDialog` and the context-menu/Tools-menu wiring get no new CTest
+  coverage — UI/ViewModel glue, the same §11 carve-out already applied to
+  `FolderSizeViewModel`/`FolderSizeWidget` and `FragmentationViewModel`/`FragmentationWidget`;
+  verified by manual smoke test instead.

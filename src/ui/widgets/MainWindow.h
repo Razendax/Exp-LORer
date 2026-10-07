@@ -47,6 +47,7 @@ class DiskUsageService;
 class DuplicateFinderService;
 class DuplicateFinderDialog;
 class FragmentationService;
+class BulkRenameUseCase;
 
 // Application shell: menu bar (File/Edit/View/Favorites/Tools/Help), a small Layout toolbar, and
 // a WorkspaceLayoutWidget as central widget hosting up to 4 independent WorkspacePaneWidget
@@ -65,7 +66,7 @@ public:
                NotificationSettingsViewModel& notificationSettingsViewModel,
                ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, DiskUsageService& diskUsageService,
                DuplicateFinderService& duplicateFinderService, FragmentationService& fragmentationService,
-               const AppConfig& initialConfig, QWidget* parent = nullptr);
+               BulkRenameUseCase& bulkRenameUseCase, const AppConfig& initialConfig, QWidget* parent = nullptr);
     ~MainWindow() override;
 
 protected:
@@ -94,6 +95,15 @@ private:
     void showManageFavoritesDialog();
     void showDuplicateFinderDialog();
 
+    // Tools > Bulk Rename... (Architecture.md §14.55): uses the focused tab's current selection if
+    // it has 2+ items, otherwise falls back to the whole current-folder listing.
+    void showBulkRenameDialogFromMenu();
+
+    // Converges both entry points (the item context menu's "Bulk Rename..." and the Tools-menu
+    // fallback above) on building and exec()ing the transient BulkRenameViewModel/BulkRenameDialog
+    // pair for `selection`. No-op for an empty selection.
+    void showBulkRenameDialogFor(const std::vector<FileNode>& selection);
+
     void onLayoutChanged(SplitLayout layout);
     void onStatusMessage(const QString& message);
     void onFocusedTabChanged(TabViewModel* tab);
@@ -120,6 +130,12 @@ private:
     void onFavoritesTrackedSelectionChanged(const std::vector<FileNode>& entries);
     void onFavoritesTrackedPathChanged(const std::filesystem::path& path);
 
+    // Bubbled up from WorkspacePaneWidget::bulkRenameRequested (Architecture.md §14.55) -- resolves
+    // `paths` back to FileNode via tab->selectedEntries() (the exact list they were built from) and
+    // calls showBulkRenameDialogFor directly, no fallback needed since the context-menu entry is
+    // only enabled for 2+ items.
+    void onBulkRenameRequested(TabViewModel* tab, const std::vector<std::filesystem::path>& paths);
+
     WorkspaceController* m_workspaceController = nullptr;
     AppConfigStore& m_configStore;
     TagManagementUseCase& m_tagManagementUseCase;
@@ -135,6 +151,7 @@ private:
     DiskUsageService& m_diskUsageService;
     DuplicateFinderService& m_duplicateFinderService;
     FragmentationService& m_fragmentationService;
+    BulkRenameUseCase& m_bulkRenameUseCase;
     DuplicateFinderDialog* m_duplicateFinderDialog = nullptr;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;

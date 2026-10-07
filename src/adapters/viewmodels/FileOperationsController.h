@@ -57,6 +57,15 @@ public slots:
     // Rename is just a same-directory move (Architecture.md §14.13) — no new Port method needed.
     void renamePath(const std::filesystem::path& source, const std::filesystem::path& destination);
 
+    // Applies every (source, destination) pair in order via the same FileNavigationUseCase::moveFile
+    // single-item call renamePath() already uses (Architecture.md §14.55). Emits pathRenamed() per
+    // successful item -- so WorkspaceController's existing per-rename tab/tree repoint logic
+    // (§14.41) runs unchanged -- then one directoryContentsMayHaveChanged() for the shared parent
+    // directory at the end, batched, same posture as pasteInto's single aggregated operationFailed
+    // for a multi-item batch. An entry that fails doesn't stop the rest; if any failed, one combined
+    // operationFailed (naming the count and the first failure's message) is emitted at the end.
+    void bulkRename(const std::vector<std::pair<std::filesystem::path, std::filesystem::path>>& renames);
+
     // Builds the registry-sourced entries for a custom QMenu (Architecture.md §14.13); does not
     // touch QMenu/QAction itself — src/ui/widgets/ContextMenuBuilder does that.
     Result<std::vector<ContextMenuEntry>> buildContextMenuForSelection(const std::vector<std::filesystem::path>& paths,

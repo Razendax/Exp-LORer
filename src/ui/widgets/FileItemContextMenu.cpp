@@ -57,6 +57,7 @@ void FileItemContextMenu::show(QWidget* parent, FileOperationsController& fileOp
     auto* pasteAction = new QAction(QObject::tr("Paste"));
     auto* deleteAction = new QAction(QObject::tr("Delete"));
     auto* renameAction = new QAction(QObject::tr("Rename"));
+    auto* bulkRenameAction = new QAction(QObject::tr("Bulk Rename..."));
     auto* propertiesAction = new QAction(QObject::tr("Properties"));
     auto* extractHereAction = new QAction(QObject::tr("Extract Here"));
     auto* extractToAction = new QAction(browsingInsideArchive ? QObject::tr("Extract...") : QObject::tr("Extract to..."));
@@ -81,6 +82,10 @@ void FileItemContextMenu::show(QWidget* parent, FileOperationsController& fileOp
     if (callbacks.rename)
     {
         QObject::connect(renameAction, &QAction::triggered, parent, callbacks.rename);
+    }
+    if (callbacks.bulkRename)
+    {
+        QObject::connect(bulkRenameAction, &QAction::triggered, parent, callbacks.bulkRename);
     }
     QObject::connect(propertiesAction, &QAction::triggered, parent, [controller, targetPath, ownerWindow]() {
         controller->showProperties(targetPath, ownerWindow);
@@ -123,6 +128,11 @@ void FileItemContextMenu::show(QWidget* parent, FileOperationsController& fileOp
     renameAction->setEnabled(singleTarget && !browsingInsideArchive && callbacks.rename);
     propertiesAction->setEnabled(singleTarget && !browsingInsideArchive);
 
+    // Bulk Rename only makes sense for a multi-item selection (Architecture.md §14.55) -- single-
+    // item rename stays F2/"Rename" above, same precedent as Cut/Copy/Delete already acting on the
+    // whole selection.
+    bulkRenameAction->setEnabled(paths.size() > 1 && !browsingInsideArchive && callbacks.bulkRename);
+
     // A read-only, virtual archive location has no real CF_HDROP paths for the OS clipboard, and
     // Cut/Paste/Delete/New Folder/Properties aren't meaningful for it either (Architecture.md
     // §14.28); the UI disables these proactively even though StandardFileSystemRepository also
@@ -139,6 +149,7 @@ void FileItemContextMenu::show(QWidget* parent, FileOperationsController& fileOp
     actions.paste = pasteAction;
     actions.deleteAction = deleteAction;
     actions.rename = renameAction;
+    actions.bulkRename = bulkRenameAction;
     actions.properties = propertiesAction;
     if (selectionIsUnenteredArchives)
     {
@@ -178,8 +189,8 @@ void FileItemContextMenu::show(QWidget* parent, FileOperationsController& fileOp
     }
 
     menu->deleteLater();
-    for (QAction* action :
-         { openAction, cutAction, copyAction, pasteAction, deleteAction, renameAction, propertiesAction, extractHereAction, extractToAction })
+    for (QAction* action : { openAction, cutAction, copyAction, pasteAction, deleteAction, renameAction, bulkRenameAction,
+                              propertiesAction, extractHereAction, extractToAction })
     {
         action->deleteLater();
     }

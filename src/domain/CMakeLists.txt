@@ -25,6 +25,8 @@ add_library(explorer_domain STATIC
     FilePreview.h
     FilePreview.cpp
     DiskUsageNode.h
+    BulkRenamePattern.h
+    BulkRenamePattern.cpp
 )
 
 target_include_directories(explorer_domain PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

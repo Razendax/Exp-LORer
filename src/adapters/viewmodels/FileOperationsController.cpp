@@ -375,6 +375,48 @@ void FileOperationsController::renamePath(const std::filesystem::path& source, c
     emit directoryContentsMayHaveChanged(source.parent_path());
 }
 
+void FileOperationsController::bulkRename(const std::vector<std::pair<std::filesystem::path, std::filesystem::path>>& renames)
+{
+    if (renames.empty())
+    {
+        return;
+    }
+
+    std::size_t failureCount = 0;
+    QString firstFailureMessage;
+    std::filesystem::path sharedParent;
+
+    for (const auto& [source, destination] : renames)
+    {
+        auto result = m_fileNavigationUseCase.moveFile(source, destination);
+        if (result.hasError())
+        {
+            if (failureCount == 0)
+            {
+                firstFailureMessage = QString::fromStdString(result.error().message);
+            }
+            ++failureCount;
+            continue;
+        }
+
+        // pathRenamed first: WorkspaceController renames the folder tree's node in place before the
+        // parent's re-list diff runs, so an expanded subtree survives (Architecture.md §14.41) --
+        // same ordering renamePath() uses.
+        emit pathRenamed(source, destination);
+        sharedParent = source.parent_path();
+    }
+
+    if (!sharedParent.empty())
+    {
+        emit directoryContentsMayHaveChanged(sharedParent);
+    }
+
+    if (failureCount > 0)
+    {
+        emit operationFailed(tr("%1 item(s) could not be renamed: %2").arg(failureCount).arg(firstFailureMessage));
+    }
+}
+
 Result<std::vector<ContextMenuEntry>> FileOperationsController::buildContextMenuForSelection(
     const std::vector<std::filesystem::path>& paths, ContextMenuSourceMode mode)
 {

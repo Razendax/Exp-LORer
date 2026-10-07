@@ -1159,6 +1159,7 @@ void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, FileBrowserView
     callbacks.rename = [browserView, targetPath]() { browserView->beginRename(targetPath); };
     callbacks.deleteItems = [this, tab]() { onDeleteRequested(tab, false); };
     callbacks.reportError = [this](const QString& message) { emit navigationFailed(message); };
+    callbacks.bulkRename = [this, tab, paths]() { emit bulkRenameRequested(tab, paths); };
 
     const bool browsingInsideArchive = ArchiveExtensions::archiveAncestorInPath(tab->currentPath()).has_value();
     FileItemContextMenu::show(this, *m_fileOperationsController, paths, browsingInsideArchive, callbacks, globalPos);

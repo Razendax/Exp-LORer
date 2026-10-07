@@ -5,6 +5,7 @@
 
 #include "AdvancedSearchService.h"
 #include "AppConfigStore.h"
+#include "BulkRenameUseCase.h"
 #include "CachingMediaDecoder.h"
 #include "ColumnVisibilitySettings.h"
 #include "ColumnVisibilitySettingsStore.h"
@@ -88,6 +89,7 @@ public:
     DuplicateFinderService& duplicateFinderService() noexcept { return m_duplicateFinderService; }
     FragmentationService& fragmentationService() noexcept { return m_fragmentationService; }
     FileNavigationUseCase& fileNavigationUseCase() noexcept { return m_fileNavigationUseCase; }
+    BulkRenameUseCase& bulkRenameUseCase() noexcept { return m_bulkRenameUseCase; }
 
 private:
     StandardFileSystemRepository m_fileSystemRepository;
@@ -214,4 +216,10 @@ private:
     // FragmentationWorker, lazily, same as Disk Usage's pattern.
     WindowsFragmentationScanner m_fragmentationScanner;
     FragmentationService m_fragmentationService;
+
+    // Architecture.md §14.55: Bulk/Batch Rename preview computation, directly on the Qt UI thread
+    // (no background work -- it's just pattern.apply() + fast stat() calls, same posture as the
+    // quick-search filters already run synchronously) -- depends only on IFileSystemRepository,
+    // same "never depend on another use case" rule FileTransferUseCase/FilePreviewUseCase follow.
+    BulkRenameUseCase m_bulkRenameUseCase;
 };

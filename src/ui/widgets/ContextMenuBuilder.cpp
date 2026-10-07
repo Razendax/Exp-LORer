@@ -111,7 +111,11 @@ QMenu* ContextMenuBuilder::buildItemMenu(const std::vector<ContextMenuEntry>& en
     {
         menu->addAction(actions.rename);
     }
-    if (actions.deleteAction || actions.rename)
+    if (actions.bulkRename)
+    {
+        menu->addAction(actions.bulkRename);
+    }
+    if (actions.deleteAction || actions.rename || actions.bulkRename)
     {
         menu->addSeparator();
     }
