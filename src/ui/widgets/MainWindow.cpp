@@ -36,6 +36,7 @@
 #include "BulkRenameViewModel.h"
 #include "DriveSpaceInfoWorker.h"
 #include "DuplicateFinderDialog.h"
+#include "EnvironmentVariablesDialog.h"
 #include "FavoritesViewModel.h"
 #include "FileDecorationsViewModel.h"
 #include "FileItemContextMenu.h"
@@ -242,7 +243,8 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
                          NotificationSettingsViewModel& notificationSettingsViewModel,
                          ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, DiskUsageService& diskUsageService,
                          DuplicateFinderService& duplicateFinderService, FragmentationService& fragmentationService,
-                         BulkRenameUseCase& bulkRenameUseCase, const AppConfig& initialConfig, QWidget* parent)
+                         BulkRenameUseCase& bulkRenameUseCase, EnvironmentVariablesViewModel& environmentVariablesViewModel,
+                         const AppConfig& initialConfig, QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceController(workspaceController)
     , m_configStore(configStore)
@@ -260,6 +262,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_duplicateFinderService(duplicateFinderService)
     , m_fragmentationService(fragmentationService)
     , m_bulkRenameUseCase(bulkRenameUseCase)
+    , m_environmentVariablesViewModel(environmentVariablesViewModel)
     , m_columnWidths(initialConfig.detailsColumnWidths)
     , m_columnOrder(initialConfig.detailsColumnOrder)
     , m_initialLeftPanelState(initialConfig.leftPanel)
@@ -440,6 +443,7 @@ void MainWindow::createMenuBar()
     QMenu* toolsMenu = menuBar()->addMenu(tr("&Tools"));
     toolsMenu->addAction(tr("Find &Duplicate Files..."), this, &MainWindow::showDuplicateFinderDialog);
     toolsMenu->addAction(tr("&Bulk Rename..."), this, &MainWindow::showBulkRenameDialogFromMenu);
+    toolsMenu->addAction(tr("&Environment Variables..."), this, &MainWindow::showEnvironmentVariablesDialog);
     menuBar()->addMenu(tr("&Help"));
 }
 
@@ -715,6 +719,12 @@ void MainWindow::showTagManagerDialog()
 void MainWindow::showManageFavoritesDialog()
 {
     ManageFavoritesDialog dialog(&m_favoritesViewModel, this);
+    dialog.exec();
+}
+
+void MainWindow::showEnvironmentVariablesDialog()
+{
+    EnvironmentVariablesDialog dialog(&m_environmentVariablesViewModel, this);
     dialog.exec();
 }
 

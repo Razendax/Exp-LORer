@@ -29,6 +29,8 @@ add_executable(explorer_adapters_tests
     NotificationSettingsTest.cpp
     NotificationSettingsStoreTest.cpp
     ColumnVisibilitySettingsStoreTest.cpp
+    EnvironmentVariablesStoreTest.cpp
+    EnvironmentVariableApplierTest.cpp
     LibGit2StatusProviderTest.cpp
     LibGit2RepositoryTest.cpp
     LibGit2BranchProviderTest.cpp

@@ -24,6 +24,7 @@ class AppConfigStore;
 class HighlightThemeViewModel;
 class FileDecorationsViewModel;
 class FavoritesViewModel;
+class EnvironmentVariablesViewModel;
 class NotificationCenter;
 class NotificationSettingsViewModel;
 class ColumnVisibilitySettingsViewModel;
@@ -66,7 +67,8 @@ public:
                NotificationSettingsViewModel& notificationSettingsViewModel,
                ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, DiskUsageService& diskUsageService,
                DuplicateFinderService& duplicateFinderService, FragmentationService& fragmentationService,
-               BulkRenameUseCase& bulkRenameUseCase, const AppConfig& initialConfig, QWidget* parent = nullptr);
+               BulkRenameUseCase& bulkRenameUseCase, EnvironmentVariablesViewModel& environmentVariablesViewModel,
+               const AppConfig& initialConfig, QWidget* parent = nullptr);
     ~MainWindow() override;
 
 protected:
@@ -94,6 +96,7 @@ private:
     void showSettingsDialog();
     void showManageFavoritesDialog();
     void showDuplicateFinderDialog();
+    void showEnvironmentVariablesDialog();
 
     // Tools > Bulk Rename... (Architecture.md §14.55): uses the focused tab's current selection if
     // it has 2+ items, otherwise falls back to the whole current-folder listing.
@@ -152,6 +155,7 @@ private:
     DuplicateFinderService& m_duplicateFinderService;
     FragmentationService& m_fragmentationService;
     BulkRenameUseCase& m_bulkRenameUseCase;
+    EnvironmentVariablesViewModel& m_environmentVariablesViewModel;
     DuplicateFinderDialog* m_duplicateFinderDialog = nullptr;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;

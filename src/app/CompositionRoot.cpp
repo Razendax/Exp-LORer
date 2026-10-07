@@ -1,8 +1,28 @@
 #include "CompositionRoot.h"
 
+#include "EnvironmentVariableApplier.h"
 #include "TabViewModel.h"
 #include "WorkspaceController.h"
 #include "WorkspacePaneViewModel.h"
+
+namespace
+{
+    // Architecture.md §14.57: the first time environment_variables.json is empty (a fresh install,
+    // or every variable having been deleted), seed it from a snapshot of the process's own current
+    // environment -- so the Environment Variables dialog opens showing the variables that already
+    // exist (PATH, TEMP, ...) rather than blank -- and persist that snapshot immediately so it
+    // becomes the editable baseline from here on, rather than being recomputed on every startup.
+    std::vector<EnvironmentVariable> loadOrSeedEnvironmentVariables(EnvironmentVariablesStore& store)
+    {
+        std::vector<EnvironmentVariable> variables = store.load();
+        if (variables.empty())
+        {
+            variables = EnvironmentVariableApplier::currentProcessEnvironmentSnapshot();
+            store.save(variables);
+        }
+        return variables;
+    }
+}
 
 // Architecture.md §9: explorer.db, config.json, cache/thumbnails/, highlight_theme.json, and
 // file_decorations.json all live directly under appDataDir, resolved once by the caller (main.cpp)
@@ -32,6 +52,9 @@ CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir)
     , m_favoritesStore(appDataDir / "favorites.json")
     , m_favorites(m_favoritesStore.load())
     , m_favoritesViewModel(m_favorites, m_favoritesStore)
+    , m_environmentVariablesStore(appDataDir / "environment_variables.json")
+    , m_environmentVariables(loadOrSeedEnvironmentVariables(m_environmentVariablesStore))
+    , m_environmentVariablesViewModel(m_environmentVariables, m_environmentVariablesStore)
     , m_notificationSettingsStore(appDataDir / "notification_settings.json")
     , m_notificationSettings(m_notificationSettingsStore.load())
     , m_notificationSettingsViewModel(m_notificationSettings, m_notificationSettingsStore)

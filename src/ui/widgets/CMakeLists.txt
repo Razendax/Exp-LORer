@@ -81,6 +81,10 @@ add_library(explorer_ui_widgets STATIC
     FileDecorationRuleDialog.cpp
     ManageFavoritesDialog.h
     ManageFavoritesDialog.cpp
+    EnvironmentVariablesDialog.h
+    EnvironmentVariablesDialog.cpp
+    EditEnvironmentVariableDialog.h
+    EditEnvironmentVariableDialog.cpp
     ToastNotificationWidget.h
     ToastNotificationWidget.cpp
     ProgressNotificationWidget.h

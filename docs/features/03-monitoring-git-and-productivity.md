@@ -7,7 +7,7 @@ redesign of either layer's existing shape) — and is recorded as a decision log
 implementation walkthrough; see git history and the code's own comments (many cite these subsection
 numbers directly) for the detail.
 
-Covers §14.34–§14.52. Preceded by
+Covers §14.34–§14.57. Preceded by
 [01-workspace-navigation-and-search.md](01-workspace-navigation-and-search.md) (§14.1–§14.26)
 and [02-preview-decoration-and-status.md](02-preview-decoration-and-status.md) (§14.27–§14.33).
 
@@ -1703,3 +1703,93 @@ Two related fixes to §14.19/§14.20's Advanced Search pane, bringing it in line
   `nameOptions` (e.g. `WholeWord`/`ExactName`) combines correctly with a size bound, mirroring the
   existing options-aware `filterByName` coverage. The `TabViewModel`/`SearchCriteriaPanel` changes
   stay under the existing §11 UI/ViewModel-glue carve-out — verified by manual smoke test.
+
+### 14.57 Environment Variables (View/Edit, Per-Process)
+
+A new `Tools > Environment Variables...` entry (next to `Find &Duplicate Files...`/
+`&Bulk Rename...`) opens a dialog managing a small custom set of environment variables scoped to
+this running Exp-LORer process only — deliberately **not** the Windows System or User environment
+variables (no registry/`setx` writes, no `ExpandEnvironmentStringsW`-visible-everywhere ambition).
+Each variable has a name plus an ordered list of values joined with `;` for display/storage.
+
+* **`src/adapters/config/EnvironmentVariable.h`** (new) — plain value type: `QString name;
+  QStringList values;`, no Qt object, same posture as `ColumnVisibilitySettings`.
+* **`src/adapters/config/EnvironmentVariablesStore.h/.cpp`** (new) — `load()`/`save()` of
+  `std::vector<EnvironmentVariable>`, built on the existing `JsonFileStore::tryLoad`/`trySave`
+  tolerant-load/atomic-save helper, identical shape to `FavoritesStore`. Persists to
+  `environment_variables.json`, alongside `favorites.json`/`config.json` under `appDataDir` (§9).
+* **`src/adapters/config/EnvironmentVariableApplier.h/.cpp`** (new) — two free functions (not
+  Qt-widget-dependent, so independently testable):
+  * `apply(const std::vector<EnvironmentVariable>&, const std::vector<QString>& previouslyAppliedNames)`:
+    clears every name in `previouslyAppliedNames` via `SetEnvironmentVariableW(name, nullptr)` first
+    (so a removed/renamed variable doesn't linger), then sets each current variable via
+    `SetEnvironmentVariableW(name, values.join(";"))`.
+  * `currentProcessEnvironmentSnapshot()`: reads every variable already in the process's own
+    environment via `GetEnvironmentStringsW`, splitting each value on `";"` the same way `apply`
+    joins values back together, and skipping Windows' hidden per-drive pseudo-variables (name
+    starting with `"="`, e.g. `"=C:=C:\Users\..."`). Used by `CompositionRoot` (below) to seed the
+    store the first time it's empty, so the dialog opens showing the variables that already exist
+    (`PATH`, `TEMP`, ...) instead of blank — see **Seeding** below.
+
+  Both `#ifdef _WIN32`-guarded; the non-Windows branch of each is a no-op/empty, same "Windows-only
+  for now" posture as §14.54's `expandEnvironmentVariables` (Specification.md §1.2).
+* **`src/adapters/config/EnvironmentVariablesViewModel.h/.cpp`** (new, `QObject`) — same
+  constructor shape as `FavoritesViewModel(Favorites&, FavoritesStore&, QObject*)`. Applies the
+  loaded set once in its own constructor (before `CompositionRoot::createWorkspaceController()`
+  ever runs, so before any pane/terminal can exist) and again on every `save()`. Deliberately has
+  **no** granular add/remove/move mutators the way `FavoritesViewModel` does: the dialog below is
+  transactional (explicit OK/Cancel, unlike Favorites' immediate-apply), so it keeps its own
+  working copy and calls `save(std::vector<EnvironmentVariable>)` exactly once, on OK — mirroring
+  Favorites' per-click-persists shape would fight the Cancel requirement.
+* **Why terminals need no code change** — `WindowsConPtyProcess::start()` (backing the integrated
+  terminal, §14.24) already calls `CreateProcessW` with `lpEnvironment = nullptr`, which means the
+  spawned shell inherits this process's current environment block automatically. Since
+  `EnvironmentVariableApplier::apply` calls `SetEnvironmentVariableW` on the real process
+  environment, every terminal started *after* a save already sees these variables with zero
+  changes to `WindowsConPtyProcess`/`TerminalWidget`/`TerminalSessionsWidget`. A terminal already
+  running when a variable is edited does not retroactively pick up the change — expected OS
+  process-creation-time semantics, not a gap. Side benefit, not a tested requirement: address-bar
+  `%VAR%` expansion (§14.54) also sees these variables for free, since it resolves through the same
+  process environment block.
+* **`src/ui/widgets/EnvironmentVariablesDialog.h/.cpp`** (new) — `QTableWidget` (Variable | Value,
+  value column showing `values.join(";")`), a right-aligned New/Edit/Delete button row below it
+  (Edit also fires on double-click; Delete needs no confirmation, same posture as
+  `ManageFavoritesDialog`'s Remove), and OK/Cancel below that. Operates on a local copy of
+  `viewModel->variables()`; New/Edit/Delete only touch that copy; OK calls `viewModel->save(...)`,
+  Cancel discards it untouched. Name is validated non-empty and case-insensitive-unique against
+  sibling rows (Windows variable-name semantics) before a New/Edit is accepted.
+* **`src/ui/widgets/EditEnvironmentVariableDialog.h/.cpp`** (new) — nested editor: a name
+  `QLineEdit` plus a values `QListWidget` with a vertical New/Edit/Delete/Move Up/Move Down button
+  column, same layout idiom as `ManageFavoritesDialog`'s button row, just stacked next to a list
+  instead of under a tree; New/Edit a value via `QInputDialog::getText`, Move Up/Down swap adjacent
+  rows the same way `ManageFavoritesDialog::onMoveUpClicked`/`onMoveDownClicked` do. Standard
+  OK/Cancel at the bottom.
+* **`CompositionRoot`** gains `EnvironmentVariablesStore`/`std::vector<EnvironmentVariable>`/
+  `EnvironmentVariablesViewModel` members (constructed from `appDataDir / "environment_variables.json"`),
+  grouped with the other presentation-only persisted-preference blocks (Favorites/Notification
+  Settings/Column Visibility), plus an `environmentVariablesViewModel()` accessor; `main.cpp` passes
+  it into `MainWindow`'s constructor the same way `favoritesViewModel()` already is.
+* **Seeding**: a plain first pass at this feature left the store empty on a fresh install — the
+  dialog opened with nothing in it, which is surprising for a tool framed as "Environment
+  Variables" rather than "my custom extra variables." `CompositionRoot`'s private
+  `loadOrSeedEnvironmentVariables(EnvironmentVariablesStore&)` helper now calls
+  `EnvironmentVariablesStore::load()` and, only if that comes back empty, replaces it with
+  `EnvironmentVariableApplier::currentProcessEnvironmentSnapshot()` and immediately `save()`s it —
+  so the *first* time the store is empty (a fresh install, or every variable having been deleted),
+  it's seeded once from whatever the process already inherited from Windows, and that snapshot
+  becomes the persisted, user-editable baseline from then on (never recomputed from the live OS
+  environment on a later startup, so edits/deletions stick).
+* **Not built:** no System/User (registry-level) environment variable viewing or editing; no
+  retroactive update of already-running terminals.
+* **Testing**: `EnvironmentVariablesStoreTest.cpp` (tolerant-load + save/load round-trip, same
+  temp-dir shape as `FavoritesStoreTest.cpp`/`ColumnVisibilitySettingsStoreTest.cpp`) and
+  `EnvironmentVariableApplierTest.cpp` (apply, assert via `GetEnvironmentVariableW`; apply a
+  changed set, assert a removed variable is cleared; `currentProcessEnvironmentSnapshot` includes a
+  variable set via `SetEnvironmentVariableW` split correctly on `";"`, and never returns a hidden
+  `"="`-prefixed pseudo-variable) — the same "deterministic, test-controlled environment variable"
+  posture §14.54's `StandardFileSystemRepositoryTest.cpp` already established, not the §11
+  OS-shell-side-effect carve-out. `loadOrSeedEnvironmentVariables`, `EnvironmentVariablesViewModel`,
+  and both dialogs get no new CTest coverage — the first is a one-line `CompositionRoot`-local
+  helper exercising already-tested `EnvironmentVariablesStore`/`EnvironmentVariableApplier` calls,
+  the rest are UI/ViewModel glue, same carve-out already applied to
+  `FavoritesViewModel`/`ManageFavoritesDialog`; verified by manual smoke test instead.

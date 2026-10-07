@@ -29,6 +29,13 @@ add_library(explorer_adapters_config STATIC
     ColumnVisibilitySettingsStore.cpp
     ColumnVisibilitySettingsViewModel.h
     ColumnVisibilitySettingsViewModel.cpp
+    EnvironmentVariable.h
+    EnvironmentVariablesStore.h
+    EnvironmentVariablesStore.cpp
+    EnvironmentVariableApplier.h
+    EnvironmentVariableApplier.cpp
+    EnvironmentVariablesViewModel.h
+    EnvironmentVariablesViewModel.cpp
 )
 
 target_include_directories(explorer_adapters_config PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <vector>
 
 #include "AdvancedSearchService.h"
 #include "AppConfigStore.h"
@@ -14,6 +15,9 @@
 #include "DiskUsageService.h"
 #include "DuplicateFinderService.h"
 #include "DuplicateFinderUseCase.h"
+#include "EnvironmentVariable.h"
+#include "EnvironmentVariablesStore.h"
+#include "EnvironmentVariablesViewModel.h"
 #include "Favorites.h"
 #include "FavoritesStore.h"
 #include "FavoritesViewModel.h"
@@ -80,6 +84,7 @@ public:
     HighlightThemeViewModel& highlightThemeViewModel() noexcept { return m_highlightThemeViewModel; }
     FileDecorationsViewModel& fileDecorationsViewModel() noexcept { return m_fileDecorationsViewModel; }
     FavoritesViewModel& favoritesViewModel() noexcept { return m_favoritesViewModel; }
+    EnvironmentVariablesViewModel& environmentVariablesViewModel() noexcept { return m_environmentVariablesViewModel; }
     NotificationCenter& notificationCenter() noexcept { return m_notificationCenter; }
     NotificationSettingsViewModel& notificationSettingsViewModel() noexcept { return m_notificationSettingsViewModel; }
     TagChangeNotifier& tagChangeNotifier() noexcept { return m_tagChangeNotifier; }
@@ -163,6 +168,13 @@ private:
     FavoritesStore m_favoritesStore;
     Favorites m_favorites;
     FavoritesViewModel m_favoritesViewModel;
+
+    // Architecture.md §14.57: custom per-process environment variables (Tools > Environment
+    // Variables...), applied directly to the process environment on load/save -- presentation-only,
+    // same posture as the favorites block above.
+    EnvironmentVariablesStore m_environmentVariablesStore;
+    std::vector<EnvironmentVariable> m_environmentVariables;
+    EnvironmentVariablesViewModel m_environmentVariablesViewModel;
 
     // Notification system: popup (toast) + progress-bar notifications, presentation-only, same
     // posture as the file-decoration/favorites blocks above. NotificationCenter holds a const&
