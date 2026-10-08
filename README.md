@@ -14,19 +14,31 @@ Full requirements and design live in [`Specification.md`](docs/Specification.md)
 
 ## Currently Supported Features
 
-- **Multi-tab browsing** — each pane owns its own tabs, with independent navigation history,
-  current path, view mode, and sort order.
-- **Split-screen layouts** — single pane, two-pane vertical/horizontal split, or a four-pane grid.
-- **Tag support** — tags are stored in a local SQLite database and never modify the tagged files
-  themselves.
-- **Content preview** — folder contents, file/text content, images, and video, plus syntax
-  highlighting for a number of common programming languages.
-- **Integrated terminal** — a collapsible terminal panel per tab.
-- **Quick select by name** — live-selects items whose name matches what you type, without needing
-  to press Enter.
-- **Color customization** — configurable, ordered rules that apply custom colors/styles to files
-  and folders based on name and extension patterns.
-- **Fast navigation** — in details view, can use arrows keys to quickly move between items.
+- **Workspaces & multi-pane browsing** — named, persisted session profiles (multi-instance
+  capable); single/two-way/four-way split layouts, each pane owning its own tabs with independent
+  navigation history, view mode, and sort order.
+- **Left panel** — folder tree and a search tab (quick + inline advanced search).
+- **Right panel** — collapsible, tabbed tag list and file preview.
+- **Tag support** — tags live in a local SQLite database (never modify the tagged files), with a
+  Tag Manager dialog and tag-integrated advanced search.
+- **Search** — recursive filename quick search (regex/case/whole-word/exact-name toggles,
+  git-ignore skip) and an async advanced criteria search.
+- **Content preview** — folders, text (with syntax highlighting), images, video, and read-only
+  archive browsing/extraction, via dedicated per-kind preview widgets with zoom.
+- **File operations** — clipboard cut/copy/paste interoperable with File Explorer, custom copy/move
+  with progress notifications, trash/permanent delete, batch rename, and a registry-sourced context
+  menu (shell extensions included).
+- **Navigation** — "This PC" virtual root, address bar autocomplete + environment-variable
+  expansion, hidden files/folders toggle, quick select by name, and fast arrow-key navigation in
+  details view.
+- **Status & decoration** — per-pane and window-wide status bars, Git branch/status integration
+  with checkout, pattern-based color/font rules, customizable detail columns (tags, dates,
+  fragments, ...), and live/monitored directory updates.
+- **Disk tools** — duplicate file finder and a disk fragmentation viewer.
+- **Integrated terminal** and a per-process environment variable viewer/editor.
+- **Session persistence** — window geometry, layout, tabs, columns, and panel state restored on
+  restart, plus Favorites and a Light/Dark theme.
+- **Notifications** — in-app notifications for background operations.
 
 ## Architecture
 
