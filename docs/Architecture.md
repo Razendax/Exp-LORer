@@ -353,7 +353,15 @@ Exp-LORer/
 ├── vcpkg.json
 ├── src/
 │   ├── domain/          # Entities — no Qt/SQLite/FFmpeg deps
-│   ├── application/     # Use cases + Port interfaces
+│   ├── application/     # Use cases + Port interfaces (single target, folder-grouped like adapters/)
+│   │   ├── filesystem/  # FileNavigationUseCase, IFileSystemRepository, FileTransferUseCase, BulkRenameUseCase
+│   │   ├── tags/        # TagManagementUseCase, ITagRepository
+│   │   ├── media/       # MediaProcessingUseCase, IMediaDecoder, FilePreviewUseCase
+│   │   ├── git/         # GitStatusUseCase, GitBranchUseCase, IGitStatusProvider, IGitBranchProvider
+│   │   ├── monitoring/  # DirectoryWatchUseCase, FolderMonitorUseCase, IDirectoryWatcher, IFolderMonitor
+│   │   ├── diskusage/   # DiskUsageUseCase, IDiskUsageScanner, IDiskUsageRepository
+│   │   ├── duplicates/  # DuplicateFinderUseCase, IDuplicateFileScanner
+│   │   └── fragmentation/ # FragmentationUseCase, IFragmentationScanner, IFragmentationRepository
 │   ├── adapters/
 │   │   ├── viewmodels/  # ViewModels/controllers (Qt-facing; §2.3, §14)
 │   │   ├── persistence/ # SQLiteTagRepository + migrations
@@ -369,7 +377,21 @@ Exp-LORer/
 │   │   ├── git/         # LibGit2Repository / LibGit2StatusProvider (§14.32)
 │   │   └── logging/     # Logging (spdlog wrapper: rotating file + console sinks, §14.23)
 │   ├── ui/
-│   │   ├── widgets/     # Qt Widgets shell: MainWindow, panes, dialogs, delegates
+│   │   ├── widgets/     # Qt Widgets shell (single target, folder-grouped like adapters/)
+│   │   │   ├── core/    # MainWindow, WorkspaceLayoutWidget, SettingsDialog, UiTheme, FlowLayout
+│   │   │   ├── navigation/ # WorkspacePaneWidget, FileBrowserView, FolderTreeView, delegates, context menus
+│   │   │   ├── search/  # SearchCriteriaPanel, SearchResultsPane, SearchPanelWidget
+│   │   │   ├── tags/    # TagChipWidget, TagPanelWidget, TagManagerDialog
+│   │   │   ├── preview/ # PreviewPanelWidget, MediaPreviewWidget, TextPreviewWidget, SyntaxHighlighter
+│   │   │   ├── diskusage/ # PieChartWidget, FolderSizeWidget
+│   │   │   ├── fragmentation/ # FragmentationWidget
+│   │   │   ├── duplicates/ # DuplicateFinderDialog
+│   │   │   ├── monitoring/ # MonitoringLogModel, MonitoringPanelWidget
+│   │   │   ├── terminal/ # TerminalWidget, TerminalSessionsWidget
+│   │   │   ├── favorites/ # ManageFavoritesDialog
+│   │   │   ├── decoration/ # FileDecorationRuleDialog
+│   │   │   ├── config/  # EnvironmentVariablesDialog, EditEnvironmentVariableDialog
+│   │   │   └── notifications/ # ToastNotificationWidget, ProgressNotificationWidget, NotificationOverlayWidget
 │   │   └── qml/         # QML media viewer (not yet implemented)
 │   └── app/
 │       ├── CompositionRoot.cpp/.h
