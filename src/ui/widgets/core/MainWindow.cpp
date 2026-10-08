@@ -552,6 +552,15 @@ void MainWindow::createWorkspace()
     splitter->addWidget(m_rightPanelWidget);
     splitter->setCollapsible(1, false);
     splitter->setSizes({ m_leftPanelWidget->collapsedWidth(), 1000, m_rightPanelWidget->collapsedWidth() });
+    // Without explicit stretch factors, QSplitter distributes any width change (e.g. the window
+    // being wider than the sizes set above, which happens on every startup since restoreGeometry()
+    // runs before this splitter exists) proportionally across all three panes, inflating the side
+    // panels' width too. Pinning the side panels to 0 and the workspace to 1 makes the workspace
+    // alone absorb all such changes, so a side panel's width only ever changes via resizeSidePanel()
+    // above -- otherwise the inflated width gets persisted on close and compounds on every launch.
+    splitter->setStretchFactor(0, 0);
+    splitter->setStretchFactor(1, 1);
+    splitter->setStretchFactor(2, 0);
     setCentralWidget(splitter);
 
     // Expanding/collapsing one side panel trades width with the workspace only; the other side
