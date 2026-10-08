@@ -7,7 +7,7 @@ redesign of either layer's existing shape) — and is recorded as a decision log
 implementation walkthrough; see git history and the code's own comments (many cite these subsection
 numbers directly) for the detail.
 
-Covers §14.34–§14.57. Preceded by
+Covers §14.34–§14.58. Preceded by
 [01-workspace-navigation-and-search.md](01-workspace-navigation-and-search.md) (§14.1–§14.26)
 and [02-preview-decoration-and-status.md](02-preview-decoration-and-status.md) (§14.27–§14.33).
 
@@ -1793,3 +1793,43 @@ Each variable has a name plus an ordered list of values joined with `;` for disp
   helper exercising already-tested `EnvironmentVariablesStore`/`EnvironmentVariableApplier` calls,
   the rest are UI/ViewModel glue, same carve-out already applied to
   `FavoritesViewModel`/`ManageFavoritesDialog`; verified by manual smoke test instead.
+
+### 14.58 Preview Panel: Dedicated Per-Kind Widgets
+
+Pure internal restructuring of `PreviewPanelWidget` (§14.26) — no behavior change, no Domain/
+Application/Port change. Before this, `PreviewPanelWidget` built and owned every preview kind's Qt
+widgets directly (an image/poster composite page, a `QPlainTextEdit`, a `QListView` +
+`FolderPreviewListModel`, plus loading/unsupported/error `QLabel`s) and held all the per-kind
+rendering logic (`showImage`/`showText`/`showFolder`/`rescaleImageLabel`) itself, dispatched from
+one `onPreviewReady()` switch. Extending that file for a future preview kind meant editing its
+constructor, member list, and switch statements all at once.
+
+* **`MediaPreviewWidget`** (new, `src/ui/widgets`) — a composite `QWidget` (info `QLabel` + pixmap
+  `QLabel` + zoom `QLabel`, same three-label layout the old image page used) covering both
+  `FilePreviewKind::Image` and `::Video`, since their rendering is otherwise byte-identical (same
+  JPEG-decoded poster bytes; video only adds a bitrate suffix to the info line). Exposes
+  `bool setPreview(const FilePreview&)`, returning `false` on a decode failure (null pixmap) so the
+  caller falls back to its own shared "unsupported" label rather than this widget needing to know
+  that label exists. Owns its own `resizeEvent` override to rescale its pixmap/recompute the zoom
+  label — `PreviewPanelWidget::resizeEvent` is gone entirely now that nothing else needs it.
+* **`TextPreviewWidget`** (new) — subclasses `QPlainTextEdit` directly rather than wrapping one,
+  the same "dedicated widget that just *is* a specialized Qt view/edit control" pattern
+  `FolderTreeView` (§14.41) already established for `QTreeView`. Owns its own `SyntaxHighlighter`
+  (§14.27), constructed from the `SyntaxHighlightEngine&`/`HighlightThemeViewModel&` it now takes
+  directly instead of `PreviewPanelWidget` plumbing them through. Exposes `setPreview(const
+  FilePreview&)`.
+* **`FolderPreviewWidget`** (new) — subclasses `QListView` directly, same pattern; owns its own
+  `FolderPreviewListModel` (unchanged). Exposes `setPreview(const FilePreview&)`.
+* **`PreviewPanelWidget`** is now a thin coordinator: constructs the three widgets above plus the
+  three status `QLabel`s, and `onPreviewReady()` just calls the matching widget's `setPreview()`
+  and switches the stack to it (falling back to the unsupported label when `MediaPreviewWidget::
+  setPreview` returns `false`). All objectNames (`previewImageLabel`, `previewImageInfoLabel`,
+  `previewZoomLabel`, `previewTextView`, `previewFolderList`, `previewLoadingLabel`,
+  `previewUnsupportedLabel`, `previewErrorLabel`, `previewPanelWidget`) are unchanged, so
+  `ui_tests/framework/automation_id.py` needed no edits.
+* **Not built / changed:** no new preview kind, no `FilePreviewViewModel`/`FilePreviewUseCase`/
+  `FilePreview` change — this section is UI-layer only. `MainWindow`'s construction of
+  `PreviewPanelWidget` is unchanged (same public constructor signature).
+* **Testing**: no CTest coverage, consistent with §11's "UI is not covered by CTest in v1" — same
+  carve-out the original §14.26 widget already fell under. `ui_tests/` needed no changes since
+  every automation id resolves by objectName + Qt widget type, both unchanged.

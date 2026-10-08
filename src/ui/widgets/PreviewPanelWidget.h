@@ -1,30 +1,25 @@
 #pragma once
 
-#include <QPixmap>
 #include <QWidget>
 
 class FilePreview;
 class FilePreviewViewModel;
-class FolderPreviewListModel;
+class FolderPreviewWidget;
 class HighlightThemeViewModel;
+class MediaPreviewWidget;
 class SyntaxHighlightEngine;
-class SyntaxHighlighter;
+class TextPreviewWidget;
 class QHideEvent;
 class QLabel;
-class QListView;
-class QPlainTextEdit;
-class QResizeEvent;
 class QShowEvent;
 class QStackedWidget;
 
-// The Preview tab's content in the right panel (Architecture.md §14.25, Specification.md
-// "Preview Panel"): a QStackedWidget switching between an image/poster label, a read-only
-// monospace text view, a flat one-level folder listing (existing QFileIconProvider icons), and
+// The Preview tab's content in the right panel (Architecture.md §14.25/§14.58, Specification.md
+// "Preview Panel"): a QStackedWidget switching between a dedicated widget per preview kind
+// (MediaPreviewWidget for image/video, TextPreviewWidget, FolderPreviewWidget) plus
 // loading/unsupported/error states, driven by FilePreviewViewModel's signals. Calls
 // setPanelActive(true/false) from showEvent/hideEvent so no background generation happens while
-// this tab isn't the visible one. The folder listing is backed by a QListView/FolderPreviewListModel
-// rather than an eagerly-populated QListWidget so that per-entry icon lookups (expensive for
-// executables) only happen for rows the view actually paints.
+// this tab isn't the visible one.
 class PreviewPanelWidget : public QWidget
 {
     Q_OBJECT
@@ -36,7 +31,6 @@ public:
 protected:
     void showEvent(QShowEvent* event) override;
     void hideEvent(QHideEvent* event) override;
-    void resizeEvent(QResizeEvent* event) override;
 
 private:
     void onPreviewLoading();
@@ -44,29 +38,13 @@ private:
     void onPreviewFailed(const QString& message);
     void onPreviewCleared();
 
-    void showImage(const FilePreview& preview);
-    void showText(const FilePreview& preview);
-    void showFolder(const FilePreview& preview);
-    void rescaleImageLabel();
-
     FilePreviewViewModel* m_viewModel = nullptr;
 
     QStackedWidget* m_stack = nullptr;
-    QWidget* m_imagePreviewPage = nullptr;
-    QLabel* m_imageInfoLabel = nullptr;
-    QLabel* m_imageLabel = nullptr;
-    QLabel* m_zoomLabel = nullptr;
-    QPlainTextEdit* m_textView = nullptr;
-    QListView* m_folderList = nullptr;
-    FolderPreviewListModel* m_folderModel = nullptr;
+    MediaPreviewWidget* m_mediaPreviewWidget = nullptr;
+    TextPreviewWidget* m_textPreviewWidget = nullptr;
+    FolderPreviewWidget* m_folderPreviewWidget = nullptr;
     QLabel* m_loadingLabel = nullptr;
     QLabel* m_unsupportedLabel = nullptr;
     QLabel* m_errorLabel = nullptr;
-
-    QPixmap m_currentImage;
-    // The previewed file's actual resolution (0 when metadata extraction failed) -- used by
-    // rescaleImageLabel() to recompute the zoom ratio on every resize.
-    int m_currentActualWidth = 0;
-    int m_currentActualHeight = 0;
-    SyntaxHighlighter* m_syntaxHighlighter = nullptr;
 };

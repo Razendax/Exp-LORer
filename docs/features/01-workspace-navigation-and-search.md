@@ -685,3 +685,10 @@ do background-thread Port dispatch (§5).
   label: an info line (fullname + resolution, + bit rate for video) and a bottom zoom line
   showing the displayed pixmap size as a percentage of the file's actual resolution, recomputed
   whenever the panel resizes.
+
+*Superseded in part by §14.58:* `PreviewPanelWidget` no longer owns each kind's Qt widgets
+directly — it now delegates to three dedicated per-kind widgets (`MediaPreviewWidget`,
+`TextPreviewWidget`, `FolderPreviewWidget`), added so that a future preview kind can be introduced
+as one new self-contained widget rather than by editing this shared file's constructor/member
+list/switch statements. Pure internal restructuring; the behavior and bullets above are otherwise
+unchanged.

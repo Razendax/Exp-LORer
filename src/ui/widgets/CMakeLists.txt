@@ -71,6 +71,12 @@ add_library(explorer_ui_widgets STATIC
     BulkRenameDialog.cpp
     PreviewPanelWidget.h
     PreviewPanelWidget.cpp
+    MediaPreviewWidget.h
+    MediaPreviewWidget.cpp
+    TextPreviewWidget.h
+    TextPreviewWidget.cpp
+    FolderPreviewWidget.h
+    FolderPreviewWidget.cpp
     FolderPreviewListModel.h
     FolderPreviewListModel.cpp
     SyntaxHighlighter.h
