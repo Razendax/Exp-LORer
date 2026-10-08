@@ -87,6 +87,7 @@ TEST(FilePreviewUseCase, ImageExtensionDispatchesToMediaDecoderAsImage)
     EXPECT_EQ(result.value().path(), std::filesystem::path("C:/data/photo.JPG"));
     EXPECT_EQ(result.value().metadata().width(), 1920);
     EXPECT_EQ(result.value().metadata().height(), 1080);
+    EXPECT_EQ(result.value().fileSizeBytes(), 10u);
 }
 
 TEST(FilePreviewUseCase, VideoExtensionDispatchesToMediaDecoderAsVideo)

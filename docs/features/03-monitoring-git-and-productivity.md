@@ -1,13 +1,13 @@
 # Architecture Document — Feature Decision Log: Monitoring, Git & Productivity Features
 
 Continues [Architecture.md](../Architecture.md) §14. Everything here extends the UI/Adapters
-layers only — **no Domain or Application layer redesign** (§14.44 is the one exception: a small,
-additive set of new Domain name-matching helpers and an Application-layer options struct, not a
-redesign of either layer's existing shape) — and is recorded as a decision log per feature, not an
-implementation walkthrough; see git history and the code's own comments (many cite these subsection
-numbers directly) for the detail.
+layers only — **no Domain or Application layer redesign** (§14.44 and §14.59 are the two
+exceptions: each adds a small, additive field/helper to an existing Domain/Application type rather
+than redesigning either layer's existing shape) — and is recorded as a decision log per feature, not
+an implementation walkthrough; see git history and the code's own comments (many cite these
+subsection numbers directly) for the detail.
 
-Covers §14.34–§14.58. Preceded by
+Covers §14.34–§14.59. Preceded by
 [01-workspace-navigation-and-search.md](01-workspace-navigation-and-search.md) (§14.1–§14.26)
 and [02-preview-decoration-and-status.md](02-preview-decoration-and-status.md) (§14.27–§14.33).
 
@@ -1833,3 +1833,54 @@ constructor, member list, and switch statements all at once.
 * **Testing**: no CTest coverage, consistent with §11's "UI is not covered by CTest in v1" — same
   carve-out the original §14.26 widget already fell under. `ui_tests/` needed no changes since
   every automation id resolves by objectName + Qt widget type, both unchanged.
+
+### 14.59 Preview Panel: Media Layout Rework (Name/Image/Properties/Zoom) + Smaller Folder Icons
+
+`MediaPreviewWidget` (§14.58) packed the filename, resolution, and (for video) bitrate into one
+info line above the image, and centered the image both horizontally and vertically in the space
+below it. Reworked into four clearly separated rows, top to bottom: the full filename alone, the
+poster/thumbnail (top-aligned, `Qt::AlignHCenter | Qt::AlignTop`, no longer vertically centered), a
+properties block, and the unchanged zoom label.
+
+* **`MediaPreviewWidget`**: `m_infoLabel` (objectName `previewImageInfoLabel`) split into
+  `m_nameLabel` (`previewImageNameLabel`, filename only, bold and two points larger than the
+  default label font) and `m_propertiesLabel` (`previewImagePropertiesLabel`, one line each for
+  Resolution, Length (`::Video` only, `metadata.duration()` formatted `mm:ss`/`hh:mm:ss`), Bitrate
+  (`::Video` only), and Size, each shown only when the underlying value is known/positive), the
+  latter now wrapped in a `QGroupBox` titled "Properties"
+  (`previewImagePropertiesGroupBox`) instead of sitting bare in the layout. `m_imageLabel`'s
+  alignment changed from `Qt::AlignCenter` to `Qt::AlignHCenter | Qt::AlignTop`.
+  `ui_tests/framework/automation_id.py` defines neither old nor new info-label/group-box id (only
+  `PREVIEW_IMAGE_LABEL`), so no edit needed there.
+* **Shrink responsiveness fix**: `m_imageLabel` previously kept Qt's default size policy, so its
+  `sizeHint()`/`minimumSizeHint()` tracked whatever pixmap `rescaleImage()` had last set (i.e. the
+  prior, larger panel size) — shrinking the right panel's splitter couldn't make incremental
+  progress against that stale hint and instead jumped straight to the overall minimum on release.
+  Expanding was unaffected since a growing hint never blocks growth. Fixed by setting
+  `QSizePolicy::Ignored` on both axes plus an explicit `setMinimumSize(1, 1)`, so the layout no
+  longer consults the label's size hint at all and `resizeEvent()` → `rescaleImage()` tracks the
+  splitter continuously in both directions.
+* **Fixed-width fix**: `m_nameLabel`/`m_propertiesLabel` kept Qt's default (`Preferred`, which has
+  `ShrinkFlag` set) horizontal size policy, so per `qSmartMinSize()` the layout's floor for each was
+  `minimumSizeHint().width()` — for a word-wrapped `QLabel`, that's the width of its widest
+  *unbreakable* run of characters. A long filename (or property value) with no spaces can't wrap at
+  all, so its minimum width was its full unwrapped text width, forcing the whole right panel/splitter
+  wider whenever such a file was previewed, and it never shrank back (splitters only grow to satisfy
+  a rising minimum). Fixed by setting the horizontal policy on both labels to `QSizePolicy::Ignored`
+  (vertical policy unchanged), which drops that floor to 0 while word-wrap/`heightForWidth` still
+  reflow the text correctly within whatever width the layout actually hands it.
+* **`FilePreview`** (Domain, additive): `image()`/`video()` now take a `std::uintmax_t
+  fileSizeBytes` parameter, exposed via new accessor `fileSizeBytes()` (0 for every other kind) —
+  the same graceful-degradation posture as the rest of the entity, not a reshape of its existing
+  shape. `FilePreviewUseCase::generatePreview()` threads `target.size()` (already stat'd as part of
+  the `FileNode` passed in — no new filesystem call) through to both factory calls.
+* **`FolderPreviewWidget`** (§14.26): now calls `setIconSize(QSize(16, 16))` and
+  `setUniformItemSizes(true)` on construction — folder-preview rows previously used
+  `QListView`'s unset (style-default, visually large) icon size; 16×16 matches the icon size
+  `FileBrowserView` already uses for its own `ViewMode::List`/`::Details`.
+* **Not built/changed**: no new `FilePreviewKind`, no `IMediaDecoder`/`IFileSystemRepository`
+  change, no `FilePreviewViewModel` change.
+* **Testing**: `tests/domain/FilePreviewTest.cpp` and
+  `tests/application/FilePreviewUseCaseTest.cpp` updated for the new `fileSizeBytes` parameter/
+  accessor. No UI test changes (automation ids above unaffected); UI is still not covered by CTest
+  in v1 (§11).

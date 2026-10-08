@@ -27,8 +27,10 @@ public:
     // syntax highlighting off its extension (Architecture.md §14.26) without FilePreview itself
     // knowing anything about highlighting.
     static FilePreview text(std::string content, bool truncated, std::filesystem::path path);
-    static FilePreview image(std::vector<std::byte> encodedBytes, std::filesystem::path path, MediaMetadata metadata);
-    static FilePreview video(std::vector<std::byte> encodedPosterBytes, std::filesystem::path path, MediaMetadata metadata);
+    static FilePreview image(std::vector<std::byte> encodedBytes, std::filesystem::path path, MediaMetadata metadata,
+                              std::uintmax_t fileSizeBytes);
+    static FilePreview video(std::vector<std::byte> encodedPosterBytes, std::filesystem::path path, MediaMetadata metadata,
+                              std::uintmax_t fileSizeBytes);
     static FilePreview unsupported();
 
     FilePreviewKind kind() const noexcept { return m_kind; }
@@ -51,6 +53,9 @@ public:
     // Image or Video only; default-valued (width/height 0) for every other kind.
     const MediaMetadata& metadata() const noexcept { return m_metadata; }
 
+    // Image or Video only; 0 for every other kind.
+    std::uintmax_t fileSizeBytes() const noexcept { return m_fileSizeBytes; }
+
 private:
     explicit FilePreview(FilePreviewKind kind);
 
@@ -61,4 +66,5 @@ private:
     std::filesystem::path m_path;
     std::vector<std::byte> m_imageBytes;
     MediaMetadata m_metadata;
+    std::uintmax_t m_fileSizeBytes = 0;
 };

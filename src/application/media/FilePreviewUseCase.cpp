@@ -93,8 +93,8 @@ Result<FilePreview> FilePreviewUseCase::generatePreview(const FileNode& target, 
         // thumbnail is still useful on its own, so fall back to zero-valued metadata rather than
         // failing the whole preview (same graceful-degradation posture as the text branch below).
         auto metadata = m_mediaDecoder.extractMetadata(readablePath);
-        return Result<FilePreview>::success(
-            FilePreview::image(std::move(bytes).value(), target.path(), metadata ? std::move(metadata).value() : MediaMetadata()));
+        return Result<FilePreview>::success(FilePreview::image(
+            std::move(bytes).value(), target.path(), metadata ? std::move(metadata).value() : MediaMetadata(), target.size()));
     }
 
     if (MediaExtensions::isVideoExtension(extension))
@@ -106,8 +106,8 @@ Result<FilePreview> FilePreviewUseCase::generatePreview(const FileNode& target, 
         }
 
         auto metadata = m_mediaDecoder.extractMetadata(readablePath);
-        return Result<FilePreview>::success(
-            FilePreview::video(std::move(bytes).value(), target.path(), metadata ? std::move(metadata).value() : MediaMetadata()));
+        return Result<FilePreview>::success(FilePreview::video(
+            std::move(bytes).value(), target.path(), metadata ? std::move(metadata).value() : MediaMetadata(), target.size()));
     }
 
     if (isTextExtension(extension))

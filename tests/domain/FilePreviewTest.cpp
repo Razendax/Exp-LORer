@@ -48,12 +48,13 @@ TEST(FilePreview, ImageFactorySetsKindBytesPathAndMetadata)
     std::vector<std::byte> bytes{ std::byte{ 0xFF }, std::byte{ 0xD8 } };
     MediaMetadata metadata = MediaMetadata::create(1920, 1080, std::chrono::milliseconds(0), "jpeg").value();
 
-    FilePreview preview = FilePreview::image(bytes, "C:/data/photo.jpg", metadata);
+    FilePreview preview = FilePreview::image(bytes, "C:/data/photo.jpg", metadata, 2048);
 
     EXPECT_EQ(preview.kind(), FilePreviewKind::Image);
     EXPECT_EQ(preview.imageBytes(), bytes);
     EXPECT_EQ(preview.path(), "C:/data/photo.jpg");
     EXPECT_EQ(preview.metadata(), metadata);
+    EXPECT_EQ(preview.fileSizeBytes(), 2048u);
 }
 
 TEST(FilePreview, VideoFactorySetsKindPosterBytesPathAndMetadata)
@@ -61,12 +62,13 @@ TEST(FilePreview, VideoFactorySetsKindPosterBytesPathAndMetadata)
     std::vector<std::byte> bytes{ std::byte{ 0x01 }, std::byte{ 0x02 } };
     MediaMetadata metadata = MediaMetadata::create(1280, 720, std::chrono::milliseconds(60000), "h264", 5'000'000).value();
 
-    FilePreview preview = FilePreview::video(bytes, "C:/data/clip.mp4", metadata);
+    FilePreview preview = FilePreview::video(bytes, "C:/data/clip.mp4", metadata, 4096);
 
     EXPECT_EQ(preview.kind(), FilePreviewKind::Video);
     EXPECT_EQ(preview.imageBytes(), bytes);
     EXPECT_EQ(preview.path(), "C:/data/clip.mp4");
     EXPECT_EQ(preview.metadata(), metadata);
+    EXPECT_EQ(preview.fileSizeBytes(), 4096u);
 }
 
 TEST(FilePreview, UnsupportedFactorySetsKindOnly)

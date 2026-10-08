@@ -8,6 +8,8 @@ FolderPreviewWidget::FolderPreviewWidget(QWidget* parent)
 {
     setObjectName(QStringLiteral("previewFolderList"));
     setEditTriggers(QAbstractItemView::NoEditTriggers);
+    setIconSize(QSize(16, 16));
+    setUniformItemSizes(true);
     m_model = new FolderPreviewListModel(this);
     setModel(m_model);
 }

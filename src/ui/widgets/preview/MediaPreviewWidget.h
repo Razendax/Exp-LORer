@@ -4,12 +4,14 @@
 #include <QWidget>
 
 class FilePreview;
+class QGroupBox;
 class QLabel;
 class QResizeEvent;
 
 // The image/video page of the Preview panel's stack (Architecture.md §14.26/§14.58,
-// Specification.md "Preview Panel"): a JPEG poster frame (image or video, identical treatment)
-// plus an info line and a live zoom-percentage label that both update on resize.
+// Specification.md "Preview Panel"): the full filename, a JPEG poster frame (image or video,
+// identical treatment), a properties block (resolution/bitrate/size), and a live zoom-percentage
+// label, top to bottom. The zoom label updates on resize.
 class MediaPreviewWidget : public QWidget
 {
     Q_OBJECT
@@ -17,8 +19,9 @@ class MediaPreviewWidget : public QWidget
 public:
     explicit MediaPreviewWidget(QWidget* parent = nullptr);
 
-    // Decodes preview.imageBytes() and updates the info/zoom labels. Returns false (widget left
-    // untouched) if decoding fails, so the caller can fall back to its own shared unsupported label.
+    // Decodes preview.imageBytes() and updates the name/properties/zoom labels. Returns false
+    // (widget left untouched) if decoding fails, so the caller can fall back to its own shared
+    // unsupported label.
     bool setPreview(const FilePreview& preview);
 
 protected:
@@ -27,9 +30,11 @@ protected:
 private:
     void rescaleImage();
 
-    QLabel* m_infoLabel = nullptr;  // objectName "previewImageInfoLabel"
-    QLabel* m_imageLabel = nullptr; // objectName "previewImageLabel"
-    QLabel* m_zoomLabel = nullptr;  // objectName "previewZoomLabel"
+    QLabel* m_nameLabel = nullptr;            // objectName "previewImageNameLabel"
+    QLabel* m_imageLabel = nullptr;           // objectName "previewImageLabel"
+    QGroupBox* m_propertiesGroupBox = nullptr; // objectName "previewImagePropertiesGroupBox"
+    QLabel* m_propertiesLabel = nullptr;      // objectName "previewImagePropertiesLabel"
+    QLabel* m_zoomLabel = nullptr;            // objectName "previewZoomLabel"
 
     QPixmap m_currentImage;
     // The previewed file's actual resolution (0 when metadata extraction failed) -- used by

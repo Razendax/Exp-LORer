@@ -1,7 +1,14 @@
 #include "MediaPreviewWidget.h"
 
+#include <chrono>
+
+#include <QFont>
+#include <QGroupBox>
 #include <QLabel>
+#include <QLocale>
 #include <QResizeEvent>
+#include <QSizePolicy>
+#include <QTime>
 #include <QVBoxLayout>
 
 #include "FilePreview.h"
@@ -13,15 +20,46 @@ MediaPreviewWidget::MediaPreviewWidget(QWidget* parent)
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
 
-    m_infoLabel = new QLabel(this);
-    m_infoLabel->setObjectName(QStringLiteral("previewImageInfoLabel"));
-    m_infoLabel->setWordWrap(true);
-    layout->addWidget(m_infoLabel);
+    m_nameLabel = new QLabel(this);
+    m_nameLabel->setObjectName(QStringLiteral("previewImageNameLabel"));
+    m_nameLabel->setWordWrap(true);
+    // A wrapped QLabel's minimumSizeHint() width is the widest *unbreakable* run of characters --
+    // for a long filename with no spaces, that's the full unwrapped text width, which would force
+    // the panel/splitter wider every time a long filename is previewed (and it never shrinks back).
+    // Ignored horizontally drops that floor to 0 (see qSmartMinSize()) while still wrapping/eliding
+    // within whatever width the layout actually gives it.
+    m_nameLabel->setSizePolicy(QSizePolicy::Ignored, m_nameLabel->sizePolicy().verticalPolicy());
+    QFont nameFont = m_nameLabel->font();
+    nameFont.setBold(true);
+    nameFont.setPointSize(nameFont.pointSize() + 2);
+    m_nameLabel->setFont(nameFont);
+    layout->addWidget(m_nameLabel);
 
     m_imageLabel = new QLabel(this);
     m_imageLabel->setObjectName(QStringLiteral("previewImageLabel"));
-    m_imageLabel->setAlignment(Qt::AlignCenter);
+    m_imageLabel->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
+    // Without this, QLabel's sizeHint()/minimumSizeHint() track whatever pixmap was last set
+    // (full prior panel size), so shrinking the right panel can't make incremental progress -- the
+    // layout refuses to go below that stale hint until the resize pushes everything to the overall
+    // minimum in one jump. Ignored + an explicit small minimum let the label (and rescaleImage(),
+    // called from resizeEvent() below) track the splitter continuously in both directions.
+    m_imageLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    m_imageLabel->setMinimumSize(1, 1);
     layout->addWidget(m_imageLabel, 1);
+
+    m_propertiesGroupBox = new QGroupBox(tr("Properties"), this);
+    m_propertiesGroupBox->setObjectName(QStringLiteral("previewImagePropertiesGroupBox"));
+    auto* propertiesLayout = new QVBoxLayout(m_propertiesGroupBox);
+
+    m_propertiesLabel = new QLabel(m_propertiesGroupBox);
+    m_propertiesLabel->setObjectName(QStringLiteral("previewImagePropertiesLabel"));
+    m_propertiesLabel->setWordWrap(true);
+    // Same fixed-width rationale as m_nameLabel above: a long property value must not be able to
+    // force the panel wider.
+    m_propertiesLabel->setSizePolicy(QSizePolicy::Ignored, m_propertiesLabel->sizePolicy().verticalPolicy());
+    propertiesLayout->addWidget(m_propertiesLabel);
+
+    layout->addWidget(m_propertiesGroupBox);
 
     m_zoomLabel = new QLabel(this);
     m_zoomLabel->setObjectName(QStringLiteral("previewZoomLabel"));
@@ -38,25 +76,34 @@ bool MediaPreviewWidget::setPreview(const FilePreview& preview)
         return false;
     }
 
+    m_nameLabel->setText(QString::fromStdWString(preview.path().filename().native()));
+
     const MediaMetadata& metadata = preview.metadata();
     m_currentActualWidth = metadata.width();
     m_currentActualHeight = metadata.height();
 
+    QStringList properties;
     if (m_currentActualWidth > 0 && m_currentActualHeight > 0)
     {
-        QString info = QString::fromStdWString(preview.path().filename().native())
-            + QStringLiteral("  —  %1x%2").arg(m_currentActualWidth).arg(m_currentActualHeight);
-        if (preview.kind() == FilePreviewKind::Video && metadata.bitRateBps() > 0)
-        {
-            info += QStringLiteral(", %1 kbps").arg(metadata.bitRateBps() / 1000);
-        }
-        m_infoLabel->setText(info);
-        m_infoLabel->setVisible(true);
+        properties << tr("Resolution: %1x%2").arg(m_currentActualWidth).arg(m_currentActualHeight);
     }
-    else
+    if (preview.kind() == FilePreviewKind::Video && metadata.duration().count() > 0)
     {
-        m_infoLabel->setVisible(false);
+        const auto totalSeconds = std::chrono::duration_cast<std::chrono::seconds>(metadata.duration()).count();
+        const QTime time = QTime(0, 0).addSecs(static_cast<int>(totalSeconds));
+        const QString format = totalSeconds >= 3600 ? QStringLiteral("hh:mm:ss") : QStringLiteral("mm:ss");
+        properties << tr("Length: %1").arg(time.toString(format));
     }
+    if (preview.kind() == FilePreviewKind::Video && metadata.bitRateBps() > 0)
+    {
+        properties << tr("Bitrate: %1 kbps").arg(metadata.bitRateBps() / 1000);
+    }
+    if (preview.fileSizeBytes() > 0)
+    {
+        properties << tr("Size: %1").arg(QLocale().formattedDataSize(static_cast<qint64>(preview.fileSizeBytes())));
+    }
+    m_propertiesLabel->setText(properties.join(QStringLiteral("\n")));
+    m_propertiesGroupBox->setVisible(!properties.isEmpty());
 
     rescaleImage();
     return true;
