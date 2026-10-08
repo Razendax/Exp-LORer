@@ -14,8 +14,9 @@ class UiThemeChangeNotifier;
 // checkable panel-tab buttons next to a QStackedWidget of panel-tab content, starting collapsed, but
 // oriented for a *horizontal* splitter (vertical button column, collapse axis = width) instead of
 // BottomPanelWidget's horizontal button row / collapse-by-height. Serves both the right panel
-// (Tags/Preview/Monitoring) and the left panel (Tree) -- the two differ only in which edge the
-// header strip sits on, which is always the edge facing the workspace. Splitter-agnostic -- emits
+// (Tags/Preview/Monitoring) and the left panel (Tree/Search) -- the two differ only in which edge the
+// header strip sits on, which is always the outer edge of the application window (so the tab names
+// stay put and only the content side expands toward the workspace). Splitter-agnostic -- emits
 // signals for the owner (MainWindow) to react to rather than reaching into its parent's layout,
 // same posture as BottomPanelWidget.
 class SidePanelWidget : public QWidget
@@ -26,8 +27,8 @@ public:
     // Which side of the workspace this panel is docked on.
     enum class Edge
     {
-        Left,  // header strip on this widget's right edge
-        Right, // header strip on this widget's left edge
+        Left,  // header strip on this widget's left edge
+        Right, // header strip on this widget's right edge
     };
 
     // `idPrefix` names this widget "<idPrefix>Widget" and its page stack "<idPrefix>Stack"

@@ -30,17 +30,18 @@ SidePanelWidget::SidePanelWidget(Edge edge, const QString& idPrefix, UiThemeChan
     m_stack->setObjectName(idPrefix + QStringLiteral("Stack"));
     m_stack->hide();
 
-    // The header strip always faces the workspace: left edge for the right panel, right edge for
-    // the left panel.
+    // The header strip always sits on the application's outer edge, so the tab names stay put while
+    // only the content stack expands toward the workspace: left edge for the left panel, right edge
+    // for the right panel.
     if (edge == Edge::Right)
     {
-        layout->addWidget(m_headerStrip);
         layout->addWidget(m_stack, 1);
+        layout->addWidget(m_headerStrip);
     }
     else
     {
-        layout->addWidget(m_stack, 1);
         layout->addWidget(m_headerStrip);
+        layout->addWidget(m_stack, 1);
     }
 
     applyThemeColors();
