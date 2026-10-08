@@ -7,6 +7,16 @@
 
 namespace
 {
+    // Migration (a pre-existing legacy config.json -> workspaces/default.json) must run before the
+    // path below is used to construct m_appConfigStore -- listWorkspaces() triggers it as a side
+    // effect (WorkspaceStore::ensureMigratedAndNonEmpty), same as every other lazy-migration-on-
+    // first-use store in this codebase.
+    std::filesystem::path resolveWorkspaceConfigFilePath(WorkspaceStore& workspaceStore, const QString& workspaceId)
+    {
+        workspaceStore.listWorkspaces();
+        return workspaceStore.configFilePath(workspaceId);
+    }
+
     // Architecture.md §14.57: the first time environment_variables.json is empty (a fresh install,
     // or every variable having been deleted), seed it from a snapshot of the process's own current
     // environment -- so the Environment Variables dialog opens showing the variables that already
@@ -27,11 +37,12 @@ namespace
 // Architecture.md §9: explorer.db, config.json, cache/thumbnails/, highlight_theme.json, and
 // file_decorations.json all live directly under appDataDir, resolved once by the caller (main.cpp)
 // -- the real app-data location by default, or a --data-dir override for test isolation.
-CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir)
+CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir, const QString& workspaceId)
     : m_fileNavigationUseCase(m_fileSystemRepository, m_contextMenuProvider)
     , m_tagRepository(appDataDir / "explorer.db")
     , m_tagManagementUseCase(m_tagRepository, m_fileSystemRepository)
-    , m_appConfigStore(appDataDir / "config.json")
+    , m_workspaceStore(appDataDir)
+    , m_appConfigStore(resolveWorkspaceConfigFilePath(m_workspaceStore, workspaceId))
     , m_thumbnailCache(appDataDir / "cache" / "thumbnails")
     , m_cachingMediaDecoder(m_mediaDecoder, m_thumbnailCache)
     , m_filePreviewUseCase(m_fileSystemRepository, m_cachingMediaDecoder)

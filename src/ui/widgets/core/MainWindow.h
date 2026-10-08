@@ -14,6 +14,8 @@
 #include "FileNavigationUseCase.h"
 #include "FileNode.h"
 #include "SplitLayout.h"
+#include "WorkspaceEntry.h"
+#include "WorkspaceLaunchContext.h"
 
 class QAction;
 class QActionGroup;
@@ -32,6 +34,7 @@ class SyntaxHighlightEngine;
 class TagManagementUseCase;
 class TagChangeNotifier;
 class UiThemeChangeNotifier;
+class WorkspaceStore;
 class WorkspaceController;
 class WorkspaceLayoutWidget;
 class TagPanelWidget;
@@ -68,7 +71,8 @@ public:
                ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, DiskUsageService& diskUsageService,
                DuplicateFinderService& duplicateFinderService, FragmentationService& fragmentationService,
                BulkRenameUseCase& bulkRenameUseCase, EnvironmentVariablesViewModel& environmentVariablesViewModel,
-               const AppConfig& initialConfig, QWidget* parent = nullptr);
+               WorkspaceStore& workspaceStore, const WorkspaceLaunchContext& launchContext, const AppConfig& initialConfig,
+               QWidget* parent = nullptr);
     ~MainWindow() override;
 
 protected:
@@ -87,6 +91,7 @@ private:
     void createShowHiddenFilesAction();
     void createMenuBar();
     void createFavoritesMenu();
+    void createWorkspacesMenu(QMenu* fileMenu);
     void createLayoutToolBar();
     void createWorkspace();
     void createFolderTree();
@@ -97,6 +102,19 @@ private:
     void showManageFavoritesDialog();
     void showDuplicateFinderDialog();
     void showEnvironmentVariablesDialog();
+
+    // Workspaces (File menu, Architecture.md §14.60).
+    void rebuildWorkspacesMenuItems();
+    void launchOrActivateWorkspace(const WorkspaceEntry& entry);
+    void onSaveAsWorkspaceTriggered();
+    void showWorkspaceManagerDialog();
+    QString currentWorkspaceName() const;
+
+    // Factored out of closeEvent() so the new "Save as Workspace..." action can capture the exact
+    // same AppConfig snapshot without duplicating it (Architecture.md §14.60). Unlike the inline
+    // code it replaces, this never mutates m_columnWidths/m_columnOrder -- nothing read those
+    // members again afterward anyway, so the old mutation was side-effect-free busywork.
+    AppConfig captureCurrentConfig() const;
 
     // Tools > Bulk Rename... (Architecture.md §14.55): uses the focused tab's current selection if
     // it has 2+ items, otherwise falls back to the whole current-folder listing.
@@ -156,6 +174,8 @@ private:
     FragmentationService& m_fragmentationService;
     BulkRenameUseCase& m_bulkRenameUseCase;
     EnvironmentVariablesViewModel& m_environmentVariablesViewModel;
+    WorkspaceStore& m_workspaceStore;
+    WorkspaceLaunchContext m_launchContext;
     DuplicateFinderDialog* m_duplicateFinderDialog = nullptr;
     WorkspaceLayoutWidget* m_workspaceLayoutWidget = nullptr;
     TagPanelWidget* m_tagPanelWidget = nullptr;
@@ -176,6 +196,10 @@ private:
     QMenu* m_favoritesMenu = nullptr;
     QAction* m_addToFavoritesAction = nullptr;
     TabViewModel* m_favoritesTrackedTab = nullptr;
+
+    // Workspaces submenu (Architecture.md §14.60): rebuilt lazily on QMenu::aboutToShow, same
+    // posture as m_favoritesMenu above.
+    QMenu* m_workspacesMenu = nullptr;
 
     // Drive/volume info query (Architecture.md §14.30) runs on m_driveInfoThread rather than the
     // Qt UI thread -- GetVolumeInformationW/GetDiskFreeSpaceExW behind it are disk/volume I/O.

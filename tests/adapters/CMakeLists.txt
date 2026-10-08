@@ -7,6 +7,7 @@ add_executable(explorer_adapters_tests
     WorkspaceLayoutTopologyTest.cpp
     SQLiteTagRepositoryTest.cpp
     AppConfigStoreTest.cpp
+    WorkspaceStoreTest.cpp
     WorkspaceControllerTest.cpp
     FolderTreeModelTest.cpp
     LoggingTest.cpp

@@ -148,8 +148,8 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
 | --- | --- |
 | Domain | `FileNode`, `Tag`, `MediaMetadata`, `FileTagAssociation` |
 | Application | `FileNavigationUseCase`, `TagManagementUseCase`, `MediaProcessingUseCase`, `DiskUsageUseCase` (§14.40), `FileTransferUseCase` (§14.47), `DuplicateFinderUseCase` (§14.51), `FragmentationUseCase` (§14.52), `BulkRenameUseCase` (§14.55), and their Ports (§2.2) |
-| Adapters | `SQLiteTagRepository`, `StandardFileSystemRepository`, `ShellContextMenuProvider`, `AppConfigStore`, `WindowsDiskUsageScanner`/`SQLiteDiskUsageRepository` (§14.40), `StandardDuplicateFileScanner` (§14.51), `WindowsFragmentationScanner` (§14.52), plus the ViewModels listed in §2.3 |
-| UI (Widgets) | `MainWindow`, `WorkspaceLayoutWidget`, `WorkspacePaneWidget`, `FileBrowserView`, `SidePanelWidget` (left/right panels), `FolderTreeView`, `TagPanelWidget`, `ContextMenuBuilder`/`FileItemContextMenu`, dialogs |
+| Adapters | `SQLiteTagRepository`, `StandardFileSystemRepository`, `ShellContextMenuProvider`, `AppConfigStore`, `WorkspaceStore` (§14.60), `WindowsDiskUsageScanner`/`SQLiteDiskUsageRepository` (§14.40), `StandardDuplicateFileScanner` (§14.51), `WindowsFragmentationScanner` (§14.52), plus the ViewModels listed in §2.3 |
+| UI (Widgets) | `MainWindow`, `WorkspaceLayoutWidget`, `WorkspacePaneWidget`, `FileBrowserView`, `SidePanelWidget` (left/right panels), `FolderTreeView`, `TagPanelWidget`, `ContextMenuBuilder`/`FileItemContextMenu`, `WorkspaceManagerDialog` (§14.60), dialogs |
 | UI (QML) | Media viewer (not yet implemented) |
 
 ## 5. Concurrency and Threading Model
@@ -213,14 +213,20 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
   `FileNavigationUseCase`'s name/extension filters, `StandardFileSystemRepository`'s error messages).
   Actual file I/O keeps using the `path` object (or `.wstring()` on Windows) directly and is
   unaffected by this.
-* **Single-instance enforcement:** a named mutex (`CreateMutexW`, Windows) / `flock`'d PID file
-  (Linux) per user session. A second launch forwards its startup args to the running instance over
-  local IPC (e.g. `QLocalSocket`) and exits. Exists to stop two processes writing to `explorer.db`/
-  the thumbnail cache concurrently (§5, §8). **Not yet implemented.** When it is, the mutex name/PID
-  file path must be derived from the resolved app-data directory (§9), not a fixed name — otherwise
-  two instances started against different `--data-dir` overrides (e.g. parallel `ui_tests/` runs, or
-  a test run alongside the developer's real running instance) would incorrectly collide with each
-  other despite writing to entirely separate data directories.
+* **Single-instance enforcement, scoped per workspace (§14.60):** a named mutex (`CreateMutexW`,
+  Windows; Linux not yet implemented) plus a `QLocalServer`/`QLocalSocket` activation channel,
+  implemented in `WorkspaceInstanceGuard` (`src/app/`). The name for both is derived from a hash of
+  the resolved app-data directory (§9) **and** the workspace id — not a fixed name, and not just the
+  data directory alone — so two instances started against different `--data-dir` overrides (e.g.
+  parallel `ui_tests/` runs, or a test run alongside the developer's real running instance) never
+  collide with each other, and, within one data directory, two different *workspaces* never collide
+  with each other either. A second launch targeting a workspace id that's already running loses the
+  mutex, forwards an "activate" message to the existing instance over the matching `QLocalSocket`
+  (which raises/focuses that instance's window), and exits before constructing `CompositionRoot` or
+  any window. Exists to stop two processes writing the same workspace's session file concurrently
+  (§9) — shared resources that remain genuinely shared across every workspace in one data directory
+  (`explorer.db`, the thumbnail cache, `favorites.json`, etc.) are not covered by this guard and rely
+  instead on `PRAGMA busy_timeout` (§5) and atomic JSON writes (§9) to tolerate concurrent processes.
 * **vcpkg overlay ports:** a repo-local `vcpkg-overlays/ports/` directory, registered via a root
   `vcpkg-configuration.json`, holds small custom ports for third-party pieces the public vcpkg
   registry doesn't package (e.g. individual tree-sitter grammars, §14.27) — each is a normal vcpkg
@@ -332,13 +338,19 @@ CREATE TABLE file_fragmentation (
   `CommandLineToArgvW()`), not the narrow `argv` `main()` receives — the same ANSI-code-page
   narrowing trap `PathUtf8`/`path::string()` guidance (§6) warns about applies here too, since the
   override value is itself a filesystem path.
-* **Session/settings:** window geometry and the split-window session (layout, each pane's tabs —
-  path/view mode/sort order — focused pane) persist to `config.json` (§14.14), written by
-  `AppConfigStore`, same directory as `explorer.db`. `QSettings` remains in use only for the
-  context-menu shell-extensions toggle (§14.13), not yet migrated; the thumbnail cache size limit is
-  unimplemented in either mechanism. Favorites persist separately to their own `favorites.json`
-  (§14.36), same directory, same tolerant-load/atomic-save shape as `highlight_theme.json`/
-  `file_decorations.json`.
+* **Session/settings, as named workspaces (§14.60):** window geometry and the split-window session
+  (layout, each pane's tabs — path/view mode/sort order — focused pane) persist per *workspace* under
+  `workspaces/` rather than to one fixed `config.json`: `workspaces/index.json` holds the
+  `{id, name}` registry (owned by `WorkspaceStore`, written only on create/rename/delete), and
+  `workspaces/<id>.json` holds that workspace's own session, in the same shape §14.14 already
+  defined and written by the same `AppConfigStore` (now constructed once per process, pointed at the
+  current workspace's file). A pre-existing single `config.json` is migrated once into
+  `workspaces/default.json` (id `"default"`, name `"Default"`) the first time `workspaces/index.json`
+  doesn't yet exist. `QSettings` remains in use only for the context-menu shell-extensions toggle
+  (§14.13), not yet migrated; the thumbnail cache size limit is unimplemented in either mechanism.
+  Favorites persist separately to their own `favorites.json` (§14.36), same directory (shared across
+  every workspace, not per-workspace), same tolerant-load/atomic-save shape as
+  `highlight_theme.json`/`file_decorations.json`.
 * **Recycle Bin / Trash:** "Delete" routes through `IFileSystemRepository` to the native OS trash
   (`SHFileOperation`/`FOF_ALLOWUNDO` on Windows; deferred to the freedesktop.org spec on Linux). A
   separate "Delete Permanently" action bypasses trash. Both go through the same Port so the
@@ -367,7 +379,7 @@ Exp-LORer/
 │   │   ├── persistence/ # SQLiteTagRepository + migrations
 │   │   ├── filesystem/  # StandardFileSystemRepository
 │   │   ├── shell/       # ShellContextMenuProvider
-│   │   ├── config/      # AppConfigStore (JSON session persistence)
+│   │   ├── config/      # AppConfigStore (JSON session persistence), WorkspaceStore (§14.60)
 │   │   ├── favorites/   # FavoriteItem / FavoriteCategory / Favorites (§14.36)
 │   │   ├── notifications/ # NotificationType / NotificationSettings / NotificationCenter (§14.37)
 │   │   ├── media/       # QtMediaDecoder / FFmpegMediaDecoder (not yet implemented)
@@ -392,11 +404,13 @@ Exp-LORer/
 │   │   │   ├── decoration/ # FileDecorationRuleDialog
 │   │   │   ├── config/  # EnvironmentVariablesDialog, EditEnvironmentVariableDialog
 │   │   │   └── notifications/ # ToastNotificationWidget, ProgressNotificationWidget, NotificationOverlayWidget
+│   │   │   # core/ also holds WorkspaceManagerDialog and WorkspaceLaunchContext (§14.60)
 │   │   └── qml/         # QML media viewer (not yet implemented)
 │   └── app/
 │       ├── CompositionRoot.cpp/.h
 │       ├── ExpLorerApplication.cpp/.h   # QApplication subclass catching event-loop exceptions (§14.23)
 │       ├── ExceptionHandler.cpp/.h      # fatal-exception dialog + logging + exit (§14.23)
+│       ├── WorkspaceInstanceGuard.cpp/.h # per-workspace single-instance mutex + activation IPC (§14.60)
 │       └── main.cpp
 ├── tests/
 │   ├── domain/          # plain unit tests
@@ -513,5 +527,7 @@ Section numbers (§14.1–§14.59) are continuous across all three:
   state persistence, per-tab column visibility persistence, Light/Dark theme, duplicate file finder,
   disk fragmentation viewer, Details-view fragments column, address bar environment-variable
   expansion, bulk/batch rename, advanced search match-mode toggles, environment variables view/edit,
-  preview panel per-kind widget split, preview panel layout/properties rework.
+  preview panel per-kind widget split, preview panel layout/properties rework, named workspaces
+  (File > Workspaces / Save as Workspace / Workspace Management) with per-workspace multi-instance
+  launching.
 

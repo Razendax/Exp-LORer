@@ -6,12 +6,15 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QCloseEvent>
+#include <QCoreApplication>
 #include <QFileIconProvider>
 #include <QFileInfo>
 #include <QFont>
 #include <QHBoxLayout>
 #include <QIcon>
+#include <QInputDialog>
 #include <QLabel>
+#include <QLineEdit>
 #include <QLocale>
 #include <QMenu>
 #include <QMenuBar>
@@ -21,6 +24,7 @@
 #include <QPainter>
 #include <QPalette>
 #include <QPointer>
+#include <QProcess>
 #include <QResizeEvent>
 #include <QSettings>
 #include <QSplitter>
@@ -59,9 +63,11 @@
 #include "VirtualPaths.h"
 #include "WorkspaceController.h"
 #include "WorkspaceLayoutWidget.h"
+#include "WorkspaceManagerDialog.h"
 #include "WorkspacePaneId.h"
 #include "WorkspacePaneViewModel.h"
 #include "WorkspacePaneWidget.h"
+#include "WorkspaceStore.h"
 
 namespace
 {
@@ -244,6 +250,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
                          ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, DiskUsageService& diskUsageService,
                          DuplicateFinderService& duplicateFinderService, FragmentationService& fragmentationService,
                          BulkRenameUseCase& bulkRenameUseCase, EnvironmentVariablesViewModel& environmentVariablesViewModel,
+                         WorkspaceStore& workspaceStore, const WorkspaceLaunchContext& launchContext,
                          const AppConfig& initialConfig, QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceController(workspaceController)
@@ -263,13 +270,15 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_fragmentationService(fragmentationService)
     , m_bulkRenameUseCase(bulkRenameUseCase)
     , m_environmentVariablesViewModel(environmentVariablesViewModel)
+    , m_workspaceStore(workspaceStore)
+    , m_launchContext(launchContext)
     , m_columnWidths(initialConfig.detailsColumnWidths)
     , m_columnOrder(initialConfig.detailsColumnOrder)
     , m_initialLeftPanelState(initialConfig.leftPanel)
     , m_initialRightPanelState(initialConfig.rightPanel)
 {
     setObjectName(QStringLiteral("mainWindow"));
-    setWindowTitle(tr("Exp-LORer"));
+    setWindowTitle(tr("Exp-LORer — %1").arg(currentWorkspaceName()));
 
     if (!initialConfig.windowGeometry.isEmpty())
     {
@@ -420,6 +429,10 @@ void MainWindow::createMenuBar()
     QMenu* fileMenu = menuBar()->addMenu(tr("&File"));
     fileMenu->addAction(tr("&Settings..."), this, &MainWindow::showSettingsDialog);
     fileMenu->addSeparator();
+
+    createWorkspacesMenu(fileMenu);
+
+    fileMenu->addSeparator();
     fileMenu->addAction(tr("E&xit"), this, &QWidget::close);
 
     QMenu* editMenu = menuBar()->addMenu(tr("&Edit"));
@@ -461,6 +474,18 @@ void MainWindow::createFavoritesMenu()
     // Rebuilt lazily right before the menu is shown, rather than kept live-synced against
     // favoritesChanged() -- always current with no extra wiring here (Architecture.md §14.35).
     connect(m_favoritesMenu, &QMenu::aboutToShow, this, &MainWindow::rebuildFavoritesMenuItems);
+}
+
+void MainWindow::createWorkspacesMenu(QMenu* fileMenu)
+{
+    m_workspacesMenu = fileMenu->addMenu(tr("&Workspaces"));
+
+    // Rebuilt lazily right before the menu is shown, rather than kept live-synced -- same posture
+    // as m_favoritesMenu above (Architecture.md §14.60).
+    connect(m_workspacesMenu, &QMenu::aboutToShow, this, &MainWindow::rebuildWorkspacesMenuItems);
+
+    fileMenu->addAction(tr("Save as &Workspace..."), this, &MainWindow::onSaveAsWorkspaceTriggered);
+    fileMenu->addAction(tr("Workspace &Management..."), this, &MainWindow::showWorkspaceManagerDialog);
 }
 
 void MainWindow::createLayoutToolBar()
@@ -720,6 +745,92 @@ void MainWindow::showManageFavoritesDialog()
 {
     ManageFavoritesDialog dialog(&m_favoritesViewModel, this);
     dialog.exec();
+}
+
+void MainWindow::rebuildWorkspacesMenuItems()
+{
+    m_workspacesMenu->clear();
+
+    for (const WorkspaceEntry& entry : m_workspaceStore.listWorkspaces())
+    {
+        QAction* action = m_workspacesMenu->addAction(entry.name);
+        action->setCheckable(true);
+        action->setChecked(entry.id == m_launchContext.workspaceId);
+        connect(action, &QAction::triggered, this, [this, entry]() { launchOrActivateWorkspace(entry); });
+    }
+}
+
+void MainWindow::launchOrActivateWorkspace(const WorkspaceEntry& entry)
+{
+    if (entry.id == m_launchContext.workspaceId)
+    {
+        raise();
+        activateWindow();
+        return;
+    }
+
+    // If `entry` is already open in another window, that process's WorkspaceInstanceGuard already
+    // owns its name -- the process started here simply loses that race, forwards activation to the
+    // real owner, and exits before constructing CompositionRoot/MainWindow (Architecture.md §14.60).
+    // No pre-check is done here first; a pre-check would itself race against the same condition.
+    QProcess::startDetached(QCoreApplication::applicationFilePath(),
+                             { QStringLiteral("--data-dir"), QString::fromStdWString(m_launchContext.appDataDir.wstring()),
+                               QStringLiteral("--workspace"), entry.id });
+}
+
+void MainWindow::onSaveAsWorkspaceTriggered()
+{
+    bool ok = false;
+    const QString name =
+        QInputDialog::getText(this, tr("Save as Workspace"), tr("Workspace name:"), QLineEdit::Normal, QString(), &ok);
+    if (!ok || name.trimmed().isEmpty())
+    {
+        return;
+    }
+    const QString trimmedName = name.trimmed();
+
+    const std::vector<WorkspaceEntry> existing = m_workspaceStore.listWorkspaces();
+    const auto it = std::find_if(existing.begin(), existing.end(),
+                                  [&trimmedName](const WorkspaceEntry& entry) { return entry.name == trimmedName; });
+
+    QString targetId;
+    if (it != existing.end())
+    {
+        const QMessageBox::StandardButton answer = QMessageBox::question(
+            this, tr("Save as Workspace"), tr("A workspace named \"%1\" already exists. Overwrite it?").arg(trimmedName));
+        if (answer != QMessageBox::Yes)
+        {
+            return;
+        }
+        targetId = it->id;
+    }
+    else
+    {
+        targetId = m_workspaceStore.createWorkspace(trimmedName);
+    }
+
+    // Deliberately does not rebind this window to targetId -- it stays tied to whatever workspace
+    // it was launched with, and keeps saving back there on close (Architecture.md §14.60).
+    const AppConfigStore targetStore(m_workspaceStore.configFilePath(targetId));
+    targetStore.save(captureCurrentConfig());
+}
+
+void MainWindow::showWorkspaceManagerDialog()
+{
+    WorkspaceManagerDialog dialog(m_workspaceStore, m_launchContext, this);
+    dialog.exec();
+}
+
+QString MainWindow::currentWorkspaceName() const
+{
+    for (const WorkspaceEntry& entry : m_workspaceStore.listWorkspaces())
+    {
+        if (entry.id == m_launchContext.workspaceId)
+        {
+            return entry.name;
+        }
+    }
+    return m_launchContext.workspaceId;
 }
 
 void MainWindow::showEnvironmentVariablesDialog()
@@ -1199,17 +1310,27 @@ void MainWindow::closeEvent(QCloseEvent* event)
         }
     }
 
+    m_configStore.save(captureCurrentConfig());
+
+    QMainWindow::closeEvent(event);
+}
+
+AppConfig MainWindow::captureCurrentConfig() const
+{
     AppConfig config;
     config.windowGeometry = saveGeometry();
     config.workspace = m_workspaceController->captureConfig();
 
     if (WorkspacePaneWidget* focusedPaneWidget = m_workspaceLayoutWidget->paneWidget(m_workspaceController->focusedPane()))
     {
-        m_columnWidths = focusedPaneWidget->currentColumnWidths();
-        m_columnOrder = focusedPaneWidget->currentColumnOrder();
+        config.detailsColumnWidths = focusedPaneWidget->currentColumnWidths();
+        config.detailsColumnOrder = focusedPaneWidget->currentColumnOrder();
     }
-    config.detailsColumnWidths = m_columnWidths;
-    config.detailsColumnOrder = m_columnOrder;
+    else
+    {
+        config.detailsColumnWidths = m_columnWidths;
+        config.detailsColumnOrder = m_columnOrder;
+    }
 
     config.leftPanel.expanded = m_leftPanelWidget->isExpanded();
     config.leftPanel.activeTabIndex = m_leftPanelWidget->activeTabIndex();
@@ -1229,7 +1350,5 @@ void MainWindow::closeEvent(QCloseEvent* event)
         }
     }
 
-    m_configStore.save(config);
-
-    QMainWindow::closeEvent(event);
+    return config;
 }

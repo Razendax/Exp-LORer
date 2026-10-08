@@ -4,6 +4,8 @@
 #include <memory>
 #include <vector>
 
+#include <QString>
+
 #include "AdvancedSearchService.h"
 #include "AppConfigStore.h"
 #include "BulkRenameUseCase.h"
@@ -57,6 +59,7 @@
 #include "WindowsDiskUsageScanner.h"
 #include "WindowsFragmentationScanner.h"
 #include "WorkspacePaneId.h"
+#include "WorkspaceStore.h"
 
 class TabViewModel;
 class WorkspacePaneViewModel;
@@ -71,13 +74,17 @@ public:
     // appDataDir: resolved once in main.cpp (the real app-data location, or a --data-dir override
     // for test isolation, Architecture.md §9) -- explorer.db, config.json, cache/thumbnails/,
     // highlight_theme.json, and file_decorations.json all live under it.
-    explicit CompositionRoot(const std::filesystem::path& appDataDir);
+    // workspaceId: resolved once in main.cpp from the "--workspace <id>" startup override (default
+    // "default", Architecture.md §14.60) -- selects which workspaces/<id>.json m_appConfigStore
+    // reads/writes this process's session state to/from.
+    CompositionRoot(const std::filesystem::path& appDataDir, const QString& workspaceId);
     ~CompositionRoot();
 
     std::unique_ptr<TabViewModel> createTabViewModel();
     std::unique_ptr<WorkspacePaneViewModel> createWorkspacePaneViewModel(WorkspacePaneId id);
     std::unique_ptr<WorkspaceController> createWorkspaceController();
 
+    WorkspaceStore& workspaceStore() noexcept { return m_workspaceStore; }
     AppConfigStore& appConfigStore() noexcept { return m_appConfigStore; }
     TagManagementUseCase& tagManagementUseCase() noexcept { return m_tagManagementUseCase; }
     SyntaxHighlightEngine& syntaxHighlightEngine() noexcept { return m_syntaxHighlightEngine; }
@@ -102,6 +109,11 @@ private:
     FileNavigationUseCase m_fileNavigationUseCase;
     SQLiteTagRepository m_tagRepository;
     TagManagementUseCase m_tagManagementUseCase;
+
+    // Declared before m_appConfigStore so its migration (a pre-existing config.json -> the
+    // resolved workspace's own workspaces/<id>.json, Architecture.md §14.60) runs before
+    // m_appConfigStore is constructed from that path.
+    WorkspaceStore m_workspaceStore;
     AppConfigStore m_appConfigStore;
 
     MediaDecoder m_mediaDecoder;

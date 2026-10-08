@@ -7,6 +7,8 @@
 #include "UiTheme.h"
 #include "VirtualPaths.h"
 #include "WorkspaceController.h"
+#include "WorkspaceInstanceGuard.h"
+#include "WorkspaceLaunchContext.h"
 #include "WorkspacePaneViewModel.h"
 
 #include <cstring>
@@ -15,6 +17,7 @@
 
 #include <QSettings>
 #include <QStandardPaths>
+#include <QString>
 
 #ifdef _WIN32
 #include <cwchar>
@@ -26,44 +29,87 @@
 
 namespace
 {
-    // Architecture.md §9: looks for a "--data-dir <path>" startup argument, letting ui_tests/ (§11)
-    // point the app at an isolated, disposable directory instead of the real app-data location. On
-    // Windows, re-reads the process's own command line as wide text rather than trusting the narrow
-    // `argv` this function receives -- MSVC's narrow argv is ANSI-code-page-limited, the same
-    // narrowing trap PathUtf8/path::string() guidance (Architecture.md §6) warns about, and the
-    // override value is itself a filesystem path that could be non-ASCII.
-    std::optional<std::filesystem::path> resolveDataDirOverride(int argc, char* argv[])
-    {
+    // Shared by resolveDataDirOverride and resolveWorkspaceIdOverride below: scans the process's
+    // own command line for `flagName` followed by a value, returning that value's raw text. On
+    // Windows, re-reads the command line as wide text (`CommandLineToArgvW`) rather than trusting
+    // the narrow `argv` main() receives -- MSVC's narrow argv is ANSI-code-page-limited, the same
+    // narrowing trap PathUtf8/path::string() guidance (Architecture.md §6) warns about, and an
+    // override value can itself be a non-ASCII filesystem path.
 #ifdef _WIN32
-        (void)argc;
-        (void)argv;
+    std::optional<std::wstring> resolveStartupArgOverride(const wchar_t* flagName)
+    {
         int wargc = 0;
         LPWSTR* wargv = CommandLineToArgvW(GetCommandLineW(), &wargc);
         if (!wargv)
         {
             return std::nullopt;
         }
-        std::optional<std::filesystem::path> result;
+
+        std::optional<std::wstring> result;
         for (int i = 1; i < wargc - 1; ++i)
         {
-            if (std::wcscmp(wargv[i], L"--data-dir") == 0)
+            if (std::wcscmp(wargv[i], flagName) == 0)
             {
-                result = std::filesystem::path(wargv[i + 1]);
+                result = wargv[i + 1];
                 break;
             }
         }
         LocalFree(wargv);
         return result;
+    }
 #else
+    std::optional<std::string> resolveStartupArgOverride(int argc, char* argv[], const char* flagName)
+    {
         for (int i = 1; i < argc - 1; ++i)
         {
-            if (std::strcmp(argv[i], "--data-dir") == 0)
+            if (std::strcmp(argv[i], flagName) == 0)
             {
-                return std::filesystem::path(argv[i + 1]);
+                return std::string(argv[i + 1]);
             }
         }
         return std::nullopt;
+    }
 #endif
+
+    // Architecture.md §9: letting ui_tests/ (§11) point the app at an isolated, disposable
+    // directory instead of the real app-data location.
+    std::optional<std::filesystem::path> resolveDataDirOverride(int argc, char* argv[])
+    {
+#ifdef _WIN32
+        (void)argc;
+        (void)argv;
+        if (const std::optional<std::wstring> value = resolveStartupArgOverride(L"--data-dir"))
+        {
+            return std::filesystem::path(*value);
+        }
+        return std::nullopt;
+#else
+        if (const std::optional<std::string> value = resolveStartupArgOverride(argc, argv, "--data-dir"))
+        {
+            return std::filesystem::path(*value);
+        }
+        return std::nullopt;
+#endif
+    }
+
+    // Architecture.md §14.60: selects which saved workspace (workspaces/<id>.json) this process
+    // opens -- defaults to "default", the id every install's first/migrated workspace is given.
+    QString resolveWorkspaceIdOverride(int argc, char* argv[])
+    {
+#ifdef _WIN32
+        (void)argc;
+        (void)argv;
+        if (const std::optional<std::wstring> value = resolveStartupArgOverride(L"--workspace"))
+        {
+            return QString::fromStdWString(*value);
+        }
+#else
+        if (const std::optional<std::string> value = resolveStartupArgOverride(argc, argv, "--workspace"))
+        {
+            return QString::fromStdString(*value);
+        }
+#endif
+        return QStringLiteral("default");
     }
 }
 
@@ -92,7 +138,21 @@ int main(int argc, char* argv[])
     Logging::info("Exp-LORer starting");
     Logging::info(std::string("--data-dir override: ") + (dataDirOverride ? "true" : "false"));
 
+    const QString workspaceId = resolveWorkspaceIdOverride(argc, argv);
+    Logging::info("workspace: " + workspaceId.toStdString());
+
     ExpLorerApplication app(argc, argv);
+
+    // Architecture.md §14.60: a losing process forwards activation to whichever process already
+    // owns this exact (appDataDir, workspaceId) and exits here, before CompositionRoot/MainWindow
+    // are ever constructed -- needs a QCoreApplication (ExpLorerApplication above) for QLocalSocket.
+    WorkspaceInstanceGuard instanceGuard(appDataDir, workspaceId);
+    if (!instanceGuard.tryAcquire())
+    {
+        Logging::info("Another instance already owns this workspace; activated it and exiting");
+        Logging::shutdown();
+        return 0;
+    }
 
     // Architecture.md §14.50: Fusion is the app's style for both Light and Dark themes (set once,
     // never re-set on a theme toggle); applying the persisted theme's QPalette here, before
@@ -101,7 +161,7 @@ int main(int argc, char* argv[])
 
     try
     {
-        CompositionRoot compositionRoot(appDataDir);
+        CompositionRoot compositionRoot(appDataDir, workspaceId);
         UiTheme::setTheme(UiTheme::currentTheme(), compositionRoot.uiThemeChangeNotifier());
 
         const AppConfig initialConfig = compositionRoot.appConfigStore().load();
@@ -117,8 +177,14 @@ int main(int argc, char* argv[])
                               compositionRoot.notificationSettingsViewModel(), compositionRoot.columnVisibilitySettingsViewModel(),
                               compositionRoot.diskUsageService(), compositionRoot.duplicateFinderService(),
                               compositionRoot.fragmentationService(), compositionRoot.bulkRenameUseCase(),
-                              compositionRoot.environmentVariablesViewModel(), initialConfig);
+                              compositionRoot.environmentVariablesViewModel(), compositionRoot.workspaceStore(),
+                              WorkspaceLaunchContext{ appDataDir, workspaceId }, initialConfig);
         mainWindow.show();
+
+        QObject::connect(&instanceGuard, &WorkspaceInstanceGuard::activationRequested, &mainWindow, [&mainWindow]() {
+            mainWindow.raise();
+            mainWindow.activateWindow();
+        });
 
         if (!restored)
         {

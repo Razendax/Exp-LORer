@@ -5,7 +5,7 @@
   "dependencies": [
     {
       "name": "qtbase",
-      "features": ["widgets", "sql"]
+      "features": ["widgets", "sql", "network"]
     },
     "qtdeclarative",
     "qtmultimedia",

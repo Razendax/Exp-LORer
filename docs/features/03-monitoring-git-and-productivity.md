@@ -1884,3 +1884,82 @@ properties block, and the unchanged zoom label.
   `tests/application/FilePreviewUseCaseTest.cpp` updated for the new `fileSizeBytes` parameter/
   accessor. No UI test changes (automation ids above unaffected); UI is still not covered by CTest
   in v1 (§11).
+
+### 14.60 Workspaces: Named Session Profiles + Per-Workspace Multi-Instance
+
+Generalizes the single, fixed window session (§14.14 — layout, each pane's tabs/paths/view
+mode/sort order, panel state, window geometry, all the `AppConfig` struct already captured) into
+any number of **named** session snapshots ("workspaces"), browsable/launchable from a new File menu
+section, each one openable as its own OS process running concurrently with the others. Reuses
+`AppConfig`/`WorkspaceConfig` and `AppConfigStore`'s JSON shape verbatim — a workspace is just an
+`AppConfig` with a name and an id, nothing new to serialize.
+
+* **Storage** (`src/adapters/config/WorkspaceStore.h/.cpp`, new `WorkspaceEntry{id, name}`): under
+  `appDataDir/workspaces/`, `index.json` holds the `[{id, name}, ...]` registry (written only by
+  `WorkspaceStore::createWorkspace`/`renameWorkspace`/`deleteWorkspace`); `<id>.json` holds that
+  workspace's own `AppConfig`, read/written by a plain `AppConfigStore` pointed at that path — zero
+  changes to `AppConfigStore` itself. Keeping the registry and the per-workspace session in separate
+  files means a rename from the Workspace Management dialog (below) can never be clobbered by some
+  other, already-running instance's save-on-exit, since that instance's `AppConfigStore::save` never
+  touches `index.json`. A pre-existing single `config.json` is migrated once into
+  `workspaces/default.json` (id `"default"`, name `"Default"`) the first time `index.json` doesn't
+  yet exist; an empty/missing index self-heals to that same single `"default"/"Default"` entry, the
+  same tolerant-fallback posture `AppConfigStore::load()` already has for a missing file.
+* **`CompositionRoot`**: gains a `WorkspaceStore m_workspaceStore` member, declared before
+  `m_appConfigStore` so migration runs first; `m_appConfigStore` is now constructed from
+  `m_workspaceStore.configFilePath(workspaceId)` instead of the fixed `appDataDir / "config.json"`.
+  Constructor takes the resolved workspace id alongside `appDataDir`.
+* **Per-workspace single instance** (`src/app/WorkspaceInstanceGuard.h/.cpp`): a Windows named mutex
+  plus a `QLocalServer`/`QLocalSocket` activation channel, both named from a hash of
+  `(appDataDir, workspaceId)` — the existing §6 "name must derive from the resolved data dir" rule,
+  extended to also fold in the workspace id. `main.cpp` tries to acquire the guard right after
+  constructing `ExpLorerApplication` (needs a `QCoreApplication` for `QLocalSocket`); losing that
+  race means some other process already owns this exact workspace, so this process sends one
+  "activate" message over the matching socket (the owner's server raises/focuses its window) and
+  exits before `CompositionRoot`/`MainWindow` are ever constructed. Two different workspace ids (or
+  two different `--data-dir` overrides) derive different names and simply never contend with each
+  other — this is the whole mechanism behind running multiple workspaces concurrently without
+  conflict; resources that stay genuinely shared across every workspace in one data directory
+  (`explorer.db`, the thumbnail cache, `favorites.json`, etc.) are unaffected and keep relying on
+  `PRAGMA busy_timeout` (§5) and atomic `QSaveFile` writes to tolerate concurrent processes, same as
+  today. Not implemented for non-Windows yet (`tryAcquire()` always succeeds off Windows), consistent
+  with "Windows-first, Linux later" and the existing `#ifdef _WIN32` scoping of
+  `resolveDataDirOverride` in `main.cpp` (§9).
+* **`main.cpp`**: the wide-argv scanning `resolveDataDirOverride` already used for `--data-dir` is
+  generalized into a small shared helper, reused for a new `--workspace <id>` startup flag (default
+  `"default"`).
+* **`MainWindow`**: the `AppConfig` snapshot `closeEvent()` already built inline is factored into a
+  private `captureCurrentConfig() const`, reused by both `closeEvent()` (unchanged behavior) and the
+  new Save-as-Workspace action below. Gains two small constructor additions: `WorkspaceStore&` and a
+  plain `WorkspaceLaunchContext{appDataDir, workspaceId}` (`src/ui/widgets/core/
+  WorkspaceLaunchContext.h`) rather than further raw path/string parameters. Window title now shows
+  the current workspace's name, so concurrently open windows are distinguishable.
+* **File menu** (`createMenuBar()`, between the existing Settings... and Exit):
+  * **Workspaces ▸** — submenu rebuilt on `aboutToShow` (same pattern as the Favorites menu,
+    `rebuildFavoritesMenuItems`) from `WorkspaceStore::listWorkspaces()`, current workspace checked.
+    Clicking the entry for the workspace already open *in this window* just raises `this`; clicking
+    any other entry runs `QProcess::startDetached(QCoreApplication::applicationFilePath(),
+    {"--data-dir", appDataDir, "--workspace", id})`. If that workspace is already open elsewhere, the
+    new process simply loses the instance-guard race, forwards activation to the real owner, and
+    exits — correct by construction, with no separate pre-check needed (a pre-check would itself
+    race against the same condition).
+  * **Save as Workspace...** — `QInputDialog::getText` for a name; an existing name prompts an
+    overwrite confirmation (reuses that id), otherwise creates a new id via
+    `WorkspaceStore::createWorkspace`. Writes `captureCurrentConfig()` to that workspace's
+    `AppConfigStore`. Deliberately does not rebind the current window to the saved-to workspace — it
+    stays tied to whatever id it was launched with, and keeps saving back there on close.
+  * **Workspace Management...** — new `WorkspaceManagerDialog` (`src/ui/widgets/core/`, same
+    list+buttons shape as `ManageFavoritesDialog`/`TagManagerDialog`): list of workspaces with
+    Rename/Delete/Close. Delete is blocked with a message when that workspace's instance-guard name
+    is currently held (i.e. it's open in another window right now), checked via a non-destructive
+    probe. Rename is always safe — it only ever touches `index.json`, which no running instance's own
+    save path writes to (see Storage, above).
+* **Build**: `vcpkg.json` adds `"network"` to `qtbase`'s feature list; root `CMakeLists.txt`'s
+  `find_package(Qt6 REQUIRED COMPONENTS ...)` gains `Network`; `src/app/CMakeLists.txt` links
+  `Qt6::Network` for `WorkspaceInstanceGuard`.
+* **Testing**: `tests/adapters/WorkspaceStoreTest.cpp` (migration from a legacy `config.json`,
+  create/list/rename/delete, empty-index self-heal, id stability across rename) — same temp-directory
+  style as `tests/adapters/AppConfigStoreTest.cpp`. `WorkspaceInstanceGuard`'s OS-mutex/IPC half is a
+  "Carve-out — OS-shell side effects with no assertable return" (§11, same posture as
+  `ShellContextMenuProvider`) — manually smoke-tested, not CTest-covered; its key-derivation step is
+  still a plain, independently testable pure function. UI is still not covered by CTest in v1 (§11).

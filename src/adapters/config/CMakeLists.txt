@@ -4,6 +4,11 @@ add_library(explorer_adapters_config STATIC
     JsonFileStore.cpp
     AppConfigStore.h
     AppConfigStore.cpp
+    WorkspaceEntry.h
+    WorkspaceStore.h
+    WorkspaceStore.cpp
+    WorkspaceInstanceProbe.h
+    WorkspaceInstanceProbe.cpp
     AsyncSaveWorker.h
     AsyncSaveDispatcher.h
     HighlightTheme.h
@@ -43,3 +48,6 @@ target_include_directories(explorer_adapters_config PUBLIC ${CMAKE_CURRENT_SOURC
 # QByteArray/QJsonDocument.
 target_link_libraries(explorer_adapters_config PUBLIC explorer_adapters_viewmodels explorer_adapters_highlighting explorer_adapters_decoration explorer_adapters_favorites explorer_adapters_notifications Qt6::Core Qt6::Gui)
 target_link_libraries(explorer_adapters_config PRIVATE explorer_adapters_logging)
+# Qt6::Network is needed for QLocalSocket (WorkspaceInstanceProbe's is-this-workspace-open check,
+# Architecture.md §14.60) -- PRIVATE since no public header here exposes a Qt Network type.
+target_link_libraries(explorer_adapters_config PRIVATE Qt6::Network)

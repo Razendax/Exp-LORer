@@ -6,6 +6,8 @@ add_executable(Exp-LORer WIN32
     ExceptionHandler.cpp
     ExpLorerApplication.h
     ExpLorerApplication.cpp
+    WorkspaceInstanceGuard.h
+    WorkspaceInstanceGuard.cpp
 )
 
 target_link_libraries(Exp-LORer PRIVATE
@@ -24,6 +26,7 @@ target_link_libraries(Exp-LORer PRIVATE
     explorer_adapters_fragmentation
     explorer_application
     Qt6::Widgets
+    Qt6::Network
 )
 
 # DbgHelp symbolizes the fatal-exception call stack logged by ExceptionHandler (Architecture.md §14.22).
