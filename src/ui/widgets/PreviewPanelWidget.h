@@ -52,7 +52,10 @@ private:
     FilePreviewViewModel* m_viewModel = nullptr;
 
     QStackedWidget* m_stack = nullptr;
+    QWidget* m_imagePreviewPage = nullptr;
+    QLabel* m_imageInfoLabel = nullptr;
     QLabel* m_imageLabel = nullptr;
+    QLabel* m_zoomLabel = nullptr;
     QPlainTextEdit* m_textView = nullptr;
     QListView* m_folderList = nullptr;
     FolderPreviewListModel* m_folderModel = nullptr;
@@ -61,5 +64,9 @@ private:
     QLabel* m_errorLabel = nullptr;
 
     QPixmap m_currentImage;
+    // The previewed file's actual resolution (0 when metadata extraction failed) -- used by
+    // rescaleImageLabel() to recompute the zoom ratio on every resize.
+    int m_currentActualWidth = 0;
+    int m_currentActualHeight = 0;
     SyntaxHighlighter* m_syntaxHighlighter = nullptr;
 };

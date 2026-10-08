@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "FilePreviewUseCase.h"
+#include "MediaMetadata.h"
 #include "MockFileSystemRepository.h"
 #include "MockMediaDecoder.h"
 
@@ -74,6 +75,8 @@ TEST(FilePreviewUseCase, ImageExtensionDispatchesToMediaDecoderAsImage)
     std::vector<std::byte> jpegBytes{ std::byte{ 0xFF }, std::byte{ 0xD8 } };
     EXPECT_CALL(mediaDecoder, generateThumbnail(std::filesystem::path("C:/data/photo.JPG"), 200, 200))
         .WillOnce(Return(Result<std::vector<std::byte>>::success(jpegBytes)));
+    EXPECT_CALL(mediaDecoder, extractMetadata(std::filesystem::path("C:/data/photo.JPG")))
+        .WillOnce(Return(MediaMetadata::create(1920, 1080, std::chrono::milliseconds(0), "jpeg")));
 
     FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
     auto result = useCase.generatePreview(makeNode("C:/data/photo.JPG", FileType::Regular), 200, 200, 1024);
@@ -81,6 +84,9 @@ TEST(FilePreviewUseCase, ImageExtensionDispatchesToMediaDecoderAsImage)
     ASSERT_TRUE(result.hasValue());
     EXPECT_EQ(result.value().kind(), FilePreviewKind::Image);
     EXPECT_EQ(result.value().imageBytes(), jpegBytes);
+    EXPECT_EQ(result.value().path(), std::filesystem::path("C:/data/photo.JPG"));
+    EXPECT_EQ(result.value().metadata().width(), 1920);
+    EXPECT_EQ(result.value().metadata().height(), 1080);
 }
 
 TEST(FilePreviewUseCase, VideoExtensionDispatchesToMediaDecoderAsVideo)
@@ -91,6 +97,8 @@ TEST(FilePreviewUseCase, VideoExtensionDispatchesToMediaDecoderAsVideo)
     std::vector<std::byte> posterBytes{ std::byte{ 0x01 } };
     EXPECT_CALL(mediaDecoder, generateThumbnail(std::filesystem::path("C:/data/clip.mp4"), 200, 200))
         .WillOnce(Return(Result<std::vector<std::byte>>::success(posterBytes)));
+    EXPECT_CALL(mediaDecoder, extractMetadata(std::filesystem::path("C:/data/clip.mp4")))
+        .WillOnce(Return(MediaMetadata::create(1280, 720, std::chrono::milliseconds(60000), "h264", 5'000'000)));
 
     FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
     auto result = useCase.generatePreview(makeNode("C:/data/clip.mp4", FileType::Regular), 200, 200, 1024);
@@ -98,6 +106,29 @@ TEST(FilePreviewUseCase, VideoExtensionDispatchesToMediaDecoderAsVideo)
     ASSERT_TRUE(result.hasValue());
     EXPECT_EQ(result.value().kind(), FilePreviewKind::Video);
     EXPECT_EQ(result.value().imageBytes(), posterBytes);
+    EXPECT_EQ(result.value().metadata().width(), 1280);
+    EXPECT_EQ(result.value().metadata().bitRateBps(), 5'000'000);
+}
+
+TEST(FilePreviewUseCase, ImageExtensionDegradesGracefullyWhenMetadataExtractionFails)
+{
+    MockFileSystemRepository fileSystemRepository;
+    MockMediaDecoder mediaDecoder;
+
+    std::vector<std::byte> jpegBytes{ std::byte{ 0xFF }, std::byte{ 0xD8 } };
+    EXPECT_CALL(mediaDecoder, generateThumbnail(std::filesystem::path("C:/data/photo.JPG"), 200, 200))
+        .WillOnce(Return(Result<std::vector<std::byte>>::success(jpegBytes)));
+    EXPECT_CALL(mediaDecoder, extractMetadata(std::filesystem::path("C:/data/photo.JPG")))
+        .WillOnce(Return(Result<MediaMetadata>::failure(Error(ErrorCode::IoError, "decode failed"))));
+
+    FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
+    auto result = useCase.generatePreview(makeNode("C:/data/photo.JPG", FileType::Regular), 200, 200, 1024);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().kind(), FilePreviewKind::Image);
+    EXPECT_EQ(result.value().imageBytes(), jpegBytes);
+    EXPECT_EQ(result.value().metadata().width(), 0);
+    EXPECT_EQ(result.value().metadata().height(), 0);
 }
 
 TEST(FilePreviewUseCase, TextExtensionReadsPrefixAndReturnsText)
@@ -210,6 +241,8 @@ TEST(FilePreviewUseCase, ImageInsideArchiveIsMaterializedBeforeDecoding)
     std::vector<std::byte> jpegBytes{ std::byte{ 0xFF }, std::byte{ 0xD8 } };
     EXPECT_CALL(mediaDecoder, generateThumbnail(realPath, 200, 200))
         .WillOnce(Return(Result<std::vector<std::byte>>::success(jpegBytes)));
+    EXPECT_CALL(mediaDecoder, extractMetadata(realPath))
+        .WillOnce(Return(MediaMetadata::create(640, 480, std::chrono::milliseconds(0), "jpeg")));
 
     FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
     auto result = useCase.generatePreview(makeNode(virtualPath, FileType::Regular), 200, 200, 1024);
@@ -217,6 +250,9 @@ TEST(FilePreviewUseCase, ImageInsideArchiveIsMaterializedBeforeDecoding)
     ASSERT_TRUE(result.hasValue());
     EXPECT_EQ(result.value().kind(), FilePreviewKind::Image);
     EXPECT_EQ(result.value().imageBytes(), jpegBytes);
+    // Syntax highlighting / display info key off the target's own (virtual) path, not the
+    // materialized temp path.
+    EXPECT_EQ(result.value().path(), virtualPath);
 }
 
 TEST(FilePreviewUseCase, TextInsideArchiveIsMaterializedBeforeReading)

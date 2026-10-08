@@ -16,17 +16,21 @@ FilePreview FilePreview::text(std::string content, bool truncated, std::filesyst
     return preview;
 }
 
-FilePreview FilePreview::image(std::vector<std::byte> encodedBytes)
+FilePreview FilePreview::image(std::vector<std::byte> encodedBytes, std::filesystem::path path, MediaMetadata metadata)
 {
     FilePreview preview(FilePreviewKind::Image);
     preview.m_imageBytes = std::move(encodedBytes);
+    preview.m_path = std::move(path);
+    preview.m_metadata = std::move(metadata);
     return preview;
 }
 
-FilePreview FilePreview::video(std::vector<std::byte> encodedPosterBytes)
+FilePreview FilePreview::video(std::vector<std::byte> encodedPosterBytes, std::filesystem::path path, MediaMetadata metadata)
 {
     FilePreview preview(FilePreviewKind::Video);
     preview.m_imageBytes = std::move(encodedPosterBytes);
+    preview.m_path = std::move(path);
+    preview.m_metadata = std::move(metadata);
     return preview;
 }
 

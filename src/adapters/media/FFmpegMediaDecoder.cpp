@@ -1,6 +1,7 @@
 #include "FFmpegMediaDecoder.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 
 #include "Logging.h"
@@ -103,10 +104,11 @@ Result<MediaMetadata> FFmpegMediaDecoder::extractMetadata(const std::filesystem:
     }
 
     const std::string codecName = opened.decoder != nullptr ? opened.decoder->name : "unknown";
+    const std::int64_t bitRateBps = std::max<std::int64_t>(0, opened.formatContext->bit_rate);
 
     Logging::debug("FFmpegMediaDecoder::extractMetadata succeeded: " + std::to_string(width) + "x" +
                     std::to_string(height) + " codec=" + codecName);
-    return MediaMetadata::create(width, height, duration, codecName);
+    return MediaMetadata::create(width, height, duration, codecName, bitRateBps);
 }
 
 Result<std::vector<std::byte>> FFmpegMediaDecoder::generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth,

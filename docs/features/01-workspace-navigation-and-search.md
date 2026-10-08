@@ -675,3 +675,13 @@ do background-thread Port dispatch (§5).
   Persisting which panel tab (including this one) is active and expanded is covered by §14.48,
   superseding the "matches §14.24's existing unpersisted posture" note this bullet previously had
   for the Preview tab specifically — the bottom panel (§14.24) itself remains unpersisted.
+* **Image/video info + zoom label:** `FilePreviewUseCase` now also calls
+  `IMediaDecoder::extractMetadata()` for Image/Video targets (alongside the existing
+  `generateThumbnail()` call), and `FilePreview::image()`/`video()` carry the target's path plus
+  the resulting `MediaMetadata` (width/height, and bit rate for video via FFmpeg's
+  `AVFormatContext::bit_rate`) — a zero-valued `MediaMetadata` on extraction failure rather than
+  failing the whole preview, same graceful-degradation posture as the text path's binary guard.
+  `PreviewPanelWidget`'s image/poster stack page gained two labels around the existing pixmap
+  label: an info line (fullname + resolution, + bit rate for video) and a bottom zoom line
+  showing the displayed pixmap size as a percentage of the file's actual resolution, recomputed
+  whenever the panel resizes.

@@ -15,6 +15,7 @@
 #include "FolderPreviewListModel.h"
 #include "LanguageRegistry.h"
 #include "MediaExtensions.h"
+#include "MediaMetadata.h"
 #include "SyntaxHighlighter.h"
 
 PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHighlightEngine& syntaxHighlightEngine,
@@ -28,10 +29,25 @@ PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHi
     m_stack = new QStackedWidget(this);
     layout->addWidget(m_stack);
 
-    m_imageLabel = new QLabel(m_stack);
+    m_imagePreviewPage = new QWidget(m_stack);
+    auto* imagePageLayout = new QVBoxLayout(m_imagePreviewPage);
+    imagePageLayout->setContentsMargins(0, 0, 0, 0);
+
+    m_imageInfoLabel = new QLabel(m_imagePreviewPage);
+    m_imageInfoLabel->setObjectName(QStringLiteral("previewImageInfoLabel"));
+    m_imageInfoLabel->setWordWrap(true);
+    imagePageLayout->addWidget(m_imageInfoLabel);
+
+    m_imageLabel = new QLabel(m_imagePreviewPage);
     m_imageLabel->setObjectName(QStringLiteral("previewImageLabel"));
     m_imageLabel->setAlignment(Qt::AlignCenter);
-    m_stack->addWidget(m_imageLabel);
+    imagePageLayout->addWidget(m_imageLabel, 1);
+
+    m_zoomLabel = new QLabel(m_imagePreviewPage);
+    m_zoomLabel->setObjectName(QStringLiteral("previewZoomLabel"));
+    imagePageLayout->addWidget(m_zoomLabel);
+
+    m_stack->addWidget(m_imagePreviewPage);
 
     m_textView = new QPlainTextEdit(m_stack);
     m_textView->setObjectName(QStringLiteral("previewTextView"));
@@ -140,8 +156,28 @@ void PreviewPanelWidget::showImage(const FilePreview& preview)
         return;
     }
 
+    const MediaMetadata& metadata = preview.metadata();
+    m_currentActualWidth = metadata.width();
+    m_currentActualHeight = metadata.height();
+
+    if (m_currentActualWidth > 0 && m_currentActualHeight > 0)
+    {
+        QString info = QString::fromStdWString(preview.path().filename().native())
+            + QStringLiteral("  —  %1x%2").arg(m_currentActualWidth).arg(m_currentActualHeight);
+        if (preview.kind() == FilePreviewKind::Video && metadata.bitRateBps() > 0)
+        {
+            info += QStringLiteral(", %1 kbps").arg(metadata.bitRateBps() / 1000);
+        }
+        m_imageInfoLabel->setText(info);
+        m_imageInfoLabel->setVisible(true);
+    }
+    else
+    {
+        m_imageInfoLabel->setVisible(false);
+    }
+
     rescaleImageLabel();
-    m_stack->setCurrentWidget(m_imageLabel);
+    m_stack->setCurrentWidget(m_imagePreviewPage);
 }
 
 void PreviewPanelWidget::showText(const FilePreview& preview)
@@ -181,5 +217,20 @@ void PreviewPanelWidget::rescaleImageLabel()
         return;
     }
 
-    m_imageLabel->setPixmap(m_currentImage.scaled(m_imageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+    const QPixmap scaled = m_currentImage.scaled(m_imageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    m_imageLabel->setPixmap(scaled);
+
+    if (m_currentActualWidth > 0)
+    {
+        const double ratio = scaled.width() / static_cast<double>(m_currentActualWidth);
+        m_zoomLabel->setText(tr("Zoom: %1% (actual %2x%3)")
+                                  .arg(qRound(ratio * 100))
+                                  .arg(m_currentActualWidth)
+                                  .arg(m_currentActualHeight));
+        m_zoomLabel->setVisible(true);
+    }
+    else
+    {
+        m_zoomLabel->setVisible(false);
+    }
 }
