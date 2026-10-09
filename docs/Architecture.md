@@ -375,7 +375,17 @@ Exp-LORer/
 │   │   ├── duplicates/  # DuplicateFinderUseCase, IDuplicateFileScanner
 │   │   └── fragmentation/ # FragmentationUseCase, IFragmentationScanner, IFragmentationRepository
 │   ├── adapters/
-│   │   ├── viewmodels/  # ViewModels/controllers (Qt-facing; §2.3, §14)
+│   │   ├── viewmodels/  # ViewModels/controllers (Qt-facing; §2.3, §14; single target, folder-grouped like application/)
+│   │   │   ├── filesystem/ # FileListModel, FolderTreeModel, FileOperationsController, FileTransferService/Worker, BulkRenameViewModel, IconLoadingService/Worker, NavigationHistory, ViewMode
+│   │   │   ├── workspace/  # WorkspaceController, WorkspacePaneViewModel, WorkspaceLayoutTopology, TabViewModel, SplitLayout, WorkspaceConfig (§14.60)
+│   │   │   ├── tags/       # TagListViewModel, TagManagerViewModel, TagChangeNotifier, FileTagsService/Worker, TagColorPalette
+│   │   │   ├── media/      # FilePreviewViewModel, FilePreviewWorker
+│   │   │   ├── git/        # GitStatusService, GitStatusWorker (§14.32/§14.45)
+│   │   │   ├── monitoring/ # MonitoringPanelViewModel, DirectoryWatchService
+│   │   │   ├── diskusage/  # DiskUsageService/Worker, DriveSpaceInfoWorker, FolderSizeViewModel (§14.40)
+│   │   │   ├── search/     # AdvancedSearchService/Worker, SearchResultsTreeModel
+│   │   │   ├── duplicates/ # DuplicateFinderService/Worker, DuplicateGroupsModel (§14.51)
+│   │   │   └── fragmentation/ # FragmentationService/Worker, FragmentationViewModel, FragmentationResultsModel
 │   │   ├── persistence/ # SQLiteTagRepository + migrations
 │   │   ├── filesystem/  # StandardFileSystemRepository
 │   │   ├── shell/       # ShellContextMenuProvider

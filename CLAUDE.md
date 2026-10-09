@@ -5,9 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project
 
 Exp-LORer is a Windows-first (Linux later) desktop file explorer in C++20/Qt6, with a SQLite-backed
-file tagging system and a built-in image/video viewer. The project is in early scaffolding: most
-layers under `src/` currently contain only `.gitkeep` placeholders and `tests/` contains only
-placeholder GTest files — `CompositionRoot`, `MainWindow`, and `main.cpp` are the only real code so far.
+file tagging system and a built-in image/video viewer. The project is well past initial scaffolding:
+`src/` is fully built out across all layers (domain, application, adapters, ui, app) with a growing
+feature set (workspaces, tagging, search, git status, duplicates, disk usage, fragmentation, terminal,
+media preview, and more — see `docs/features/`), and `tests/` has real GoogleTest coverage mirroring
+the `src/` layer structure.
 
 Full requirements and design are in `docs/Specification.md` and `docs/Architecture.md` — read
 these before implementing a new component or feature, refactoring the code, or making changes in code;
@@ -114,7 +116,7 @@ and implemented in `src/adapters`.
 
 - `src/domain` — plain C++ entities (`FileNode`, `Tag`, `MediaMetadata`, `FileTagAssociation`), no framework deps.
 - `src/application` — use cases (`FileNavigationUseCase`, `TagManagementUseCase`, `MediaProcessingUseCase`) and the Port interfaces above.
-- `src/adapters/viewmodels` — Qt-facing ViewModels wrapping use cases (`FileTreeViewModel`, `TagListViewModel`, `MediaPreviewViewModel`).
+- `src/adapters/viewmodels` — Qt-facing ViewModels wrapping use cases (`TagListViewModel`, `FilePreviewViewModel`, `WorkspaceController`); one target, folder-grouped by feature (`filesystem/`, `workspace/`, `tags/`, `media/`, `git/`, `monitoring/`, `diskusage/`, `search/`, `duplicates/`, `fragmentation/`) the same way `src/application` and `src/ui/widgets` are — see `Architecture.md` §10.
 - `src/adapters/persistence` — `SQLiteTagRepository` + migrations.
 - `src/adapters/filesystem` — `StandardFileSystemRepository` (`std::filesystem`, Windows long-path `\\?\` handling, OS trash calls).
 - `src/adapters/media` — `QtMediaDecoder`/`FFmpegMediaDecoder`, thumbnail generation.
