@@ -103,6 +103,12 @@ signals:
     // refreshes any live tab whose currentPath() matches.
     void directoryContentsMayHaveChanged(const std::filesystem::path& directory);
 
+    // Emitted by renamePath()/bulkRename() right before the actual rename, one per item.
+    // WorkspaceController releases any live directory watch at/inside `source` first -- Windows can
+    // refuse to rename a directory while a change-notification handle is open on anything inside
+    // it, even a descendant open tab's folder (Architecture.md §14.41).
+    void pathAboutToBeRenamed(const std::filesystem::path& source, const std::filesystem::path& destination);
+
     // Emitted by renamePath() on success, just before directoryContentsMayHaveChanged(source's
     // parent). WorkspaceController re-points every tab browsing at/inside `source` to the matching
     // path under `destination`, and renames the folder tree's node (Architecture.md §14.41).

@@ -71,8 +71,12 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
             &WorkspaceController::refreshTabsShowing);
     connect(m_fileOperationsController, &FileOperationsController::directoryContentsMayHaveChanged, m_folderTreeModel,
             &FolderTreeModel::refreshDirectory);
+    connect(m_fileOperationsController, &FileOperationsController::pathAboutToBeRenamed, this,
+            &WorkspaceController::onPathAboutToBeRenamed);
     connect(m_fileOperationsController, &FileOperationsController::pathRenamed, this, &WorkspaceController::onPathRenamed);
     connect(m_fileOperationsController, &FileOperationsController::pathRemoved, this, &WorkspaceController::onPathRemoved);
+    connect(m_fileOperationsController, &FileOperationsController::operationFailed, m_directoryWatchService,
+            &DirectoryWatchService::restoreReleasedWatches);
 
     retargetFocusedTab();
     updateLiveWatchedTabs();
@@ -194,6 +198,11 @@ void WorkspaceController::refreshTabsShowing(const std::filesystem::path& direct
             }
         }
     }
+}
+
+void WorkspaceController::onPathAboutToBeRenamed(const std::filesystem::path& source)
+{
+    m_directoryWatchService->releaseWatchesUnder(source);
 }
 
 void WorkspaceController::onPathRenamed(const std::filesystem::path& source, const std::filesystem::path& destination)

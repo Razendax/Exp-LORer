@@ -362,6 +362,8 @@ void FileOperationsController::extractArchive(const std::filesystem::path& archi
 
 void FileOperationsController::renamePath(const std::filesystem::path& source, const std::filesystem::path& destination)
 {
+    emit pathAboutToBeRenamed(source, destination);
+
     auto result = m_fileNavigationUseCase.moveFile(source, destination);
     if (result.hasError())
     {
@@ -388,6 +390,8 @@ void FileOperationsController::bulkRename(const std::vector<std::pair<std::files
 
     for (const auto& [source, destination] : renames)
     {
+        emit pathAboutToBeRenamed(source, destination);
+
         auto result = m_fileNavigationUseCase.moveFile(source, destination);
         if (result.hasError())
         {

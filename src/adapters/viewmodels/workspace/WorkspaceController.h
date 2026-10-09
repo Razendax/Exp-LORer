@@ -96,6 +96,14 @@ private:
     // from is reflected everywhere (Architecture.md §14.10).
     void refreshTabsShowing(const std::filesystem::path& directory);
 
+    // Connected to m_fileOperationsController->pathAboutToBeRenamed (Architecture.md §14.41).
+    // Releases any live directory watch at/inside `source` before the actual rename runs, since
+    // Windows can refuse to rename a directory while a change-notification handle is open on
+    // anything inside it, even a descendant open tab's folder. A successful rename re-watches the
+    // moved tab itself via onPathRenamed()'s replaceCurrentPath() below; operationFailed restores
+    // it otherwise.
+    void onPathAboutToBeRenamed(const std::filesystem::path& source);
+
     // Connected to m_fileOperationsController->pathRenamed/pathRemoved (Architecture.md §14.41).
     // Every live tab, in any pane, whose currentPath() is the renamed/removed path or inside it is
     // moved -- to the rewritten path after a rename, to the removed path's parent after a delete --

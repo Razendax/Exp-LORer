@@ -4,6 +4,7 @@
 
 #include <QTimer>
 
+#include "PathContainment.h"
 #include "TabViewModel.h"
 
 namespace
@@ -84,6 +85,33 @@ void DirectoryWatchService::startWatching(TabViewModel* tab)
     // even when the OS-level watch itself failed (e.g. "This PC" or an archive-virtual path),
     // there's still a one-time freshness benefit and no ongoing live-update to skip.
     tab->refresh();
+}
+
+void DirectoryWatchService::releaseWatchesUnder(const std::filesystem::path& root)
+{
+    for (WatchedTab& watched : m_watched)
+    {
+        if (isPathWithinOrEqual(watched.tab->currentPath(), root))
+        {
+            m_useCase.unwatch(watched.watchId);
+            watched.watchId = 0;
+        }
+    }
+}
+
+void DirectoryWatchService::restoreReleasedWatches()
+{
+    for (WatchedTab& watched : m_watched)
+    {
+        if (watched.watchId != 0)
+        {
+            continue;
+        }
+
+        QTimer* debounceTimer = watched.debounceTimer;
+        auto result = m_useCase.watch(watched.tab->currentPath(), [debounceTimer]() { debounceTimer->start(); });
+        watched.watchId = result ? result.value() : DirectoryWatchId{ 0 };
+    }
 }
 
 void DirectoryWatchService::rewatch(TabViewModel* tab)

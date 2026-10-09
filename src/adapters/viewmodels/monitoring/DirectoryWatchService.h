@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <vector>
 
 #include <QObject>
@@ -29,6 +30,15 @@ public slots:
     // whenever the visible+active tab set may have changed (layout change, any pane's
     // activeTabChanged).
     void setVisibleTabs(const std::vector<TabViewModel*>& tabs);
+
+    // Drops the OS-level watch (keeping the tracking entry) for any live-watched tab currently
+    // showing a path at/inside `root` -- called by WorkspaceController just before renaming `root`
+    // itself, since Windows can refuse to rename a directory while a change-notification handle is
+    // open on anything inside it, even a descendant (Architecture.md §14.41). A successful rename's
+    // own TabViewModel::currentPathChanged already re-watches the moved tab via rewatch(), so
+    // restoreReleasedWatches() below only matters as a fallback when the rename failed outright.
+    void releaseWatchesUnder(const std::filesystem::path& root);
+    void restoreReleasedWatches();
 
 private:
     struct WatchedTab
