@@ -29,28 +29,24 @@ QHash<QString, MediaThumbnailData> MediaThumbnailLoadingWorker::thumbnailsFor(co
 
     for (const FileNode& entry : entries)
     {
-        const Result<std::vector<std::byte>> thumbnail = m_mediaProcessingUseCase.generateThumbnail(entry.path(), maxWidth, maxHeight);
+        const Result<MediaThumbnail> thumbnail = m_mediaProcessingUseCase.generateThumbnail(entry.path(), maxWidth, maxHeight);
         if (thumbnail.hasError())
         {
             continue;
         }
 
+        const std::vector<std::byte>& bytes = thumbnail.value().bytes;
         QImage image;
-        if (!image.loadFromData(reinterpret_cast<const uchar*>(thumbnail.value().data()), static_cast<int>(thumbnail.value().size())))
+        if (!image.loadFromData(reinterpret_cast<const uchar*>(bytes.data()), static_cast<int>(bytes.size())))
         {
             continue;
         }
 
         MediaThumbnailData data;
         data.image = std::move(image);
-
-        const Result<MediaMetadata> metadata = m_mediaProcessingUseCase.extractMetadata(entry.path());
-        if (!metadata.hasError())
-        {
-            data.width = metadata.value().width();
-            data.height = metadata.value().height();
-            data.duration = metadata.value().duration();
-        }
+        data.width = thumbnail.value().metadata.width();
+        data.height = thumbnail.value().metadata.height();
+        data.duration = thumbnail.value().metadata.duration();
 
         result.insert(toQString(entry.path()), std::move(data));
     }

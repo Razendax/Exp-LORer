@@ -24,28 +24,6 @@ namespace
     };
 }
 
-TEST_F(FFmpegMediaDecoderTest, ExtractMetadataOnMissingFileReturnsError)
-{
-    FFmpegMediaDecoder decoder;
-
-    auto result = decoder.extractMetadata(m_tempDir / "does-not-exist.mp4");
-
-    EXPECT_TRUE(result.hasError());
-}
-
-TEST_F(FFmpegMediaDecoderTest, ExtractMetadataOnGarbageBytesReturnsError)
-{
-    const fs::path garbageFile = m_tempDir / "not-a-video.mp4";
-    std::ofstream stream(garbageFile, std::ios::binary);
-    stream << "this is not a real video container, just some bytes";
-    stream.close();
-
-    FFmpegMediaDecoder decoder;
-    auto result = decoder.extractMetadata(garbageFile);
-
-    EXPECT_TRUE(result.hasError());
-}
-
 TEST_F(FFmpegMediaDecoderTest, GenerateThumbnailOnMissingFileReturnsError)
 {
     FFmpegMediaDecoder decoder;

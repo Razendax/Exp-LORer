@@ -83,31 +83,31 @@ Result<FilePreview> FilePreviewUseCase::generatePreview(const FileNode& target, 
 
     if (MediaExtensions::isImageExtension(extension))
     {
-        auto bytes = m_mediaDecoder.generateThumbnail(readablePath, maxImageWidth, maxImageHeight);
-        if (!bytes)
+        auto thumbnail = m_mediaDecoder.generateThumbnail(readablePath, maxImageWidth, maxImageHeight);
+        if (!thumbnail)
         {
-            return Result<FilePreview>::failure(bytes.error());
+            return Result<FilePreview>::failure(thumbnail.error());
         }
 
-        // extractMetadata() failures are already logged by the media decoder adapter itself; the
-        // thumbnail is still useful on its own, so fall back to zero-valued metadata rather than
-        // failing the whole preview (same graceful-degradation posture as the text branch below).
-        auto metadata = m_mediaDecoder.extractMetadata(readablePath);
-        return Result<FilePreview>::success(FilePreview::image(
-            std::move(bytes).value(), target.path(), metadata ? std::move(metadata).value() : MediaMetadata(), target.size()));
+        // Metadata comes bundled with the thumbnail bytes -- the adapter already falls back to
+        // zero-valued MediaMetadata internally if it can't be determined, same graceful-
+        // degradation posture as the text branch below (Architecture.md §14.63).
+        MediaThumbnail decoded = std::move(thumbnail).value();
+        return Result<FilePreview>::success(
+            FilePreview::image(std::move(decoded.bytes), target.path(), decoded.metadata, target.size()));
     }
 
     if (MediaExtensions::isVideoExtension(extension))
     {
-        auto bytes = m_mediaDecoder.generateThumbnail(readablePath, maxImageWidth, maxImageHeight);
-        if (!bytes)
+        auto thumbnail = m_mediaDecoder.generateThumbnail(readablePath, maxImageWidth, maxImageHeight);
+        if (!thumbnail)
         {
-            return Result<FilePreview>::failure(bytes.error());
+            return Result<FilePreview>::failure(thumbnail.error());
         }
 
-        auto metadata = m_mediaDecoder.extractMetadata(readablePath);
-        return Result<FilePreview>::success(FilePreview::video(
-            std::move(bytes).value(), target.path(), metadata ? std::move(metadata).value() : MediaMetadata(), target.size()));
+        MediaThumbnail decoded = std::move(thumbnail).value();
+        return Result<FilePreview>::success(
+            FilePreview::video(std::move(decoded.bytes), target.path(), decoded.metadata, target.size()));
     }
 
     if (isTextExtension(extension))

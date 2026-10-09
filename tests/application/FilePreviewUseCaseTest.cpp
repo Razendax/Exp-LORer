@@ -72,18 +72,18 @@ TEST(FilePreviewUseCase, ImageExtensionDispatchesToMediaDecoderAsImage)
     MockFileSystemRepository fileSystemRepository;
     MockMediaDecoder mediaDecoder;
 
-    std::vector<std::byte> jpegBytes{ std::byte{ 0xFF }, std::byte{ 0xD8 } };
+    MediaThumbnail thumbnail;
+    thumbnail.bytes = { std::byte{ 0xFF }, std::byte{ 0xD8 } };
+    thumbnail.metadata = MediaMetadata::create(1920, 1080, std::chrono::milliseconds(0), "jpeg").value();
     EXPECT_CALL(mediaDecoder, generateThumbnail(std::filesystem::path("C:/data/photo.JPG"), 200, 200))
-        .WillOnce(Return(Result<std::vector<std::byte>>::success(jpegBytes)));
-    EXPECT_CALL(mediaDecoder, extractMetadata(std::filesystem::path("C:/data/photo.JPG")))
-        .WillOnce(Return(MediaMetadata::create(1920, 1080, std::chrono::milliseconds(0), "jpeg")));
+        .WillOnce(Return(Result<MediaThumbnail>::success(thumbnail)));
 
     FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
     auto result = useCase.generatePreview(makeNode("C:/data/photo.JPG", FileType::Regular), 200, 200, 1024);
 
     ASSERT_TRUE(result.hasValue());
     EXPECT_EQ(result.value().kind(), FilePreviewKind::Image);
-    EXPECT_EQ(result.value().imageBytes(), jpegBytes);
+    EXPECT_EQ(result.value().imageBytes(), thumbnail.bytes);
     EXPECT_EQ(result.value().path(), std::filesystem::path("C:/data/photo.JPG"));
     EXPECT_EQ(result.value().metadata().width(), 1920);
     EXPECT_EQ(result.value().metadata().height(), 1080);
@@ -95,39 +95,41 @@ TEST(FilePreviewUseCase, VideoExtensionDispatchesToMediaDecoderAsVideo)
     MockFileSystemRepository fileSystemRepository;
     MockMediaDecoder mediaDecoder;
 
-    std::vector<std::byte> posterBytes{ std::byte{ 0x01 } };
+    MediaThumbnail thumbnail;
+    thumbnail.bytes = { std::byte{ 0x01 } };
+    thumbnail.metadata = MediaMetadata::create(1280, 720, std::chrono::milliseconds(60000), "h264", 5'000'000).value();
     EXPECT_CALL(mediaDecoder, generateThumbnail(std::filesystem::path("C:/data/clip.mp4"), 200, 200))
-        .WillOnce(Return(Result<std::vector<std::byte>>::success(posterBytes)));
-    EXPECT_CALL(mediaDecoder, extractMetadata(std::filesystem::path("C:/data/clip.mp4")))
-        .WillOnce(Return(MediaMetadata::create(1280, 720, std::chrono::milliseconds(60000), "h264", 5'000'000)));
+        .WillOnce(Return(Result<MediaThumbnail>::success(thumbnail)));
 
     FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
     auto result = useCase.generatePreview(makeNode("C:/data/clip.mp4", FileType::Regular), 200, 200, 1024);
 
     ASSERT_TRUE(result.hasValue());
     EXPECT_EQ(result.value().kind(), FilePreviewKind::Video);
-    EXPECT_EQ(result.value().imageBytes(), posterBytes);
+    EXPECT_EQ(result.value().imageBytes(), thumbnail.bytes);
     EXPECT_EQ(result.value().metadata().width(), 1280);
     EXPECT_EQ(result.value().metadata().bitRateBps(), 5'000'000);
 }
 
-TEST(FilePreviewUseCase, ImageExtensionDegradesGracefullyWhenMetadataExtractionFails)
+TEST(FilePreviewUseCase, ImageExtensionUsesWhateverMetadataTheDecoderReturned)
 {
     MockFileSystemRepository fileSystemRepository;
     MockMediaDecoder mediaDecoder;
 
-    std::vector<std::byte> jpegBytes{ std::byte{ 0xFF }, std::byte{ 0xD8 } };
+    // The adapter itself is responsible for degrading to zero-valued MediaMetadata when it can't
+    // determine the real dimensions (Architecture.md §14.63) -- generatePreview() just passes
+    // whatever MediaThumbnail::metadata it got through unchanged.
+    MediaThumbnail thumbnail;
+    thumbnail.bytes = { std::byte{ 0xFF }, std::byte{ 0xD8 } };
     EXPECT_CALL(mediaDecoder, generateThumbnail(std::filesystem::path("C:/data/photo.JPG"), 200, 200))
-        .WillOnce(Return(Result<std::vector<std::byte>>::success(jpegBytes)));
-    EXPECT_CALL(mediaDecoder, extractMetadata(std::filesystem::path("C:/data/photo.JPG")))
-        .WillOnce(Return(Result<MediaMetadata>::failure(Error(ErrorCode::IoError, "decode failed"))));
+        .WillOnce(Return(Result<MediaThumbnail>::success(thumbnail)));
 
     FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
     auto result = useCase.generatePreview(makeNode("C:/data/photo.JPG", FileType::Regular), 200, 200, 1024);
 
     ASSERT_TRUE(result.hasValue());
     EXPECT_EQ(result.value().kind(), FilePreviewKind::Image);
-    EXPECT_EQ(result.value().imageBytes(), jpegBytes);
+    EXPECT_EQ(result.value().imageBytes(), thumbnail.bytes);
     EXPECT_EQ(result.value().metadata().width(), 0);
     EXPECT_EQ(result.value().metadata().height(), 0);
 }
@@ -239,18 +241,18 @@ TEST(FilePreviewUseCase, ImageInsideArchiveIsMaterializedBeforeDecoding)
     EXPECT_CALL(fileSystemRepository, materializeForReading(virtualPath))
         .WillOnce(Return(Result<std::filesystem::path>::success(realPath)));
 
-    std::vector<std::byte> jpegBytes{ std::byte{ 0xFF }, std::byte{ 0xD8 } };
+    MediaThumbnail thumbnail;
+    thumbnail.bytes = { std::byte{ 0xFF }, std::byte{ 0xD8 } };
+    thumbnail.metadata = MediaMetadata::create(640, 480, std::chrono::milliseconds(0), "jpeg").value();
     EXPECT_CALL(mediaDecoder, generateThumbnail(realPath, 200, 200))
-        .WillOnce(Return(Result<std::vector<std::byte>>::success(jpegBytes)));
-    EXPECT_CALL(mediaDecoder, extractMetadata(realPath))
-        .WillOnce(Return(MediaMetadata::create(640, 480, std::chrono::milliseconds(0), "jpeg")));
+        .WillOnce(Return(Result<MediaThumbnail>::success(thumbnail)));
 
     FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
     auto result = useCase.generatePreview(makeNode(virtualPath, FileType::Regular), 200, 200, 1024);
 
     ASSERT_TRUE(result.hasValue());
     EXPECT_EQ(result.value().kind(), FilePreviewKind::Image);
-    EXPECT_EQ(result.value().imageBytes(), jpegBytes);
+    EXPECT_EQ(result.value().imageBytes(), thumbnail.bytes);
     // Syntax highlighting / display info key off the target's own (virtual) path, not the
     // materialized temp path.
     EXPECT_EQ(result.value().path(), virtualPath);

@@ -2111,3 +2111,44 @@ Application/schema/layering change.
   Qt-coupled ViewModel orchestration stays under the existing §11 UI/ViewModel-glue carve-out;
   `MediaThumbnailLoadingWorker`'s per-item call is a thin pass-through to the already-tested
   `MediaProcessingUseCase`, same posture as `IconLoadingWorker` having no dedicated test.
+
+### 14.63 IMediaDecoder: Merge generateThumbnail/extractMetadata (Performance)
+
+Every known caller of `IMediaDecoder` (`FilePreviewUseCase`, §14.26/§14.62's
+`MediaThumbnailLoadingWorker`) always called `generateThumbnail()` and `extractMetadata()` back to
+back on the same file. Since the two were separate Port methods, this meant decoding/probing the
+source file twice per request: `FFmpegMediaDecoder::extractMetadata()` re-ran a full
+`avformat_open_input`/`avformat_find_stream_info` container probe that `generateThumbnail()` had
+just done for the frame grab, and `VipsImageDecoder::extractMetadata()` re-read the whole file from
+disk a second time. `CachingMediaDecoder` made it worse for images/video alike: it cached
+`generateThumbnail()`'s bytes but passed `extractMetadata()` straight through uncached, so even a
+thumbnail cache *hit* still paid the full metadata re-decode cost on every call.
+
+* **`MediaThumbnail`** (`src/domain/MediaThumbnail.h`, new): a plain `{ bytes; metadata; }`
+  aggregate — `IMediaDecoder`'s one remaining method, `generateThumbnail(path, maxWidth,
+  maxHeight) -> Result<MediaThumbnail>`, returns both from the same decode pass.
+  `extractMetadata()` is removed from the Port entirely (no caller ever needed metadata without a
+  thumbnail).
+* **`VipsImageDecoder`**: reads the file once; a cheap `vips_image_new_from_buffer` header-level
+  open (libvips decodes pixel data lazily, so this doesn't force a full decode) yields the source
+  image's own width/height for `MediaMetadata`, then the same byte buffer feeds
+  `vips_thumbnail_buffer` for the actual thumbnail — one file read instead of two.
+* **`FFmpegMediaDecoder`**: builds `MediaMetadata` from the same already-open
+  `AVFormatContext`/`AVCodecParameters` used for the frame grab, instead of a second
+  `avformat_open_input`/`avformat_find_stream_info` probe of the same file.
+* **`CachingMediaDecoder`**: the cached blob now holds both the thumbnail bytes and a serialized
+  `MediaMetadata` (a small fixed header + codec string + the bytes, (de)serialized entirely inside
+  `CachingMediaDecoder.cpp` — `ThumbnailCache` itself stays a plain byte-blob cache, §8). A cache
+  hit now returns metadata too without touching the inner decoder at all; an unparsable/corrupt
+  blob is treated as a cache miss and regenerated rather than failing the request.
+* Both adapters keep the existing graceful-degradation posture: if the metadata half can't be
+  built (e.g. `MediaMetadata::create()`'s width/height>0 validation fails), the call still succeeds
+  with zero-valued metadata rather than failing the whole thumbnail.
+* **Not built**: a metadata-only Port method (no caller needs one); cross-version on-disk cache
+  format compatibility (an unparsable old-format entry is just discarded and regenerated, same as
+  any other corrupt entry).
+* **Testing**: `VipsImageDecoderTest`/`FFmpegMediaDecoderTest` lost their now-redundant
+  `ExtractMetadata*` cases (merged into the existing `GenerateThumbnail*` error-path cases);
+  `CachingMediaDecoderTest` gained a case asserting a cache hit returns the originally-decoded
+  metadata without a second call into the inner mock; `MediaProcessingUseCaseTest`/
+  `FilePreviewUseCaseTest` updated to the merged `MockMediaDecoder` signature.

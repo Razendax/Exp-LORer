@@ -20,6 +20,7 @@ add_library(explorer_domain STATIC
     Tag.cpp
     MediaMetadata.h
     MediaMetadata.cpp
+    MediaThumbnail.h
     FileTagAssociation.h
     FileTagAssociation.cpp
     FilePreview.h

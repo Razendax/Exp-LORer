@@ -127,36 +127,8 @@ namespace
     }
 }
 
-Result<MediaMetadata> VipsImageDecoder::extractMetadata(const std::filesystem::path& mediaFile) const
-{
-    ensureVipsInitialized();
-
-    auto bytesResult = readWholeFile(mediaFile);
-    if (!bytesResult)
-    {
-        Logging::warn("VipsImageDecoder::extractMetadata failed: " + std::string(toLogString(bytesResult.error().code)));
-        return Result<MediaMetadata>::failure(bytesResult.error());
-    }
-    const std::vector<std::byte>& bytes = bytesResult.value();
-
-    VipsImage* image = vips_image_new_from_buffer(bytes.data(), bytes.size(), "", nullptr);
-    if (image == nullptr)
-    {
-        Logging::warn("VipsImageDecoder::extractMetadata failed: " + std::string(toLogString(ErrorCode::IoError)));
-        return Result<MediaMetadata>::failure(
-            Error(ErrorCode::IoError, "libvips failed to decode " + PathUtf8::toUtf8(mediaFile)));
-    }
-
-    const int width = vips_image_get_width(image);
-    const int height = vips_image_get_height(image);
-    g_object_unref(image);
-
-    Logging::debug("VipsImageDecoder::extractMetadata succeeded: " + std::to_string(width) + "x" + std::to_string(height));
-    return MediaMetadata::create(width, height, std::chrono::milliseconds(0), "image");
-}
-
-Result<std::vector<std::byte>> VipsImageDecoder::generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth,
-                                                                     int maxHeight) const
+Result<MediaThumbnail> VipsImageDecoder::generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth,
+                                                              int maxHeight) const
 {
     ensureVipsInitialized();
 
@@ -164,9 +136,29 @@ Result<std::vector<std::byte>> VipsImageDecoder::generateThumbnail(const std::fi
     if (!bytesResult)
     {
         Logging::warn("VipsImageDecoder::generateThumbnail failed: " + std::string(toLogString(bytesResult.error().code)));
-        return Result<std::vector<std::byte>>::failure(bytesResult.error());
+        return Result<MediaThumbnail>::failure(bytesResult.error());
     }
     const std::vector<std::byte>& sourceBytes = bytesResult.value();
+
+    // Cheap header-level open to read the source image's own dimensions (Architecture.md §14.63) --
+    // libvips decodes pixel data lazily, so this does not force the full pixel decode
+    // vips_thumbnail_buffer below performs; it just lets the thumbnail and its metadata come from
+    // one file read instead of two. Falls back to zero-valued metadata (graceful degradation, same
+    // posture as the rest of this codebase) if the source dimensions can't be read for some reason
+    // -- the thumbnail below is still useful on its own.
+    MediaMetadata metadata;
+    VipsImage* sourceImage = vips_image_new_from_buffer(sourceBytes.data(), sourceBytes.size(), "", nullptr);
+    if (sourceImage != nullptr)
+    {
+        const int sourceWidth = vips_image_get_width(sourceImage);
+        const int sourceHeight = vips_image_get_height(sourceImage);
+        g_object_unref(sourceImage);
+
+        if (auto created = MediaMetadata::create(sourceWidth, sourceHeight, std::chrono::milliseconds(0), "image"))
+        {
+            metadata = std::move(created).value();
+        }
+    }
 
     VipsImage* thumbnail = nullptr;
     const int thumbnailRc = vips_thumbnail_buffer(const_cast<std::byte*>(sourceBytes.data()), sourceBytes.size(),
@@ -175,7 +167,7 @@ Result<std::vector<std::byte>> VipsImageDecoder::generateThumbnail(const std::fi
     if (thumbnailRc != 0 || thumbnail == nullptr)
     {
         Logging::warn("VipsImageDecoder::generateThumbnail failed: " + std::string(toLogString(ErrorCode::IoError)));
-        return Result<std::vector<std::byte>>::failure(
+        return Result<MediaThumbnail>::failure(
             Error(ErrorCode::IoError, "libvips failed to generate a thumbnail for " + PathUtf8::toUtf8(mediaFile)));
     }
 
@@ -187,7 +179,7 @@ Result<std::vector<std::byte>> VipsImageDecoder::generateThumbnail(const std::fi
         if (checkeredThumbnail == nullptr)
         {
             g_object_unref(thumbnail);
-            return Result<std::vector<std::byte>>::failure(Error(
+            return Result<MediaThumbnail>::failure(Error(
                 ErrorCode::IoError, "libvips failed to composite the transparency checkerboard for " + PathUtf8::toUtf8(mediaFile)));
         }
         imageToEncode = checkeredThumbnail;
@@ -205,7 +197,7 @@ Result<std::vector<std::byte>> VipsImageDecoder::generateThumbnail(const std::fi
     if (saveRc != 0 || jpegBuffer == nullptr)
     {
         Logging::warn("VipsImageDecoder::generateThumbnail failed: " + std::string(toLogString(ErrorCode::IoError)));
-        return Result<std::vector<std::byte>>::failure(
+        return Result<MediaThumbnail>::failure(
             Error(ErrorCode::IoError, "libvips failed to JPEG-encode the thumbnail for " + PathUtf8::toUtf8(mediaFile)));
     }
 
@@ -214,5 +206,5 @@ Result<std::vector<std::byte>> VipsImageDecoder::generateThumbnail(const std::fi
     g_free(jpegBuffer);
 
     Logging::debug("VipsImageDecoder::generateThumbnail succeeded: " + std::to_string(encoded.size()) + " byte(s)");
-    return Result<std::vector<std::byte>>::success(std::move(encoded));
+    return Result<MediaThumbnail>::success(MediaThumbnail{ std::move(encoded), std::move(metadata) });
 }

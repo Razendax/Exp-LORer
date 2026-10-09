@@ -24,28 +24,6 @@ namespace
     };
 }
 
-TEST_F(VipsImageDecoderTest, ExtractMetadataOnMissingFileReturnsError)
-{
-    VipsImageDecoder decoder;
-
-    auto result = decoder.extractMetadata(m_tempDir / "does-not-exist.jpg");
-
-    EXPECT_TRUE(result.hasError());
-}
-
-TEST_F(VipsImageDecoderTest, ExtractMetadataOnGarbageBytesReturnsError)
-{
-    const fs::path garbageFile = m_tempDir / "not-an-image.jpg";
-    std::ofstream stream(garbageFile, std::ios::binary);
-    stream << "this is not a real image file, just some bytes";
-    stream.close();
-
-    VipsImageDecoder decoder;
-    auto result = decoder.extractMetadata(garbageFile);
-
-    EXPECT_TRUE(result.hasError());
-}
-
 TEST_F(VipsImageDecoderTest, GenerateThumbnailOnMissingFileReturnsError)
 {
     VipsImageDecoder decoder;

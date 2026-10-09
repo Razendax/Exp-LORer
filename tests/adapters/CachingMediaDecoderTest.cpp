@@ -17,10 +17,17 @@ namespace
     class MockInnerDecoder : public IMediaDecoder
     {
     public:
-        MOCK_METHOD(Result<MediaMetadata>, extractMetadata, (const std::filesystem::path& mediaFile), (const, override));
-        MOCK_METHOD(Result<std::vector<std::byte>>, generateThumbnail,
+        MOCK_METHOD(Result<MediaThumbnail>, generateThumbnail,
                     (const std::filesystem::path& mediaFile, int maxWidth, int maxHeight), (const, override));
     };
+
+    MediaThumbnail makeThumbnail(std::vector<std::byte> bytes, int width = 100, int height = 100)
+    {
+        MediaThumbnail thumbnail;
+        thumbnail.bytes = std::move(bytes);
+        thumbnail.metadata = MediaMetadata::create(width, height, std::chrono::milliseconds(0), "image").value();
+        return thumbnail;
+    }
 
     class CachingMediaDecoderTest : public ::testing::Test
     {
@@ -43,28 +50,15 @@ namespace
     };
 }
 
-TEST_F(CachingMediaDecoderTest, ExtractMetadataPassesThroughUncached)
-{
-    MockInnerDecoder inner;
-    ThumbnailCache cache(m_tempDir / "cache");
-    MediaMetadata metadata = MediaMetadata::create(100, 100, std::chrono::milliseconds(0), "image").value();
-
-    EXPECT_CALL(inner, extractMetadata(m_filePath)).Times(2).WillRepeatedly(Return(Result<MediaMetadata>::success(metadata)));
-
-    CachingMediaDecoder decorator(inner, cache);
-    decorator.extractMetadata(m_filePath);
-    decorator.extractMetadata(m_filePath);
-}
-
 TEST_F(CachingMediaDecoderTest, GenerateThumbnailCallsInnerOnceForRepeatedCalls)
 {
     MockInnerDecoder inner;
     ThumbnailCache cache(m_tempDir / "cache");
-    std::vector<std::byte> bytes{ std::byte{ 0xFF }, std::byte{ 0xD8 } };
+    const MediaThumbnail thumbnail = makeThumbnail({ std::byte{ 0xFF }, std::byte{ 0xD8 } }, 1920, 1080);
 
     EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128))
         .Times(1)
-        .WillOnce(Return(Result<std::vector<std::byte>>::success(bytes)));
+        .WillOnce(Return(Result<MediaThumbnail>::success(thumbnail)));
 
     CachingMediaDecoder decorator(inner, cache);
 
@@ -73,19 +67,42 @@ TEST_F(CachingMediaDecoderTest, GenerateThumbnailCallsInnerOnceForRepeatedCalls)
 
     ASSERT_TRUE(first.hasValue());
     ASSERT_TRUE(second.hasValue());
-    EXPECT_EQ(first.value(), bytes);
-    EXPECT_EQ(second.value(), bytes);
+    EXPECT_EQ(first.value().bytes, thumbnail.bytes);
+    EXPECT_EQ(second.value().bytes, thumbnail.bytes);
+}
+
+// A cache hit must return the same metadata the original decode produced -- without this, every
+// cache hit would still need to fall back into the inner decoder to get width/height/duration,
+// defeating most of the point of caching (Architecture.md §14.63).
+TEST_F(CachingMediaDecoderTest, GenerateThumbnailCacheHitReturnsCachedMetadataWithoutCallingInnerAgain)
+{
+    MockInnerDecoder inner;
+    ThumbnailCache cache(m_tempDir / "cache");
+    const MediaThumbnail thumbnail = makeThumbnail({ std::byte{ 0xFF }, std::byte{ 0xD8 } }, 1920, 1080);
+
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128))
+        .Times(1)
+        .WillOnce(Return(Result<MediaThumbnail>::success(thumbnail)));
+
+    CachingMediaDecoder decorator(inner, cache);
+
+    decorator.generateThumbnail(m_filePath, 128, 128);
+    auto cached = decorator.generateThumbnail(m_filePath, 128, 128);
+
+    ASSERT_TRUE(cached.hasValue());
+    EXPECT_EQ(cached.value().metadata.width(), 1920);
+    EXPECT_EQ(cached.value().metadata.height(), 1080);
 }
 
 TEST_F(CachingMediaDecoderTest, GenerateThumbnailWithDifferentDimensionsCallsInnerAgain)
 {
     MockInnerDecoder inner;
     ThumbnailCache cache(m_tempDir / "cache");
-    std::vector<std::byte> smallBytes{ std::byte{ 0x01 } };
-    std::vector<std::byte> largeBytes{ std::byte{ 0x02 } };
+    const MediaThumbnail smallThumbnail = makeThumbnail({ std::byte{ 0x01 } });
+    const MediaThumbnail largeThumbnail = makeThumbnail({ std::byte{ 0x02 } });
 
-    EXPECT_CALL(inner, generateThumbnail(m_filePath, 64, 64)).WillOnce(Return(Result<std::vector<std::byte>>::success(smallBytes)));
-    EXPECT_CALL(inner, generateThumbnail(m_filePath, 256, 256)).WillOnce(Return(Result<std::vector<std::byte>>::success(largeBytes)));
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 64, 64)).WillOnce(Return(Result<MediaThumbnail>::success(smallThumbnail)));
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 256, 256)).WillOnce(Return(Result<MediaThumbnail>::success(largeThumbnail)));
 
     CachingMediaDecoder decorator(inner, cache);
 
@@ -94,8 +111,8 @@ TEST_F(CachingMediaDecoderTest, GenerateThumbnailWithDifferentDimensionsCallsInn
 
     ASSERT_TRUE(small.hasValue());
     ASSERT_TRUE(large.hasValue());
-    EXPECT_EQ(small.value(), smallBytes);
-    EXPECT_EQ(large.value(), largeBytes);
+    EXPECT_EQ(small.value().bytes, smallThumbnail.bytes);
+    EXPECT_EQ(large.value().bytes, largeThumbnail.bytes);
 }
 
 TEST_F(CachingMediaDecoderTest, GenerateThumbnailFailureIsNotCached)
@@ -105,7 +122,7 @@ TEST_F(CachingMediaDecoderTest, GenerateThumbnailFailureIsNotCached)
 
     EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128))
         .Times(2)
-        .WillRepeatedly(Return(Result<std::vector<std::byte>>::failure(Error(ErrorCode::IoError, "decode failed"))));
+        .WillRepeatedly(Return(Result<MediaThumbnail>::failure(Error(ErrorCode::IoError, "decode failed"))));
 
     CachingMediaDecoder decorator(inner, cache);
 
@@ -120,7 +137,7 @@ TEST_F(CachingMediaDecoderTest, GenerateThumbnailForMissingFileFallsThroughToInn
     const fs::path missing = m_tempDir / "does-not-exist.jpg";
 
     EXPECT_CALL(inner, generateThumbnail(missing, 128, 128))
-        .WillOnce(Return(Result<std::vector<std::byte>>::failure(Error(ErrorCode::NotFound, "missing"))));
+        .WillOnce(Return(Result<MediaThumbnail>::failure(Error(ErrorCode::NotFound, "missing"))));
 
     CachingMediaDecoder decorator(inner, cache);
     auto result = decorator.generateThumbnail(missing, 128, 128);

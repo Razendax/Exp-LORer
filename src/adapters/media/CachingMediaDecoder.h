@@ -5,17 +5,17 @@
 
 // Decorator implementing IMediaDecoder: wraps an inner IMediaDecoder + ThumbnailCache
 // (Architecture.md §8, §14.25). generateThumbnail() checks the cache first and populates it on a
-// miss; extractMetadata() passes through uncached (cheap, not on the preview hot path). This is
-// what CompositionRoot injects everywhere IMediaDecoder is needed -- caching stays transparent to
-// callers such as FilePreviewUseCase/MediaProcessingUseCase.
+// miss; the cached entry holds both the thumbnail bytes and the metadata produced alongside them
+// (Architecture.md §14.63), so a cache hit never needs to fall back into the inner decoder at all.
+// This is what CompositionRoot injects everywhere IMediaDecoder is needed -- caching stays
+// transparent to callers such as FilePreviewUseCase/MediaProcessingUseCase.
 class CachingMediaDecoder : public IMediaDecoder
 {
 public:
     CachingMediaDecoder(IMediaDecoder& inner, ThumbnailCache& cache);
 
-    Result<MediaMetadata> extractMetadata(const std::filesystem::path& mediaFile) const override;
-    Result<std::vector<std::byte>> generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth,
-                                                       int maxHeight) const override;
+    Result<MediaThumbnail> generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth,
+                                               int maxHeight) const override;
 
 private:
     IMediaDecoder& m_inner;

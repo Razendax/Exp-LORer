@@ -18,9 +18,9 @@ extern "C"
 
 namespace
 {
-    // Reads video width/height/codec name for the first decodable video stream. Shared by
-    // extractMetadata() and generateThumbnail() so the open/find-stream boilerplate isn't
-    // duplicated.
+    // Reads video width/height/codec name for the first decodable video stream, kept open so the
+    // single generateThumbnail() call below can build MediaMetadata from it directly rather than
+    // probing the file a second time (Architecture.md §14.63).
     struct OpenedVideo
     {
         AVFormatContext* formatContext = nullptr;
@@ -82,37 +82,8 @@ namespace
     }
 }
 
-Result<MediaMetadata> FFmpegMediaDecoder::extractMetadata(const std::filesystem::path& mediaFile) const
-{
-    const std::string url = PathUtf8::toUtf8(WindowsLongPath::withPrefix(mediaFile));
-
-    OpenedVideo opened;
-    if (auto openResult = openVideo(url, opened); !openResult)
-    {
-        Logging::warn("FFmpegMediaDecoder::extractMetadata failed: " + std::string(toLogString(openResult.error().code)));
-        return Result<MediaMetadata>::failure(std::move(openResult).error());
-    }
-
-    const AVCodecParameters* codecpar = opened.formatContext->streams[opened.videoStreamIndex]->codecpar;
-    const int width = codecpar->width;
-    const int height = codecpar->height;
-
-    std::chrono::milliseconds duration{ 0 };
-    if (opened.formatContext->duration > 0)
-    {
-        duration = std::chrono::milliseconds(opened.formatContext->duration / (AV_TIME_BASE / 1000));
-    }
-
-    const std::string codecName = opened.decoder != nullptr ? opened.decoder->name : "unknown";
-    const std::int64_t bitRateBps = std::max<std::int64_t>(0, opened.formatContext->bit_rate);
-
-    Logging::debug("FFmpegMediaDecoder::extractMetadata succeeded: " + std::to_string(width) + "x" +
-                    std::to_string(height) + " codec=" + codecName);
-    return MediaMetadata::create(width, height, duration, codecName, bitRateBps);
-}
-
-Result<std::vector<std::byte>> FFmpegMediaDecoder::generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth,
-                                                                       int maxHeight) const
+Result<MediaThumbnail> FFmpegMediaDecoder::generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth,
+                                                                int maxHeight) const
 {
     const std::string url = PathUtf8::toUtf8(WindowsLongPath::withPrefix(mediaFile));
 
@@ -120,12 +91,35 @@ Result<std::vector<std::byte>> FFmpegMediaDecoder::generateThumbnail(const std::
     if (auto openResult = openVideo(url, opened); !openResult)
     {
         Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(openResult.error().code)));
-        return Result<std::vector<std::byte>>::failure(std::move(openResult).error());
+        return Result<MediaThumbnail>::failure(std::move(openResult).error());
     }
     if (auto decoderResult = openDecoder(opened, url); !decoderResult)
     {
         Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(decoderResult.error().code)));
-        return Result<std::vector<std::byte>>::failure(std::move(decoderResult).error());
+        return Result<MediaThumbnail>::failure(std::move(decoderResult).error());
+    }
+
+    // Built from the same already-open session used for the frame grab below (Architecture.md
+    // §14.63), rather than a second avformat_open_input/avformat_find_stream_info probe of the
+    // same file -- falls back to zero-valued metadata (graceful degradation) if these fields
+    // somehow don't form a valid MediaMetadata; the thumbnail below is still useful on its own.
+    MediaMetadata metadata;
+    {
+        const AVCodecParameters* codecpar = opened.formatContext->streams[opened.videoStreamIndex]->codecpar;
+
+        std::chrono::milliseconds duration{ 0 };
+        if (opened.formatContext->duration > 0)
+        {
+            duration = std::chrono::milliseconds(opened.formatContext->duration / (AV_TIME_BASE / 1000));
+        }
+
+        const std::string codecName = opened.decoder != nullptr ? opened.decoder->name : "unknown";
+        const std::int64_t bitRateBps = std::max<std::int64_t>(0, opened.formatContext->bit_rate);
+
+        if (auto created = MediaMetadata::create(codecpar->width, codecpar->height, duration, codecName, bitRateBps))
+        {
+            metadata = std::move(created).value();
+        }
     }
 
     // Seek to ~10% into the stream for a representative frame (Architecture.md §14.25); falls
@@ -161,7 +155,7 @@ Result<std::vector<std::byte>> FFmpegMediaDecoder::generateThumbnail(const std::
     {
         av_frame_free(&decodedFrame);
         Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(ErrorCode::IoError)));
-        return Result<std::vector<std::byte>>::failure(Error(ErrorCode::IoError, "FFmpeg failed to decode a frame from " + url));
+        return Result<MediaThumbnail>::failure(Error(ErrorCode::IoError, "FFmpeg failed to decode a frame from " + url));
     }
 
     const double widthScale = static_cast<double>(maxWidth) / decodedFrame->width;
@@ -177,7 +171,7 @@ Result<std::vector<std::byte>> FFmpegMediaDecoder::generateThumbnail(const std::
     {
         av_frame_free(&decodedFrame);
         Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(ErrorCode::Unknown)));
-        return Result<std::vector<std::byte>>::failure(Error(ErrorCode::Unknown, "Failed to create a scaling context for " + url));
+        return Result<MediaThumbnail>::failure(Error(ErrorCode::Unknown, "Failed to create a scaling context for " + url));
     }
 
     AVFrame* scaledFrame = av_frame_alloc();
@@ -189,7 +183,7 @@ Result<std::vector<std::byte>> FFmpegMediaDecoder::generateThumbnail(const std::
         sws_freeContext(swsContext);
         av_frame_free(&scaledFrame);
         av_frame_free(&decodedFrame);
-        return Result<std::vector<std::byte>>::failure(Error(ErrorCode::Unknown, "Failed to allocate the scaled frame for " + url));
+        return Result<MediaThumbnail>::failure(Error(ErrorCode::Unknown, "Failed to allocate the scaled frame for " + url));
     }
 
     sws_scale(swsContext, decodedFrame->data, decodedFrame->linesize, 0, decodedFrame->height, scaledFrame->data,
@@ -201,14 +195,14 @@ Result<std::vector<std::byte>> FFmpegMediaDecoder::generateThumbnail(const std::
     if (encoder == nullptr)
     {
         av_frame_free(&scaledFrame);
-        return Result<std::vector<std::byte>>::failure(Error(ErrorCode::Unknown, "MJPEG encoder not available"));
+        return Result<MediaThumbnail>::failure(Error(ErrorCode::Unknown, "MJPEG encoder not available"));
     }
 
     AVCodecContext* encoderContext = avcodec_alloc_context3(encoder);
     if (encoderContext == nullptr)
     {
         av_frame_free(&scaledFrame);
-        return Result<std::vector<std::byte>>::failure(Error(ErrorCode::Unknown, "Failed to allocate the MJPEG encoder context for " + url));
+        return Result<MediaThumbnail>::failure(Error(ErrorCode::Unknown, "Failed to allocate the MJPEG encoder context for " + url));
     }
     encoderContext->width = targetWidth;
     encoderContext->height = targetHeight;
@@ -246,15 +240,13 @@ Result<std::vector<std::byte>> FFmpegMediaDecoder::generateThumbnail(const std::
     avcodec_free_context(&encoderContext);
     av_frame_free(&scaledFrame);
 
-    if (result.hasValue())
-    {
-        Logging::debug("FFmpegMediaDecoder::generateThumbnail succeeded: " + std::to_string(targetWidth) + "x" +
-                        std::to_string(targetHeight));
-    }
-    else
+    if (!result)
     {
         Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(result.error().code)));
+        return Result<MediaThumbnail>::failure(std::move(result).error());
     }
 
-    return result;
+    Logging::debug("FFmpegMediaDecoder::generateThumbnail succeeded: " + std::to_string(targetWidth) + "x" +
+                    std::to_string(targetHeight));
+    return Result<MediaThumbnail>::success(MediaThumbnail{ std::move(result).value(), std::move(metadata) });
 }
