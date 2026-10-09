@@ -86,6 +86,15 @@ namespace
         }
     }
 
+    // Directories synthesized by archive-browsing (Architecture.md §14.28) have no real path on
+    // disk, so QFileIconProvider::icon(QFileInfo) can't stat them and falls back to a generic/file
+    // icon instead of a folder icon -- callers needing the real (non-placeholder) icon force the
+    // QFileIconProvider::Folder enum icon for these instead.
+    bool archiveSynthesizedDir(const FileNode& entry)
+    {
+        return entry.isDirectory() && !QFileInfo(toQString(entry.path())).exists();
+    }
+
     // Hidden files/folders keep the classic dimmed-icon look (Architecture.md §14.21) independent
     // of §14.29's now-configurable text/font styling -- rebuilds `icon` with every available size
     // run through QStyle::generatedIconPixmap(QIcon::Disabled, ...), the same graying Qt applies to
@@ -271,20 +280,7 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
 
     if (role == Qt::DecorationRole && index.column() == NameColumn)
     {
-        const QFileInfo info(toQString(entry.path()));
-        const bool archiveSynthesizedDir = entry.isDirectory() && !info.exists();
-        QIcon icon;
-        if (archiveSynthesizedDir)
-        {
-            // Archive-synthesized directories (Architecture.md §14.28) have no real path on disk,
-            // so QFileIconProvider::icon(QFileInfo) can't stat them and falls back to a generic/file
-            // icon instead of a folder icon.
-            icon = m_iconProvider.icon(QFileIconProvider::Folder);
-        }
-        else
-        {
-            icon = m_iconProvider.icon(info);
-        }
+        const QIcon icon = resolveIcon(entry);
 
         if (!entry.isHidden())
         {
@@ -294,9 +290,9 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
         // Cache the dimmed variant per icon "kind" instead of rebuilding it on every data() call --
         // all entries of the same kind (extension/directory/symlink) share the same base icon, so
         // this collapses the per-row/per-repaint cost down to one generatedIconPixmap() per kind.
-        QString cacheKey = archiveSynthesizedDir  ? QStringLiteral("@archive-dir")
-                            : entry.isDirectory() ? QStringLiteral("@dir")
-                                                   : toQString(entry.path().extension()).toLower();
+        QString cacheKey = archiveSynthesizedDir(entry) ? QStringLiteral("@archive-dir")
+                            : entry.isDirectory()         ? QStringLiteral("@dir")
+                                                           : toQString(entry.path().extension()).toLower();
         if (cacheKey.isEmpty())
         {
             cacheKey = QStringLiteral("@file");
@@ -510,6 +506,7 @@ void FileListModel::setEntries(const std::filesystem::path& directory, const std
     m_fileTagsByPath.clear();
     m_folderSizesByPath.clear();
     m_fragmentCountsByPath.clear();
+    m_iconCache.clear();
     recomputeTotalSize();
     rebuildVisibleRows();
     endResetModel();
@@ -620,6 +617,21 @@ void FileListModel::setFragmentCounts(const FragmentCountsByPathMap& countsByPat
                       { Qt::DisplayRole });
 }
 
+void FileListModel::setIcons(const QHash<QString, QIcon>& iconsByPath)
+{
+    for (auto it = iconsByPath.constBegin(); it != iconsByPath.constEnd(); ++it)
+    {
+        m_iconCache.insert(it.key(), it.value());
+    }
+
+    if (m_visibleRows.empty())
+    {
+        return;
+    }
+
+    emit dataChanged(index(0, NameColumn), index(static_cast<int>(m_visibleRows.size()) - 1, NameColumn), { Qt::DecorationRole });
+}
+
 std::optional<FileDecorationRule> FileListModel::resolveDecoration(const FileNode& entry) const
 {
     if (entry.displayName())
@@ -649,6 +661,23 @@ void FileListModel::handleFileDecorationsChanged()
 
     emit dataChanged(index(0, 0), index(static_cast<int>(m_visibleRows.size()) - 1, ColumnCount - 1),
                       { Qt::ForegroundRole, Qt::FontRole });
+}
+
+QIcon FileListModel::resolveIcon(const FileNode& entry) const
+{
+    const QString key = toQString(entry.path());
+
+    const auto cached = m_iconCache.constFind(key);
+    if (cached != m_iconCache.constEnd())
+    {
+        return cached.value();
+    }
+
+    // Not resolved by IconLoadingService yet -- a cheap generic placeholder (a static resource
+    // lookup, not the expensive per-file SHGetFileInfo extraction QFileIconProvider::icon(QFileInfo)
+    // does for .exe/.dll/.lnk) rather than blocking here; setIcons() overwrites this entry with the
+    // real icon once the background worker delivers it.
+    return m_iconProvider.icon(entry.isDirectory() ? QFileIconProvider::Folder : QFileIconProvider::File);
 }
 
 std::optional<std::uintmax_t> FileListModel::knownSizeOf(const FileNode& entry) const

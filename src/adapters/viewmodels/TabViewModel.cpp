@@ -19,6 +19,7 @@
 #include "FragmentationService.h"
 #include "GitDirectoryStatus.h"
 #include "GitStatusService.h"
+#include "IconLoadingService.h"
 #include "TagChangeNotifier.h"
 #include "TagManagementUseCase.h"
 #include "VirtualPaths.h"
@@ -38,7 +39,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
                            GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
                            AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
                            DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
-                           TagChangeNotifier& tagChangeNotifier, QObject* parent)
+                           IconLoadingService& iconLoadingService, TagChangeNotifier& tagChangeNotifier, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagManagementUseCase(tagManagementUseCase)
@@ -48,6 +49,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     , m_fileTagsService(fileTagsService)
     , m_diskUsageService(diskUsageService)
     , m_fragmentationService(fragmentationService)
+    , m_iconLoadingService(iconLoadingService)
     , m_tagChangeNotifier(tagChangeNotifier)
     , m_fileListModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_searchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
@@ -66,6 +68,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
                 requestFileTags(path, entries);
                 requestFolderSizes(path, entries);
                 requestFragmentCounts(path, entries);
+                requestIcons(path, entries);
             });
 
     // Architecture.md §14.x: a tag assigned/removed/renamed/deleted anywhere re-fetches this tab's
@@ -428,6 +431,7 @@ void TabViewModel::onSearchCandidatesReady(int generation, Result<std::vector<Fi
     m_searchFullScanDone = true;
     applySearchFilter(m_searchSnapshot);
     requestSearchResultTags(generation, m_searchSnapshot);
+    requestSearchResultIcons(generation, m_searchSnapshot);
 
     emit searchLoadingFinished();
 }
@@ -443,6 +447,7 @@ void TabViewModel::onSearchProgress(int generation, std::vector<FileNode> partia
     m_searchPartialSnapshot = std::move(partial);
     applySearchFilter(m_searchPartialSnapshot);
     requestSearchResultTags(generation, m_searchPartialSnapshot);
+    requestSearchResultIcons(generation, m_searchPartialSnapshot);
 }
 
 void TabViewModel::setSearchOptions(const NameSearchOptions& options)
@@ -539,6 +544,7 @@ void TabViewModel::showCurrentFolderNonRecursive()
     auto sorted = FileNavigationUseCase::sortBy(std::move(result).value(), SortCriterion::Name, true);
     m_advancedSearchResultsModel->setEntries(path, sorted);
     requestAdvancedSearchResultTags(m_advancedSearchGeneration, sorted);
+    requestAdvancedSearchResultIcons(m_advancedSearchGeneration, sorted);
 
     emit advancedSearchResultsChanged(sorted);
     emit advancedSearchCriteriaChanged(m_advancedSearchCriteria);
@@ -825,6 +831,7 @@ void TabViewModel::onAdvancedSearchCandidatesReady(int generation, Result<std::v
         m_advancedSearchFullScanDone = true;
         applyAdvancedSearchFilter(m_advancedSearchSnapshot);
         requestAdvancedSearchResultTags(generation, m_advancedSearchSnapshot);
+        requestAdvancedSearchResultIcons(generation, m_advancedSearchSnapshot);
     }
     else
     {
@@ -845,6 +852,7 @@ void TabViewModel::onAdvancedSearchProgress(int generation, std::vector<FileNode
     m_advancedSearchPartialSnapshot = std::move(partial);
     applyAdvancedSearchFilter(m_advancedSearchPartialSnapshot);
     requestAdvancedSearchResultTags(generation, m_advancedSearchPartialSnapshot);
+    requestAdvancedSearchResultIcons(generation, m_advancedSearchPartialSnapshot);
 }
 
 void TabViewModel::emitAvailability()
@@ -954,6 +962,49 @@ void TabViewModel::requestFragmentCounts(const std::filesystem::path& path, cons
         }
         m_fileListModel->setFragmentCounts(counts);
     });
+}
+
+void TabViewModel::requestIcons(const std::filesystem::path& path, const std::vector<FileNode>& entries)
+{
+    m_iconLoadingService.requestIcons(m_fileListModel, path, entries, [this, path](QHash<QString, QIcon> batch) {
+        if (path != currentPath())
+        {
+            // A newer navigation has since happened; this reply is stale.
+            return;
+        }
+
+        m_fileListModel->setIcons(batch);
+    });
+}
+
+void TabViewModel::requestSearchResultIcons(int generation, const std::vector<FileNode>& candidates)
+{
+    m_iconLoadingService.requestIcons(m_searchResultsModel, m_searchRoot, candidates, [this, generation](QHash<QString, QIcon> batch) {
+        if (generation != m_searchGeneration)
+        {
+            // Superseded/abandoned, same discard-by-generation-id approach onSearchCandidatesReady/
+            // onSearchProgress use.
+            return;
+        }
+
+        m_searchResultsModel->setIcons(batch);
+    });
+}
+
+void TabViewModel::requestAdvancedSearchResultIcons(int generation, const std::vector<FileNode>& candidates)
+{
+    m_iconLoadingService.requestIcons(m_advancedSearchResultsModel, m_advancedSearchRoot, candidates,
+                                       [this, generation](QHash<QString, QIcon> batch) {
+                                           if (generation != m_advancedSearchGeneration)
+                                           {
+                                               // Superseded/abandoned, same discard-by-generation-id
+                                               // approach onAdvancedSearchCandidatesReady/
+                                               // onAdvancedSearchProgress use.
+                                               return;
+                                           }
+
+                                           m_advancedSearchResultsModel->setIcons(batch);
+                                       });
 }
 
 void TabViewModel::requestSearchResultTags(int generation, const std::vector<FileNode>& candidates)

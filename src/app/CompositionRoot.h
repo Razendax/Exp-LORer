@@ -38,6 +38,7 @@
 #include "HighlightTheme.h"
 #include "HighlightThemeStore.h"
 #include "HighlightThemeViewModel.h"
+#include "IconLoadingService.h"
 #include "LibGit2BranchProvider.h"
 #include "LibGit2StatusProvider.h"
 #include "MediaDecoder.h"
@@ -100,6 +101,7 @@ public:
     DiskUsageService& diskUsageService() noexcept { return m_diskUsageService; }
     DuplicateFinderService& duplicateFinderService() noexcept { return m_duplicateFinderService; }
     FragmentationService& fragmentationService() noexcept { return m_fragmentationService; }
+    IconLoadingService& iconLoadingService() noexcept { return m_iconLoadingService; }
     FileNavigationUseCase& fileNavigationUseCase() noexcept { return m_fileNavigationUseCase; }
     BulkRenameUseCase& bulkRenameUseCase() noexcept { return m_bulkRenameUseCase; }
 
@@ -240,6 +242,14 @@ private:
     // FragmentationWorker, lazily, same as Disk Usage's pattern.
     WindowsFragmentationScanner m_fragmentationScanner;
     FragmentationService m_fragmentationService;
+
+    // "Fix slow folder-open for executable-heavy directories": every open tab's/search result's
+    // DecorationRole icon lookups, off the Qt UI thread -- same "own dedicated thread" shape as
+    // m_diskUsageService/m_fragmentationService, grouped here with the other shared background-work
+    // services. No scanner/use-case member here -- QFileIconProvider is inherently a Qt/OS-shell
+    // concept with nothing to abstract through an Application-layer Port (same posture as
+    // m_thumbnailCache/m_cachingMediaDecoder for thumbnails).
+    IconLoadingService m_iconLoadingService;
 
     // Architecture.md §14.55: Bulk/Batch Rename preview computation, directly on the Qt UI thread
     // (no background work -- it's just pattern.apply() + fast stat() calls, same posture as the

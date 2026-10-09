@@ -90,7 +90,7 @@ std::unique_ptr<TabViewModel> CompositionRoot::createTabViewModel()
     return std::make_unique<TabViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
                                            m_fileDecorationsViewModel, m_gitStatusService, m_folderMonitorUseCase,
                                            m_advancedSearchService, m_fileTagsService, m_diskUsageService,
-                                           m_fragmentationService, m_tagChangeNotifier);
+                                           m_fragmentationService, m_iconLoadingService, m_tagChangeNotifier);
 }
 
 std::unique_ptr<WorkspacePaneViewModel> CompositionRoot::createWorkspacePaneViewModel(WorkspacePaneId id)
@@ -98,7 +98,7 @@ std::unique_ptr<WorkspacePaneViewModel> CompositionRoot::createWorkspacePaneView
     return std::make_unique<WorkspacePaneViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
                                                      m_fileDecorationsViewModel, m_gitStatusService, m_folderMonitorUseCase,
                                                      m_advancedSearchService, m_fileTagsService, m_diskUsageService,
-                                                     m_fragmentationService, m_tagChangeNotifier, id);
+                                                     m_fragmentationService, m_iconLoadingService, m_tagChangeNotifier, id);
 }
 
 std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController()
@@ -107,6 +107,6 @@ std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController(
                                                   m_fileSystemRepository, m_fileDecorationRules, m_fileDecorationsViewModel,
                                                   m_gitStatusService, m_directoryWatchUseCase, m_folderMonitorUseCase,
                                                   m_notificationCenter, m_advancedSearchService, m_fileTagsService,
-                                                  m_diskUsageService, m_fragmentationService, m_tagChangeNotifier,
-                                                  m_fileTransferService);
+                                                  m_diskUsageService, m_fragmentationService, m_iconLoadingService,
+                                                  m_tagChangeNotifier, m_fileTransferService);
 }

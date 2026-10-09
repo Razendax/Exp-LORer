@@ -77,6 +77,10 @@ add_library(explorer_adapters_viewmodels STATIC
     FragmentationResultsModel.cpp
     BulkRenameViewModel.h
     BulkRenameViewModel.cpp
+    IconLoadingWorker.h
+    IconLoadingWorker.cpp
+    IconLoadingService.h
+    IconLoadingService.cpp
 )
 
 target_include_directories(explorer_adapters_viewmodels PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

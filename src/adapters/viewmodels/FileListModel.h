@@ -155,6 +155,14 @@ public slots:
     // blank regardless of this map (fragmentation is tracked per file only).
     void setFragmentCounts(const FragmentCountsByPathMap& countsByPath);
 
+    // Merges freshly-resolved icons into m_iconCache, keyed by each entry's absolute path, and
+    // repaints NameColumn's DecorationRole for every row. Called incrementally by
+    // TabViewModel::requestIcons as IconLoadingService's background worker delivers each chunk, so
+    // rows upgrade from the generic placeholder resolveIcon() returns on a cache miss to the real
+    // (e.g. an .exe's own PE resource) icon progressively rather than all at once (Architecture.md
+    // §14.x).
+    void setIcons(const QHash<QString, QIcon>& iconsByPath);
+
 signals:
     void sortOrderChanged(SortCriterion criterion, bool ascending);
 
@@ -180,6 +188,15 @@ private:
     // Architecture.md §14.39), otherwise std::nullopt (shown blank, never 0).
     std::optional<std::uintmax_t> knownSizeOf(const FileNode& entry) const;
 
+    // Returns the cached real icon for `entry` if IconLoadingService has already resolved it
+    // (m_iconCache hit); otherwise returns a cheap generic placeholder -- m_iconProvider.icon() on
+    // the QFileIconProvider::Folder/File enum overload, a static resource lookup, not
+    // QFileIconProvider::icon(QFileInfo) (which on Windows runs the comparatively expensive
+    // SHGetFileInfo PE-resource extraction for .exe/.dll/.lnk) -- and does NOT insert that
+    // placeholder into the cache, so the real icon delivered later by setIcons() still overwrites
+    // it (Architecture.md §14.x, "Fix slow folder-open for executable-heavy directories").
+    QIcon resolveIcon(const FileNode& entry) const;
+
     // Recomputes m_totalKnownSize from m_entries via knownSizeOf (unknown entries contribute 0) --
     // the PercentColumn denominator, Architecture.md §14.39's "full children total" basis. Called
     // whenever m_entries or m_folderSizesByPath changes.
@@ -200,6 +217,12 @@ private:
     // with many hidden entries visible (.git, node_modules, ...) rebuilding per repaint reintroduces
     // the UI-freeze class of issue efd8132 fixed for the base icon.
     mutable QHash<QString, QIcon> m_dimmedIconCache;
+
+    // Per-path real-icon cache, populated incrementally by setIcons() (IconLoadingService's
+    // background worker) and consulted by resolveIcon() -- a cache miss means the icon hasn't been
+    // resolved yet, not that it's missing. Cleared in setEntries() alongside every other per-
+    // directory map, bounding memory to the current directory's entries.
+    mutable QHash<QString, QIcon> m_iconCache;
 
     SortCriterion m_sortCriterion = SortCriterion::Name;
     bool m_sortAscending = true;

@@ -1,0 +1,102 @@
+#include "IconLoadingService.h"
+
+#include <algorithm>
+#include <utility>
+
+#include <QMetaObject>
+#include <QMutexLocker>
+#include <QPixmap>
+#include <QPointer>
+
+#include "IconLoadingWorker.h"
+
+namespace
+{
+    constexpr std::size_t kChunkSize = 20;
+}
+
+IconLoadingService::IconLoadingService(QObject* parent)
+    : QObject(parent)
+{
+    m_worker = new IconLoadingWorker();
+    m_worker->moveToThread(&m_workerThread);
+    m_workerThread.start();
+}
+
+IconLoadingService::~IconLoadingService()
+{
+    m_workerThread.quit();
+    m_workerThread.wait();
+    delete m_worker;
+}
+
+void IconLoadingService::requestIcons(QObject* context, const std::filesystem::path& directory, std::vector<FileNode> entries,
+                                       std::function<void(QHash<QString, QIcon>)> onBatch)
+{
+    {
+        QMutexLocker locker(&m_activeDirectoryMutex);
+        m_activeDirectoryByContext.insert(context, directory);
+    }
+
+    QPointer<QObject> guard(context);
+
+    for (std::size_t offset = 0; offset < entries.size(); offset += kChunkSize)
+    {
+        const std::size_t count = std::min(kChunkSize, entries.size() - offset);
+        std::vector<FileNode> chunk(entries.begin() + static_cast<std::ptrdiff_t>(offset),
+                                     entries.begin() + static_cast<std::ptrdiff_t>(offset + count));
+
+        // Both hops are queued functor calls (QMetaObject::invokeMethod), not Qt signals/slots --
+        // QHash<QString, QIcon>/std::vector<FileNode> aren't (and shouldn't need to become)
+        // registered Qt meta-types, matching GitStatusService's own reasoning.
+        QMetaObject::invokeMethod(
+            m_worker,
+            [this, guard, context, directory, chunk = std::move(chunk), onBatch]() {
+                {
+                    QMutexLocker locker(&m_activeDirectoryMutex);
+                    const auto activeIt = m_activeDirectoryByContext.constFind(context);
+                    if (activeIt == m_activeDirectoryByContext.constEnd() || activeIt.value() != directory)
+                    {
+                        // Superseded by a newer request from this same context -- drop this
+                        // not-yet-started chunk rather than spend time resolving icons nobody will
+                        // see.
+                        return;
+                    }
+                }
+
+                QHash<QString, IconImages> images = m_worker->iconsFor(chunk);
+
+                QMetaObject::invokeMethod(
+                    this,
+                    [guard, onBatch, images = std::move(images)]() {
+                        if (!guard)
+                        {
+                            return;
+                        }
+
+                        // QPixmap/QIcon construction must happen on the GUI thread -- images was
+                        // carried across as plain QImage data (no GUI-thread affinity) for exactly
+                        // this reason.
+                        QHash<QString, QIcon> batch;
+                        batch.reserve(images.size());
+                        for (auto it = images.constBegin(); it != images.constEnd(); ++it)
+                        {
+                            QIcon icon;
+                            if (!it.value().smallImage.isNull())
+                            {
+                                icon.addPixmap(QPixmap::fromImage(it.value().smallImage));
+                            }
+                            if (!it.value().largeImage.isNull())
+                            {
+                                icon.addPixmap(QPixmap::fromImage(it.value().largeImage));
+                            }
+                            batch.insert(it.key(), icon);
+                        }
+
+                        onBatch(batch);
+                    },
+                    Qt::QueuedConnection);
+            },
+            Qt::QueuedConnection);
+    }
+}

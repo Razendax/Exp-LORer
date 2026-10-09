@@ -37,6 +37,7 @@ class FileTagsService;
 class TagChangeNotifier;
 class DiskUsageService;
 class FragmentationService;
+class IconLoadingService;
 
 // Binds address-bar/navigation-toolbar UI to FileNavigationUseCase and NavigationHistory for a
 // single tab. Owns the FileListModel that backs that tab's FileBrowserView, wiring
@@ -55,7 +56,7 @@ public:
                  GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
                  AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
                  DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
-                 TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
+                 IconLoadingService& iconLoadingService, TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
 
     ~TabViewModel() override;
 
@@ -388,6 +389,25 @@ private:
     // longer current the same way requestFolderSizes does.
     void requestFragmentCounts(const std::filesystem::path& path, const std::vector<FileNode>& entries);
 
+    // Wired into the same directoryContentsChanged funnel as requestGitStatus/requestFileTags/
+    // requestFolderSizes/requestFragmentCounts ("Fix slow folder-open for executable-heavy
+    // directories"). Dispatches a chunked background icon-resolution request via
+    // IconLoadingService, applying each chunk's results to m_fileListModel as they arrive --
+    // dropping a reply for a path that's no longer current the same way requestGitStatus does.
+    void requestIcons(const std::filesystem::path& path, const std::vector<FileNode>& entries);
+
+    // Same mechanism as requestIcons, for the quick-search results model -- called wherever
+    // requestSearchResultTags already is (i.e. whenever the search candidate list itself changes),
+    // mirroring how that function covers m_searchResultsModel. Discarded if `generation` no longer
+    // matches m_searchGeneration, same discard-by-generation-id approach as
+    // onSearchCandidatesReady/onSearchProgress.
+    void requestSearchResultIcons(int generation, const std::vector<FileNode>& candidates);
+
+    // Same as requestSearchResultIcons, for the advanced-search results model -- called wherever
+    // requestAdvancedSearchResultTags already is. Discarded if `generation` no longer matches
+    // m_advancedSearchGeneration.
+    void requestAdvancedSearchResultIcons(int generation, const std::vector<FileNode>& candidates);
+
     // Fetches tags for every file in `candidates` and, once they arrive (discarded if
     // `generation` no longer matches m_searchGeneration), caches them into m_searchSnapshotTags and
     // applies them to m_searchResultsModel. Used whenever the search candidate set itself changes
@@ -468,6 +488,7 @@ private:
     FileTagsService& m_fileTagsService;
     DiskUsageService& m_diskUsageService;
     FragmentationService& m_fragmentationService;
+    IconLoadingService& m_iconLoadingService;
     TagChangeNotifier& m_tagChangeNotifier;
     NavigationHistory m_history;
     ViewMode m_viewMode = ViewMode::Details;

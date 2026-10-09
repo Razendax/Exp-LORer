@@ -16,6 +16,7 @@ class AdvancedSearchService;
 class FileTagsService;
 class DiskUsageService;
 class FragmentationService;
+class IconLoadingService;
 class TagChangeNotifier;
 
 // Per-pane tab bookkeeping: owns an ordered list of TabViewModel children and tracks which one is
@@ -32,7 +33,8 @@ public:
                             GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
                             AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
                             DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
-                            TagChangeNotifier& tagChangeNotifier, WorkspacePaneId id, QObject* parent = nullptr);
+                            IconLoadingService& iconLoadingService, TagChangeNotifier& tagChangeNotifier, WorkspacePaneId id,
+                            QObject* parent = nullptr);
 
     WorkspacePaneId id() const noexcept { return m_id; }
     int tabCount() const noexcept { return static_cast<int>(m_tabs.size()); }
@@ -68,6 +70,7 @@ private:
     FileTagsService& m_fileTagsService;
     DiskUsageService& m_diskUsageService;
     FragmentationService& m_fragmentationService;
+    IconLoadingService& m_iconLoadingService;
     TagChangeNotifier& m_tagChangeNotifier;
     WorkspacePaneId m_id;
     std::vector<TabViewModel*> m_tabs;
