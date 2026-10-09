@@ -706,6 +706,11 @@ void TabViewModel::enterMediaViewer()
     m_mediaViewerActive = true;
     setSelectedEntries({});
     emit mediaViewerModeChanged(true);
+    // The kind is force-reset to Image above without going through setMediaViewerKind (which
+    // no-ops when the new kind already equals the old one) -- emit explicitly so
+    // MediaViewerSearchPanelWidget's combo resyncs even when it was left showing Video from a
+    // previous Media Viewer session on this tab.
+    emit mediaViewerKindChanged(MediaViewerKind::Image);
 
     runMediaViewerQuery();
 }
