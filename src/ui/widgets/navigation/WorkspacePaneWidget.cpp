@@ -715,6 +715,15 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
 
 void WorkspacePaneWidget::updateToolBarEnabledForMediaViewer(bool active)
 {
+    // Media Viewer mode's grid root is fixed to whichever tab entered it, so switching to another
+    // tab in this pane while it's active would strand that lock with no visible way back; disable
+    // every other tab for the duration instead, re-enabling all of them once it exits.
+    const int mediaViewerTabIndex = indexOfTab(m_boundTab);
+    for (int i = 0; i < m_tabWidget->count(); ++i)
+    {
+        m_tabWidget->setTabEnabled(i, !active || i == mediaViewerTabIndex);
+    }
+
     if (active)
     {
         m_backAction->setEnabled(false);
