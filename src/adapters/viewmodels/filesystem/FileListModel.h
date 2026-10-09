@@ -17,6 +17,7 @@
 #include "FolderSizesByPath.h"
 #include "FragmentCountsByPath.h"
 #include "GitDirectoryStatus.h"
+#include "MediaThumbnailData.h"
 #include "Tag.h"
 
 // Lets Tag/std::vector<Tag> travel through QVariant (FileListModel::data()'s TagsRole,
@@ -62,6 +63,12 @@ public:
         // fill bar without re-parsing DisplayRole's "NN%" text. Invalid when this entry's own size
         // is unknown (an unscanned directory) or the folder's total known size is 0.
         PercentRole,
+        // NameColumn's decoded Media Viewer grid thumbnail (Architecture.md §14.62), a
+        // MediaThumbnailData QVariant -- consulted only by MediaGridTileDelegate. Invalid until
+        // MediaThumbnailLoadingService's background decode delivers it for this row; until then
+        // the delegate falls back to Qt::DecorationRole's placeholder icon, same relationship
+        // setIcons() already has with resolveIcon()'s cache-miss fallback.
+        MediaThumbnailRole,
     };
 
     // `fileDecorationsChangeSource` is a bare QObject& (not FileDecorationsViewModel&, the concrete
@@ -163,6 +170,13 @@ public slots:
     // §14.x).
     void setIcons(const QHash<QString, QIcon>& iconsByPath);
 
+    // Merges freshly-decoded Media Viewer grid thumbnails into m_mediaThumbnailsByPath, keyed by
+    // each entry's absolute path, and repaints NameColumn's MediaThumbnailRole for every row
+    // touched. Called incrementally by TabViewModel::requestMediaViewerResultThumbnails as
+    // MediaThumbnailLoadingService's background worker delivers each chunk -- same progressive-
+    // delivery shape as setIcons() (Architecture.md §14.62).
+    void setMediaThumbnails(const QHash<QString, MediaThumbnailData>& thumbnailsByPath);
+
 signals:
     void sortOrderChanged(SortCriterion criterion, bool ascending);
 
@@ -230,6 +244,13 @@ private:
     // resolved yet, not that it's missing. Cleared in setEntries() alongside every other per-
     // directory map, bounding memory to the current directory's entries.
     mutable QHash<QString, QIcon> m_iconCache;
+
+    // Per-path Media Viewer grid thumbnail cache, populated incrementally by setMediaThumbnails()
+    // (MediaThumbnailLoadingService's background worker) and consulted by data()'s
+    // MediaThumbnailRole handling -- a cache miss means the thumbnail hasn't been decoded yet, not
+    // that it's missing. Cleared in setEntries() alongside m_iconCache and every other per-
+    // directory map (Architecture.md §14.62).
+    QHash<QString, MediaThumbnailData> m_mediaThumbnailsByPath;
 
     SortCriterion m_sortCriterion = SortCriterion::Name;
     bool m_sortAscending = true;

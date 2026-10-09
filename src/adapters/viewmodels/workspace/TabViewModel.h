@@ -39,6 +39,7 @@ class TagChangeNotifier;
 class DiskUsageService;
 class FragmentationService;
 class IconLoadingService;
+class MediaThumbnailLoadingService;
 
 // Binds address-bar/navigation-toolbar UI to FileNavigationUseCase and NavigationHistory for a
 // single tab. Owns the FileListModel that backs that tab's FileBrowserView, wiring
@@ -57,7 +58,8 @@ public:
                  GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
                  AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
                  DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
-                 IconLoadingService& iconLoadingService, TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
+                 IconLoadingService& iconLoadingService, MediaThumbnailLoadingService& mediaThumbnailLoadingService,
+                 TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
 
     ~TabViewModel() override;
 
@@ -472,6 +474,12 @@ private:
     // already has). Discarded if `generation` no longer matches m_mediaViewerGeneration.
     void requestMediaViewerResultIcons(int generation, const std::vector<FileNode>& candidates);
 
+    // Same as requestMediaViewerResultIcons, for the Media Viewer grid's real decoded thumbnails
+    // (Architecture.md §14.62) rather than the plain DecorationRole icon -- called once per
+    // candidate-set fetch (onMediaViewerCandidatesReady), same "only follows a real fetch" posture.
+    // Discarded if `generation` no longer matches m_mediaViewerGeneration.
+    void requestMediaViewerResultThumbnails(int generation, const std::vector<FileNode>& candidates);
+
     // Fetches tags for every file in `candidates` and, once they arrive (discarded if
     // `generation` no longer matches m_searchGeneration), caches them into m_searchSnapshotTags and
     // applies them to m_searchResultsModel. Used whenever the search candidate set itself changes
@@ -575,6 +583,7 @@ private:
     DiskUsageService& m_diskUsageService;
     FragmentationService& m_fragmentationService;
     IconLoadingService& m_iconLoadingService;
+    MediaThumbnailLoadingService& m_mediaThumbnailLoadingService;
     TagChangeNotifier& m_tagChangeNotifier;
     NavigationHistory m_history;
     ViewMode m_viewMode = ViewMode::Details;

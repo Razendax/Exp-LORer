@@ -42,6 +42,8 @@
 #include "LibGit2BranchProvider.h"
 #include "LibGit2StatusProvider.h"
 #include "MediaDecoder.h"
+#include "MediaProcessingUseCase.h"
+#include "MediaThumbnailLoadingService.h"
 #include "NotificationCenter.h"
 #include "NotificationSettings.h"
 #include "NotificationSettingsStore.h"
@@ -102,6 +104,7 @@ public:
     DuplicateFinderService& duplicateFinderService() noexcept { return m_duplicateFinderService; }
     FragmentationService& fragmentationService() noexcept { return m_fragmentationService; }
     IconLoadingService& iconLoadingService() noexcept { return m_iconLoadingService; }
+    MediaThumbnailLoadingService& mediaThumbnailLoadingService() noexcept { return m_mediaThumbnailLoadingService; }
     FileNavigationUseCase& fileNavigationUseCase() noexcept { return m_fileNavigationUseCase; }
     BulkRenameUseCase& bulkRenameUseCase() noexcept { return m_bulkRenameUseCase; }
 
@@ -122,6 +125,11 @@ private:
     ThumbnailCache m_thumbnailCache;
     CachingMediaDecoder m_cachingMediaDecoder;
     FilePreviewUseCase m_filePreviewUseCase;
+
+    // Architecture.md §14.62: Media Viewer grid thumbnail decoding, over the same shared
+    // CachingMediaDecoder instance (and its on-disk ThumbnailCache) as m_filePreviewUseCase above --
+    // same "stateless, safe for concurrent callers" posture (Architecture.md §14.2).
+    MediaProcessingUseCase m_mediaProcessingUseCase;
 
     // Architecture.md §14.x: per-file/folder git status badges. Provider before use case before
     // service (construction order matches this declaration order).
@@ -250,6 +258,12 @@ private:
     // concept with nothing to abstract through an Application-layer Port (same posture as
     // m_thumbnailCache/m_cachingMediaDecoder for thumbnails).
     IconLoadingService m_iconLoadingService;
+
+    // Architecture.md §14.62: Media Viewer grid thumbnail decode/metadata requests, off the Qt UI
+    // thread -- same "own dedicated thread" shape as m_gitStatusService/m_diskUsageService, grouped
+    // here with the other shared background-work services. One worker thread rather than a pool
+    // (see MediaThumbnailLoadingService.h's class comment for why, unlike m_iconLoadingService).
+    MediaThumbnailLoadingService m_mediaThumbnailLoadingService;
 
     // Architecture.md §14.55: Bulk/Batch Rename preview computation, directly on the Qt UI thread
     // (no background work -- it's just pattern.apply() + fast stat() calls, same posture as the

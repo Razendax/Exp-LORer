@@ -329,6 +329,16 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
         return role == Qt::DecorationRole ? QVariant(gitStatusBadgeIcon(statusIt->second)) : QVariant(gitStatusTooltip(statusIt->second));
     }
 
+    if (role == MediaThumbnailRole && index.column() == NameColumn)
+    {
+        const auto thumbnailIt = m_mediaThumbnailsByPath.constFind(toQString(entry.path()));
+        if (thumbnailIt == m_mediaThumbnailsByPath.constEnd())
+        {
+            return {};
+        }
+        return QVariant::fromValue(thumbnailIt.value());
+    }
+
     if (index.column() == TagsColumn && role == TagsRole)
     {
         if (entry.displayName())
@@ -509,6 +519,7 @@ void FileListModel::setEntries(const std::filesystem::path& directory, const std
     m_folderSizesByPath.clear();
     m_fragmentCountsByPath.clear();
     m_iconCache.clear();
+    m_mediaThumbnailsByPath.clear();
     recomputeTotalSize();
     rebuildVisibleRows();
     endResetModel();
@@ -649,6 +660,37 @@ void FileListModel::setIcons(const QHash<QString, QIcon>& iconsByPath)
     }
 
     emit dataChanged(index(minRow, NameColumn), index(maxRow, NameColumn), { Qt::DecorationRole });
+}
+
+void FileListModel::setMediaThumbnails(const QHash<QString, MediaThumbnailData>& thumbnailsByPath)
+{
+    int minRow = -1;
+    int maxRow = -1;
+
+    for (auto it = thumbnailsByPath.constBegin(); it != thumbnailsByPath.constEnd(); ++it)
+    {
+        m_mediaThumbnailsByPath.insert(it.key(), it.value());
+
+        // A key absent from m_rowByPath is either filtered out by the hidden-files toggle or a
+        // stale reply for a listing this model has since moved on from -- same defense-in-depth
+        // posture as setIcons().
+        const auto rowIt = m_rowByPath.constFind(it.key());
+        if (rowIt == m_rowByPath.constEnd())
+        {
+            continue;
+        }
+
+        const int row = rowIt.value();
+        minRow = (minRow < 0) ? row : std::min(minRow, row);
+        maxRow = std::max(maxRow, row);
+    }
+
+    if (minRow < 0)
+    {
+        return;
+    }
+
+    emit dataChanged(index(minRow, NameColumn), index(maxRow, NameColumn), { MediaThumbnailRole });
 }
 
 std::optional<FileDecorationRule> FileListModel::resolveDecoration(const FileNode& entry) const

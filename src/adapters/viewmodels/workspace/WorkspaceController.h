@@ -32,6 +32,7 @@ class FileTagsService;
 class DiskUsageService;
 class FragmentationService;
 class IconLoadingService;
+class MediaThumbnailLoadingService;
 class TagChangeNotifier;
 
 // Mediator owning all 4 WorkspacePaneViewModels (always instantiated, regardless of which are
@@ -54,8 +55,9 @@ public:
                          FolderMonitorUseCase& folderMonitorUseCase, NotificationCenter& notificationCenter,
                          AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
                          DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
-                         IconLoadingService& iconLoadingService, TagChangeNotifier& tagChangeNotifier,
-                         FileTransferService& fileTransferService, QObject* parent = nullptr);
+                         IconLoadingService& iconLoadingService, MediaThumbnailLoadingService& mediaThumbnailLoadingService,
+                         TagChangeNotifier& tagChangeNotifier, FileTransferService& fileTransferService,
+                         QObject* parent = nullptr);
 
     WorkspacePaneViewModel* pane(WorkspacePaneId id) const;
     SplitLayout layout() const noexcept { return m_layout; }

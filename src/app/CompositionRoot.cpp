@@ -46,6 +46,7 @@ CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir, const 
     , m_thumbnailCache(appDataDir / "cache" / "thumbnails")
     , m_cachingMediaDecoder(m_mediaDecoder, m_thumbnailCache)
     , m_filePreviewUseCase(m_fileSystemRepository, m_cachingMediaDecoder)
+    , m_mediaProcessingUseCase(m_cachingMediaDecoder)
     , m_gitStatusUseCase(m_gitStatusProvider)
     , m_gitBranchUseCase(m_gitBranchProvider)
     , m_gitStatusService(m_gitStatusUseCase, m_gitBranchUseCase)
@@ -79,6 +80,7 @@ CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir, const 
     , m_duplicateFinderService(m_duplicateFinderUseCase, m_fileSystemRepository)
     , m_fragmentationScanner(m_fileSystemRepository)
     , m_fragmentationService(m_fragmentationScanner, appDataDir / "explorer.db")
+    , m_mediaThumbnailLoadingService(m_mediaProcessingUseCase)
     , m_bulkRenameUseCase(m_fileSystemRepository)
 {
 }
@@ -90,7 +92,8 @@ std::unique_ptr<TabViewModel> CompositionRoot::createTabViewModel()
     return std::make_unique<TabViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
                                            m_fileDecorationsViewModel, m_gitStatusService, m_folderMonitorUseCase,
                                            m_advancedSearchService, m_fileTagsService, m_diskUsageService,
-                                           m_fragmentationService, m_iconLoadingService, m_tagChangeNotifier);
+                                           m_fragmentationService, m_iconLoadingService, m_mediaThumbnailLoadingService,
+                                           m_tagChangeNotifier);
 }
 
 std::unique_ptr<WorkspacePaneViewModel> CompositionRoot::createWorkspacePaneViewModel(WorkspacePaneId id)
@@ -98,7 +101,8 @@ std::unique_ptr<WorkspacePaneViewModel> CompositionRoot::createWorkspacePaneView
     return std::make_unique<WorkspacePaneViewModel>(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
                                                      m_fileDecorationsViewModel, m_gitStatusService, m_folderMonitorUseCase,
                                                      m_advancedSearchService, m_fileTagsService, m_diskUsageService,
-                                                     m_fragmentationService, m_iconLoadingService, m_tagChangeNotifier, id);
+                                                     m_fragmentationService, m_iconLoadingService,
+                                                     m_mediaThumbnailLoadingService, m_tagChangeNotifier, id);
 }
 
 std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController()
@@ -108,5 +112,5 @@ std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController(
                                                   m_gitStatusService, m_directoryWatchUseCase, m_folderMonitorUseCase,
                                                   m_notificationCenter, m_advancedSearchService, m_fileTagsService,
                                                   m_diskUsageService, m_fragmentationService, m_iconLoadingService,
-                                                  m_tagChangeNotifier, m_fileTransferService);
+                                                  m_mediaThumbnailLoadingService, m_tagChangeNotifier, m_fileTransferService);
 }

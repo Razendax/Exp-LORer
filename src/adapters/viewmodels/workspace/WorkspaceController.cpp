@@ -30,8 +30,10 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
                                            FolderMonitorUseCase& folderMonitorUseCase, NotificationCenter& notificationCenter,
                                            AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
                                            DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
-                                           IconLoadingService& iconLoadingService, TagChangeNotifier& tagChangeNotifier,
-                                           FileTransferService& fileTransferService, QObject* parent)
+                                           IconLoadingService& iconLoadingService,
+                                           MediaThumbnailLoadingService& mediaThumbnailLoadingService,
+                                           TagChangeNotifier& tagChangeNotifier, FileTransferService& fileTransferService,
+                                           QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagChangeNotifier(tagChangeNotifier)
@@ -39,19 +41,19 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
     m_panes[indexOf(WorkspacePaneId::PaneA)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
         folderMonitorUseCase, advancedSearchService, fileTagsService, diskUsageService, fragmentationService,
-        iconLoadingService, tagChangeNotifier, WorkspacePaneId::PaneA, this);
+        iconLoadingService, mediaThumbnailLoadingService, tagChangeNotifier, WorkspacePaneId::PaneA, this);
     m_panes[indexOf(WorkspacePaneId::PaneB)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
         folderMonitorUseCase, advancedSearchService, fileTagsService, diskUsageService, fragmentationService,
-        iconLoadingService, tagChangeNotifier, WorkspacePaneId::PaneB, this);
+        iconLoadingService, mediaThumbnailLoadingService, tagChangeNotifier, WorkspacePaneId::PaneB, this);
     m_panes[indexOf(WorkspacePaneId::PaneC)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
         folderMonitorUseCase, advancedSearchService, fileTagsService, diskUsageService, fragmentationService,
-        iconLoadingService, tagChangeNotifier, WorkspacePaneId::PaneC, this);
+        iconLoadingService, mediaThumbnailLoadingService, tagChangeNotifier, WorkspacePaneId::PaneC, this);
     m_panes[indexOf(WorkspacePaneId::PaneD)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
         folderMonitorUseCase, advancedSearchService, fileTagsService, diskUsageService, fragmentationService,
-        iconLoadingService, tagChangeNotifier, WorkspacePaneId::PaneD, this);
+        iconLoadingService, mediaThumbnailLoadingService, tagChangeNotifier, WorkspacePaneId::PaneD, this);
 
     m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, notificationCenter, tagChangeNotifier, this);
     m_filePreviewViewModel = new FilePreviewViewModel(filePreviewUseCase, fileSystemRepository, this);

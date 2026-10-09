@@ -21,6 +21,7 @@
 #include "FileListModel.h"
 #include "FileNameEditDelegate.h"
 #include "FileTileDelegate.h"
+#include "MediaGridTileDelegate.h"
 #include "PercentCellDelegate.h"
 #include "SearchResultDelegate.h"
 #include "TagsCellDelegate.h"
@@ -93,6 +94,7 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     m_nameEditDelegate = new FileNameEditDelegate(this);
     m_tileDelegate = new FileTileDelegate(this);
     m_iconDelegate = new FileIconDelegate(this);
+    m_mediaGridDelegate = new MediaGridTileDelegate(this);
     m_tagsCellDelegate = new TagsCellDelegate(this);
     m_percentCellDelegate = new PercentCellDelegate(this);
 
@@ -114,8 +116,10 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     {
         // Locked icon-grid rendering (Architecture.md §14.61), installed once here rather than
         // per setViewMode() call -- mirrors the AdvancedSearchResults delegate setup above, and
-        // means the first setViewMode() call after construction is cheap.
-        m_listView->setItemDelegate(m_iconDelegate);
+        // means the first setViewMode() call after construction is cheap. MediaGridTileDelegate
+        // (Architecture.md §14.62) replaces the plain FileIconDelegate here, painting a real
+        // decoded thumbnail + corner metadata chips instead of just the generic file-type icon.
+        m_listView->setItemDelegate(m_mediaGridDelegate);
         m_listView->setUniformItemSizes(true);
         m_listView->setViewMode(QListView::IconMode);
         m_listView->setFlow(QListView::LeftToRight);

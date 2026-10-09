@@ -25,6 +25,7 @@ class QKeyEvent;
 class FileListModel;
 class FileTileDelegate;
 class FileIconDelegate;
+class MediaGridTileDelegate;
 class FileNameEditDelegate;
 class SearchResultDelegate;
 class TagsCellDelegate;
@@ -179,6 +180,7 @@ private:
     FileTileDelegate* m_tileDelegate = nullptr;
     SearchResultDelegate* m_searchResultDelegate = nullptr;
     FileIconDelegate* m_iconDelegate = nullptr;
+    MediaGridTileDelegate* m_mediaGridDelegate = nullptr;
     TagsCellDelegate* m_tagsCellDelegate = nullptr;
     PercentCellDelegate* m_percentCellDelegate = nullptr;
     QItemSelectionModel* m_selectionModel = nullptr;

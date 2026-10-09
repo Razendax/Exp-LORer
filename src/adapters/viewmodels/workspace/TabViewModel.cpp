@@ -21,6 +21,7 @@
 #include "GitStatusService.h"
 #include "IconLoadingService.h"
 #include "MediaExtensions.h"
+#include "MediaThumbnailLoadingService.h"
 #include "TagChangeNotifier.h"
 #include "TagManagementUseCase.h"
 #include "VirtualPaths.h"
@@ -40,7 +41,8 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
                            GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
                            AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
                            DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
-                           IconLoadingService& iconLoadingService, TagChangeNotifier& tagChangeNotifier, QObject* parent)
+                           IconLoadingService& iconLoadingService, MediaThumbnailLoadingService& mediaThumbnailLoadingService,
+                           TagChangeNotifier& tagChangeNotifier, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagManagementUseCase(tagManagementUseCase)
@@ -51,6 +53,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     , m_diskUsageService(diskUsageService)
     , m_fragmentationService(fragmentationService)
     , m_iconLoadingService(iconLoadingService)
+    , m_mediaThumbnailLoadingService(mediaThumbnailLoadingService)
     , m_tagChangeNotifier(tagChangeNotifier)
     , m_fileListModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_searchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
@@ -821,6 +824,7 @@ void TabViewModel::onMediaViewerCandidatesReady(int generation, Result<std::vect
     m_mediaViewerCandidates = std::move(result).value();
     applyMediaViewerFilter();
     requestMediaViewerResultIcons(generation, m_mediaViewerCandidates);
+    requestMediaViewerResultThumbnails(generation, m_mediaViewerCandidates);
 
     emit mediaViewerLoadingFinished();
 }
@@ -844,6 +848,13 @@ void TabViewModel::applyMediaViewerFilter()
     filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
 
     m_mediaViewerResultsModel->setEntries(m_mediaViewerRoot, filtered);
+    // setEntries() above clears the model's icon/thumbnail caches -- re-request both for the
+    // filtered set (kind toggle, tag filter, or name query all funnel through here) so tiles don't
+    // sit on the placeholder icon until the next full runMediaViewerQuery() rescan. Reuses the
+    // current generation rather than bumping it: this is a re-filter of already-fetched candidates,
+    // not a new fetch, so in-flight replies for this generation are still valid.
+    requestMediaViewerResultIcons(m_mediaViewerGeneration, filtered);
+    requestMediaViewerResultThumbnails(m_mediaViewerGeneration, filtered);
     emit mediaViewerResultsChanged(filtered);
 }
 
@@ -1226,6 +1237,24 @@ void TabViewModel::requestMediaViewerResultIcons(int generation, const std::vect
             }
 
             m_mediaViewerResultsModel->setIcons(batch);
+        });
+}
+
+void TabViewModel::requestMediaViewerResultThumbnails(int generation, const std::vector<FileNode>& candidates)
+{
+    // 256x256 matches FileBrowserView.cpp's iconSizeFor(ViewMode::ExtraLargeIcons) -- the fixed
+    // grid sizing MediaViewerGrid mode locks to (Architecture.md §14.62).
+    m_mediaThumbnailLoadingService.requestThumbnails(
+        m_mediaViewerResultsModel, m_mediaViewerRoot, candidates, 256, 256,
+        [this, generation](QHash<QString, MediaThumbnailData> batch) {
+            if (generation != m_mediaViewerGeneration)
+            {
+                // Superseded/abandoned, same discard-by-generation-id approach
+                // onMediaViewerCandidatesReady uses.
+                return;
+            }
+
+            m_mediaViewerResultsModel->setMediaThumbnails(batch);
         });
 }
 

@@ -23,6 +23,8 @@
 #include "LibGit2BranchProvider.h"
 #include "LibGit2StatusProvider.h"
 #include "MediaDecoder.h"
+#include "MediaProcessingUseCase.h"
+#include "MediaThumbnailLoadingService.h"
 #include "NotificationCenter.h"
 #include "NotificationSettings.h"
 #include "SQLiteTagRepository.h"
@@ -92,6 +94,8 @@ namespace
         WindowsFragmentationScanner m_fragmentationScanner{ m_fileSystemRepository };
         FragmentationService m_fragmentationService{ m_fragmentationScanner, fs::path(":memory:") };
         IconLoadingService m_iconLoadingService;
+        MediaProcessingUseCase m_mediaProcessingUseCase{ m_mediaDecoder };
+        MediaThumbnailLoadingService m_mediaThumbnailLoadingService{ m_mediaProcessingUseCase };
         TagChangeNotifier m_tagChangeNotifier;
         FileTransferService m_fileTransferService{ m_fileSystemRepository };
         WorkspaceController m_controller{ m_fileNavigationUseCase,  m_tagManagementUseCase,     m_filePreviewUseCase,
@@ -99,7 +103,7 @@ namespace
                                            m_gitStatusService,     m_directoryWatchUseCase,    m_folderMonitorUseCase,
                                            m_notificationCenter,   m_advancedSearchService,    m_fileTagsService,
                                            m_diskUsageService,     m_fragmentationService,     m_iconLoadingService,
-                                           m_tagChangeNotifier,    m_fileTransferService };
+                                           m_mediaThumbnailLoadingService, m_tagChangeNotifier, m_fileTransferService };
     };
 }
 
@@ -136,7 +140,7 @@ TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsThroughRestoreFromConfig)
                                              m_gitStatusService,     m_directoryWatchUseCase,      m_folderMonitorUseCase,
                                              m_notificationCenter,   m_advancedSearchService,      m_fileTagsService,
                                              m_diskUsageService,     m_fragmentationService,       m_iconLoadingService,
-                                             m_tagChangeNotifier,    m_fileTransferService };
+                                             m_mediaThumbnailLoadingService, m_tagChangeNotifier,  m_fileTransferService };
 
     const bool restored = restoredController.restoreFromConfig(captured);
     ASSERT_TRUE(restored);
@@ -182,7 +186,7 @@ TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsHiddenColumnsThroughResto
                                              m_gitStatusService,     m_directoryWatchUseCase,      m_folderMonitorUseCase,
                                              m_notificationCenter,   m_advancedSearchService,      m_fileTagsService,
                                              m_diskUsageService,     m_fragmentationService,       m_iconLoadingService,
-                                             m_tagChangeNotifier,    m_fileTransferService };
+                                             m_mediaThumbnailLoadingService, m_tagChangeNotifier,  m_fileTransferService };
 
     ASSERT_TRUE(restoredController.restoreFromConfig(captured));
 

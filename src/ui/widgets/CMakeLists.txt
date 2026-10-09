@@ -65,6 +65,8 @@ add_library(explorer_ui_widgets STATIC
     tags/TagManagerDialog.cpp
     media/MediaViewerSearchPanelWidget.h
     media/MediaViewerSearchPanelWidget.cpp
+    media/MediaGridTileDelegate.h
+    media/MediaGridTileDelegate.cpp
     preview/PreviewPanelWidget.h
     preview/PreviewPanelWidget.cpp
     preview/MediaPreviewWidget.h

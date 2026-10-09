@@ -2041,3 +2041,73 @@ Port or Domain/Application change.
 * **Testing**: no new GTest coverage — `TabViewModel`/`AdvancedSearchService`/`SearchCriteria` have no
   existing tests either; this layer's Qt-coupled ViewModel orchestration stays under the existing §11
   UI/ViewModel-glue carve-out, verified by manual smoke test.
+
+### 14.62 Media Viewer Mode: Thumbnail Previews & Metadata Overlays
+
+§14.61's grid originally rendered every row through the plain `FileIconDelegate`/`resolveIcon()`
+path used everywhere else (the generic Explorer file-type icon via `IconLoadingService`, never a
+decoded preview of the image/video's actual pixels). This wires in real decoded thumbnails plus two
+small corner metadata labels per tile, reusing the decode/cache plumbing `ThumbnailCache`'s own
+header comment says it was "written so the future grid-icon thumbnail feature can reuse it
+unchanged" — the same `IMediaDecoder::generateThumbnail`/`extractMetadata` via
+`MediaProcessingUseCase` over the already-shared `CachingMediaDecoder`/`ThumbnailCache`
+(`CompositionRoot.h`) the Preview panel uses. Entirely Adapters/UI — no new Port, no Domain/
+Application/schema/layering change.
+
+* **`MediaThumbnailData`** (`src/adapters/viewmodels/media/MediaThumbnailData.h`, new): `{ QImage
+  image; int width = 0; int height = 0; std::chrono::milliseconds duration{}; }`,
+  `Q_DECLARE_METATYPE`'d so it can travel through `QVariant` the way `Tag`/`std::vector<Tag>` do.
+* **`MediaThumbnailLoadingWorker`/`MediaThumbnailLoadingService`** (`src/adapters/viewmodels/media/`,
+  new) mirror `IconLoadingWorker`/`IconLoadingService`'s chunked-request/per-context-staleness shape,
+  but with one dedicated `QThread` rather than a pool — the same single-serialized-worker shape every
+  other background `*Service` in this codebase uses (`GitStatusService`/`DiskUsageService`/
+  `FragmentationService`/`FilePreviewWorker`). `IconLoadingService`'s pool is explicitly justified by
+  cheap-but-many synchronous shell/GDI calls that parallelize well; thumbnail decode instead goes
+  through the one shared `MediaProcessingUseCase`/`CachingMediaDecoder` instance, so a pool would just
+  contend for the same decoder/cache rather than parallelizing real work. Chunks are ~10 entries
+  (smaller than `IconLoadingService`'s 20, since decode is heavier per item). Per item:
+  `MediaProcessingUseCase::generateThumbnail()` → `QImage::fromData()` (fine off the UI thread — no
+  GUI-thread affinity, same as `IconLoadingWorker`'s `QImage` results) + `extractMetadata()`, packaged
+  into a `MediaThumbnailData`. `CompositionRoot` gains `MediaProcessingUseCase
+  m_mediaProcessingUseCase` (constructed over the existing `m_cachingMediaDecoder`, same posture as
+  `m_filePreviewUseCase`) and `MediaThumbnailLoadingService m_mediaThumbnailLoadingService`, plus a
+  `mediaThumbnailLoadingService()` accessor threaded through `createTabViewModel()`/
+  `createWorkspacePaneViewModel()`/`createWorkspaceController()` and down through
+  `WorkspacePaneViewModel`/`WorkspaceController` into `TabViewModel`'s constructor, alongside the
+  existing `IconLoadingService&`.
+* **`FileListModel`** gains a `MediaThumbnailRole` (`NameColumn` only) returning a
+  `MediaThumbnailData` `QVariant` once decoded, a `m_mediaThumbnailsByPath` cache (cleared in
+  `setEntries()` alongside `m_iconCache`), and a `setMediaThumbnails(const QHash<QString,
+  MediaThumbnailData>&)` slot that merges a batch in and emits a scoped
+  `dataChanged({MediaThumbnailRole})` — identical shape to the existing `setIcons()`. The already-
+  resolved generic icon (§14.61's original behavior) keeps showing as the placeholder until each
+  row's real thumbnail batch arrives, same "placeholder now, real data later" relationship
+  `setIcons()` already has with `resolveIcon()`'s cache-miss fallback.
+* **`TabViewModel`** gains `requestMediaViewerResultThumbnails(generation, candidates)`, called from
+  `onMediaViewerCandidatesReady` right alongside the existing `requestMediaViewerResultIcons` call —
+  same generation-guard discard pattern, same `256×256` max size `FileBrowserView.cpp`'s
+  `iconSizeFor(ViewMode::ExtraLargeIcons)` already uses for this grid (the UI-layer constant can't be
+  referenced directly from the adapters layer, so it's duplicated as a literal with a comment).
+* **`MediaGridTileDelegate`** (`src/ui/widgets/media/`, new) replaces `FileIconDelegate` as the
+  `MediaViewerGrid` mode's installed delegate in `FileBrowserView`'s constructor
+  (`DisplayMode::MediaViewerGrid` branch). Plain `QStyledItemDelegate` — no rename-edit support
+  needed, since F2/rename is already disabled in this mode (so no reason to inherit
+  `FileNameEditDelegate` the way `FileIconDelegate` does). `paint()` draws `MediaThumbnailRole`'s
+  `QImage` aspect-fit/letterboxed when present, otherwise falls back to painting
+  `Qt::DecorationRole`'s placeholder `QIcon` the same way `FileIconDelegate::paintIcon()` does; the
+  filename caption and dashed selection-rect outline reuse `FileIconDelegate`'s layout math
+  (`nameRectFor`/`sizeHint`), copied rather than inherited. Once a thumbnail has arrived, two small
+  semi-transparent rounded-rect label chips are drawn anchored inside the thumbnail box's
+  bottom-left/bottom-right corners: bottom-left is always `FileSizeFormat::format()`'s size string;
+  bottom-right is `"{width}×{height}"` for an image (`MediaExtensions::isImageExtension()`) or the
+  mm:ss/hh:mm:ss duration string (copied from `MediaPreviewWidget.cpp`'s formatting) for a video. The
+  filename caption stays below the thumbnail, consistent with every other icon/tile delegate — the
+  only visual difference between an image and a video tile is the corner label itself, no extra
+  play-button glyph.
+* **Not built:** any change to normal browsing's or search results' icon/thumbnail rendering;
+  animated/scrubbable video preview (poster frame only, matching the existing Preview panel); live
+  re-decoding on resize beyond Qt's normal pixmap scaling; persisting any new state across restarts.
+* **Testing**: no new GTest coverage, matching §14.61's own precedent for this layer — this layer's
+  Qt-coupled ViewModel orchestration stays under the existing §11 UI/ViewModel-glue carve-out;
+  `MediaThumbnailLoadingWorker`'s per-item call is a thin pass-through to the already-tested
+  `MediaProcessingUseCase`, same posture as `IconLoadingWorker` having no dedicated test.
