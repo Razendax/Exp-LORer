@@ -42,6 +42,32 @@ namespace
 
         return type + QStringLiteral("   ") + QLocale().formattedDataSize(sizeValue.toULongLong());
     }
+
+    // QIcon::paint() never upscales: its engine picks the closest available pixmap and only
+    // shrinks it to fit, never grows it, so a row icon resolved from a single native-resolution
+    // Shell pixmap (IconLoadingWorker's SHGFI_LARGEICON, ~32x32) can render smaller than
+    // `kIconSize` instead of filling it. Draw the largest available pixmap straight into `rect`
+    // instead -- QPainter::drawPixmap(QRect, QPixmap) always scales to fill it.
+    void paintIcon(QPainter* painter, const QIcon& icon, const QRect& rect)
+    {
+        if (icon.isNull())
+        {
+            return;
+        }
+
+        const QList<QSize> sizes = icon.availableSizes();
+        QSize bestSize = rect.size();
+        for (const QSize& size : sizes)
+        {
+            if (size.width() * size.height() > bestSize.width() * bestSize.height())
+            {
+                bestSize = size;
+            }
+        }
+
+        painter->setRenderHint(QPainter::SmoothPixmapTransform);
+        painter->drawPixmap(rect, icon.pixmap(bestSize));
+    }
 }
 
 FileTileDelegate::FileTileDelegate(QObject* parent)

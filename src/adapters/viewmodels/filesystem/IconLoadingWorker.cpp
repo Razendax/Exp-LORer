@@ -9,6 +9,8 @@
 #ifdef _WIN32
 #include <windows.h>
 
+#include <commctrl.h> // IMAGELISTDRAWPARAMS/IMAGEINFO, which commoncontrols.h below needs but doesn't itself pull in
+#include <commoncontrols.h>
 #include <objbase.h>
 #include <shellapi.h>
 #endif
@@ -97,27 +99,12 @@ namespace
         return image;
     }
 
-    // One SHGetFileInfoW + DrawIconEx round trip for a single icon size (SHGFI_SMALLICON or
-    // SHGFI_LARGEICON).
-    QImage iconImage(const QString& path, bool useFileAttributes, UINT sizeFlag)
+    // Detects `hIcon`'s real pixel size via GetIconInfo (rather than assuming it matches whatever
+    // size was requested -- Shell icon APIs don't guarantee that) and composites it into a QImage.
+    // Always destroys `hIcon`, so every caller can treat this as "consume and convert".
+    QImage imageFromDetectedHIcon(HICON hIcon)
     {
-        SHFILEINFOW info{};
-        UINT flags = SHGFI_ICON | sizeFlag;
-        DWORD attributes = FILE_ATTRIBUTE_NORMAL;
-        if (useFileAttributes)
-        {
-            // SHGFI_USEFILEATTRIBUTES asks for the generic icon for this attribute/extension
-            // without SHGetFileInfoW itself ever opening the real path -- needed for directories
-            // synthesized by archive-browsing (Architecture.md §14.28), which have no real path on
-            // disk to stat. Real directories are queried normally (below) so desktop.ini-customized
-            // folder icons -- notably "This PC"'s quick-access folders (Desktop/Documents/Pictures/
-            // Videos/Music/Downloads, Architecture.md §14.15) and drive icons -- still resolve
-            // correctly, matching the synchronous QFileIconProvider lookup this worker replaced.
-            flags |= SHGFI_USEFILEATTRIBUTES;
-            attributes = FILE_ATTRIBUTE_DIRECTORY;
-        }
-
-        if (!SHGetFileInfoW(reinterpret_cast<const wchar_t*>(path.utf16()), attributes, &info, sizeof(info), flags) || !info.hIcon)
+        if (!hIcon)
         {
             return {};
         }
@@ -125,7 +112,7 @@ namespace
         int width = 0;
         int height = 0;
         ICONINFO iconInfo{};
-        if (GetIconInfo(info.hIcon, &iconInfo))
+        if (GetIconInfo(hIcon, &iconInfo))
         {
             BITMAP bitmap{};
             if (GetObject(iconInfo.hbmColor ? iconInfo.hbmColor : iconInfo.hbmMask, sizeof(bitmap), &bitmap))
@@ -145,9 +132,84 @@ namespace
             }
         }
 
-        const QImage image = imageFromHIcon(info.hIcon, width, height);
-        DestroyIcon(info.hIcon);
+        const QImage image = imageFromHIcon(hIcon, width, height);
+        DestroyIcon(hIcon);
         return image;
+    }
+
+    // Resolves `path`'s small (16x16, SHGFI_SMALLICON) system icon -- used only for SmallIcons/
+    // List/Details, where that native resolution already matches the paint size exactly.
+    QImage smallIconImage(const QString& path, bool useFileAttributes)
+    {
+        SHFILEINFOW info{};
+        UINT flags = SHGFI_ICON | SHGFI_SMALLICON;
+        DWORD attributes = FILE_ATTRIBUTE_NORMAL;
+        if (useFileAttributes)
+        {
+            // SHGFI_USEFILEATTRIBUTES asks for the generic icon for this attribute/extension
+            // without SHGetFileInfoW itself ever opening the real path -- needed for directories
+            // synthesized by archive-browsing (Architecture.md §14.28), which have no real path on
+            // disk to stat. Real directories are queried normally (below) so desktop.ini-customized
+            // folder icons -- notably "This PC"'s quick-access folders (Desktop/Documents/Pictures/
+            // Videos/Music/Downloads, Architecture.md §14.15) and drive icons -- still resolve
+            // correctly, matching the synchronous QFileIconProvider lookup this worker replaced.
+            flags |= SHGFI_USEFILEATTRIBUTES;
+            attributes = FILE_ATTRIBUTE_DIRECTORY;
+        }
+
+        if (!SHGetFileInfoW(reinterpret_cast<const wchar_t*>(path.utf16()), attributes, &info, sizeof(info), flags))
+        {
+            return {};
+        }
+
+        return imageFromDetectedHIcon(info.hIcon);
+    }
+
+    // Resolves `path`'s "Jumbo" (256x256, SHIL_JUMBO) system icon -- Explorer's own source for
+    // Large/Extra Large Icons, and the one used here for every icon-grid view mode (Medium/Large/
+    // Extra Large/Tiles). SHGFI_LARGEICON only ever hands back the classic ~32x32 "large" icon, so
+    // using it for those modes meant stretching a low-res pixmap up to a 256x256 cell -- blurry,
+    // and visibly worse for icons (folders especially) that the Shell otherwise ships a genuine
+    // high-resolution version of. Fetching the real 256x256 version here instead means the
+    // delegate (FileIconDelegate/FileTileDelegate) only ever scales a row's icon *down* to fit its
+    // cell, never up.
+    QImage jumboIconImage(const QString& path, bool useFileAttributes)
+    {
+        SHFILEINFOW info{};
+        // SHGFI_SYSICONINDEX asks for the shared system-image-list index rather than an HICON
+        // directly -- SHGFI_LARGEICON here only selects which image list the index applies to
+        // (required by the flag), not the final resolution; the index itself is valid across
+        // every one of Explorer's image lists (small/large/extra-large/jumbo) on Vista+.
+        UINT flags = SHGFI_SYSICONINDEX | SHGFI_LARGEICON;
+        DWORD attributes = FILE_ATTRIBUTE_NORMAL;
+        if (useFileAttributes)
+        {
+            flags |= SHGFI_USEFILEATTRIBUTES;
+            attributes = FILE_ATTRIBUTE_DIRECTORY;
+        }
+
+        if (!SHGetFileInfoW(reinterpret_cast<const wchar_t*>(path.utf16()), attributes, &info, sizeof(info), flags))
+        {
+            return {};
+        }
+        if (info.hIcon)
+        {
+            // Not documented as always empty alongside SHGFI_SYSICONINDEX, so destroy defensively
+            // rather than leak it -- this call only wants `info.iIcon`.
+            DestroyIcon(info.hIcon);
+        }
+
+        IImageList* imageList = nullptr;
+        if (FAILED(SHGetImageList(SHIL_JUMBO, IID_IImageList, reinterpret_cast<void**>(&imageList))) || !imageList)
+        {
+            return {};
+        }
+
+        HICON jumboIcon = nullptr;
+        imageList->GetIcon(info.iIcon, ILD_TRANSPARENT, &jumboIcon);
+        imageList->Release();
+
+        return imageFromDetectedHIcon(jumboIcon);
     }
 #endif
 }
@@ -179,12 +241,12 @@ IconImages IconLoadingWorker::resolveImages(const FileNode& entry, bool useFileA
     IconImages images;
     if (hasFlag(sizeMask, IconSizeMask::Small))
     {
-        images.smallImage = iconImage(path, useFileAttributes, SHGFI_SMALLICON);
+        images.smallImage = smallIconImage(path, useFileAttributes);
         images.hasSmall = true;
     }
     if (hasFlag(sizeMask, IconSizeMask::Large))
     {
-        images.largeImage = iconImage(path, useFileAttributes, SHGFI_LARGEICON);
+        images.largeImage = jumboIconImage(path, useFileAttributes);
         images.hasLarge = true;
     }
     return images;

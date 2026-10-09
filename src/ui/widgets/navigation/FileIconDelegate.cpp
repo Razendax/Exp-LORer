@@ -22,6 +22,33 @@ namespace
         const QVariant fontData = index.data(Qt::FontRole);
         return fontData.canConvert<QFont>() ? fontData.value<QFont>() : option.font;
     }
+
+    // QIcon::paint() never upscales: its engine picks the closest available pixmap and only
+    // shrinks it to fit, never grows it, so a row icon resolved from a single native-resolution
+    // Shell pixmap (IconLoadingWorker's SHGFI_LARGEICON, ~32x32) renders tiny and centered inside
+    // a Medium/Large/Extra Large grid cell instead of filling it. Explorer itself stretches that
+    // same native pixmap to fill the cell in those modes, so draw the largest available pixmap
+    // straight into `rect` -- QPainter::drawPixmap(QRect, QPixmap) always scales to fill it.
+    void paintIcon(QPainter* painter, const QIcon& icon, const QRect& rect)
+    {
+        if (icon.isNull())
+        {
+            return;
+        }
+
+        const QList<QSize> sizes = icon.availableSizes();
+        QSize bestSize = rect.size();
+        for (const QSize& size : sizes)
+        {
+            if (size.width() * size.height() > bestSize.width() * bestSize.height())
+            {
+                bestSize = size;
+            }
+        }
+
+        painter->setRenderHint(QPainter::SmoothPixmapTransform);
+        painter->drawPixmap(rect, icon.pixmap(bestSize));
+    }
 }
 
 FileIconDelegate::FileIconDelegate(QObject* parent)
@@ -54,7 +81,7 @@ void FileIconDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
                           option.rect.top() + kPadding,
                           iconSize.width(),
                           iconSize.height());
-    icon.paint(painter, iconRect);
+    paintIcon(painter, icon, iconRect);
 
     const QRect textRect = nameRectFor(option, index);
 

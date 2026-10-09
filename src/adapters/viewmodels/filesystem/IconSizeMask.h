@@ -23,8 +23,9 @@ inline IconSizeMask combine(IconSizeMask lhs, IconSizeMask rhs)
 }
 
 // Mirrors FileBrowserView.cpp's iconSizeFor(ViewMode): SmallIcons/List/Details paint the 16x16
-// small icon; every icon-grid mode (including Extra Large, which stretches it) paints the large
-// one.
+// small icon; every icon-grid mode (Medium/Large/Extra Large Icons, Tiles) paints the "large"
+// one, which IconLoadingWorker actually resolves at 256x256 (Explorer's own "Jumbo" system icon)
+// so those modes only ever scale it down, never stretch a low-res icon up.
 inline IconSizeMask iconSizeMaskFor(ViewMode mode)
 {
     switch (mode)
