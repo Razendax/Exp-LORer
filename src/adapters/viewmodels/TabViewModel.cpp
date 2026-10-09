@@ -279,8 +279,28 @@ void TabViewModel::setViewMode(ViewMode mode)
         return;
     }
 
+    const IconSizeMask oldMask = iconSizeMaskFor(m_viewMode);
+    const IconSizeMask newMask = iconSizeMaskFor(mode);
+
     m_viewMode = mode;
     emit viewModeChanged(mode);
+
+    if (newMask == oldMask)
+    {
+        return;
+    }
+
+    requestIcons(currentPath(), m_fileListModel->entries());
+
+    if (m_searchActive)
+    {
+        requestSearchResultIcons(m_searchGeneration, m_searchResultsModel->entries());
+    }
+
+    if (m_advancedSearchActive)
+    {
+        requestAdvancedSearchResultIcons(m_advancedSearchGeneration, m_advancedSearchResultsModel->entries());
+    }
 }
 
 void TabViewModel::setSortCriterion(SortCriterion criterion, bool ascending)
@@ -966,7 +986,7 @@ void TabViewModel::requestFragmentCounts(const std::filesystem::path& path, cons
 
 void TabViewModel::requestIcons(const std::filesystem::path& path, const std::vector<FileNode>& entries)
 {
-    m_iconLoadingService.requestIcons(m_fileListModel, path, entries, [this, path](QHash<QString, QIcon> batch) {
+    m_iconLoadingService.requestIcons(m_fileListModel, path, entries, iconSizeMaskFor(m_viewMode), [this, path](QHash<QString, QIcon> batch) {
         if (path != currentPath())
         {
             // A newer navigation has since happened; this reply is stale.
@@ -979,32 +999,33 @@ void TabViewModel::requestIcons(const std::filesystem::path& path, const std::ve
 
 void TabViewModel::requestSearchResultIcons(int generation, const std::vector<FileNode>& candidates)
 {
-    m_iconLoadingService.requestIcons(m_searchResultsModel, m_searchRoot, candidates, [this, generation](QHash<QString, QIcon> batch) {
-        if (generation != m_searchGeneration)
-        {
-            // Superseded/abandoned, same discard-by-generation-id approach onSearchCandidatesReady/
-            // onSearchProgress use.
-            return;
-        }
+    m_iconLoadingService.requestIcons(
+        m_searchResultsModel, m_searchRoot, candidates, iconSizeMaskFor(m_viewMode), [this, generation](QHash<QString, QIcon> batch) {
+            if (generation != m_searchGeneration)
+            {
+                // Superseded/abandoned, same discard-by-generation-id approach
+                // onSearchCandidatesReady/onSearchProgress use.
+                return;
+            }
 
-        m_searchResultsModel->setIcons(batch);
-    });
+            m_searchResultsModel->setIcons(batch);
+        });
 }
 
 void TabViewModel::requestAdvancedSearchResultIcons(int generation, const std::vector<FileNode>& candidates)
 {
-    m_iconLoadingService.requestIcons(m_advancedSearchResultsModel, m_advancedSearchRoot, candidates,
-                                       [this, generation](QHash<QString, QIcon> batch) {
-                                           if (generation != m_advancedSearchGeneration)
-                                           {
-                                               // Superseded/abandoned, same discard-by-generation-id
-                                               // approach onAdvancedSearchCandidatesReady/
-                                               // onAdvancedSearchProgress use.
-                                               return;
-                                           }
+    m_iconLoadingService.requestIcons(
+        m_advancedSearchResultsModel, m_advancedSearchRoot, candidates, iconSizeMaskFor(m_viewMode),
+        [this, generation](QHash<QString, QIcon> batch) {
+            if (generation != m_advancedSearchGeneration)
+            {
+                // Superseded/abandoned, same discard-by-generation-id approach
+                // onAdvancedSearchCandidatesReady/onAdvancedSearchProgress use.
+                return;
+            }
 
-                                           m_advancedSearchResultsModel->setIcons(batch);
-                                       });
+            m_advancedSearchResultsModel->setIcons(batch);
+        });
 }
 
 void TabViewModel::requestSearchResultTags(int generation, const std::vector<FileNode>& candidates)

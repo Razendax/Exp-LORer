@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <system_error>
 
+#include <QSet>
+
 #ifdef _WIN32
 #include <windows.h>
 
@@ -16,6 +18,34 @@ namespace
     QString toQString(const std::filesystem::path& path)
     {
         return QString::fromStdWString(path.wstring());
+    }
+
+    QString lowercaseExtensionOf(const FileNode& entry)
+    {
+        QString ext = toQString(entry.path().extension()).toLower();
+        if (!ext.isEmpty() && ext.startsWith(QLatin1Char('.')))
+        {
+            ext.remove(0, 1);
+        }
+        return ext;
+    }
+
+    // True for entries whose own icon can genuinely differ per instance -- a real directory
+    // (desktop.ini/drive overrides) or a file extension the shell resolves from the file's own
+    // content/target rather than a generic per-type icon (PE resources for .exe/.dll/.scr/.cpl/
+    // .msc, a shortcut's target for .lnk/.url, the image itself for .ico). Everything else shares
+    // exactly one icon with every other file of the same extension.
+    bool hasPerFileIcon(const FileNode& entry)
+    {
+        if (entry.isDirectory())
+        {
+            return true;
+        }
+        static const QSet<QString> kUniqueIconExtensions = {
+            QStringLiteral("exe"), QStringLiteral("dll"), QStringLiteral("lnk"), QStringLiteral("ico"),
+            QStringLiteral("scr"), QStringLiteral("cpl"), QStringLiteral("msc"), QStringLiteral("url"),
+        };
+        return kUniqueIconExtensions.contains(lowercaseExtensionOf(entry));
     }
 
 #ifdef _WIN32
@@ -142,24 +172,26 @@ void IconLoadingWorker::ensureComInitialized()
     m_comInitialized = true;
 }
 
-IconImages IconLoadingWorker::resolveImages(const FileNode& entry) const
+IconImages IconLoadingWorker::resolveImages(const FileNode& entry, bool useFileAttributes, IconSizeMask sizeMask) const
 {
     const QString path = toQString(entry.path());
 
-    // Only a directory with no real path on disk (archive-browsing's synthesized entries,
-    // Architecture.md §14.28) needs SHGFI_USEFILEATTRIBUTES -- a real directory is queried
-    // normally below so its actual shell icon (desktop.ini overrides, drive icons, ...) resolves.
-    std::error_code ec;
-    const bool useFileAttributes = entry.isDirectory() && !std::filesystem::exists(entry.path(), ec);
-
     IconImages images;
-    images.smallImage = iconImage(path, useFileAttributes, SHGFI_SMALLICON);
-    images.largeImage = iconImage(path, useFileAttributes, SHGFI_LARGEICON);
+    if (hasFlag(sizeMask, IconSizeMask::Small))
+    {
+        images.smallImage = iconImage(path, useFileAttributes, SHGFI_SMALLICON);
+        images.hasSmall = true;
+    }
+    if (hasFlag(sizeMask, IconSizeMask::Large))
+    {
+        images.largeImage = iconImage(path, useFileAttributes, SHGFI_LARGEICON);
+        images.hasLarge = true;
+    }
     return images;
 }
 #endif
 
-QHash<QString, IconImages> IconLoadingWorker::iconsFor(const std::vector<FileNode>& entries)
+QHash<QString, IconImages> IconLoadingWorker::iconsFor(const std::vector<FileNode>& entries, IconSizeMask sizeMask)
 {
     QHash<QString, IconImages> result;
     result.reserve(static_cast<int>(entries.size()));
@@ -168,25 +200,82 @@ QHash<QString, IconImages> IconLoadingWorker::iconsFor(const std::vector<FileNod
     ensureComInitialized();
 #endif
 
+    const bool wantSmall = hasFlag(sizeMask, IconSizeMask::Small);
+    const bool wantLarge = hasFlag(sizeMask, IconSizeMask::Large);
+
     for (const FileNode& entry : entries)
     {
-        const QString key = toQString(entry.path());
+        const QString resultKey = toQString(entry.path());
 
-        const auto cached = m_cache.constFind(key);
-        if (cached != m_cache.constEnd() && cached.value().modificationDate == entry.modificationDate())
+        // Only a directory with no real path on disk (archive-browsing's synthesized entries,
+        // Architecture.md §14.28) needs SHGFI_USEFILEATTRIBUTES -- a real directory is queried
+        // normally below so its actual shell icon (desktop.ini overrides, drive icons, ...)
+        // resolves.
+        std::error_code ec;
+        const bool useFileAttributes = entry.isDirectory() && !std::filesystem::exists(entry.path(), ec);
+
+        // Cache key: a constant for every archive-synthesized directory (SHGFI_USEFILEATTRIBUTES
+        // never looks at the real path, so they're 100% shareable); the entry's own path for
+        // anything hasPerFileIcon() flags (real directories, and files whose icon the shell
+        // derives from their own content/target); otherwise one shared key per lowercase
+        // extension, since ordinary files of the same extension all show the same generic icon.
+        QString cacheKey;
+        bool pathBased = false;
+        if (useFileAttributes)
         {
-            result.insert(key, cached.value().images);
-            continue;
+            cacheKey = QStringLiteral("@archive-dir");
+        }
+        else if (hasPerFileIcon(entry))
+        {
+            cacheKey = resultKey;
+            pathBased = true;
+        }
+        else
+        {
+            const QString ext = lowercaseExtensionOf(entry);
+            cacheKey = ext.isEmpty() ? QStringLiteral("@noext") : QStringLiteral("@ext:") + ext;
         }
 
-#ifdef _WIN32
-        IconImages images = resolveImages(entry);
-#else
-        IconImages images;
-#endif
+        auto cacheIt = m_cache.find(cacheKey);
+        const bool staleMtime = pathBased && cacheIt != m_cache.end() && cacheIt.value().modificationDate != entry.modificationDate();
+        if (cacheIt == m_cache.end() || staleMtime)
+        {
+            cacheIt = m_cache.insert(cacheKey, CacheEntry{});
+            if (pathBased)
+            {
+                cacheIt.value().modificationDate = entry.modificationDate();
+            }
+        }
 
-        m_cache.insert(key, CacheEntry{ entry.modificationDate(), images });
-        result.insert(key, images);
+        IconImages images = cacheIt.value().images;
+        const bool needSmall = wantSmall && !images.hasSmall;
+        const bool needLarge = wantLarge && !images.hasLarge;
+
+        if (needSmall || needLarge)
+        {
+#ifdef _WIN32
+            const IconSizeMask missingMask = static_cast<IconSizeMask>((needSmall ? static_cast<int>(IconSizeMask::Small) : 0) |
+                                                                         (needLarge ? static_cast<int>(IconSizeMask::Large) : 0));
+            const IconImages resolved = resolveImages(entry, useFileAttributes, missingMask);
+#else
+            IconImages resolved;
+            resolved.hasSmall = needSmall;
+            resolved.hasLarge = needLarge;
+#endif
+            if (needSmall)
+            {
+                images.smallImage = resolved.smallImage;
+                images.hasSmall = true;
+            }
+            if (needLarge)
+            {
+                images.largeImage = resolved.largeImage;
+                images.hasLarge = true;
+            }
+            cacheIt.value().images = images;
+        }
+
+        result.insert(resultKey, images);
     }
 
     return result;

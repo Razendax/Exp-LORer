@@ -9,6 +9,7 @@
 #include <QString>
 
 #include "FileNode.h"
+#include "IconSizeMask.h"
 
 // Both common icon sizes SHGetFileInfoW can hand back for a file/folder, combined by the GUI
 // thread into one QIcon with two pixmaps once delivered, so a QIcon::pixmap(size) request scales
@@ -19,6 +20,12 @@ struct IconImages
     // `small` to `char` for old MIDL compatibility, which silently breaks a member of that name.
     QImage smallImage;
     QImage largeImage;
+    // Tracks which sizes have actually been resolved (attempted), independent of whether the
+    // resolved image itself came back null (extraction failure) -- lets iconsFor() merge a
+    // later request for the other size into an already-cached record instead of either
+    // re-resolving a size it already has or mistaking "never asked for" for "failed".
+    bool hasSmall = false;
+    bool hasLarge = false;
 };
 
 // Resolves file/folder icons off the Qt UI thread ("Fix slow folder-open for executable-heavy
@@ -42,12 +49,22 @@ public:
     explicit IconLoadingWorker(QObject* parent = nullptr);
 
     // Resolves (or returns the already-cached) icon images for every entry in `entries`, keyed by
-    // each entry's absolute path.
-    QHash<QString, IconImages> iconsFor(const std::vector<FileNode>& entries);
+    // each entry's absolute path. Only resolves the size(s) set in `sizeMask` -- a size an entry's
+    // cache record already has is never re-resolved, and the returned record for that entry always
+    // carries every size resolved so far (this call's included), not just what `sizeMask` asked
+    // for this time, so a view-mode switch that needs the other size can never regress an entry
+    // that was already fully resolved.
+    QHash<QString, IconImages> iconsFor(const std::vector<FileNode>& entries, IconSizeMask sizeMask);
 
 private:
+    // Most ordinary files share exactly one icon per extension (resolved once, not once per file);
+    // only entries whose own icon can genuinely differ per instance need a path+mtime cache key --
+    // real directories (desktop.ini/drive overrides) and a short list of extensions the shell gives
+    // a unique, content-derived icon (PE resources, shortcut targets, the icon file's own image).
     struct CacheEntry
     {
+        // Only meaningful (and only ever compared) when this entry was cached under a path-based
+        // key -- see iconsFor()'s `pathBased` local. Left default-initialized otherwise.
         std::chrono::system_clock::time_point modificationDate;
         IconImages images;
     };
@@ -62,7 +79,10 @@ private:
     void ensureComInitialized();
     bool m_comInitialized = false;
 
-    IconImages resolveImages(const FileNode& entry) const;
+    // Resolves only the size(s) set in `sizeMask` for `entry`; `useFileAttributes` is iconsFor()'s
+    // already-computed classification for archive-synthesized directories (Architecture.md
+    // §14.28), threaded through rather than recomputed here.
+    IconImages resolveImages(const FileNode& entry, bool useFileAttributes, IconSizeMask sizeMask) const;
 #endif
 
     QHash<QString, CacheEntry> m_cache;

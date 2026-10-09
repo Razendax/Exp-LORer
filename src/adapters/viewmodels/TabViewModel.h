@@ -171,6 +171,11 @@ public slots:
     void goBack();
     void goForward();
 
+    // Re-requests icons for whatever's currently loaded (normal browsing, and quick/advanced
+    // search results if active) when the new mode's icon size tier (IconSizeMask.h) differs from
+    // the old one, so switching e.g. Details -> Large Icons doesn't leave rows showing an upscaled
+    // 16px icon forever. Cheap even for a huge directory: IconLoadingWorker merges a missing size
+    // into its already-cached record rather than re-resolving sizes it already has.
     void setViewMode(ViewMode mode);
 
     // Bulk-replaces the per-tab column-visibility overrides, used by WorkspaceController::

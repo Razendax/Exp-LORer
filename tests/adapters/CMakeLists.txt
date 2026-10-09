@@ -40,6 +40,8 @@ add_executable(explorer_adapters_tests
     StandardFileHasherTest.cpp
     StandardDuplicateFileScannerTest.cpp
     SQLiteFragmentationRepositoryTest.cpp
+    IconLoadingWorkerTest.cpp
+    FileListModelTest.cpp
 )
 
 target_link_libraries(explorer_adapters_tests PRIVATE

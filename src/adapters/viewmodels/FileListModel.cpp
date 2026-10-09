@@ -1,5 +1,7 @@
 #include "FileListModel.h"
 
+#include <algorithm>
+
 #include <QApplication>
 #include <QColor>
 #include <QDateTime>
@@ -619,17 +621,34 @@ void FileListModel::setFragmentCounts(const FragmentCountsByPathMap& countsByPat
 
 void FileListModel::setIcons(const QHash<QString, QIcon>& iconsByPath)
 {
+    int minRow = -1;
+    int maxRow = -1;
+
     for (auto it = iconsByPath.constBegin(); it != iconsByPath.constEnd(); ++it)
     {
         m_iconCache.insert(it.key(), it.value());
+
+        // A key absent from m_rowByPath is either filtered out by the hidden-files toggle or a
+        // stale reply for a listing this model has since moved on from (defense in depth alongside
+        // the path-is-still-current check TabViewModel::requestIcons already applies) -- either
+        // way, nothing visible to repaint for it.
+        const auto rowIt = m_rowByPath.constFind(it.key());
+        if (rowIt == m_rowByPath.constEnd())
+        {
+            continue;
+        }
+
+        const int row = rowIt.value();
+        minRow = (minRow < 0) ? row : std::min(minRow, row);
+        maxRow = std::max(maxRow, row);
     }
 
-    if (m_visibleRows.empty())
+    if (minRow < 0)
     {
         return;
     }
 
-    emit dataChanged(index(0, NameColumn), index(static_cast<int>(m_visibleRows.size()) - 1, NameColumn), { Qt::DecorationRole });
+    emit dataChanged(index(minRow, NameColumn), index(maxRow, NameColumn), { Qt::DecorationRole });
 }
 
 std::optional<FileDecorationRule> FileListModel::resolveDecoration(const FileNode& entry) const
@@ -711,10 +730,13 @@ void FileListModel::rebuildVisibleRows()
 {
     m_visibleRows.clear();
     m_visibleRows.reserve(m_entries.size());
+    m_rowByPath.clear();
+    m_rowByPath.reserve(static_cast<int>(m_entries.size()));
     for (int i = 0; i < static_cast<int>(m_entries.size()); ++i)
     {
         if (m_showHiddenFiles || !m_entries[static_cast<size_t>(i)].isHidden())
         {
+            m_rowByPath.insert(toQString(m_entries[static_cast<size_t>(i)].path()), static_cast<int>(m_visibleRows.size()));
             m_visibleRows.push_back(i);
         }
     }

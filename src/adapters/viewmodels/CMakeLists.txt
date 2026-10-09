@@ -4,6 +4,7 @@ add_library(explorer_adapters_viewmodels STATIC
     TabViewModel.h
     TabViewModel.cpp
     ViewMode.h
+    IconSizeMask.h
     FileListModel.h
     FileListModel.cpp
     FileSizeFormat.h

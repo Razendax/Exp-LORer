@@ -205,6 +205,13 @@ private:
     std::filesystem::path m_directory;
     std::vector<FileNode> m_entries;
     std::vector<int> m_visibleRows;
+    // Inverse of m_visibleRows, keyed by each visible entry's absolute path -- lets setIcons()
+    // scope its dataChanged emit to the rows an icon batch actually touched instead of repainting
+    // the whole column on every ~20-entry chunk delivery. Rebuilt alongside m_visibleRows inside
+    // rebuildVisibleRows() so it stays correct after setEntries/setSortCriterion/
+    // setShowHiddenFiles. A path not in this map is currently filtered out (hidden-file toggle) or
+    // belongs to a stale reply for an already-superseded listing.
+    QHash<QString, int> m_rowByPath;
     QFileIconProvider m_iconProvider;
     GitStatusByPathMap m_gitStatusByPath;
     TagsByPathMap m_fileTagsByPath;
