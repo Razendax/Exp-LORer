@@ -10,10 +10,12 @@
 #include <QListView>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QScrollBar>
 #include <QStackedWidget>
 #include <QStyledItemDelegate>
 #include <QTreeView>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
 #include "FileIconDelegate.h"
 #include "FileListModel.h"
@@ -45,6 +47,29 @@ namespace
         }
         return QSize(48, 48);
     }
+
+    // Qt's QListView never honours setVerticalScrollMode(ScrollPerItem) in IconMode (used for
+    // Tiles/ExtraLargeIcons/LargeIcons/MediumIcons/SmallIcons): its icon-mode layout engine
+    // (QIconModeViewBase) always falls back to the generic pixel-based scrollbar setup, ignoring
+    // the ScrollPerItem property entirely (unlike ListMode, which does honour it). That leaves the
+    // wheel scrolling an arbitrary handful of pixels per notch instead of a full row, so icon-family
+    // modes get their own wheel handling below, stepping the vertical scrollbar by exactly one row.
+    bool isIconFamilyViewMode(ViewMode mode)
+    {
+        switch (mode)
+        {
+            case ViewMode::ExtraLargeIcons:
+            case ViewMode::LargeIcons:
+            case ViewMode::MediumIcons:
+            case ViewMode::SmallIcons:
+            case ViewMode::Tiles:
+                return true;
+            case ViewMode::List:
+            case ViewMode::Details:
+                return false;
+        }
+        return false;
+    }
 }
 
 FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayMode displayMode)
@@ -60,6 +85,11 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     m_listView = new QListView(this);
     m_listView->setObjectName(QStringLiteral("fileBrowserListView"));
     m_listView->setModel(m_model);
+
+    // Qt's QListView defaults to ScrollPerPixel in IconMode, with a small fixed wheel step
+    // unrelated to icon size -- a wheel notch barely moves a 96px/256px icon. ScrollPerItem makes
+    // each step one row of items, matching Explorer's own icon-view scrolling.
+    m_listView->setVerticalScrollMode(QAbstractItemView::ScrollPerItem);
     m_nameEditDelegate = new FileNameEditDelegate(this);
     m_tileDelegate = new FileTileDelegate(this);
     m_iconDelegate = new FileIconDelegate(this);
@@ -178,6 +208,30 @@ bool FileBrowserView::eventFilter(QObject* watched, QEvent* event)
         }
     }
 
+    // See isIconFamilyViewMode()'s comment: Qt's IconMode ignores ScrollPerItem, so icon-family
+    // modes get manual wheel handling here, stepping by exactly one row's height per notch rather
+    // than Qt's small fixed per-pixel default.
+    if (watched == m_listView->viewport() && event->type() == QEvent::Wheel && isIconFamilyViewMode(m_viewMode))
+    {
+        auto* wheelEvent = static_cast<QWheelEvent*>(event);
+        const int notches = wheelEvent->angleDelta().y() / 120;
+        if (notches == 0)
+        {
+            return QWidget::eventFilter(watched, event);
+        }
+
+        const QModelIndex firstIndex = m_model->index(0, 0);
+        const int rowStep = firstIndex.isValid() ? m_listView->sizeHintForIndex(firstIndex).height() : 0;
+        if (rowStep <= 0)
+        {
+            return QWidget::eventFilter(watched, event);
+        }
+
+        QScrollBar* verticalScrollBar = m_listView->verticalScrollBar();
+        verticalScrollBar->setValue(verticalScrollBar->value() - notches * rowStep);
+        return true;
+    }
+
     // Clicking empty space in the view (no item under the cursor) deselects the current item,
     // matching Explorer. Selection is only cleared, not consumed, so rubber-band selection from
     // empty space still works normally.
@@ -272,6 +326,8 @@ bool FileBrowserView::handleKeyPress(QKeyEvent* event)
 
 void FileBrowserView::setViewMode(ViewMode mode)
 {
+    m_viewMode = mode;
+
     if (m_displayMode == DisplayMode::AdvancedSearchResults)
     {
         m_stack->setCurrentWidget(m_treeView);

@@ -168,6 +168,7 @@ private:
 
     FileListModel* m_model = nullptr;
     DisplayMode m_displayMode = DisplayMode::Normal;
+    ViewMode m_viewMode = ViewMode::Details;
     QStackedWidget* m_stack = nullptr;
     QListView* m_listView = nullptr;
     QTreeView* m_treeView = nullptr;
