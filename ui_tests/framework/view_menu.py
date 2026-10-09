@@ -26,3 +26,12 @@ class ViewMenu:
         """
         self._app.window.child_window(title="View", control_type="MenuItem").click_input()
         self._app.window.child_window(title="Show hidden files/folders", control_type="MenuItem").click_input()
+
+    def toggle_media_viewer_mode(self) -> None:
+        """Opens View and clicks "Media Viewer Mode", flipping the focused tab's `TabViewModel::
+        enterMediaViewer()`/`exitMediaViewer()` (Architecture.md §14.61) -- the only entry point
+        into/out of the mode besides the Searcher panel's own "Exit viewer mode" button
+        (`RightPanel.searcher.exit_button`).
+        """
+        self._app.window.child_window(title="View", control_type="MenuItem").click_input()
+        self._app.window.child_window(title="Media Viewer Mode", control_type="MenuItem").click_input()

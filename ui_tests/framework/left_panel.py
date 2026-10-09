@@ -220,6 +220,18 @@ class LeftPanel:
         """
         return self.tree_button.is_checked() or self.search_button.is_checked()
 
+    def is_visible(self) -> bool:
+        """Whether the left SidePanelWidget itself is currently visible at all (`QWidget::
+        setVisible`) -- distinct from `is_expanded()` (whether Tree/Search's own header button is
+        checked within an already-visible panel). Media Viewer mode hides the whole panel outright
+        for its duration (`MainWindow::onMediaViewerModeChanged`, Architecture.md §14.61) rather
+        than just collapsing it.
+        """
+        try:
+            return self._panel.exists(timeout=0.5) and bool(self._panel.raw.is_visible())
+        except LookupError:
+            return False
+
     def tree_visible(self) -> bool:
         """Whether the tree is currently on screen (panel expanded), without expanding it."""
         try:

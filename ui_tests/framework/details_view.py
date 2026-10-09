@@ -372,6 +372,19 @@ def read_name_column(tree_view: Element) -> List[str]:
     ]
 
 
+def read_grid_item_names(list_view: Element) -> List[str]:
+    """Display names of every currently shown row in an icon-grid `QListView` (`FILE_LIST_VIEW` /
+    `app.panes.a.file_list_view`) -- e.g. Media Viewer mode's locked icon-grid rendering
+    (`FileBrowserView::DisplayMode::MediaViewerGrid`, Architecture.md §14.61). Unlike the
+    `QTreeView`-backed Details view `read_name_column`/`read_details_rows` read from, Qt's `uia`
+    bridge exposes each `QListView` row as one flat `ListItem` child (one cell, not one per
+    column) -- the same shape `PANE_ADDRESS_BAR_POPUP`'s `QListWidget` items use.
+    """
+    return [
+        item.window_text() for item in list_view.raw.children() if item.element_info.control_type == "ListItem"
+    ]
+
+
 def find_header(tree_view: Element, title: str) -> Any:
     """Locates one header cell by its exact title (e.g. "Size", "Date modified") -- the raw
     pywinauto wrapper, ready for `.click_input()` (sort), `.right_click_input()` (column-visibility

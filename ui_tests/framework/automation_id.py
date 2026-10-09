@@ -68,6 +68,7 @@ class AutomationID:
     RIGHT_PANEL_TAGS_BUTTON = "rightPanelTagsButton"
     RIGHT_PANEL_PREVIEW_BUTTON = "rightPanelPreviewButton"
     RIGHT_PANEL_MONITORING_BUTTON = "rightPanelMonitoringButton"
+    RIGHT_PANEL_SEARCHER_BUTTON = "rightPanelSearcherButton"
     LEFT_PANEL = "leftPanelWidget"
     LEFT_PANEL_STACK = "leftPanelStack"
     LEFT_PANEL_TREE_BUTTON = "leftPanelTreeButton"
@@ -167,6 +168,24 @@ class AutomationID:
     MONITORING_PIN_BUTTON = "monitoringPinButton"
     MONITORING_LOG_VIEW = "monitoringLogView"
     MONITORING_TOTAL_LABEL = "monitoringTotalLabel"
+
+    # --- Media Viewer Search Panel (MediaViewerSearchPanelWidget.cpp, singleton, right panel's
+    #     "Searcher" tab -- Architecture.md §14.61) ---
+    MEDIA_VIEWER_SEARCH_PANEL = "mediaViewerSearchPanelWidget"
+    MEDIA_VIEWER_KIND_COMBO = "mediaViewerKindCombo"
+    MEDIA_VIEWER_EXIT_BUTTON = "mediaViewerExitButton"
+    MEDIA_VIEWER_LOADING_LABEL = "mediaViewerLoadingLabel"
+    MEDIA_VIEWER_APPLIED_FILTERS_SECTION = "mediaViewerAppliedFiltersSection"
+    MEDIA_VIEWER_TAG_SEARCH_EDIT = "mediaViewerTagSearchEdit"
+    MEDIA_VIEWER_TAG_MATCHES_SECTION = "mediaViewerTagMatchesSection"
+    # Match Case/Whole Word/Exact Name/Match Regex/Skip Git-Ignored toggles -- same
+    # ExclusiveOptional behavior as SearchCriteriaPanel's own row (see AdvancedSearchPanel).
+    MEDIA_VIEWER_MATCH_CASE_BUTTON = "mediaViewerMatchCaseButton"
+    MEDIA_VIEWER_WHOLE_WORD_BUTTON = "mediaViewerWholeWordButton"
+    MEDIA_VIEWER_EXACT_NAME_BUTTON = "mediaViewerExactNameButton"
+    MEDIA_VIEWER_REGEX_BUTTON = "mediaViewerRegexButton"
+    MEDIA_VIEWER_SKIP_GIT_IGNORED_BUTTON = "mediaViewerSkipGitIgnoredButton"
+    MEDIA_VIEWER_NAME_EDIT = "mediaViewerNameEdit"
 
     # --- Notification Overlay (NotificationOverlayWidget.cpp, singleton, Architecture.md §14.37) ---
     # Toast/progress cards are dynamic -- any number can stack concurrently -- so, like tag chips,

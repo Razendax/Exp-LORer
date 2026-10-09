@@ -107,6 +107,14 @@ class PaneTabs:
         """Clicks the tab at `index` (0-based, tab order), making it the pane's active tab."""
         self._tab_items()[index].click_input()
 
+    def is_enabled(self, index: int) -> bool:
+        """Whether the tab at `index` can currently be switched to -- Media Viewer mode
+        (Architecture.md §14.61) disables every other tab in the pane for its duration
+        (`WorkspacePaneWidget::updateToolBarEnabledForMediaViewer`'s `setTabEnabled`), since its
+        grid root is fixed to whichever tab entered it.
+        """
+        return bool(self._tab_items()[index].is_enabled())
+
 
 class PaneStatusBar:
     def __init__(self, container: Callable[[], object]):
@@ -246,6 +254,15 @@ class WorkspacePane:
 
     def _container(self) -> Any:
         return self._pane.raw
+
+    def media_viewer_result_names(self) -> List[str]:
+        """Display names currently shown in Media Viewer mode's locked icon-grid (`FileBrowserView::
+        DisplayMode::MediaViewerGrid`, Architecture.md §14.61) -- reuses `file_list_view` (the same
+        fixed id every display mode's `QListView` shares), top to bottom/left to right.
+        """
+        from .details_view import read_grid_item_names
+
+        return read_grid_item_names(self.file_list_view)
 
 
 class WorkspacePanes:
