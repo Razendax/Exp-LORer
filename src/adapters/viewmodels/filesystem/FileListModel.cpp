@@ -525,6 +525,16 @@ void FileListModel::setEntries(const std::filesystem::path& directory, const std
     endResetModel();
 }
 
+void FileListModel::refilterEntries(const std::vector<FileNode>& entries)
+{
+    beginResetModel();
+    m_entries = FileNavigationUseCase::sortBy(entries, m_sortCriterion, m_sortAscending,
+                                                [this](const FileNode& entry) { return knownSizeOf(entry).value_or(0); });
+    recomputeTotalSize();
+    rebuildVisibleRows();
+    endResetModel();
+}
+
 void FileListModel::setSortCriterion(SortCriterion criterion, bool ascending)
 {
     if (criterion == m_sortCriterion && ascending == m_sortAscending)

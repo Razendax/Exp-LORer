@@ -566,7 +566,13 @@ private:
     // m_mediaViewerKind, then by m_mediaViewerNameQuery/m_mediaViewerNameOptions (reusing
     // FileNavigationUseCase::filterByName), sorts, and applies to m_mediaViewerResultsModel. The
     // tail shared by onMediaViewerCandidatesReady and every in-memory kind/name-filter edit.
-    void applyMediaViewerFilter();
+    // `freshCandidates` selects which FileListModel method applies the filtered result:
+    // onMediaViewerCandidatesReady (just replaced m_mediaViewerCandidates from a new scan) passes
+    // true, going through setEntries() to drop stale per-path caches from the previous candidate
+    // set; a plain in-memory kind/name-filter edit of the SAME candidates passes false, going
+    // through refilterEntries() so already-resolved icons/thumbnails survive narrowing and
+    // widening the filter without flickering back to their placeholder (Architecture.md §14.62).
+    void applyMediaViewerFilter(bool freshCandidates);
 
     // Completion callback for runMediaViewerQuery()'s AdvancedSearchService request. Discards the
     // result if `generation` no longer matches m_mediaViewerGeneration (a newer request, or

@@ -744,7 +744,7 @@ void TabViewModel::setMediaViewerKind(MediaViewerKind kind)
     }
 
     m_mediaViewerKind = kind;
-    applyMediaViewerFilter();
+    applyMediaViewerFilter(false);
     emit mediaViewerKindChanged(kind);
 }
 
@@ -788,7 +788,7 @@ void TabViewModel::setMediaViewerNameFilter(const QString& query, const NameSear
 
     m_mediaViewerNameQuery = query;
     m_mediaViewerNameOptions = options;
-    applyMediaViewerFilter();
+    applyMediaViewerFilter(false);
 }
 
 void TabViewModel::runMediaViewerQuery()
@@ -827,14 +827,18 @@ void TabViewModel::onMediaViewerCandidatesReady(int generation, Result<std::vect
     }
 
     m_mediaViewerCandidates = std::move(result).value();
-    applyMediaViewerFilter();
+    // Fresh candidate set from a new recursive/tag-first scan (possibly a different root than
+    // whatever this tab's media viewer last showed) -- unlike a plain kind/name re-filter of
+    // candidates already held, stale cached icons/thumbnails from the previous set are not worth
+    // keeping around, so let applyMediaViewerFilter() clear them via setEntries().
+    applyMediaViewerFilter(true);
     requestMediaViewerResultIcons(generation, m_mediaViewerCandidates);
     requestMediaViewerResultThumbnails(generation, m_mediaViewerCandidates);
 
     emit mediaViewerLoadingFinished();
 }
 
-void TabViewModel::applyMediaViewerFilter()
+void TabViewModel::applyMediaViewerFilter(bool freshCandidates)
 {
     std::vector<FileNode> filtered;
     filtered.reserve(m_mediaViewerCandidates.size());
@@ -852,12 +856,26 @@ void TabViewModel::applyMediaViewerFilter()
     filtered = FileNavigationUseCase::filterByName(std::move(filtered), m_mediaViewerNameQuery.toStdString(), m_mediaViewerNameOptions);
     filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
 
-    m_mediaViewerResultsModel->setEntries(m_mediaViewerRoot, filtered);
-    // setEntries() above clears the model's icon/thumbnail caches -- re-request both for the
-    // filtered set (kind toggle, tag filter, or name query all funnel through here) so tiles don't
-    // sit on the placeholder icon until the next full runMediaViewerQuery() rescan. Reuses the
-    // current generation rather than bumping it: this is a re-filter of already-fetched candidates,
-    // not a new fetch, so in-flight replies for this generation are still valid.
+    if (freshCandidates)
+    {
+        m_mediaViewerResultsModel->setEntries(m_mediaViewerRoot, filtered);
+    }
+    else
+    {
+        // Image<->Video kind toggle or a name-query keystroke: narrowing the SAME already-fetched
+        // candidate set, not a new one, so this goes through refilterEntries() instead of
+        // setEntries() -- it leaves the model's icon/thumbnail caches alone, so a tile that drops
+        // out of view and later comes back (toggling the kind filter back, say) stays showing its
+        // already-decoded thumbnail instead of flashing back to the placeholder icon while
+        // MediaThumbnailLoadingService redundantly redecodes something it already decoded
+        // (Architecture.md §14.62).
+        m_mediaViewerResultsModel->refilterEntries(filtered);
+    }
+
+    // Reuses the current generation rather than bumping it: this is a re-filter/fresh-listing
+    // handled above, not itself a new fetch, so in-flight replies for this generation are still
+    // valid. Still needed even when refilterEntries() preserved the cache: entries that are newly
+    // visible after narrowing/widening the filter may not have been requested before.
     requestMediaViewerResultIcons(m_mediaViewerGeneration, filtered);
     requestMediaViewerResultThumbnails(m_mediaViewerGeneration, filtered);
     emit mediaViewerResultsChanged(filtered);

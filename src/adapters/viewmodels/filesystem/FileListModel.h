@@ -128,6 +128,16 @@ public:
 public slots:
     void setEntries(const std::filesystem::path& directory, const std::vector<FileNode>& entries);
 
+    // Re-filters `entries` into the SAME listing setEntries() last established -- m_directory is
+    // left untouched and, unlike setEntries(), none of the per-path caches (m_iconCache,
+    // m_mediaThumbnailsByPath, git status, tags, folder/fragment counts) are cleared. Used by Media
+    // Viewer's Image/Video kind toggle and name-query filter (TabViewModel::applyMediaViewerFilter),
+    // which narrow an already-fetched candidate set rather than fetch a new one: a path that drops
+    // out of view and later comes back (toggling Image<->Video, say) stays resolved instead of
+    // bouncing through its placeholder icon again while MediaThumbnailLoadingService redundantly
+    // redecodes something it already decoded (Architecture.md §14.62).
+    void refilterEntries(const std::vector<FileNode>& entries);
+
     // Re-sorts m_entries in place via FileNavigationUseCase::sortBy and emits sortOrderChanged.
     // No-op if criterion/ascending are unchanged.
     void setSortCriterion(SortCriterion criterion, bool ascending);
