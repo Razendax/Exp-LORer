@@ -110,6 +110,19 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
         m_searchResultDelegate = new SearchResultDelegate(this);
         m_treeView->setItemDelegate(m_searchResultDelegate);
     }
+    else if (m_displayMode == DisplayMode::MediaViewerGrid)
+    {
+        // Locked icon-grid rendering (Architecture.md §14.61), installed once here rather than
+        // per setViewMode() call -- mirrors the AdvancedSearchResults delegate setup above, and
+        // means the first setViewMode() call after construction is cheap.
+        m_listView->setItemDelegate(m_iconDelegate);
+        m_listView->setUniformItemSizes(true);
+        m_listView->setViewMode(QListView::IconMode);
+        m_listView->setFlow(QListView::LeftToRight);
+        m_listView->setWrapping(true);
+        m_listView->setGridSize(QSize());
+        m_listView->setIconSize(iconSizeFor(ViewMode::ExtraLargeIcons));
+    }
     else
     {
         // Installed once here (rather than per setViewMode() call, like the QListView delegates
@@ -280,7 +293,7 @@ bool FileBrowserView::handleKeyPress(QKeyEvent* event)
     if (event->matches(QKeySequence::Paste)) { emit pasteRequested(); return true; }
     if (event->key() == Qt::Key_Backspace)   { emit navigateUpRequested(); return true; }
 
-    if (event->key() == Qt::Key_F2 && m_displayMode != DisplayMode::AdvancedSearchResults)
+    if (event->key() == Qt::Key_F2 && m_displayMode == DisplayMode::Normal)
     {
         const QModelIndexList selectedRows = m_selectionModel->selectedRows();
         if (selectedRows.size() == 1 && (selectedRows.front().flags() & Qt::ItemIsEditable))
@@ -331,6 +344,15 @@ void FileBrowserView::setViewMode(ViewMode mode)
     if (m_displayMode == DisplayMode::AdvancedSearchResults)
     {
         m_stack->setCurrentWidget(m_treeView);
+        return;
+    }
+
+    if (m_displayMode == DisplayMode::MediaViewerGrid)
+    {
+        // Rendering is fully set up once at construction time -- mode is ignored here, same
+        // "ignore the parameter, lock the rendering" shape as the AdvancedSearchResults branch
+        // above.
+        m_stack->setCurrentWidget(m_listView);
         return;
     }
 
@@ -493,7 +515,7 @@ void FileBrowserView::selectEntryByPath(const std::filesystem::path& path)
 
 void FileBrowserView::beginRename(const std::filesystem::path& path)
 {
-    if (m_displayMode == DisplayMode::AdvancedSearchResults)
+    if (m_displayMode != DisplayMode::Normal)
     {
         return;
     }

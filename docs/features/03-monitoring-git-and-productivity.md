@@ -1963,3 +1963,81 @@ section, each one openable as its own OS process running concurrently with the o
   "Carve-out — OS-shell side effects with no assertable return" (§11, same posture as
   `ShellContextMenuProvider`) — manually smoke-tested, not CTest-covered; its key-derivation step is
   still a plain, independently testable pure function. UI is still not covered by CTest in v1 (§11).
+
+### 14.61 Media Viewer Mode
+
+A new per-tab mode (View menu, "Media Viewer Mode," checkable) that replaces the pane's normal
+browsing with a full-grid gallery of every image or video found recursively under whatever folder
+the tab was showing when the mode was entered, filterable by AND-combined tags and a name/toggle
+filter from a new right-panel "Searcher" tab. Entirely UI/Adapters — reuses `AdvancedSearchService`'s
+existing recursive-scan/tag-first-candidate requests, `TagManagementUseCase::findFilesWithAllTags`
+(§14.20's "tag-first" design), and `MediaExtensions::isImageExtension`/`isVideoExtension`; no new
+Port or Domain/Application change.
+
+* **`MediaViewerKind`** (`src/adapters/viewmodels/media/MediaViewerKind.h`, new): `enum class
+  MediaViewerKind { Image, Video }`, same minimal posture as `ViewMode.h`.
+* **`TabViewModel`** gains a third per-tab `FileListModel* m_mediaViewerResultsModel`, alongside
+  `m_fileListModel`/`m_advancedSearchResultsModel`, plus `mediaViewerActive()`/`enterMediaViewer()`/
+  `exitMediaViewer()`/`setMediaViewerKind()`/`addMediaViewerTagFilter()`/
+  `removeMediaViewerTagFilter()`/`setMediaViewerNameFilter()` and matching
+  `mediaViewerModeChanged`/`mediaViewerResultsChanged`/`mediaViewerKindChanged`/
+  `mediaViewerCriteriaChanged`/`mediaViewerLoading(Finished)`/`mediaViewerFailed` signals.
+  `enterMediaViewer()` captures `currentPath()` as the fixed recursive root, resets kind to `Image`
+  and all filters, exits quick/advanced search if active (single-active-mode invariant, same as
+  `showAdvancedSearchPanel`), and dispatches the initial candidate fetch. The candidate list (tag-first
+  via `findFilesWithAllTags` when tags are applied, otherwise a full `listDirectoryRecursive` scan,
+  both through the already-injected `AdvancedSearchService&`) is cached and **only re-fetched when the
+  applied tag set changes** — the Images/Videos dropdown and the name/toggle filter re-filter that
+  cached list in memory (`MediaExtensions`-based kind filter, then `FileNavigationUseCase::
+  filterByName`), mirroring `runAdvancedSearch`'s cached-snapshot split. Deliberately **does not**
+  port Advanced Search's partial-snapshot/progress-tick machinery (§14.37/§14.38) — only a single
+  `m_mediaViewerGeneration` counter guards against a stale async reply — since this is a narrower,
+  usually-fast, single-root query; a plain busy signal pair covers the UI instead of incremental
+  results.
+* **`FileBrowserView`** gains `DisplayMode::MediaViewerGrid`, alongside the existing
+  `AdvancedSearchResults` (§14.19) — same "ignore `setViewMode()`, lock the rendering" shape, but
+  locked to the icon-grid (`m_iconDelegate`, `IconMode`, `ExtraLargeIcons` sizing) instead of the
+  Details tree. Rename (F2/context menu) stays disabled in this mode too, same guard as
+  `AdvancedSearchResults`.
+* **`WorkspacePaneWidget::addPageForTab`** adds a third per-tab stack page: a `FileBrowserView` bound
+  to `tab->mediaViewerResultsModel()` in `MediaViewerGrid` mode, wired through the same
+  `wireBrowserView()` every other page uses (selection/activation/context-menu all come for free, same
+  rationale as §14.18). `pickStackPage` now picks page 2 when `mediaViewerActive()`, ahead of page 1's
+  `advancedSearchActive()` check. The same signal also hides the tab's `BottomPanelWidget` and disables
+  the pane's back/forward/up/refresh/address-bar/view-mode toolbar for the duration — the grid's root
+  is fixed at entry, so navigation is locked rather than attempting to re-scope it live; exiting (the
+  Searcher tab's "Exit viewer mode" button, or unchecking the View-menu action) returns to normal
+  browsing at the same folder.
+* **`SidePanelWidget`** gains one new method, `setPanelTabButtonVisible(int, bool)`, so a panel tab's
+  header button can be hidden/shown at runtime without touching `addPanelTab`/`activateTab`. The new
+  right-panel "Searcher" tab is registered at startup like Tags/Preview/Monitoring but starts hidden,
+  only appearing (with Tags/Preview/Monitoring hidden in turn) while any tab has Media Viewer mode
+  active, restoring on exit. The left panel is hidden outright (`setVisible(false)`, it's a direct
+  `mainSplitter` child, same posture `WorkspaceLayoutWidget` already uses to hide inactive panes).
+* **`MediaViewerSearchPanelWidget`** (`src/ui/widgets/media/`, new) is the Searcher tab's content, top
+  to bottom: an Images/Videos `QComboBox`, an "Exit viewer mode" button, a `TagChipWidget::
+  Kind::Removable` applied-filter row, a tag-search box + `Kind::ReadOnly` matching-tag row (wired to
+  `clicked`, exactly `SearchCriteriaPanel`'s `m_tagMatchesLayout` pattern — no "+" button), and the
+  same Match Case/Whole Word/Exact Name/Regex/Skip-Git-Ignored 5-button row plus a name field,
+  copied from `SearchCriteriaPanel` rather than extracted into a shared widget (this codebase already
+  duplicates that row between `SearchPanelWidget` and `SearchCriteriaPanel`, so a third copy follows
+  existing precedent rather than introducing a new abstraction).
+* **`MainWindow`**: a new checkable View-menu action drives `enterMediaViewer()`/`exitMediaViewer()`
+  on `m_workspaceController->focusedTab()`. `createWorkspace()` registers the Searcher tab as the right
+  panel's 4th tab (`kRightPanelTabCount` → 4), hidden immediately after registration. `
+  onFocusedTabChanged` gets a new `m_mediaViewerTrackedTab` disconnect/connect block — directly
+  mirroring the existing `m_searchTrackedTab`/`m_searchPanelWidget` block rather than introducing a
+  dedicated ViewModel class — wiring the focused tab's media-viewer signals to
+  `m_mediaViewerSearchPanelWidget`'s setters (and the widget's own signals back to that tab), plus
+  hiding/showing the left panel and swapping the right panel's visible tab on
+  `mediaViewerModeChanged`. The persisted right-panel active-tab-index restore at startup is clamped
+  to exclude the Searcher slot, since the mode is never persisted (same posture as search/advanced
+  search — only path/ViewMode/sort/active-tab-index survive in `TabConfig`).
+* **Not built:** live re-scoping of the grid if the user could somehow navigate mid-session (they
+  can't — navigation is locked, see above); persisting Media Viewer mode, the kind selection, or its
+  filters across restarts; Advanced Search's progress-tick partial-result UI (an explicit v1
+  simplification, see above) — can be added later if a very large recursive scan proves slow enough
+  to need it.
+* **Testing**: no new GTest coverage — `TabViewModel`/`AdvancedSearchService`/`SearchCriteria` have no
+  existing tests either; this layer's Qt-coupled ViewModel orchestration stays under the existing §11
+  UI/ViewModel-glue carve-out, verified by manual smoke test.

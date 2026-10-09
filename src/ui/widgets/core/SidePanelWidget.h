@@ -62,6 +62,11 @@ public:
     // through exactly the same expand/select/lazy-activate logic a real click uses.
     void activateTab(int index);
 
+    // Shows/hides a panel tab's header button without touching addPanelTab/activateTab's own
+    // machinery (Architecture.md §14.61) -- lets a tab registered up front (e.g. Media Viewer
+    // mode's "Searcher" tab) start hidden and only appear while that mode is active.
+    void setPanelTabButtonVisible(int index, bool visible);
+
 signals:
     // Fires whenever expansion state flips (collapsed <-> expanded), so the owning QSplitter can
     // resize itself.

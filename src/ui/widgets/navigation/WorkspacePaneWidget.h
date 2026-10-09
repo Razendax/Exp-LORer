@@ -139,6 +139,12 @@ private:
     void bindToolBarToTab(TabViewModel* tab);
     int indexOfTab(TabViewModel* tab) const;
 
+    // Media Viewer mode's navigation lock (Architecture.md §14.61): disables back/forward/up/
+    // refresh/address bar/view-mode button while active, restoring them (back/forward/up to
+    // m_boundTab's own availability, not unconditionally true) when it isn't. Invoked both by the
+    // bound tab's live mediaViewerModeChanged signal and by bindToolBarToTab on every tab switch.
+    void updateToolBarEnabledForMediaViewer(bool active);
+
     // Resolves the FileBrowserView backing whichever page (normal browsing, search results, or
     // advanced search results) the current tab is currently showing -- factors out the splitter ->
     // QStackedWidget -> (FileBrowserView or SearchResultsPane::browserView()) unwrap also used by
@@ -212,6 +218,10 @@ private:
     QAction* m_forwardAction = nullptr;
     QAction* m_upAction = nullptr;
     QAction* m_refreshAction = nullptr;
+    // Disabled/enabled alongside the actions above by updateToolBarEnabledForMediaViewer
+    // (Architecture.md §14.61) -- otherwise unowned by any member (createToolBar() only needed a
+    // local), but Media Viewer mode's navigation lock needs to reach it too.
+    QToolButton* m_viewModeButton = nullptr;
 
     // One QAction per ViewMode (same order as the anonymous-namespace kViewModes array in the
     // .cpp), shared between this pane's toolbar dropdown and (eventually) its own view menu.

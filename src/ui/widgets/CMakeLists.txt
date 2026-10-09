@@ -63,6 +63,8 @@ add_library(explorer_ui_widgets STATIC
     tags/TagPanelWidget.cpp
     tags/TagManagerDialog.h
     tags/TagManagerDialog.cpp
+    media/MediaViewerSearchPanelWidget.h
+    media/MediaViewerSearchPanelWidget.cpp
     preview/PreviewPanelWidget.h
     preview/PreviewPanelWidget.cpp
     preview/MediaPreviewWidget.h
@@ -113,6 +115,7 @@ target_include_directories(explorer_ui_widgets PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/navigation
     ${CMAKE_CURRENT_SOURCE_DIR}/search
     ${CMAKE_CURRENT_SOURCE_DIR}/tags
+    ${CMAKE_CURRENT_SOURCE_DIR}/media
     ${CMAKE_CURRENT_SOURCE_DIR}/preview
     ${CMAKE_CURRENT_SOURCE_DIR}/diskusage
     ${CMAKE_CURRENT_SOURCE_DIR}/fragmentation

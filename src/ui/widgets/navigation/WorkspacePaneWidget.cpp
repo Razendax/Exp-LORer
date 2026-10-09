@@ -267,13 +267,13 @@ QToolBar* WorkspacePaneWidget::createToolBar()
     auto* viewModeMenu = new QMenu(this);
     viewModeMenu->addActions(m_viewModeActions);
 
-    auto* viewModeButton = new QToolButton(toolBar);
-    viewModeButton->setObjectName(QStringLiteral("paneViewModeButton"));
-    viewModeButton->setPopupMode(QToolButton::InstantPopup);
-    viewModeButton->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
-    viewModeButton->setToolTip(tr("View"));
-    viewModeButton->setMenu(viewModeMenu);
-    toolBar->addWidget(viewModeButton);
+    m_viewModeButton = new QToolButton(toolBar);
+    m_viewModeButton->setObjectName(QStringLiteral("paneViewModeButton"));
+    m_viewModeButton->setPopupMode(QToolButton::InstantPopup);
+    m_viewModeButton->setIcon(style()->standardIcon(QStyle::SP_FileDialogDetailedView));
+    m_viewModeButton->setToolTip(tr("View"));
+    m_viewModeButton->setMenu(viewModeMenu);
+    toolBar->addWidget(m_viewModeButton);
 
     m_refreshAction = toolBar->addAction(style()->standardIcon(QStyle::SP_BrowserReload), tr("Refresh"));
     m_refreshAction->setEnabled(false);
@@ -398,6 +398,13 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     wireBrowserView(advancedSearchPane->browserView(), tab);
     stack->addWidget(advancedSearchPane); // page 1: advanced search results
 
+    // Media Viewer mode (Architecture.md §14.61): a third FileBrowserView, locked to the icon-grid
+    // rendering, bound to this tab's own media-viewer results model. Selection/activation/context
+    // menu all come for free via the same wireBrowserView() every other page already goes through.
+    auto* mediaViewerBrowserView = new FileBrowserView(tab->mediaViewerResultsModel(), stack, FileBrowserView::DisplayMode::MediaViewerGrid);
+    wireBrowserView(mediaViewerBrowserView, tab);
+    stack->addWidget(mediaViewerBrowserView); // page 2: Media Viewer grid
+
     // Keeps this tab's two FileBrowserView instances in sync (Architecture.md §14.x): toggling a
     // column in one (normally the visible one, but either works) hides/shows it in the other too,
     // since visibility is a per-*tab* concept, not a per-view one. The Search tab's own results
@@ -424,9 +431,11 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
 
     // The Search tab's own quick search (Architecture.md §14.42) no longer has an in-place page
     // here -- its results render in the left panel's SearchPanelWidget instead, so this pane's
-    // stack only ever switches between normal browsing and Advanced Search's in-place results.
-    auto pickStackPage = [stack, tab]() { stack->setCurrentIndex(tab->advancedSearchActive() ? 1 : 0); };
+    // stack only ever switches between normal browsing, Advanced Search's in-place results, and
+    // Media Viewer mode's grid (Architecture.md §14.61).
+    auto pickStackPage = [stack, tab]() { stack->setCurrentIndex(tab->mediaViewerActive() ? 2 : (tab->advancedSearchActive() ? 1 : 0)); };
     connect(tab, &TabViewModel::advancedSearchModeChanged, stack, [pickStackPage](bool) { pickStackPage(); });
+    connect(tab, &TabViewModel::mediaViewerModeChanged, stack, [pickStackPage](bool) { pickStackPage(); });
 
     connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::searchRequested, tab,
             [tab](const SearchCriteria& criteria) { tab->startAdvancedSearch(criteria); });
@@ -473,6 +482,12 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     // TerminalSessionsWidget, which can hold several concurrent cmd/PowerShell sessions rather than
     // the single always-cmd TerminalWidget this used to be.
     auto* bottomPanel = new BottomPanelWidget(m_uiThemeChangeNotifier, m_tabWidget);
+
+    // Media Viewer mode hides the bottom panel for the duration (Architecture.md §14.61) -- a
+    // per-tab widget, so wiring it directly to this tab's own signal (regardless of whether this
+    // tab is currently the bound/focused one) is safe; it only ever affects this tab's own page.
+    connect(tab, &TabViewModel::mediaViewerModeChanged, bottomPanel, [bottomPanel](bool active) { bottomPanel->setVisible(!active); });
+
     auto* terminalSessions = new TerminalSessionsWidget(m_uiThemeChangeNotifier, bottomPanel);
     terminalSessions->setObjectName(QStringLiteral("terminalSessionsWidget"));
     const int terminalPanelTabIndex = bottomPanel->addPanelTab(tr("Terminal"), terminalSessions);
@@ -634,6 +649,7 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
         disconnect(m_boundTab, &TabViewModel::upAvailableChanged, m_upAction, &QAction::setEnabled);
         disconnect(m_boundTab, &TabViewModel::navigationFailed, this, &WorkspacePaneWidget::onNavigationFailed);
         disconnect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged);
+        disconnect(m_boundTab, &TabViewModel::mediaViewerModeChanged, this, &WorkspacePaneWidget::updateToolBarEnabledForMediaViewer);
 
         disconnect(m_boundTab, &TabViewModel::directoryContentsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
         disconnect(m_boundTab, &TabViewModel::advancedSearchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
@@ -668,6 +684,7 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
     connect(m_boundTab, &TabViewModel::upAvailableChanged, m_upAction, &QAction::setEnabled);
     connect(m_boundTab, &TabViewModel::navigationFailed, this, &WorkspacePaneWidget::onNavigationFailed);
     connect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged);
+    connect(m_boundTab, &TabViewModel::mediaViewerModeChanged, this, &WorkspacePaneWidget::updateToolBarEnabledForMediaViewer);
 
     connect(m_boundTab, &TabViewModel::directoryContentsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
     connect(m_boundTab, &TabViewModel::advancedSearchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
@@ -691,8 +708,36 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
     m_addressBar->setText(displayPathText(m_boundTab->currentPath()));
     m_statusBar->clearQuickSelect();
     onViewModeChanged(m_boundTab->viewMode());
+    updateToolBarEnabledForMediaViewer(m_boundTab->mediaViewerActive());
     refreshStatusCounts();
     updateGitStatusBar(m_boundTab->lastGitRepositorySummary());
+}
+
+void WorkspacePaneWidget::updateToolBarEnabledForMediaViewer(bool active)
+{
+    if (active)
+    {
+        m_backAction->setEnabled(false);
+        m_forwardAction->setEnabled(false);
+        m_upAction->setEnabled(false);
+        m_refreshAction->setEnabled(false);
+        m_addressBar->setEnabled(false);
+        m_viewModeButton->setEnabled(false);
+        return;
+    }
+
+    m_addressBar->setEnabled(true);
+    m_viewModeButton->setEnabled(true);
+
+    if (!m_boundTab)
+    {
+        return;
+    }
+
+    m_backAction->setEnabled(m_boundTab->backAvailable());
+    m_forwardAction->setEnabled(m_boundTab->forwardAvailable());
+    m_upAction->setEnabled(m_boundTab->upAvailable());
+    m_refreshAction->setEnabled(true);
 }
 
 int WorkspacePaneWidget::indexOfTab(TabViewModel* tab) const

@@ -20,6 +20,10 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 
 **Directory Navigation:**
 * Tree view and list/grid view of the local file system.
+* **Media Viewer mode** (Architecture.md §14.61): a focused, full-pane gallery view (entered via the
+  View menu) that recursively lists every image or video under the current folder as thumbnail
+  tiles, filterable by AND-combined tags and a name filter, with the side/bottom panels replaced by
+  a dedicated right-panel picker for the duration of the mode.
 * **Folder tree** (Architecture.md §14.41): a collapsible, resizable side panel on the left edge of
   the window (collapsed by default, same behavior as the right-hand panel) with a "Tree" tab
   showing only folders, rooted at "This PC". It always follows the active pane's active tab —

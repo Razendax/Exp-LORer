@@ -41,11 +41,14 @@ public:
     // Normal: the usual Icons/List/Tiles/Details switching driven by setViewMode(). Advanced
     // search results (Architecture.md §14.19) always render as the QTreeView page regardless of
     // ViewMode, with SearchResultDelegate instead of the stock delegate — setViewMode() calls are
-    // ignored in this mode.
+    // ignored in this mode. MediaViewerGrid (Architecture.md §14.61) similarly always renders as
+    // the QListView page locked to an Extra-Large-Icons-style grid, ignoring setViewMode() the
+    // same way.
     enum class DisplayMode
     {
         Normal,
         AdvancedSearchResults,
+        MediaViewerGrid,
     };
 
     explicit FileBrowserView(FileListModel* model, QWidget* parent = nullptr, DisplayMode displayMode = DisplayMode::Normal);

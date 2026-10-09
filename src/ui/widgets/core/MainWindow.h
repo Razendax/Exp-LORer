@@ -41,6 +41,7 @@ class TagPanelWidget;
 class SidePanelWidget;
 class FolderTreeView;
 class SearchPanelWidget;
+class MediaViewerSearchPanelWidget;
 class PreviewPanelWidget;
 class MonitoringPanelWidget;
 class NotificationOverlayWidget;
@@ -89,6 +90,7 @@ private:
     void createSortByActions();
     void createContextMenuModeAction();
     void createShowHiddenFilesAction();
+    void createMediaViewerModeAction();
     void createMenuBar();
     void createFavoritesMenu();
     void createWorkspacesMenu(QMenu* fileMenu);
@@ -128,6 +130,11 @@ private:
     void onLayoutChanged(SplitLayout layout);
     void onStatusMessage(const QString& message);
     void onFocusedTabChanged(TabViewModel* tab);
+
+    // Media Viewer mode (Architecture.md §14.61): shows/hides the left panel and the right panel's
+    // Tags/Preview/Monitoring/Searcher tab buttons, and switches the right panel to the Searcher
+    // tab, in response to the focused tab's own mediaViewerModeChanged.
+    void onMediaViewerModeChanged(bool active);
     void onSortOrderChanged(SortCriterion criterion, bool ascending);
     void onActiveTabPathChanged(const std::filesystem::path& path);
     void onDriveSpaceInfoReady(int generation, Result<DriveSpaceInfo> result);
@@ -186,8 +193,10 @@ private:
     SidePanelWidget* m_leftPanelWidget = nullptr;
     FolderTreeView* m_folderTreeView = nullptr;
     SearchPanelWidget* m_searchPanelWidget = nullptr;
+    MediaViewerSearchPanelWidget* m_mediaViewerSearchPanelWidget = nullptr;
     TabViewModel* m_sortTrackedTab = nullptr;
     TabViewModel* m_searchTrackedTab = nullptr;
+    TabViewModel* m_mediaViewerTrackedTab = nullptr;
     TabViewModel* m_driveInfoTrackedTab = nullptr;
     MainStatusBarWidget* m_mainStatusBarWidget = nullptr;
 
@@ -237,6 +246,17 @@ private:
     // one is live-broadcast to every already-open tab's models on toggle, since hidden state
     // affects an already-populated model rather than something read fresh at next use.
     QAction* m_showHiddenFilesAction = nullptr;
+
+    // Media Viewer mode toggle (Architecture.md §14.61), wired to the focused tab's enter/
+    // exitMediaViewer() the same way the sort actions target focusedTab(). Not persisted (same
+    // posture as m_showHiddenFilesAction is NOT -- this one specifically mirrors
+    // m_searchTrackedTab's per-tab, not-restored-on-restart posture).
+    QAction* m_mediaViewerModeAction = nullptr;
+
+    // Right panel's active tab index right before Media Viewer mode's Searcher tab took over, so
+    // exiting the mode restores whichever tab (Tags/Preview/Monitoring) was showing before. -1 if
+    // none was active (panel was collapsed).
+    int m_rightPanelActiveIndexBeforeMediaViewer = -1;
 
     // Details-view column widths (Architecture.md §14.14): loaded from AppConfig, handed to
     // WorkspaceLayoutWidget so every pane's FileBrowserView starts out sized this way, then

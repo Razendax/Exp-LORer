@@ -20,6 +20,7 @@
 #include "GitDirectoryStatus.h"
 #include "GitStatusService.h"
 #include "IconLoadingService.h"
+#include "MediaExtensions.h"
 #include "TagChangeNotifier.h"
 #include "TagManagementUseCase.h"
 #include "VirtualPaths.h"
@@ -54,6 +55,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     , m_fileListModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_searchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_advancedSearchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
+    , m_mediaViewerResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
 {
     connect(this, &TabViewModel::directoryContentsChanged, m_fileListModel, &FileListModel::setEntries);
     connect(m_fileListModel, &FileListModel::sortOrderChanged, this, &TabViewModel::sortOrderChanged);
@@ -681,6 +683,170 @@ void TabViewModel::removeTagSearchCriterion(Tag::Id tagId)
     }
 }
 
+void TabViewModel::enterMediaViewer()
+{
+    if (m_mediaViewerActive)
+    {
+        return;
+    }
+
+    exitSearch();
+    exitAdvancedSearch();
+
+    m_mediaViewerRoot = currentPath();
+    m_mediaViewerKind = MediaViewerKind::Image;
+    m_mediaViewerTagIds.clear();
+    m_mediaViewerNameQuery.clear();
+    m_mediaViewerNameOptions = NameSearchOptions();
+    m_mediaViewerCandidates.clear();
+
+    m_mediaViewerActive = true;
+    setSelectedEntries({});
+    emit mediaViewerModeChanged(true);
+
+    runMediaViewerQuery();
+}
+
+void TabViewModel::exitMediaViewer()
+{
+    if (!m_mediaViewerActive)
+    {
+        return;
+    }
+
+    m_mediaViewerActive = false;
+    m_mediaViewerRoot.clear();
+    m_mediaViewerTagIds.clear();
+    m_mediaViewerNameQuery.clear();
+    m_mediaViewerNameOptions = NameSearchOptions();
+    m_mediaViewerCandidates.clear();
+    // Invalidates any fetch still in flight -- its (now-stale) result is discarded by
+    // onMediaViewerCandidatesReady's generation check when it eventually arrives.
+    ++m_mediaViewerGeneration;
+
+    setSelectedEntries({});
+    emit mediaViewerModeChanged(false);
+}
+
+void TabViewModel::setMediaViewerKind(MediaViewerKind kind)
+{
+    if (!m_mediaViewerActive || kind == m_mediaViewerKind)
+    {
+        return;
+    }
+
+    m_mediaViewerKind = kind;
+    applyMediaViewerFilter();
+    emit mediaViewerKindChanged(kind);
+}
+
+void TabViewModel::addMediaViewerTagFilter(Tag::Id tagId)
+{
+    if (!m_mediaViewerActive ||
+        std::find(m_mediaViewerTagIds.begin(), m_mediaViewerTagIds.end(), tagId) != m_mediaViewerTagIds.end())
+    {
+        return;
+    }
+
+    m_mediaViewerTagIds.push_back(tagId);
+    runMediaViewerQuery();
+    emit mediaViewerCriteriaChanged();
+}
+
+void TabViewModel::removeMediaViewerTagFilter(Tag::Id tagId)
+{
+    if (!m_mediaViewerActive)
+    {
+        return;
+    }
+
+    const auto it = std::find(m_mediaViewerTagIds.begin(), m_mediaViewerTagIds.end(), tagId);
+    if (it == m_mediaViewerTagIds.end())
+    {
+        return;
+    }
+
+    m_mediaViewerTagIds.erase(it);
+    runMediaViewerQuery();
+    emit mediaViewerCriteriaChanged();
+}
+
+void TabViewModel::setMediaViewerNameFilter(const QString& query, const NameSearchOptions& options)
+{
+    if (!m_mediaViewerActive)
+    {
+        return;
+    }
+
+    m_mediaViewerNameQuery = query;
+    m_mediaViewerNameOptions = options;
+    applyMediaViewerFilter();
+}
+
+void TabViewModel::runMediaViewerQuery()
+{
+    const int generation = ++m_mediaViewerGeneration;
+
+    emit mediaViewerLoading();
+
+    if (!m_mediaViewerTagIds.empty())
+    {
+        m_advancedSearchService.requestTagFirstCandidates(
+            this, m_mediaViewerRoot, m_mediaViewerTagIds, [this, generation](Result<std::vector<FileNode>> result) {
+                onMediaViewerCandidatesReady(generation, std::move(result));
+            });
+        return;
+    }
+
+    m_advancedSearchService.requestRecursiveScan(
+        this, m_mediaViewerRoot,
+        [this, generation](Result<std::vector<FileNode>> result) { onMediaViewerCandidatesReady(generation, std::move(result)); });
+}
+
+void TabViewModel::onMediaViewerCandidatesReady(int generation, Result<std::vector<FileNode>> result)
+{
+    if (generation != m_mediaViewerGeneration)
+    {
+        // Superseded by a newer request, or exitMediaViewer()/the tab was closed -- discard.
+        return;
+    }
+
+    if (result.hasError())
+    {
+        emit mediaViewerFailed(QString::fromStdString(result.error().message));
+        emit mediaViewerLoadingFinished();
+        return;
+    }
+
+    m_mediaViewerCandidates = std::move(result).value();
+    applyMediaViewerFilter();
+    requestMediaViewerResultIcons(generation, m_mediaViewerCandidates);
+
+    emit mediaViewerLoadingFinished();
+}
+
+void TabViewModel::applyMediaViewerFilter()
+{
+    std::vector<FileNode> filtered;
+    filtered.reserve(m_mediaViewerCandidates.size());
+    for (const FileNode& candidate : m_mediaViewerCandidates)
+    {
+        const std::string extension = MediaExtensions::lowercaseExtension(candidate.path());
+        const bool matchesKind = m_mediaViewerKind == MediaViewerKind::Image ? MediaExtensions::isImageExtension(extension)
+                                                                              : MediaExtensions::isVideoExtension(extension);
+        if (matchesKind)
+        {
+            filtered.push_back(candidate);
+        }
+    }
+
+    filtered = FileNavigationUseCase::filterByName(std::move(filtered), m_mediaViewerNameQuery.toStdString(), m_mediaViewerNameOptions);
+    filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
+
+    m_mediaViewerResultsModel->setEntries(m_mediaViewerRoot, filtered);
+    emit mediaViewerResultsChanged(filtered);
+}
+
 std::vector<Tag> TabViewModel::searchTagsForCriteria(const QString& query) const
 {
     auto result = m_tagManagementUseCase.searchTags(query.toStdString());
@@ -704,6 +870,25 @@ std::vector<Tag> TabViewModel::resolveTagCriteria() const
     {
         if (std::find(m_advancedSearchCriteria.tagIds.begin(), m_advancedSearchCriteria.tagIds.end(), tag.id()) !=
             m_advancedSearchCriteria.tagIds.end())
+        {
+            resolved.push_back(tag);
+        }
+    }
+    return resolved;
+}
+
+std::vector<Tag> TabViewModel::resolveMediaViewerTagFilters() const
+{
+    auto result = m_tagManagementUseCase.allTags();
+    if (result.hasError())
+    {
+        return {};
+    }
+
+    std::vector<Tag> resolved;
+    for (const Tag& tag : result.value())
+    {
+        if (std::find(m_mediaViewerTagIds.begin(), m_mediaViewerTagIds.end(), tag.id()) != m_mediaViewerTagIds.end())
         {
             resolved.push_back(tag);
         }
@@ -1025,6 +1210,22 @@ void TabViewModel::requestAdvancedSearchResultIcons(int generation, const std::v
             }
 
             m_advancedSearchResultsModel->setIcons(batch);
+        });
+}
+
+void TabViewModel::requestMediaViewerResultIcons(int generation, const std::vector<FileNode>& candidates)
+{
+    m_iconLoadingService.requestIcons(
+        m_mediaViewerResultsModel, m_mediaViewerRoot, candidates, iconSizeMaskFor(ViewMode::ExtraLargeIcons),
+        [this, generation](QHash<QString, QIcon> batch) {
+            if (generation != m_mediaViewerGeneration)
+            {
+                // Superseded/abandoned, same discard-by-generation-id approach
+                // onMediaViewerCandidatesReady uses.
+                return;
+            }
+
+            m_mediaViewerResultsModel->setIcons(batch);
         });
 }
 

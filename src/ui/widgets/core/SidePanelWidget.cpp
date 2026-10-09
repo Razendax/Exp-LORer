@@ -78,6 +78,11 @@ void SidePanelWidget::activateTab(int index)
     onPanelTabButtonClicked(index);
 }
 
+void SidePanelWidget::setPanelTabButtonVisible(int index, bool visible)
+{
+    m_buttons[static_cast<std::size_t>(index)]->setVisible(visible);
+}
+
 void SidePanelWidget::onPanelTabButtonClicked(int index)
 {
     if (m_expanded && m_activeIndex == index)

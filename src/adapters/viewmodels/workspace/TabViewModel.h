@@ -20,6 +20,7 @@
 #include "FolderMonitorUseCase.h"
 #include "FolderSizesByPath.h"
 #include "GitRepositorySummary.h"
+#include "MediaViewerKind.h"
 #include "NameSearchOptions.h"
 #include "NavigationHistory.h"
 #include "SearchCriteria.h"
@@ -91,6 +92,19 @@ public:
     FileListModel* advancedSearchResultsModel() const noexcept { return m_advancedSearchResultsModel; }
     bool advancedSearchActive() const noexcept { return m_advancedSearchActive; }
     const SearchCriteria& advancedSearchCriteria() const noexcept { return m_advancedSearchCriteria; }
+
+    // Media Viewer mode (Architecture.md §14.61): a focused, full-pane recursive gallery of every
+    // image/video under whatever folder was current when it was entered.
+    FileListModel* mediaViewerResultsModel() const noexcept { return m_mediaViewerResultsModel; }
+    bool mediaViewerActive() const noexcept { return m_mediaViewerActive; }
+    MediaViewerKind mediaViewerKind() const noexcept { return m_mediaViewerKind; }
+    const std::vector<Tag::Id>& mediaViewerTagFilters() const noexcept { return m_mediaViewerTagIds; }
+    QString mediaViewerNameFilter() const noexcept { return m_mediaViewerNameQuery; }
+    NameSearchOptions mediaViewerNameOptions() const noexcept { return m_mediaViewerNameOptions; }
+
+    // Resolves mediaViewerTagFilters() into full Tag objects (for chip display), mirroring
+    // resolveTagCriteria().
+    std::vector<Tag> resolveMediaViewerTagFilters() const;
 
     const std::vector<FileNode>& selectedEntries() const noexcept { return m_selectedEntries; }
     SortCriterion sortCriterion() const noexcept;
@@ -261,6 +275,34 @@ public slots:
     // otherwise or if tagId isn't present.
     void removeTagSearchCriterion(Tag::Id tagId);
 
+    // Media Viewer mode (Architecture.md §14.61): a focused, full-pane recursive gallery of every
+    // image/video under currentPath(), entered from the View menu. No-op if already active.
+    // Captures currentPath() as the fixed recursive root, resets kind/filters to their defaults,
+    // exits Quick/Advanced Search first (single-active-mode invariant, same posture as
+    // showAdvancedSearchPanel), dispatches the initial candidate fetch, and emits
+    // mediaViewerModeChanged(true).
+    void enterMediaViewer();
+
+    // Clears Media Viewer state and flips mediaViewerActive off. No-op if already inactive.
+    void exitMediaViewer();
+
+    // Switches the grid between images and videos -- re-filters the cached candidate set in
+    // memory only (no rescan: the cached set is already post-tag-filter, pre-kind/name-filter).
+    // No-op if already active or outside Media Viewer mode.
+    void setMediaViewerKind(MediaViewerKind kind);
+
+    // Adds/removes a tag from the AND-combined tag filter (no-op if already present/absent) and
+    // re-dispatches the candidate fetch, since the tag set determines which candidates are even
+    // fetched (tag-first vs. recursive-scan branch of runMediaViewerQuery()). No-op outside Media
+    // Viewer mode.
+    void addMediaViewerTagFilter(Tag::Id tagId);
+    void removeMediaViewerTagFilter(Tag::Id tagId);
+
+    // Updates the name/Match Case/Whole Word/Exact Name/Match Regex filter and re-filters the
+    // cached candidate set in memory only -- never dispatches a rescan, since neither affects which
+    // candidates were fetched. No-op outside Media Viewer mode.
+    void setMediaViewerNameFilter(const QString& query, const NameSearchOptions& options);
+
     // No-op if already active or already starting, or if currentPath() is VirtualPaths::ThisPC/an
     // archive-virtual path (the Start button is also UI-disabled in that state, but this slot stays
     // defensive). Clears any previous session's log/total, then dispatches an async watch request
@@ -324,6 +366,17 @@ signals:
     // regardless of *which* entry point changed the criteria (its own fields, its own tag-search
     // box, or a right-panel tag click on a completely different widget).
     void advancedSearchCriteriaChanged(const SearchCriteria& criteria);
+
+    // Media Viewer mode (Architecture.md §14.61).
+    void mediaViewerModeChanged(bool active);
+    void mediaViewerResultsChanged(const std::vector<FileNode>& entries);
+    void mediaViewerKindChanged(MediaViewerKind kind);
+    // Lets the UI re-sync its applied-tag-filter chip row regardless of which entry point changed
+    // the filter set (mirrors advancedSearchCriteriaChanged).
+    void mediaViewerCriteriaChanged();
+    void mediaViewerLoading();
+    void mediaViewerLoadingFinished();
+    void mediaViewerFailed(const QString& message);
 
     void monitoringActiveChanged(bool active);
     void monitoringLogAppended(const std::vector<FolderChangeEvent>& batch);
@@ -413,6 +466,12 @@ private:
     // m_advancedSearchGeneration.
     void requestAdvancedSearchResultIcons(int generation, const std::vector<FileNode>& candidates);
 
+    // Same as requestAdvancedSearchResultIcons, for the Media Viewer results model -- called once
+    // per candidate-set fetch (onMediaViewerCandidatesReady), not on every in-memory kind/name
+    // filter edit (same "icons only follow a real fetch" posture requestAdvancedSearchResultIcons
+    // already has). Discarded if `generation` no longer matches m_mediaViewerGeneration.
+    void requestMediaViewerResultIcons(int generation, const std::vector<FileNode>& candidates);
+
     // Fetches tags for every file in `candidates` and, once they arrive (discarded if
     // `generation` no longer matches m_searchGeneration), caches them into m_searchSnapshotTags and
     // applies them to m_searchResultsModel. Used whenever the search candidate set itself changes
@@ -484,6 +543,28 @@ private:
     // candidate list so far and re-filters it with whatever m_searchQuery holds *right now* -- so a
     // query edit that arrives while the scan is still running is reflected on the very next tick.
     void onSearchProgress(int generation, std::vector<FileNode> partial);
+
+    // Dispatches Media Viewer mode's candidate fetch via the already-injected
+    // m_advancedSearchService (Architecture.md §14.61) -- tag-first (requestTagFirstCandidates)
+    // when m_mediaViewerTagIds is non-empty, else a plain recursive scan
+    // (requestRecursiveScan) of m_mediaViewerRoot. Deliberately simpler than
+    // runAdvancedSearch/runSearch: no in-flight-scan reuse or progress-tick machinery, since this
+    // is only ever called right after the tag filter set itself changed (enterMediaViewer/
+    // addMediaViewerTagFilter/removeMediaViewerTagFilter), not on every keystroke. On completion,
+    // caches the result into m_mediaViewerCandidates and calls applyMediaViewerFilter().
+    void runMediaViewerQuery();
+
+    // Filters m_mediaViewerCandidates by MediaExtensions::isImageExtension/isVideoExtension for
+    // m_mediaViewerKind, then by m_mediaViewerNameQuery/m_mediaViewerNameOptions (reusing
+    // FileNavigationUseCase::filterByName), sorts, and applies to m_mediaViewerResultsModel. The
+    // tail shared by onMediaViewerCandidatesReady and every in-memory kind/name-filter edit.
+    void applyMediaViewerFilter();
+
+    // Completion callback for runMediaViewerQuery()'s AdvancedSearchService request. Discards the
+    // result if `generation` no longer matches m_mediaViewerGeneration (a newer request, or
+    // exitMediaViewer(), superseded it in the meantime) -- the one piece of the generation-counter
+    // machinery still needed here for correctness.
+    void onMediaViewerCandidatesReady(int generation, Result<std::vector<FileNode>> result);
 
     FileNavigationUseCase& m_fileNavigationUseCase;
     TagManagementUseCase& m_tagManagementUseCase;
@@ -576,6 +657,22 @@ private:
     // request can't resurrect it (Architecture.md §5's discard-by-generation-id approach, same as
     // FilePreviewViewModel).
     int m_advancedSearchGeneration = 0;
+
+    // Media Viewer mode (Architecture.md §14.61).
+    FileListModel* m_mediaViewerResultsModel = nullptr;
+    bool m_mediaViewerActive = false;
+    MediaViewerKind m_mediaViewerKind = MediaViewerKind::Image;
+    std::filesystem::path m_mediaViewerRoot;
+    std::vector<Tag::Id> m_mediaViewerTagIds;
+    QString m_mediaViewerNameQuery;
+    NameSearchOptions m_mediaViewerNameOptions;
+    // Cached candidate set: post-tag-filter (or the whole recursive scan when no tags are
+    // applied), pre-kind/name-filter -- re-fetched only when m_mediaViewerTagIds changes;
+    // applyMediaViewerFilter() re-filters this in memory for every kind/name-filter edit.
+    std::vector<FileNode> m_mediaViewerCandidates;
+    // Bumped on every candidate-fetch dispatch and on exitMediaViewer(); discards a stale reply
+    // the same way m_advancedSearchGeneration/m_searchGeneration do.
+    int m_mediaViewerGeneration = 0;
 
     // True from startMonitoring() dispatching StandardFolderMonitor's async open until that open's
     // onStarted callback runs (successfully or not) -- opening the directory handle is I/O and now
