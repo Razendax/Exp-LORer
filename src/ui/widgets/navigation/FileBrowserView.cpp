@@ -83,8 +83,7 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     , m_displayMode(displayMode)
 {
     // Default id; overridden by the owner for a specific role (e.g. SearchPanelWidget renames its
-    // results instance to "searchListResultsView") -- see Architecture.md §11's UI Automation
-    // convention.
+    // results instance to "searchListResultsView") -- see Architecture.md §11's UI Automation convention.
     setObjectName(QStringLiteral("fileBrowserView"));
 
     m_listView = new QListView(this);
@@ -108,6 +107,8 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     m_treeView->setRootIsDecorated(false);
     m_treeView->header()->setSectionsClickable(true);
     m_treeView->header()->setSectionsMovable(true);
+
+    m_treeView->header()->setStretchLastSection(false);
     m_treeView->header()->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_treeView->header(), &QWidget::customContextMenuRequested, this, &FileBrowserView::showColumnMenu);
 
