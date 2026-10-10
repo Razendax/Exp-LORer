@@ -20,6 +20,7 @@ add_library(explorer_application STATIC
     tags/TagManagementUseCase.cpp
     media/IMediaDecoder.h
     media/MediaExtensions.h
+    media/MediaPreviewFrames.h
     media/MediaProcessingUseCase.h
     media/MediaProcessingUseCase.cpp
     media/FilePreviewUseCase.h

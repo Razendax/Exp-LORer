@@ -2152,3 +2152,71 @@ thumbnail cache *hit* still paid the full metadata re-decode cost on every call.
   `CachingMediaDecoderTest` gained a case asserting a cache hit returns the originally-decoded
   metadata without a second call into the inner mock; `MediaProcessingUseCaseTest`/
   `FilePreviewUseCaseTest` updated to the merged `MockMediaDecoder` signature.
+
+### 14.64 Media Viewer Mode: Video Hover-Scrub Previews
+
+§14.62's video tiles show one fixed poster frame (~10% into the stream). This adds 5 equally-
+spaced preview frames per video and lets the cursor's horizontal position over a tile's thumbnail
+pick which one shows — the thumbnail's width is divided into 5 equal bands, band *i* (left to
+right, 0-based) shows the frame at `(i + 0.5) / 5` of the stream's duration (10%/30%/50%/70%/90%);
+band 0 is exactly today's existing poster-frame position. Images are unaffected: still one static
+thumbnail, no hover behavior. Entirely Adapters/UI, same posture as §14.61–§14.63 — no new Port,
+no Domain/Application redesign.
+
+* **`MediaPreviewFrames.h`** (`src/application/media`, new, pure): `kCount = 5` plus
+  `fractionForIndex(int)`, shared by the FFmpeg seek below, the worker's per-video decode loop, and
+  the UI hover-band math, so the three can't drift apart.
+* **`IMediaDecoder::generateThumbnail`/`MediaProcessingUseCase::generateThumbnail`** gain a last
+  `int previewIndex = 0` parameter (ignored by image decoders; selects which of `kCount` frames a
+  video decoder grabs). Defaulted so every existing call site that only ever wanted one frame
+  (`FilePreviewUseCase`'s Preview-panel calls) compiles and behaves unchanged — `previewIndex = 0`
+  reproduces the exact ~10% position §14.25 already established. `FFmpegMediaDecoder` replaces its
+  hardcoded `duration / 10` seek with `duration * fractionForIndex(previewIndex)`;
+  `VipsImageDecoder` accepts and ignores the parameter; the `MediaDecoder` dispatch facade passes
+  it through.
+* **`ThumbnailCache::Key`** gains `int previewIndex = 0`, folded into the existing XXH64 filename
+  hash — each of a video's 5 frames becomes its own cache entry, at the same
+  path+size+mtime+dimensions otherwise. `CachingMediaDecoder` threads it through to the `Key` and
+  the inner decode call on a miss.
+* **Cache size, widened for the new per-video 5x entry count** (images are unaffected — still one
+  entry each): `ThumbnailCache`'s default on-disk cap, 512MB → 1536MB; its in-memory LRU
+  (`kMemoryLruCapacity`), 20 → 60 entries, so scrubbing back and forth across several recently-
+  hovered videos stays a memory hit instead of thrashing back out to disk.
+* **`MediaThumbnailData`** (`src/adapters/viewmodels/media`) gains `std::vector<QImage>
+  previewFrames` — empty for an image row (`image` stays the only frame, unchanged); `kCount`
+  entries in time order for a video row (`previewFrames[0] == image`, decoded once and reused, not
+  duplicated). **`MediaThumbnailLoadingWorker::thumbnailsFor`** branches on
+  `MediaExtensions::isVideoExtension`: an image entry keeps its single existing decode call; a
+  video entry makes `kCount` calls (`previewIndex` 0..4), backfilling any one failed slot from its
+  nearest successfully-decoded neighbor so scrubbing never hits a blank frame, and omitting the
+  entry entirely only if every slot fails (same "placeholder keeps showing" posture as today).
+* **`MediaGridTileDelegate`** gains hover state (`QPersistentModelIndex` + the hovered band index,
+  set/read via `setHoveredPreview`/`hoveredIndex`/`hoveredPreviewIndex`) and paints
+  `previewFrames[hoveredPreviewIndex]` instead of `image` only for the currently-hovered video row
+  with a complete frame set — every other row (image, non-hovered, still-decoding) paints exactly
+  as §14.62 already does. `thumbnailRectFor(option)` is refactored into a cell-rect-only overload
+  (`thumbnailRectForCellRect`) so `FileBrowserView` can compute the same thumbnail sub-rect without
+  building a full `QStyleOptionViewItem`.
+* **`FileBrowserView`** enables `setMouseTracking(true)` on the grid's `QListView` viewport only in
+  `DisplayMode::MediaViewerGrid`, and extends its existing viewport `eventFilter()` with a
+  `MouseMove`/`Leave` branch (observes, doesn't consume) that resolves the index under the cursor,
+  skips anything that isn't a video row (`FilePathRole` + `MediaExtensions::isVideoExtension`, same
+  check the delegate itself uses), maps the cursor's `x` within
+  `thumbnailRectForCellRect(visualRect(index), iconSize())` to a 0-based band, and — only on an
+  actual change — updates the delegate's hover state and issues a targeted `update()` on the
+  previous and new hovered cells rather than the whole viewport.
+* **Not built:** lazy/on-demand decoding of the 4 non-default frames (all 5 are decoded upfront
+  during the existing chunked grid-population pass, same trigger point as today's single poster
+  frame) — a video-heavy folder's grid now does ~5x the FFmpeg decode work to fully populate
+  (images are unaffected); left as a future optimization (e.g. decode frame 0 eagerly, defer 1–4 to
+  a lower-priority pass) if this proves too slow in practice. No change to the Preview panel's
+  single-frame video preview, and no persistence of hover state across selection/navigation (purely
+  ephemeral, cleared on mouse leave).
+* **Testing**: `MockMediaDecoder`/`MediaProcessingUseCaseTest`/`FilePreviewUseCaseTest` updated to
+  the new 4-argument `generateThumbnail` signature, plus a case asserting an out-of-range
+  `previewIndex` fails `InvalidArgument`; `FFmpegMediaDecoderTest` gains a case covering multiple
+  `previewIndex` values; `CachingMediaDecoderTest`/`ThumbnailCacheTest` gain cases asserting two
+  different `previewIndex` values for the same file produce two independently cacheable entries.
+  No new coverage for the `MediaThumbnailLoadingWorker`/`MediaGridTileDelegate`/`FileBrowserView`
+  hover wiring, matching §14.61/§14.62's own precedent for this layer (no existing tests either) —
+  manual smoke test only.

@@ -10,8 +10,8 @@
 class MediaDecoder : public IMediaDecoder
 {
 public:
-    Result<MediaThumbnail> generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth,
-                                               int maxHeight) const override;
+    Result<MediaThumbnail> generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth, int maxHeight,
+                                               int previewIndex = 0) const override;
 
 private:
     VipsImageDecoder m_imageDecoder;

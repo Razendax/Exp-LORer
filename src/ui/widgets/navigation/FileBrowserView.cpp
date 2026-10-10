@@ -1,5 +1,7 @@
 #include "FileBrowserView.h"
 
+#include <algorithm>
+
 #include <QAbstractItemView>
 #include <QAction>
 #include <QEvent>
@@ -21,7 +23,9 @@
 #include "FileListModel.h"
 #include "FileNameEditDelegate.h"
 #include "FileTileDelegate.h"
+#include "MediaExtensions.h"
 #include "MediaGridTileDelegate.h"
+#include "MediaPreviewFrames.h"
 #include "PercentCellDelegate.h"
 #include "SearchResultDelegate.h"
 #include "TagsCellDelegate.h"
@@ -126,6 +130,10 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
         m_listView->setWrapping(true);
         m_listView->setGridSize(QSize());
         m_listView->setIconSize(iconSizeFor(ViewMode::ExtraLargeIcons));
+
+        // Hover-scrub previews (Architecture.md §14.64): mouse-move events only arrive without a
+        // button held down when tracking is enabled.
+        m_listView->viewport()->setMouseTracking(true);
     }
     else
     {
@@ -247,6 +255,17 @@ bool FileBrowserView::eventFilter(QObject* watched, QEvent* event)
         QScrollBar* verticalScrollBar = m_listView->verticalScrollBar();
         verticalScrollBar->setValue(verticalScrollBar->value() - notches * rowStep);
         return true;
+    }
+
+    // Hover-scrub previews (Architecture.md §14.64), MediaViewerGrid only: observes MouseMove/Leave
+    // without consuming them, so normal item-view hover/drag handling still runs afterward.
+    if (watched == m_listView->viewport() && m_displayMode == DisplayMode::MediaViewerGrid
+        && (event->type() == QEvent::MouseMove || event->type() == QEvent::Leave))
+    {
+        const bool isLeave = event->type() == QEvent::Leave;
+        const QPoint pos = isLeave ? QPoint() : static_cast<QMouseEvent*>(event)->position().toPoint();
+        updateMediaViewerHover(pos, isLeave);
+        return QWidget::eventFilter(watched, event);
     }
 
     // Clicking empty space in the view (no item under the cursor) deselects the current item,
@@ -629,6 +648,52 @@ void FileBrowserView::showColumnMenu(const QPoint& localPos)
     }
 
     menu.exec(m_treeView->header()->mapToGlobal(localPos));
+}
+
+void FileBrowserView::updateMediaViewerHover(const QPoint& pos, bool isLeave)
+{
+    QModelIndex newHoveredIndex;
+    int newHoveredPreviewIndex = -1;
+
+    if (!isLeave)
+    {
+        const QModelIndex index = m_listView->indexAt(pos);
+        if (index.isValid())
+        {
+            const auto path = std::filesystem::path(index.data(FileListModel::FilePathRole).toString().toStdWString());
+            if (MediaExtensions::isVideoExtension(MediaExtensions::lowercaseExtension(path)))
+            {
+                const QRect cellRect = m_listView->visualRect(index);
+                const QRect thumbnailRect = MediaGridTileDelegate::thumbnailRectForCellRect(cellRect, m_listView->iconSize());
+                if (thumbnailRect.width() > 0)
+                {
+                    const double fraction =
+                        static_cast<double>(pos.x() - thumbnailRect.left()) / static_cast<double>(thumbnailRect.width());
+                    const int band =
+                        std::clamp(static_cast<int>(fraction * MediaPreviewFrames::kCount), 0, MediaPreviewFrames::kCount - 1);
+                    newHoveredIndex = index;
+                    newHoveredPreviewIndex = band;
+                }
+            }
+        }
+    }
+
+    const QModelIndex previousHoveredIndex = m_mediaGridDelegate->hoveredIndex();
+    if (previousHoveredIndex == newHoveredIndex && m_mediaGridDelegate->hoveredPreviewIndex() == newHoveredPreviewIndex)
+    {
+        return;
+    }
+
+    m_mediaGridDelegate->setHoveredPreview(newHoveredIndex, newHoveredPreviewIndex);
+
+    if (previousHoveredIndex.isValid())
+    {
+        m_listView->update(previousHoveredIndex);
+    }
+    if (newHoveredIndex.isValid())
+    {
+        m_listView->update(newHoveredIndex);
+    }
 }
 
 void FileBrowserView::handleContextMenuRequested(QAbstractItemView* view, const QPoint& localPos)

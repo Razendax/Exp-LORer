@@ -75,7 +75,7 @@ TEST(FilePreviewUseCase, ImageExtensionDispatchesToMediaDecoderAsImage)
     MediaThumbnail thumbnail;
     thumbnail.bytes = { std::byte{ 0xFF }, std::byte{ 0xD8 } };
     thumbnail.metadata = MediaMetadata::create(1920, 1080, std::chrono::milliseconds(0), "jpeg").value();
-    EXPECT_CALL(mediaDecoder, generateThumbnail(std::filesystem::path("C:/data/photo.JPG"), 200, 200))
+    EXPECT_CALL(mediaDecoder, generateThumbnail(std::filesystem::path("C:/data/photo.JPG"), 200, 200, 0))
         .WillOnce(Return(Result<MediaThumbnail>::success(thumbnail)));
 
     FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
@@ -98,7 +98,7 @@ TEST(FilePreviewUseCase, VideoExtensionDispatchesToMediaDecoderAsVideo)
     MediaThumbnail thumbnail;
     thumbnail.bytes = { std::byte{ 0x01 } };
     thumbnail.metadata = MediaMetadata::create(1280, 720, std::chrono::milliseconds(60000), "h264", 5'000'000).value();
-    EXPECT_CALL(mediaDecoder, generateThumbnail(std::filesystem::path("C:/data/clip.mp4"), 200, 200))
+    EXPECT_CALL(mediaDecoder, generateThumbnail(std::filesystem::path("C:/data/clip.mp4"), 200, 200, 0))
         .WillOnce(Return(Result<MediaThumbnail>::success(thumbnail)));
 
     FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
@@ -121,7 +121,7 @@ TEST(FilePreviewUseCase, ImageExtensionUsesWhateverMetadataTheDecoderReturned)
     // whatever MediaThumbnail::metadata it got through unchanged.
     MediaThumbnail thumbnail;
     thumbnail.bytes = { std::byte{ 0xFF }, std::byte{ 0xD8 } };
-    EXPECT_CALL(mediaDecoder, generateThumbnail(std::filesystem::path("C:/data/photo.JPG"), 200, 200))
+    EXPECT_CALL(mediaDecoder, generateThumbnail(std::filesystem::path("C:/data/photo.JPG"), 200, 200, 0))
         .WillOnce(Return(Result<MediaThumbnail>::success(thumbnail)));
 
     FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
@@ -215,7 +215,7 @@ TEST(FilePreviewUseCase, UnknownExtensionReturnsUnsupportedWithoutTouchingPorts)
 
     EXPECT_CALL(fileSystemRepository, listDirectory(_)).Times(0);
     EXPECT_CALL(fileSystemRepository, readFilePrefix(_, _)).Times(0);
-    EXPECT_CALL(mediaDecoder, generateThumbnail(_, _, _)).Times(0);
+    EXPECT_CALL(mediaDecoder, generateThumbnail(_, _, _, _)).Times(0);
 
     FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
     auto result = useCase.generatePreview(makeNode("C:/data/unknown.xyz", FileType::Regular), 200, 200, 1024);
@@ -244,7 +244,7 @@ TEST(FilePreviewUseCase, ImageInsideArchiveIsMaterializedBeforeDecoding)
     MediaThumbnail thumbnail;
     thumbnail.bytes = { std::byte{ 0xFF }, std::byte{ 0xD8 } };
     thumbnail.metadata = MediaMetadata::create(640, 480, std::chrono::milliseconds(0), "jpeg").value();
-    EXPECT_CALL(mediaDecoder, generateThumbnail(realPath, 200, 200))
+    EXPECT_CALL(mediaDecoder, generateThumbnail(realPath, 200, 200, 0))
         .WillOnce(Return(Result<MediaThumbnail>::success(thumbnail)));
 
     FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
@@ -291,7 +291,7 @@ TEST(FilePreviewUseCase, ImageInsideArchivePropagatesMaterializeFailure)
 
     EXPECT_CALL(fileSystemRepository, materializeForReading(virtualPath))
         .WillOnce(Return(Result<std::filesystem::path>::failure(Error(ErrorCode::IoError, "extraction failed"))));
-    EXPECT_CALL(mediaDecoder, generateThumbnail(_, _, _)).Times(0);
+    EXPECT_CALL(mediaDecoder, generateThumbnail(_, _, _, _)).Times(0);
 
     FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
     auto result = useCase.generatePreview(makeNode(virtualPath, FileType::Regular), 200, 200, 1024);

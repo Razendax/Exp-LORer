@@ -14,7 +14,8 @@ class MediaProcessingUseCase
 public:
     explicit MediaProcessingUseCase(IMediaDecoder& mediaDecoder);
 
-    Result<MediaThumbnail> generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth, int maxHeight) const;
+    Result<MediaThumbnail> generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth, int maxHeight,
+                                              int previewIndex = 0) const;
 
 private:
     IMediaDecoder& m_mediaDecoder;

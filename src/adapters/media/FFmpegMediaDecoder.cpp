@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "Logging.h"
+#include "MediaPreviewFrames.h"
 #include "PathUtf8.h"
 #include "WindowsLongPath.h"
 
@@ -83,7 +84,7 @@ namespace
 }
 
 Result<MediaThumbnail> FFmpegMediaDecoder::generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth,
-                                                                int maxHeight) const
+                                                                int maxHeight, int previewIndex) const
 {
     const std::string url = PathUtf8::toUtf8(WindowsLongPath::withPrefix(mediaFile));
 
@@ -122,11 +123,14 @@ Result<MediaThumbnail> FFmpegMediaDecoder::generateThumbnail(const std::filesyst
         }
     }
 
-    // Seek to ~10% into the stream for a representative frame (Architecture.md §14.25); falls
-    // back to the first decodable frame when duration is unavailable.
+    // Seek to one of MediaPreviewFrames::kCount equally-spaced positions into the stream for a
+    // representative frame (Architecture.md §14.25/§14.64); falls back to the first decodable
+    // frame when duration is unavailable. previewIndex 0 reproduces the original ~10% position.
     if (opened.formatContext->duration > 0)
     {
-        const int64_t seekTarget = opened.formatContext->duration / 10;
+        const int clampedPreviewIndex = std::clamp(previewIndex, 0, MediaPreviewFrames::kCount - 1);
+        const int64_t seekTarget = static_cast<int64_t>(
+            static_cast<double>(opened.formatContext->duration) * MediaPreviewFrames::fractionForIndex(clampedPreviewIndex));
         av_seek_frame(opened.formatContext, -1, seekTarget, AVSEEK_FLAG_BACKWARD);
         avcodec_flush_buffers(opened.decoderContext);
     }

@@ -45,3 +45,27 @@ TEST_F(FFmpegMediaDecoderTest, GenerateThumbnailOnGarbageBytesReturnsError)
 
     EXPECT_TRUE(result.hasError());
 }
+
+// No real video fixture exists in this suite to assert two previewIndex values decode distinct
+// frame content (Architecture.md §14.64) -- at minimum, every valid index must behave identically
+// to a missing file (fail cleanly), and an out-of-range index must be clamped rather than crash or
+// seek somewhere nonsensical.
+TEST_F(FFmpegMediaDecoderTest, GenerateThumbnailOnMissingFileFailsForEveryPreviewIndex)
+{
+    FFmpegMediaDecoder decoder;
+    const fs::path missing = m_tempDir / "does-not-exist.mp4";
+
+    for (int previewIndex = 0; previewIndex < 5; ++previewIndex)
+    {
+        EXPECT_TRUE(decoder.generateThumbnail(missing, 128, 128, previewIndex).hasError());
+    }
+}
+
+TEST_F(FFmpegMediaDecoderTest, GenerateThumbnailClampsOutOfRangePreviewIndexInsteadOfCrashing)
+{
+    FFmpegMediaDecoder decoder;
+    const fs::path missing = m_tempDir / "does-not-exist.mp4";
+
+    EXPECT_TRUE(decoder.generateThumbnail(missing, 128, 128, -1).hasError());
+    EXPECT_TRUE(decoder.generateThumbnail(missing, 128, 128, 99).hasError());
+}

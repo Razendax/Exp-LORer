@@ -128,7 +128,7 @@ namespace
 }
 
 Result<MediaThumbnail> VipsImageDecoder::generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth,
-                                                              int maxHeight) const
+                                                              int maxHeight, int /*previewIndex*/) const
 {
     ensureVipsInitialized();
 

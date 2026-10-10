@@ -66,6 +66,23 @@ TEST_F(ThumbnailCacheTest, DifferentDimensionsProduceDistinctEntries)
     EXPECT_NE(smallResult->size(), largeResult->size());
 }
 
+TEST_F(ThumbnailCacheTest, DifferentPreviewIndexProducesDistinctEntries)
+{
+    ThumbnailCache cache(m_tempDir / "cache");
+    const ThumbnailCache::Key frame0{ "C:/videos/a.mp4", 100, 1, 128, 128, 0 };
+    const ThumbnailCache::Key frame4{ "C:/videos/a.mp4", 100, 1, 128, 128, 4 };
+
+    cache.put(frame0, makeBytes(4, std::byte{ 0x01 }));
+    cache.put(frame4, makeBytes(8, std::byte{ 0x02 }));
+
+    auto frame0Result = cache.get(frame0);
+    auto frame4Result = cache.get(frame4);
+
+    ASSERT_TRUE(frame0Result.has_value());
+    ASSERT_TRUE(frame4Result.has_value());
+    EXPECT_NE(frame0Result->size(), frame4Result->size());
+}
+
 TEST_F(ThumbnailCacheTest, ChangedMtimeProducesDistinctEntryFromOriginal)
 {
     ThumbnailCache cache(m_tempDir / "cache");

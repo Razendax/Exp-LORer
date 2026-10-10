@@ -18,7 +18,7 @@ namespace
     {
     public:
         MOCK_METHOD(Result<MediaThumbnail>, generateThumbnail,
-                    (const std::filesystem::path& mediaFile, int maxWidth, int maxHeight), (const, override));
+                    (const std::filesystem::path& mediaFile, int maxWidth, int maxHeight, int previewIndex), (const, override));
     };
 
     MediaThumbnail makeThumbnail(std::vector<std::byte> bytes, int width = 100, int height = 100)
@@ -56,7 +56,7 @@ TEST_F(CachingMediaDecoderTest, GenerateThumbnailCallsInnerOnceForRepeatedCalls)
     ThumbnailCache cache(m_tempDir / "cache");
     const MediaThumbnail thumbnail = makeThumbnail({ std::byte{ 0xFF }, std::byte{ 0xD8 } }, 1920, 1080);
 
-    EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128))
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128, 0))
         .Times(1)
         .WillOnce(Return(Result<MediaThumbnail>::success(thumbnail)));
 
@@ -80,7 +80,7 @@ TEST_F(CachingMediaDecoderTest, GenerateThumbnailCacheHitReturnsCachedMetadataWi
     ThumbnailCache cache(m_tempDir / "cache");
     const MediaThumbnail thumbnail = makeThumbnail({ std::byte{ 0xFF }, std::byte{ 0xD8 } }, 1920, 1080);
 
-    EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128))
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128, 0))
         .Times(1)
         .WillOnce(Return(Result<MediaThumbnail>::success(thumbnail)));
 
@@ -101,8 +101,8 @@ TEST_F(CachingMediaDecoderTest, GenerateThumbnailWithDifferentDimensionsCallsInn
     const MediaThumbnail smallThumbnail = makeThumbnail({ std::byte{ 0x01 } });
     const MediaThumbnail largeThumbnail = makeThumbnail({ std::byte{ 0x02 } });
 
-    EXPECT_CALL(inner, generateThumbnail(m_filePath, 64, 64)).WillOnce(Return(Result<MediaThumbnail>::success(smallThumbnail)));
-    EXPECT_CALL(inner, generateThumbnail(m_filePath, 256, 256)).WillOnce(Return(Result<MediaThumbnail>::success(largeThumbnail)));
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 64, 64, 0)).WillOnce(Return(Result<MediaThumbnail>::success(smallThumbnail)));
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 256, 256, 0)).WillOnce(Return(Result<MediaThumbnail>::success(largeThumbnail)));
 
     CachingMediaDecoder decorator(inner, cache);
 
@@ -120,7 +120,7 @@ TEST_F(CachingMediaDecoderTest, GenerateThumbnailFailureIsNotCached)
     MockInnerDecoder inner;
     ThumbnailCache cache(m_tempDir / "cache");
 
-    EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128))
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128, 0))
         .Times(2)
         .WillRepeatedly(Return(Result<MediaThumbnail>::failure(Error(ErrorCode::IoError, "decode failed"))));
 
@@ -136,11 +136,46 @@ TEST_F(CachingMediaDecoderTest, GenerateThumbnailForMissingFileFallsThroughToInn
     ThumbnailCache cache(m_tempDir / "cache");
     const fs::path missing = m_tempDir / "does-not-exist.jpg";
 
-    EXPECT_CALL(inner, generateThumbnail(missing, 128, 128))
+    EXPECT_CALL(inner, generateThumbnail(missing, 128, 128, 0))
         .WillOnce(Return(Result<MediaThumbnail>::failure(Error(ErrorCode::NotFound, "missing"))));
 
     CachingMediaDecoder decorator(inner, cache);
     auto result = decorator.generateThumbnail(missing, 128, 128);
 
     EXPECT_TRUE(result.hasError());
+}
+
+TEST_F(CachingMediaDecoderTest, GenerateThumbnailWithDifferentPreviewIndexCallsInnerAgainAndBothAreCacheable)
+{
+    MockInnerDecoder inner;
+    ThumbnailCache cache(m_tempDir / "cache");
+    const MediaThumbnail frame0 = makeThumbnail({ std::byte{ 0x01 } });
+    const MediaThumbnail frame4 = makeThumbnail({ std::byte{ 0x02 } });
+
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128, 0))
+        .Times(1)
+        .WillOnce(Return(Result<MediaThumbnail>::success(frame0)));
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128, 4))
+        .Times(1)
+        .WillOnce(Return(Result<MediaThumbnail>::success(frame4)));
+
+    CachingMediaDecoder decorator(inner, cache);
+
+    // Each previewIndex decoded once...
+    auto first0 = decorator.generateThumbnail(m_filePath, 128, 128, 0);
+    auto first4 = decorator.generateThumbnail(m_filePath, 128, 128, 4);
+    // ...and a repeated request for either hits its own cache entry without calling inner again
+    // (the inner EXPECT_CALLs above are each Times(1)) -- a hit for one previewIndex must not
+    // short-circuit a request for the other.
+    auto second0 = decorator.generateThumbnail(m_filePath, 128, 128, 0);
+    auto second4 = decorator.generateThumbnail(m_filePath, 128, 128, 4);
+
+    ASSERT_TRUE(first0.hasValue());
+    ASSERT_TRUE(first4.hasValue());
+    ASSERT_TRUE(second0.hasValue());
+    ASSERT_TRUE(second4.hasValue());
+    EXPECT_EQ(first0.value().bytes, frame0.bytes);
+    EXPECT_EQ(first4.value().bytes, frame4.bytes);
+    EXPECT_EQ(second0.value().bytes, frame0.bytes);
+    EXPECT_EQ(second4.value().bytes, frame4.bytes);
 }

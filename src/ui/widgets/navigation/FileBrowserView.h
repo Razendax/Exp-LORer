@@ -170,6 +170,14 @@ private:
     // via setColumnVisible() on click.
     void showColumnMenu(const QPoint& localPos);
 
+    // MediaViewerGrid-only hover-scrub tracking (Architecture.md §14.64): called from eventFilter()
+    // for every viewport MouseMove/Leave. Resolves which video tile (if any) the cursor is over and
+    // which of its MediaPreviewFrames::kCount bands `pos` falls in, updates
+    // m_mediaGridDelegate's hover state on an actual change, and issues a targeted repaint of just
+    // the previous and new hovered cells. isLeave forces the hover state to "cleared" regardless of
+    // pos.
+    void updateMediaViewerHover(const QPoint& pos, bool isLeave);
+
     FileListModel* m_model = nullptr;
     DisplayMode m_displayMode = DisplayMode::Normal;
     ViewMode m_viewMode = ViewMode::Details;

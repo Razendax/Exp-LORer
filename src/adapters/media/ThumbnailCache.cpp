@@ -50,6 +50,7 @@ std::string ThumbnailCache::cacheFileName(const Key& key) const
     XXH64_update(state, &key.mtimeTicks, sizeof(key.mtimeTicks));
     XXH64_update(state, &key.maxWidth, sizeof(key.maxWidth));
     XXH64_update(state, &key.maxHeight, sizeof(key.maxHeight));
+    XXH64_update(state, &key.previewIndex, sizeof(key.previewIndex));
     const std::uint64_t hash = XXH64_digest(state);
     XXH64_freeState(state);
 

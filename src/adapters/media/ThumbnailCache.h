@@ -25,14 +25,20 @@ public:
         std::int64_t mtimeTicks = 0;
         int maxWidth = 0;
         int maxHeight = 0;
+        // Which of a video's MediaPreviewFrames::kCount hover-scrub frames this entry is for
+        // (Architecture.md §14.64); always 0 for an image, and 0 reproduces the original
+        // single-poster-frame cache filename for video so existing cache contents on disk stay
+        // valid.
+        int previewIndex = 0;
     };
 
     // cacheDirectory is created (recursively) if missing. maxTotalBytes caps total on-disk size
-    // (default 512MB, Architecture.md §8); least-recently-accessed entries are pruned on
-    // construction and after any write that pushes the total over the cap. "Least recently
-    // accessed" is approximated by file modification time (touched on every cache hit), since
-    // NTFS last-access-time tracking is commonly disabled for performance.
-    explicit ThumbnailCache(std::filesystem::path cacheDirectory, std::uintmax_t maxTotalBytes = 512ull * 1024 * 1024);
+    // (default 1536MB, Architecture.md §8/§14.64 -- widened 3x from the original 512MB since a
+    // video's 5 hover-scrub preview frames now each get their own entry); least-recently-accessed
+    // entries are pruned on construction and after any write that pushes the total over the cap.
+    // "Least recently accessed" is approximated by file modification time (touched on every cache
+    // hit), since NTFS last-access-time tracking is commonly disabled for performance.
+    explicit ThumbnailCache(std::filesystem::path cacheDirectory, std::uintmax_t maxTotalBytes = 1536ull * 1024 * 1024);
 
     std::optional<std::vector<std::byte>> get(const Key& key);
     void put(const Key& key, const std::vector<std::byte>& bytes);
@@ -56,7 +62,10 @@ private:
     std::mutex m_mutex;
     std::list<MemoryEntry> m_memoryLru; // front = most recently used
     std::unordered_map<std::string, std::list<MemoryEntry>::iterator> m_memoryIndex;
-    static constexpr std::size_t kMemoryLruCapacity = 20;
+    // 60 (up from 20, Architecture.md §14.64) comfortably covers a dozen actively-hovered videos'
+    // worth of 5-frame sets, so scrubbing back and forth across several recently-hovered tiles
+    // stays a memory hit instead of thrashing back out to disk.
+    static constexpr std::size_t kMemoryLruCapacity = 60;
 
     // In-memory mirror of what's on disk (size + last-write per cache file), built once from a
     // directory scan in the constructor and kept in sync incrementally by get()/put() from then

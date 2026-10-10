@@ -14,8 +14,8 @@ class CachingMediaDecoder : public IMediaDecoder
 public:
     CachingMediaDecoder(IMediaDecoder& inner, ThumbnailCache& cache);
 
-    Result<MediaThumbnail> generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth,
-                                               int maxHeight) const override;
+    Result<MediaThumbnail> generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth, int maxHeight,
+                                               int previewIndex = 0) const override;
 
 private:
     IMediaDecoder& m_inner;

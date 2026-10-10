@@ -16,6 +16,7 @@
 #include "FileListModel.h"
 #include "FileSizeFormat.h"
 #include "MediaExtensions.h"
+#include "MediaPreviewFrames.h"
 #include "MediaThumbnailData.h"
 
 namespace
@@ -122,11 +123,21 @@ MediaGridTileDelegate::MediaGridTileDelegate(QObject* parent)
 {
 }
 
+QRect MediaGridTileDelegate::thumbnailRectForCellRect(const QRect& cellRect, const QSize& iconSize)
+{
+    return QRect(cellRect.left() + (cellRect.width() - iconSize.width()) / 2, cellRect.top() + kPadding, iconSize.width(),
+                 iconSize.height());
+}
+
 QRect MediaGridTileDelegate::thumbnailRectFor(const QStyleOptionViewItem& option)
 {
-    const QSize iconSize = option.decorationSize;
-    return QRect(option.rect.left() + (option.rect.width() - iconSize.width()) / 2, option.rect.top() + kPadding, iconSize.width(),
-                 iconSize.height());
+    return thumbnailRectForCellRect(option.rect, option.decorationSize);
+}
+
+void MediaGridTileDelegate::setHoveredPreview(const QModelIndex& index, int previewIndex)
+{
+    m_hoveredIndex = index;
+    m_hoveredPreviewIndex = previewIndex;
 }
 
 QRect MediaGridTileDelegate::nameRectFor(const QStyleOptionViewItem& option, const QModelIndex& index)
@@ -147,7 +158,20 @@ void MediaGridTileDelegate::paint(QPainter* painter, const QStyleOptionViewItem&
 
     if (hasThumbnail)
     {
-        paintThumbnail(painter, thumbnailVariant.value<MediaThumbnailData>().image, iconRect);
+        const MediaThumbnailData& thumbnailData = thumbnailVariant.value<MediaThumbnailData>();
+
+        QImage imageToPaint = thumbnailData.image;
+        if (index == m_hoveredIndex && thumbnailData.previewFrames.size() == static_cast<std::size_t>(MediaPreviewFrames::kCount))
+        {
+            const int frameIndex = std::clamp(m_hoveredPreviewIndex, 0, MediaPreviewFrames::kCount - 1);
+            const QImage& hoveredFrame = thumbnailData.previewFrames[static_cast<std::size_t>(frameIndex)];
+            if (!hoveredFrame.isNull())
+            {
+                imageToPaint = hoveredFrame;
+            }
+        }
+
+        paintThumbnail(painter, imageToPaint, iconRect);
     }
     else
     {

@@ -88,7 +88,7 @@ CachingMediaDecoder::CachingMediaDecoder(IMediaDecoder& inner, ThumbnailCache& c
 }
 
 Result<MediaThumbnail> CachingMediaDecoder::generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth,
-                                                                 int maxHeight) const
+                                                                 int maxHeight, int previewIndex) const
 {
     namespace fs = std::filesystem;
 
@@ -103,10 +103,10 @@ Result<MediaThumbnail> CachingMediaDecoder::generateThumbnail(const std::filesys
     {
         // Can't build a reliable cache key -- fall through uncached; the inner decoder will
         // produce a proper Error for the caller.
-        return m_inner.generateThumbnail(mediaFile, maxWidth, maxHeight);
+        return m_inner.generateThumbnail(mediaFile, maxWidth, maxHeight, previewIndex);
     }
 
-    const ThumbnailCache::Key key{ mediaFile, size, mtime.time_since_epoch().count(), maxWidth, maxHeight };
+    const ThumbnailCache::Key key{ mediaFile, size, mtime.time_since_epoch().count(), maxWidth, maxHeight, previewIndex };
 
     if (auto cachedBlob = m_cache.get(key))
     {
@@ -119,7 +119,7 @@ Result<MediaThumbnail> CachingMediaDecoder::generateThumbnail(const std::filesys
     }
 
     Logging::debug("CachingMediaDecoder: thumbnail cache miss");
-    auto generated = m_inner.generateThumbnail(mediaFile, maxWidth, maxHeight);
+    auto generated = m_inner.generateThumbnail(mediaFile, maxWidth, maxHeight, previewIndex);
     if (generated)
     {
         m_cache.put(key, serialize(generated.value()));

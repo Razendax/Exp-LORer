@@ -10,6 +10,8 @@
 class VipsImageDecoder : public IMediaDecoder
 {
 public:
-    Result<MediaThumbnail> generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth,
-                                               int maxHeight) const override;
+    // previewIndex is accepted and ignored -- images have no concept of a time position
+    // (Architecture.md §14.64).
+    Result<MediaThumbnail> generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth, int maxHeight,
+                                               int previewIndex = 0) const override;
 };
