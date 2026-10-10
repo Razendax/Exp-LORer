@@ -77,3 +77,17 @@ foreach(imageFormatPlugin IN ITEMS Qt6::QJpegPlugin Qt6::QGifPlugin Qt6::QICOPlu
         )
     endif()
 endforeach()
+
+# Same applocal-DLL-copy gap as above: QMediaPlayer (VideoPlayerWidget, §14.67) loads its decode
+# (FFmpeg) and Windows playback backend from a "multimedia" subfolder next to the executable.
+foreach(multimediaPlugin IN ITEMS Qt6::QFFmpegMediaPlugin Qt6::QWindowsMediaPlugin)
+    if(WIN32 AND TARGET ${multimediaPlugin})
+        add_custom_command(TARGET Exp-LORer POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Exp-LORer>/multimedia"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "$<TARGET_FILE:${multimediaPlugin}>"
+                    "$<TARGET_FILE_DIR:Exp-LORer>/multimedia/"
+            COMMENT "Deploying Qt multimedia playback plugin (${multimediaPlugin})"
+        )
+    endif()
+endforeach()

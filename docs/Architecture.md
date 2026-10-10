@@ -88,8 +88,7 @@ Converts between Domain/Application types and framework types.
   `FileTransferUseCase`, same shape as `AdvancedSearchService`/`AdvancedSearchWorker`, §14.47),
   `FolderTreeModel` (the left panel's lazily-listed folders-only tree, retargeted to the focused
   tab, §14.41),
-  `TagManagerViewModel` (global tag CRUD, §14.17), `MediaPreviewViewModel` (QML-facing state; not
-  yet implemented).
+  `TagManagerViewModel` (global tag CRUD, §14.17).
 * **Persistence** (`adapters/persistence`) — `SQLiteTagRepository`, implements `ITagRepository`
   (§7, §10).
 * **Filesystem** (`adapters/filesystem`) — `StandardFileSystemRepository`, implements
@@ -121,10 +120,12 @@ per-tab presentation state, not a Domain/Application concern.
 
 ### 2.4 Frameworks & Drivers Layer
 
-* **UI:** Qt 6 Widgets for the main shell; Qt Quick/QML (via `QQuickWidget`) for the image/video
-  viewer.
+* **UI:** Qt 6 Widgets throughout, including the inline video player (§14.67) -- no QML/
+  `QQuickWidget` surface exists in the project; the originally-sketched full-window QML image/
+  video viewer was never built and is superseded by the Widgets-based player.
 * **Database:** SQLite.
-* **Media:** Qt Multimedia and/or FFmpeg.
+* **Media:** FFmpeg (thumbnail/poster-frame decode, `FFmpegMediaDecoder`) and Qt Multimedia
+  (`QMediaPlayer`/`QVideoWidget`/`QAudioOutput`, inline playback, §14.67).
 * **OS:** Windows (primary), Linux (planned).
 
 ## 3. Component Relationships & Data Flow
@@ -149,8 +150,7 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
 | Domain | `FileNode`, `Tag`, `MediaMetadata`, `FileTagAssociation` |
 | Application | `FileNavigationUseCase`, `TagManagementUseCase`, `MediaProcessingUseCase`, `DiskUsageUseCase` (§14.40), `FileTransferUseCase` (§14.47), `DuplicateFinderUseCase` (§14.51), `FragmentationUseCase` (§14.52), `BulkRenameUseCase` (§14.55), and their Ports (§2.2) |
 | Adapters | `SQLiteTagRepository`, `StandardFileSystemRepository`, `ShellContextMenuProvider`, `AppConfigStore`, `WorkspaceStore` (§14.60), `WindowsDiskUsageScanner`/`SQLiteDiskUsageRepository` (§14.40), `StandardDuplicateFileScanner` (§14.51), `WindowsFragmentationScanner` (§14.52), plus the ViewModels listed in §2.3 |
-| UI (Widgets) | `MainWindow`, `WorkspaceLayoutWidget`, `WorkspacePaneWidget`, `FileBrowserView`, `SidePanelWidget` (left/right panels), `FolderTreeView`, `TagPanelWidget`, `ContextMenuBuilder`/`FileItemContextMenu`, `WorkspaceManagerDialog` (§14.60), dialogs |
-| UI (QML) | Media viewer (not yet implemented) |
+| UI (Widgets) | `MainWindow`, `WorkspaceLayoutWidget`, `WorkspacePaneWidget`, `FileBrowserView`, `SidePanelWidget` (left/right panels), `FolderTreeView`, `TagPanelWidget`, `ContextMenuBuilder`/`FileItemContextMenu`, `WorkspaceManagerDialog` (§14.60), `VideoPlayerWidget` (reusable inline video player, first used in the Preview tab, §14.67), dialogs |
 
 ## 5. Concurrency and Threading Model
 
@@ -405,6 +405,7 @@ Exp-LORer/
 │   │   │   ├── search/  # SearchCriteriaPanel, SearchResultsPane, SearchPanelWidget
 │   │   │   ├── tags/    # TagChipWidget, TagPanelWidget, TagManagerDialog
 │   │   │   ├── preview/ # PreviewPanelWidget, MediaPreviewWidget, TextPreviewWidget, SyntaxHighlighter
+│   │   │   ├── video/   # VideoPlayerWidget (§14.67) -- standalone, reusable beyond the Preview tab
 │   │   │   ├── diskusage/ # PieChartWidget, FolderSizeWidget
 │   │   │   ├── fragmentation/ # FragmentationWidget
 │   │   │   ├── duplicates/ # DuplicateFinderDialog
@@ -415,7 +416,8 @@ Exp-LORer/
 │   │   │   ├── config/  # EnvironmentVariablesDialog, EditEnvironmentVariableDialog
 │   │   │   └── notifications/ # ToastNotificationWidget, ProgressNotificationWidget, NotificationOverlayWidget
 │   │   │   # core/ also holds WorkspaceManagerDialog and WorkspaceLaunchContext (§14.60)
-│   │   └── qml/         # QML media viewer (not yet implemented)
+│   │   └── qml/         # unused -- no QML surface exists; inline video playback lives in
+│   │                    # widgets/video/VideoPlayerWidget instead (§14.67)
 │   └── app/
 │       ├── CompositionRoot.cpp/.h
 │       ├── ExpLorerApplication.cpp/.h   # QApplication subclass catching event-loop exceptions (§14.23)

@@ -2330,3 +2330,68 @@ Domain/Application/schema change.
 * **Testing**: no new GTest coverage, matching every existing Media Viewer entry in this decision log
   (§14.61/§14.62/§14.64/§14.65 all note this layer stays under the §11 UI/ViewModel-glue carve-out);
   manual smoke test only.
+
+### 14.67 Simple Built-In Video Player (Widgets, not QML)
+
+Specification.md §2.4 and the original Architecture.md sketch called for a full-window QML viewer
+(`MediaPreviewViewModel`, via `QQuickWidget`) for video playback, but no QML file was ever added to
+the project -- every other media feature (poster frames, grid hover previews, §14.26/§14.58/
+§14.64) shipped in plain Qt Widgets instead. Rather than introduce the project's first QML surface
+and `Quick`/`Qml`/`QQuickWidget` CMake plumbing for what the user wants kept simple, the player is
+plain Qt Widgets + Qt Multimedia (`QMediaPlayer`/`QVideoWidget`/`QAudioOutput`), consistent with the
+rest of the codebase. `qtmultimedia`'s vcpkg port already default-builds the `widgets` feature and
+the `ffmpeg` decode backend, so no `vcpkg.json` change was needed -- only `find_package(Qt6 ...
+Multimedia MultimediaWidgets)` at the top level and linking those two modules into
+`explorer_ui_widgets`.
+
+* **No new Port.** `QMediaPlayer` loads the video file directly from `FilePreview::path()`; there is
+  no business logic to express as a use case, so `VideoPlayerWidget` talks to Qt Multimedia
+  directly with no `IVideoPlayer`-style abstraction -- same posture as `TerminalWidget`/
+  `WindowsConPtyProcess` (Architecture.md §9/§10): a pure OS/Qt integration with no second
+  implementation ever in scope, so an interface would buy nothing.
+* **Standalone component** (`src/ui/widgets/video/VideoPlayerWidget`), not nested under `preview/`:
+  the user explicitly wants it reusable later (e.g. Media Viewer grid playback, a future
+  full-window viewer) without having to move code out from under an unrelated feature's folder
+  first. `PreviewPanelWidget` is just its first consumer -- the same relationship `preview/`
+  already has with `SyntaxHighlightEngine`/`HighlightThemeViewModel`.
+* **UI shape**: `QVideoWidget` on top (stretches); a controls row below with a play/pause toggle
+  `QToolButton` (`SP_MediaPlay`/`SP_MediaPause`), a separate Stop `QToolButton`
+  (`SP_MediaStop`, distinct from pause per the user's request), and a `mm:ss / mm:ss` time label;
+  a bottom row with the seek `QSlider` (stretch), a mute-toggle `QToolButton`
+  (`SP_MediaVolume`/`SP_MediaVolumeMuted`), and a volume `QSlider` (0-100, mapped to
+  `QAudioOutput::setVolume()`'s 0.0-1.0). All icons are Qt standard icons -- no new icon assets.
+* **Seek-drag handling**: while the seek slider is pressed (`sliderPressed` through
+  `sliderReleased`), incoming `positionChanged` updates are suppressed so playback doesn't fight the
+  drag; `sliderMoved` live-updates the time label; `sliderReleased` commits via
+  `player->setPosition()`.
+* **Public API**: `load(path)` sets the source (`QUrl::fromLocalFile(QString::fromStdWString(
+  path.wstring()))` -- never `.string()`/`.generic_string()`, per CLAUDE.md's non-ASCII-path rule)
+  and leaves playback **paused** (first frame visible, no autoplay/audio burst on selection).
+  `release()` stops playback and clears the source; called from every point the widget can stop
+  being the visible content -- `PreviewPanelWidget::hideEvent`, `onPreviewLoading`,
+  `onPreviewFailed`, `onPreviewCleared` (unconditionally, since a no-op release is harmless), and
+  whenever `onPreviewReady` resolves to a non-Video kind or the mode combo switches away from the
+  player -- so playback/audio never continues once the Preview tab is hidden, the selection changes,
+  or a newer preview generation supersedes it.
+* **Preview tab integration**: `PreviewPanelWidget` gains a `QComboBox` ("Static image" / "Video
+  player") shown only while the current preview's kind is `Video`, plus `VideoPlayerWidget` as a
+  new `m_stack` page. The last-seen Video `FilePreview` is kept as a member
+  (`std::optional<FilePreview>`) so switching the combo re-renders through the newly selected page
+  without re-asking `FilePreviewViewModel`; "Static image" renders through the existing
+  `MediaPreviewWidget::setPreview()` (same poster-frame path image/video already shared), "Video
+  player" calls `VideoPlayerWidget::load()`. The mode choice is a plain member, not persisted via
+  `AppConfig`/`QSettings` -- not requested, and avoids config/schema churn for a "simple" player.
+* **Deployment**: the FFmpeg and Windows Media Foundation playback-backend plugin DLLs
+  (`ffmpegmediaplugin.dll`, `windowsmediaplugin.dll`, targets `Qt6::QFFmpegMediaPlugin`/
+  `Qt6::QWindowsMediaPlugin`) are loaded by Qt Multimedia at runtime from a `multimedia/` subfolder
+  next to the executable -- vcpkg's applocal DLL copy doesn't reach plugin-loaded DLLs, so
+  `src/app/CMakeLists.txt` deploys them explicitly, same pattern as the existing `platforms/`/
+  `sqldrivers/`/`imageformats/` post-build steps. No separate Windows audio-backend plugin exists
+  (WASAPI is compiled in).
+* **Not built** (Specification.md §2.4 lists these; not requested now): fullscreen toggle,
+  aspect-ratio adjustments, loop playback; any playback in the Media Viewer grid/gallery mode
+  (stays poster + hover-preview only, §14.62/§14.64/§14.66); persisting the mode choice across
+  sessions; any change to the `IMediaDecoder`/`FFmpegMediaDecoder`/thumbnail-cache pipeline, which
+  keeps serving the poster frame and grid hover previews exactly as before.
+* **Testing**: no new GTest coverage -- pure UI-layer addition, no Domain/Application/Adapter
+  change, and UI stays uncovered by CTest in v1 (Architecture.md §11); manual smoke test only.

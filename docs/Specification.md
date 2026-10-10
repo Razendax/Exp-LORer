@@ -356,9 +356,9 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   if nothing is selected): a folder's immediate contents (folders first, then files, both
   alphabetical); a text/source file's content (txt/html/xml/json/md/ini/log/yaml/csv, common
   source extensions such as cs/cpp/h/hpp/c/py/js/ts/css); a scaled preview image for supported
-  image formats (2.3); or a static representative frame for supported video formats (2.4) — full
-  video playback belongs to the built-in video player below, not this panel. Anything else shows
-  "no preview available."
+  image formats (2.3); or, for supported video formats (2.4), a static representative frame by
+  default with a dropdown to switch to the inline built-in video player instead (Architecture.md
+  §14.67). Anything else shows "no preview available."
 * **Syntax highlighting** (Architecture.md §14.27): recognized source files (C, C++, C#, Python,
   JavaScript, TypeScript, JSON, HTML, CSS in this pass) are shown with tree-sitter-based syntax
   highlighting rather than plain monospace text; other accepted text extensions remain plain text.
@@ -383,9 +383,11 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 **Supported Formats:** Common video containers and codecs (e.g., MP4, MKV, AVI, MOV) dependent on system codecs or integrated libraries (like FFmpeg or Qt Multimedia).
 
 **Playback Controls:**
-* Play, pause, seek bar (scrubbing), volume control, and mute.
-* Fullscreen toggle and aspect ratio adjustments.
-* Loop playback option.
+* Play, pause, seek bar (scrubbing), volume control, and mute — implemented (Architecture.md
+  §14.67) as an inline Qt Widgets/Qt Multimedia player (`VideoPlayerWidget`), reachable from the
+  Preview panel's mode dropdown (2.2) and reusable elsewhere later.
+* Fullscreen toggle and aspect ratio adjustments — not yet implemented.
+* Loop playback option — not yet implemented.
 
 
 **Previewing:**

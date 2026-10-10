@@ -9,7 +9,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Sql Network)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Sql Network Multimedia MultimediaWidgets)
 find_package(spdlog CONFIG REQUIRED)
 
 add_subdirectory(src)

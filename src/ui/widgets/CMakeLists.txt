@@ -79,6 +79,8 @@ add_library(explorer_ui_widgets STATIC
     preview/FolderPreviewListModel.cpp
     preview/SyntaxHighlighter.h
     preview/SyntaxHighlighter.cpp
+    video/VideoPlayerWidget.h
+    video/VideoPlayerWidget.cpp
     diskusage/PieChartWidget.h
     diskusage/PieChartWidget.cpp
     diskusage/FolderSizeWidget.h
@@ -119,6 +121,7 @@ target_include_directories(explorer_ui_widgets PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/tags
     ${CMAKE_CURRENT_SOURCE_DIR}/media
     ${CMAKE_CURRENT_SOURCE_DIR}/preview
+    ${CMAKE_CURRENT_SOURCE_DIR}/video
     ${CMAKE_CURRENT_SOURCE_DIR}/diskusage
     ${CMAKE_CURRENT_SOURCE_DIR}/fragmentation
     ${CMAKE_CURRENT_SOURCE_DIR}/duplicates
@@ -134,3 +137,6 @@ target_include_directories(explorer_ui_widgets PUBLIC
 # NotificationCenter for SettingsDialog/MainWindow/NotificationOverlayWidget here.
 target_link_libraries(explorer_ui_widgets PUBLIC Qt6::Widgets explorer_adapters_viewmodels explorer_adapters_config
                                                   explorer_adapters_terminal explorer_adapters_highlighting)
+# VideoPlayerWidget (video/) wraps QMediaPlayer/QVideoWidget/QAudioOutput -- kept private since no
+# public API of this target exposes Qt Multimedia types.
+target_link_libraries(explorer_ui_widgets PRIVATE Qt6::Multimedia Qt6::MultimediaWidgets)

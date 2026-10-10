@@ -43,6 +43,18 @@ void NotificationOverlayWidget::updateGeometry()
         return;
     }
 
+    if (m_stackLayout->count() == 0)
+    {
+        // No cards: collapse to a zero-sized rect instead of falling through to the sizeHint
+        // math below, which -- even with no items -- still returns setContentsMargins()'s 16px
+        // (8 top + 8 bottom). Left as a real but empty 320x16 rect, that strip sat raised above
+        // the bottom-right corner of the window and silently swallowed clicks meant for whatever
+        // was underneath it there (e.g. VideoPlayerWidget's seek bar/mute button in the Preview
+        // panel, Architecture.md §14.67) even though nothing was visibly drawn.
+        setGeometry(parentWidget()->width(), m_availableHeight, 0, 0);
+        return;
+    }
+
     // totalHeightForWidth() returns -1 when none of the current cards' items have a
     // width-dependent height (e.g. a lone ProgressNotificationWidget, whose labels don't
     // word-wrap) -- fall back to totalSizeHint() in that case, since blindly min()-ing a -1
