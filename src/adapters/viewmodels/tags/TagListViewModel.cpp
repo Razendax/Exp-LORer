@@ -144,6 +144,29 @@ void TagListViewModel::createAndAddTagFromQuery()
     addTagToSelection(created.value().id());
 }
 
+void TagListViewModel::acceptSearchQuery()
+{
+    const QString trimmed = m_searchQuery.trimmed();
+    if (trimmed.isEmpty())
+    {
+        return;
+    }
+
+    if (m_canCreateTagFromQuery)
+    {
+        createAndAddTagFromQuery();
+        return;
+    }
+
+    const auto it = std::find_if(m_searchResults.begin(), m_searchResults.end(), [&trimmed](const Tag& tag) {
+        return QString::fromStdString(tag.name()).compare(trimmed, Qt::CaseInsensitive) == 0;
+    });
+    if (it != m_searchResults.end())
+    {
+        addTagToSelection(it->id());
+    }
+}
+
 void TagListViewModel::requestTagSearch(Tag::Id tagId)
 {
     if (m_activeTab)

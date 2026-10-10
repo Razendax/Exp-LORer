@@ -1,14 +1,15 @@
 #include "TagPanelWidget.h"
 
 #include <QLabel>
-#include <QLineEdit>
 #include <QPushButton>
 #include <QScrollArea>
+#include <QStringList>
 #include <QVBoxLayout>
 
 #include "FlowLayout.h"
 #include "TagChipWidget.h"
 #include "TagListViewModel.h"
+#include "TagSearchEdit.h"
 #include "UiThemeChangeNotifier.h"
 
 TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent)
@@ -20,7 +21,7 @@ TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, UiThemeChangeNotifie
     m_folderTagsLayout = addChipSection(mainLayout, tr("Folder tags"), &UiColors::UiColorSet::folderTagsBackground,
                                          QStringLiteral("tagPanelFolderTagsSection"));
 
-    m_searchEdit = new QLineEdit(this);
+    m_searchEdit = new TagSearchEdit(this);
     m_searchEdit->setObjectName(QStringLiteral("tagPanelSearchEdit"));
     m_searchEdit->setPlaceholderText(tr("Search tags..."));
     mainLayout->addWidget(m_searchEdit);
@@ -37,15 +38,18 @@ TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, UiThemeChangeNotifie
                                                QStringLiteral("tagPanelSelectedItemTagsSection"));
 
     connect(m_searchEdit, &QLineEdit::textChanged, m_viewModel, &TagListViewModel::setSearchQuery);
+    connect(m_searchEdit, &QLineEdit::returnPressed, this, &TagPanelWidget::onSearchEditReturnPressed);
     connect(m_createTagButton, &QPushButton::clicked, m_viewModel, &TagListViewModel::createAndAddTagFromQuery);
 
     connect(m_viewModel, &TagListViewModel::folderTagsChanged, this, &TagPanelWidget::rebuildFolderTags);
     connect(m_viewModel, &TagListViewModel::searchResultsChanged, this, &TagPanelWidget::rebuildSearchResults);
+    connect(m_viewModel, &TagListViewModel::searchResultsChanged, this, &TagPanelWidget::updateSearchSuggestions);
     connect(m_viewModel, &TagListViewModel::selectedItemTagsChanged, this, &TagPanelWidget::rebuildSelectedItemTags);
     connect(m_viewModel, &TagListViewModel::canCreateTagFromQueryChanged, this, &TagPanelWidget::updateCreateTagAffordance);
 
     rebuildFolderTags(m_viewModel->folderTags());
     rebuildSearchResults(m_viewModel->searchResults());
+    updateSearchSuggestions(m_viewModel->searchResults());
     rebuildSelectedItemTags(m_viewModel->selectedItemTags());
     updateCreateTagAffordance(m_viewModel->canCreateTagFromQuery());
 
@@ -138,6 +142,23 @@ void TagPanelWidget::rebuildSelectedItemTags(const std::vector<Tag>& tags)
 void TagPanelWidget::onTagChipClicked(Tag::Id tagId)
 {
     m_viewModel->requestTagSearch(tagId);
+}
+
+void TagPanelWidget::onSearchEditReturnPressed()
+{
+    m_viewModel->acceptSearchQuery();
+    m_searchEdit->clear();
+}
+
+void TagPanelWidget::updateSearchSuggestions(const std::vector<Tag>& tags)
+{
+    QStringList names;
+    names.reserve(static_cast<int>(tags.size()));
+    for (const Tag& tag : tags)
+    {
+        names.append(QString::fromStdString(tag.name()));
+    }
+    m_searchEdit->setSuggestions(names);
 }
 
 void TagPanelWidget::updateCreateTagAffordance(bool canCreate)

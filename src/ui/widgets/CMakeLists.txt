@@ -61,6 +61,8 @@ add_library(explorer_ui_widgets STATIC
     tags/TagChipColor.cpp
     tags/TagChipWidget.h
     tags/TagChipWidget.cpp
+    tags/TagSearchEdit.h
+    tags/TagSearchEdit.cpp
     tags/TagPanelWidget.h
     tags/TagPanelWidget.cpp
     tags/TagManagerDialog.h

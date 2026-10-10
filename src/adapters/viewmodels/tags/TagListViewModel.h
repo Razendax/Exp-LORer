@@ -61,6 +61,12 @@ public slots:
     // TagColorPalette) and immediately assigns it to the resolved target.
     void createAndAddTagFromQuery();
 
+    // Enter-key commit: assigns the existing exact-name match if there is one (same effect as the
+    // "+" button), otherwise creates the tag and assigns it (same effect as "Create tag"). No-op
+    // on an empty query, and a no-op if the exact match is already assigned to the target (it's
+    // excluded from m_searchResults already, so there's nothing to find).
+    void acceptSearchQuery();
+
     // Requirement 1/2: opens Advanced Search on the focused tab with tagId as a criterion. No-op
     // if there is no active/focused tab.
     void requestTagSearch(Tag::Id tagId);

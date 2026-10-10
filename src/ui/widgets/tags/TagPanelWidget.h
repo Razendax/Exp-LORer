@@ -8,10 +8,10 @@
 #include "UiColors.h"
 
 class FlowLayout;
-class QLineEdit;
 class QPushButton;
 class QVBoxLayout;
 class TagListViewModel;
+class TagSearchEdit;
 class UiThemeChangeNotifier;
 
 // The right-hand tag panel (Architecture.md §14.9, Specification.md "Tag Panel"): (1.1) a
@@ -43,7 +43,9 @@ private:
     void rebuildSearchResults(const std::vector<Tag>& tags);
     void rebuildSelectedItemTags(const std::vector<Tag>& tags);
     void updateCreateTagAffordance(bool canCreate);
+    void updateSearchSuggestions(const std::vector<Tag>& tags);
     void onTagChipClicked(Tag::Id tagId);
+    void onSearchEditReturnPressed();
     static void clearLayout(FlowLayout* layout);
 
     // Re-applies every recorded chip section's tint from UiColors::current() (Architecture.md
@@ -53,7 +55,7 @@ private:
     TagListViewModel* m_viewModel = nullptr;
 
     FlowLayout* m_folderTagsLayout = nullptr;
-    QLineEdit* m_searchEdit = nullptr;
+    TagSearchEdit* m_searchEdit = nullptr;
     FlowLayout* m_searchResultsLayout = nullptr;
     QPushButton* m_createTagButton = nullptr;
     FlowLayout* m_selectedItemTagsLayout = nullptr;
