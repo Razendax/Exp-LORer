@@ -519,35 +519,42 @@ layer redesign** — and is recorded as a decision log per feature, not an imple
 walkthrough; see git history and the code's own comments (many cite these subsection numbers
 directly) for the detail.
 
-The log grew too large for one document and is split across five files under `docs/features/`.
-Section numbers (§14.1–§14.70) are continuous across all five. **Keep each file at or under 1000
-lines** — if a file would grow past that, start a new numbered file (`06-...`, and so on) rather
-than letting it keep growing:
+The log grew too large for one document and is split across nine files under `docs/features/`,
+organized **by feature topic** rather than by when each was built. Section numbers (§14.1–§14.70)
+were assigned chronologically as each feature shipped and are kept stable within whichever file
+now holds them, since code comments cite them directly — so a file's own section numbers are not
+necessarily contiguous; each file's intro lists its exact set. **Keep each file at or under 1000
+lines** — if a file would grow past that, split its most self-contained sub-topic into a new file
+(picking the next free number in `docs/features/`, e.g. `10-...`) rather than letting it keep
+growing, and update both that file's intro and this index to match.
 
-* **[features/01-workspace-navigation-and-search.md](features/01-workspace-navigation-and-search.md)**
-  — §14.1–§14.26: split-window layout/tabs/panes, tag panel, clipboard file operations,
-  opening files, sort order, custom context menu, session persistence, "This PC", multi-selection, tag
-  manager dialog, filename/advanced/tag-integrated search, address bar autocomplete, hidden files,
-  startup logging/exception handling, bottom panel & terminal, right panel, file preview.
-* **[features/02-preview-decoration-and-status.md](features/02-preview-decoration-and-status.md)**
-  — §14.27–§14.33: text-preview syntax highlighting, per-pane status bar, archive
-  browsing/preview/extraction, per-file/folder font & color decoration, window-wide status bar, git
-  status badges, live directory update.
-* **[features/03-monitoring-git-and-productivity.md](features/03-monitoring-git-and-productivity.md)**
-  — §14.34–§14.43: recursive folder monitoring, git branch status/checkout, favorites,
-  notification system, async advanced search, customizable Details-view columns, disk usage/folder
-  size, left panel with folder tree, unified search tab, search tab follow-up fixes.
-* **[features/04-search-persistence-and-file-tools.md](features/04-search-persistence-and-file-tools.md)**
-  — §14.44–§14.56: quick-search match options (case/whole-word/exact/regex), quick-search
-  skip-git-ignored toggle, search tab inline advanced-search toggle & debounced quick search, custom
-  copy/move progress, left/right panel state persistence, per-tab column visibility persistence,
-  Light/Dark theme, duplicate file finder, disk fragmentation viewer, Details-view fragments column,
-  address bar environment-variable expansion, bulk/batch rename, advanced search match-mode toggles.
-* **[features/05-media-viewer-and-workspaces.md](features/05-media-viewer-and-workspaces.md)**
-  — §14.57–§14.70: environment variables view/edit, preview panel per-kind widget split, preview
-  panel layout/properties rework, named workspaces (File > Workspaces / Save as Workspace /
-  Workspace Management) with per-workspace multi-instance launching, Media Viewer mode (recursive
-  tag/name-filtered image/video gallery) and its follow-ups (thumbnail previews/metadata overlays,
-  decoder merge, video hover-scrub, loading progress, kind-scoped loading, built-in video player,
-  sort/view controls, filmstrip/details view modes), tag panel keyboard-driven autocomplete.
+* **[features/01-workspaces-and-panels.md](features/01-workspaces-and-panels.md)** — split-window
+  layout/panes/tabs, session persistence, the bottom/right/left collapsible panel shells (Terminal/
+  Tags/folder Tree), left/right panel state persistence, named workspaces (multi-instance launch).
+* **[features/02-file-operations-and-navigation.md](features/02-file-operations-and-navigation.md)**
+  — clipboard file operations, opening files, custom context menu, "This PC", multi-selection,
+  address bar autocomplete & environment-variable expansion, hidden files, custom copy/move with
+  progress notifications.
+* **[features/03-search.md](features/03-search.md)** — per-tab filename/advanced/tag-integrated
+  search, the unified left-panel Search tab, async advanced search, quick-search match-mode/
+  skip-git-ignored toggles, debounced quick search, advanced-search match-mode toggles.
+* **[features/04-tagging.md](features/04-tagging.md)** — the tag panel and selection tracking, the
+  Tag Manager dialog, tag panel keyboard-driven autocomplete.
+* **[features/05-preview-and-decoration.md](features/05-preview-and-decoration.md)** — the
+  right-panel file Preview tab (and its later per-kind-widget/layout rework), text-preview syntax
+  highlighting, archive browsing/preview/extraction, per-file/folder font & color decoration, the
+  built-in Widgets video player.
+* **[features/06-status-and-monitoring.md](features/06-status-and-monitoring.md)** — per-pane and
+  window-wide status bars, per-file git status badges, live directory update, recursive folder
+  monitoring, git branch status/checkout.
+* **[features/07-media-viewer.md](features/07-media-viewer.md)** — Media Viewer mode (recursive
+  tag/name-filtered image/video gallery) and its follow-ups: thumbnail previews/metadata overlays,
+  decoder merge, video hover-scrub, loading progress, kind-scoped loading, sort/view/filmstrip/
+  details controls.
+* **[features/08-disk-and-file-tools.md](features/08-disk-and-file-tools.md)** — customizable
+  Details-view columns (+ per-tab persistence), disk usage/folder size, duplicate file finder, disk
+  fragmentation viewer (+ Details-view fragments column), bulk/batch rename.
+* **[features/09-app-infrastructure.md](features/09-app-infrastructure.md)** — startup/exit
+  logging & fatal exception handling, favorites, notification system, Light/Dark theme, per-process
+  environment variables.
 

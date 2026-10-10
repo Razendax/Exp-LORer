@@ -16,18 +16,22 @@ these before implementing a new component or feature, refactoring the code, or m
 they define the layering, threading model, DB schema, file hashing strategy, and v1 scope exclusions in detail.
 Do not restate their content here — refer to them.
 
-`Architecture.md` §14 is a per-feature decision log that outgrew one file; it's split across
-`docs/features/01-workspace-navigation-and-search.md`, `docs/features/02-preview-decoration-and-status.md`,
-`docs/features/03-monitoring-git-and-productivity.md`, `docs/features/04-search-persistence-and-file-tools.md`,
-and `docs/features/05-media-viewer-and-workspaces.md` (section numbers §14.1–§14.70 are continuous
-across all five). `Architecture.md` itself still holds §1–§13 (the core architecture) plus a short
-index into those five files — read the relevant one(s) for the feature you're touching.
+`Architecture.md` §14 is a per-feature decision log that outgrew one file; it's split **by feature
+topic** across nine files under `docs/features/` — `01-workspaces-and-panels.md`,
+`02-file-operations-and-navigation.md`, `03-search.md`, `04-tagging.md`,
+`05-preview-and-decoration.md`, `06-status-and-monitoring.md`, `07-media-viewer.md`,
+`08-disk-and-file-tools.md`, `09-app-infrastructure.md`. Section numbers (§14.1–§14.70) were
+assigned chronologically as each feature shipped and are kept stable wherever they now live, since
+code comments cite them directly — so a given file's own numbers are not necessarily contiguous;
+each file's intro lists its exact set. `Architecture.md` itself still holds §1–§13 (the core
+architecture) plus a short index into those nine files — read the relevant one(s) for the feature
+you're touching, picking by *topic*, not by guessing a section-number range.
 
-Keep each `docs/features/*.md` file at or under **1000 lines**. When a plan-mode doc update (step 3
-below) would push a file past that, split the overflow into a new, next-numbered file instead of
-letting it keep growing — give it its own descriptive name, update the cross-file "Covers §.../
-Preceded by/Continued in" header on every file in the chain, and update `Architecture.md` §14's
-index the same way.
+When a feature's decision-log entry needs to be added (step 3 below), pick whichever existing
+`docs/features/*.md` file its topic fits best and append the new §14.N section there, updating
+that file's "Covers §..." intro. If the feature doesn't fit any existing file's topic well, create
+a new topically-named file (next free number, e.g. `10-...`) instead of forcing it into a
+loosely-related one, and add it to `Architecture.md` §14's index.
 
 ## Development Workflow
 

@@ -1,18 +1,95 @@
-# Architecture Document — Feature Decision Log: Preview, Decoration & Status Bars
+# Architecture Document — Feature Decision Log: Preview & Decoration
 
 Continues [Architecture.md](../Architecture.md) §14. Everything here extends the UI/Adapters
 layers only — **no Domain or Application layer redesign** — and is recorded as a decision log
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.27–§14.33. Preceded by
-[01-workspace-navigation-and-search.md](01-workspace-navigation-and-search.md) (§14.1–§14.26);
-continued in
-[03-monitoring-git-and-productivity.md](03-monitoring-git-and-productivity.md) (§14.34–§14.43),
-[04-search-persistence-and-file-tools.md](04-search-persistence-and-file-tools.md) (§14.44–§14.56),
-and [05-media-viewer-and-workspaces.md](05-media-viewer-and-workspaces.md) (§14.57–§14.70).
+Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67 — the right-panel file Preview tab, its
+text-preview syntax highlighting, archive browsing/preview/extraction, per-file/folder font &
+color decoration, the Preview panel's dedicated per-kind widgets and media-layout rework, and the
+built-in Widgets video player (first used here, before Media Viewer mode reused it). Section
+numbers are **not** contiguous with this file's neighbors — they were assigned chronologically as
+each feature was built and are kept stable since code comments cite them directly. See
+[Architecture.md](../Architecture.md) §14 for the full topic index across all nine files.
 
 ---
+### 14.26 Right-Panel File Preview (Preview Tab)
+
+A second `RightPanelWidget` tab, "Preview" (§14.25's panel already supports more than one tab with
+no further plumbing), showing content for whatever the focused pane/tab currently has selected —
+or its browsed folder when nothing is selected, same resolution rule `TagListViewModel::
+resolveTarget()` already uses for the tag panel (§14.9). This is also the first concrete
+implementation of `adapters/media` (previously `.gitkeep` only) and the first feature to actually
+do background-thread Port dispatch (§5).
+
+* **Scope by file type:** a directory shows its immediate children only (directories first, then
+  files, both alphabetical — not a recursive tree); a recognized text/source extension
+  (txt/html/xml/json/md/ini/log/yaml/csv, common source extensions cs/cpp/h/hpp/c/py/js/ts/css/…)
+  shows a capped byte-prefix of its content, falling back to "unsupported" if a `\0` appears in
+  that prefix (binary guard); an image extension (jpg/png/bmp/gif/webp) shows a scaled preview
+  decoded via **libvips** (new vcpkg dependency), per the product requirement to use that library
+  specifically rather than Qt's own image codecs; a video extension (mp4/mkv/avi/mov/…) shows a
+  scaled **static poster frame** decoded via FFmpeg (already a dependency) — no inline playback,
+  which belongs to the still-unbuilt full-window QML viewer (Specification §2.3/§2.4) instead.
+  Anything else shows "no preview available."
+* **`FilePreviewUseCase`** (new, `src/application`) — stateless, depends on
+  `IFileSystemRepository` (folder listing via the existing `listDirectory`; a new
+  `readFilePrefix(path, maxBytes)` method for text) and `IMediaDecoder` (image/video thumbnail
+  bytes, reusing the existing `generateThumbnail(path, maxWidth, maxHeight)` contract) — never on
+  `MediaProcessingUseCase` or any other use case, preserving this layer's "depend on Ports only"
+  testability posture (§11). Returns a new Domain entity, `FilePreview` (kind + folder
+  entries/text/image-or-poster bytes).
+* **`adapters/media`** (new target `explorer_adapters_media`): `MediaDecoder` — the concrete
+  `IMediaDecoder` dispatching by extension to `VipsImageDecoder` (images, libvips end to end:
+  decode, resize, JPEG-encode) or `FFmpegMediaDecoder` (video, one representative frame via
+  libavformat/libavcodec, scaled via libswscale, JPEG-encoded via libavcodec's MJPEG encoder) —
+  each self-contained, not cross-calling the other, keeping the two backends independently
+  swappable. `ThumbnailCache` + `CachingMediaDecoder` (§8) sit in front as a transparent decorator,
+  so `FilePreviewUseCase` never sees caching logic.
+* **`FilePreviewViewModel`** (new, `adapters/viewmodels`) — the shared ViewModel, owned by
+  `WorkspaceController` and retargeted via `setActiveTab()` exactly like `TagListViewModel` (§14.9)
+  — a **distinct component from the still-unbuilt `MediaPreviewViewModel`** named in §2.3, which is
+  QML-facing state for the future full-window viewer, not this panel; the two must not be
+  conflated. Owns one dedicated background `QThread` + `FilePreviewWorker` (one always-alive
+  worker, not a pool — only one active preview needed at a time), the same "one background thread,
+  results marshaled back via a queued signal" shape `WindowsConPtyProcess` already established
+  (§14.24). A `setPanelActive(bool)` slot, driven by the widget's `showEvent`/`hideEvent`, stops
+  background work while the Preview tab isn't the visible one and catches up immediately on
+  reactivation. Cancellation is a generation-id fence (§5) — switching the selection bumps a
+  counter, and a result that arrives for a stale generation is dropped, never shown; the
+  in-flight libvips/FFmpeg call itself still runs to completion, since neither library exposes a
+  mid-call abort. A small in-memory LRU (~20 entries) caches `Text`/`Folder` results only —
+  image/video results are already cached on disk by `CachingMediaDecoder`, so caching them a
+  second time here would be redundant.
+* **`PreviewPanelWidget`** (new, `src/ui/widgets`) — a `QStackedWidget` switching between an image/
+  poster `QLabel`, a read-only monospace `QPlainTextEdit` for text, a flat `QListWidget` (existing
+  `QFileIconProvider` icons) for the one-level folder listing, and loading/unsupported/error
+  states, driven by `FilePreviewViewModel`'s signals. `MainWindow::createWorkspace` adds it as a
+  second `RightPanelWidget` tab next to "Tags" — no change needed to `RightPanelWidget` itself.
+* **Not built:** video playback; a recursive/multi-level folder tree; animated-GIF playback beyond
+  a static first frame (goes through the image path); full-content display beyond the byte cap
+  (syntax highlighting of the shown prefix is covered by §14.27); a Linux media-decoding backend.
+  Persisting which panel tab (including this one) is active and expanded is covered by §14.48,
+  superseding the "matches §14.24's existing unpersisted posture" note this bullet previously had
+  for the Preview tab specifically — the bottom panel (§14.24) itself remains unpersisted.
+* **Image/video info + zoom label:** `FilePreviewUseCase` now also calls
+  `IMediaDecoder::extractMetadata()` for Image/Video targets (alongside the existing
+  `generateThumbnail()` call), and `FilePreview::image()`/`video()` carry the target's path plus
+  the resulting `MediaMetadata` (width/height, and bit rate for video via FFmpeg's
+  `AVFormatContext::bit_rate`) — a zero-valued `MediaMetadata` on extraction failure rather than
+  failing the whole preview, same graceful-degradation posture as the text path's binary guard.
+  `PreviewPanelWidget`'s image/poster stack page gained two labels around the existing pixmap
+  label: an info line (fullname + resolution, + bit rate for video) and a bottom zoom line
+  showing the displayed pixmap size as a percentage of the file's actual resolution, recomputed
+  whenever the panel resizes.
+
+*Superseded in part by §14.58:* `PreviewPanelWidget` no longer owns each kind's Qt widgets
+directly — it now delegates to three dedicated per-kind widgets (`MediaPreviewWidget`,
+`TextPreviewWidget`, `FolderPreviewWidget`), added so that a future preview kind can be introduced
+as one new self-contained widget rather than by editing this shared file's constructor/member
+list/switch statements. Pure internal restructuring; the behavior and bullets above are otherwise
+unchanged.
 
 ### 14.27 Text-Preview Syntax Highlighting
 
@@ -80,51 +157,6 @@ Qt/SQLite/FFmpeg — but this is a presentation concern, not a Domain/Applicatio
   presets, or a "reset to defaults" button; automated UI coverage for `SettingsDialog`/
   `SyntaxHighlighter` beyond `SyntaxHighlightEngine`'s own GTest coverage (§11's existing UI/
   ViewModel-glue carve-out).
-
-### 14.28 Per-Pane Status Bar
-
-A persistent status bar shown at the bottom of every pane, reporting the currently focused
-tab's object count / selection count and hosting a quick-select field — distinct from
-`MainWindow`'s existing `QMainWindow::statusBar()` (a transient, window-wide 5-second
-auto-hiding message bar for navigation/search failures, `MainWindow::onStatusMessage`), which is
-unchanged by this feature.
-
-* **One widget per pane, rebound to the active tab** — the same shape `WorkspacePaneWidget`
-  already uses for its toolbar (address bar, back/forward/up): a single `StatusBarWidget`
-  instance, not one per tab page, so the existing per-tab splitter/`QStackedWidget` structure
-  (`addPageForTab`, §14.24) is untouched. `bindToolBarToTab()` — already the tab-switch rebind
-  point — additionally wires the new tab's `directoryContentsChanged`, `searchResultsChanged`,
-  `advancedSearchResultsChanged`, `searchModeChanged`, `advancedSearchModeChanged`, and
-  `selectedEntriesChanged` signals to a `refreshStatusCounts()` handler that reads the counts
-  directly off the tab (`advancedSearchActive()`/`searchActive()` pick which of
-  `fileListModel()`/`searchResultsModel()`/`advancedSearchResultsModel()`'s `rowCount()` is
-  "current", plus `selectedEntries().size()`), so it's correct regardless of which signal fired.
-* **`StatusBarWidget`** (new, `src/ui/widgets`) — a plain display widget, same posture as
-  `AddressBarWidget`: a `QLabel` (`"<N> items"`, or `"<N> items, <M> selected"` once something is
-  selected) plus a `QLineEdit` quick-select field emitting `quickSelectTextChanged(QString)` on
-  every keystroke; Escape clears it. No `TabViewModel`/`FileListModel` dependency — it only
-  emits signals, `WorkspacePaneWidget` mediates, exactly like the address bar's
-  `folderSuggestionsRequested` (§14.21). Fixed height, appended below `m_tabWidget` in
-  `WorkspacePaneWidget`'s own top-level layout (not inside any per-tab splitter).
-* **Quick select** (`FileBrowserView::selectEntriesContaining(text)`, new) — a linear scan over
-  the currently active tab page's model (mirroring `indexForPath`'s existing scan), matching
-  against the Name column's *displayed* text (`Qt::DisplayRole`, so synthetic `displayName()`
-  overrides like "This PC" drives, §14.15, match what's typed) rather than `FileNode::name()`
-  directly. Every case-insensitive substring match (anywhere in the name, not just a prefix) is
-  selected; the first match is scrolled into view. Empty text is a no-op (leaves the existing
-  selection alone); no match clears the selection. `WorkspacePaneWidget` resolves "the currently
-  active tab page's browser view" via a new `currentBrowserView()` helper, factored out of the
-  unwrap `onViewModeChanged()`/`currentColumnWidths()` already duplicated (splitter →
-  `QStackedWidget` → `FileBrowserView`-or-`SearchResultsPane::browserView()`).
-* **Reset points:** the quick-select field is cleared (`StatusBarWidget::clearQuickSelect()`) on
-  tab switch and on the bound tab's `currentPathChanged`/search-mode-toggle signals, since the
-  visible item set changes completely at each of those points — same ephemeral-per-context
-  posture as the quick-search/advanced-search boxes' own state (§14.18/§14.19).
-* **Not built:** cycling through multiple matches (Tab/F3) — all matches are selected at once;
-  persisting the quick-select text across navigation or restart; per-tab status bar instances.
-  No Domain/Application change — every count and listing the bar needs already exists on
-  `TabViewModel`/`FileListModel`. No automated coverage: pure UI/ViewModel glue, same carve-out
-  as the toolbar and address-bar autocomplete (§11).
 
 ### 14.29 Archive Browsing, Preview, and Extraction (Read-Only)
 
@@ -331,204 +363,159 @@ adapter-layer pure logic plus Qt-facing config/ViewModel/UI, mirroring the
   UI/ViewModel-glue carve-out; the pure `FileNamePattern`/`FileDecorationRule`/`FileDecorationRules`
   logic and `FileDecorationRulesStore`'s round trip are GTest-covered.
 
-### 14.31 Window-Wide Status Bar
+### 14.58 Preview Panel: Dedicated Per-Kind Widgets
 
-A persistent, window-wide bar at the very bottom of the application — outside any pane/tab, unlike
-`StatusBarWidget` (§14.28, one instance per pane, item/selection counts + quick-select). Shows,
-left-aligned, the focused pane's active tab's drive (`"<label> — <free> free of <total>"`) and,
-centered, the machine's computer name (`QSysInfo::machineHostName()`, set once — no Port, not
-filesystem-related).
+Pure internal restructuring of `PreviewPanelWidget` (§14.26) — no behavior change, no Domain/
+Application/Port change. Before this, `PreviewPanelWidget` built and owned every preview kind's Qt
+widgets directly (an image/poster composite page, a `QPlainTextEdit`, a `QListView` +
+`FolderPreviewListModel`, plus loading/unsupported/error `QLabel`s) and held all the per-kind
+rendering logic (`showImage`/`showText`/`showFolder`/`rescaleImageLabel`) itself, dispatched from
+one `onPreviewReady()` switch. Extending that file for a future preview kind meant editing its
+constructor, member list, and switch statements all at once.
 
-* **Reuses `QMainWindow::statusBar()`** rather than a second independent bottom widget — it is
-  already bottom-of-window, full-width, and tab-agnostic. `statusBar()` was previously used only
-  for `MainWindow::onStatusMessage`'s transient, 5-second auto-hiding failure messages
-  (`showMessage()`), which is unchanged. `QStatusBar` keeps "normal" widgets (`addWidget`, hidden
-  while a transient message shows) separate from "permanent" widgets (`addPermanentWidget`, never
-  hidden) — the new content is added as a single permanent widget with stretch factor 1
-  (`statusBar()->addPermanentWidget(m_mainStatusBarWidget, 1)`), so with nothing else competing for
-  space it expands to the whole bar width in the common case, only compressing toward the right
-  during the rare seconds a transient message is showing.
-* **`MainStatusBarWidget`** (new, `src/ui/widgets`) — a plain display widget, same posture as
-  `AddressBarWidget`/`StatusBarWidget`: an internal `[driveLabel, stretch, computerNameLabel,
-  stretch]` `QHBoxLayout` (the second stretch both centers the computer name and reserves room for
-  a possible future right-hand section) and one setter, `setDriveInfoText(QString)` — empty string
-  blanks it. No `TabViewModel`/use-case dependency.
-* **`IFileSystemRepository::driveSpaceInfo(path)`** (new Port method) resolves the drive/volume
-  containing `path` (any path on it) to a `DriveSpaceInfo{ displayLabel, freeBytes, totalBytes }`
-  (new plain-data type, `src/application/DriveSpaceInfo.h`) — `displayLabel` is fully resolved
-  UTF-8 text by the adapter (reusing the same `DriveLabel::driveDisplayLabel` helper and
-  `GetDriveTypeW`/`GetVolumeInformationW` calls `StandardFileSystemRepository`'s `buildDriveNode()`
-  already makes for "This PC", §14.15), so no OS-specific type crosses the Application boundary —
-  same posture as `FileNode::displayName()`. `GetDiskFreeSpaceExW` supplies the byte counts.
-  Failure (the "This PC" sentinel, an archive-virtual path, or an unreachable volume) is tolerated
-  by simply blanking the label, same as `buildDriveNode()`'s `nullopt` case. `FileNavigationUseCase`
-  and `TabViewModel` each add a thin passthrough (`TabViewModel::driveSpaceInfo()` calling
-  `m_fileNavigationUseCase.driveSpaceInfo(currentPath())`), the same shape as existing
-  single-Port-call wrappers (e.g. `showProperties`).
-* **Refresh points:** `MainWindow` tracks the focused pane's active tab the same way it already
-  does for sort/search (`m_sortTrackedTab`/`m_searchTrackedTab`) with a new
-  `m_driveInfoTrackedTab`, connecting its `currentPathChanged` to re-fetch and reformat the drive
-  label. Updates on tab-focus change and on navigation only — same event-driven-only posture as
-  §14.28's own refresh, no timer/polling.
-* **Threading:** kept synchronous on the UI thread, same as `buildDriveNode()`'s identical Win32
-  calls during "This PC" enumeration (§14.15) and consistent with §5's accepted "most Port calls
-  are still synchronous" gap.
-* **Testing:** `driveSpaceInfo()`'s adapter implementation depends on live, per-machine drive
-  state exactly like `buildDriveNode()` — covered by the same §11 carve-out ("live drive/known-
-  folder enumeration... not covered by automated adapter tests"). The `FileNavigationUseCase`
-  passthrough is covered by an ordinary mock-based test, per §11. `DriveLabel` is unchanged/reused
-  as-is.
-* **Not built:** live/periodic refresh while idle in the same folder; a populated right-hand
-  section (layout reserves room for one); non-Windows implementations (a future Linux backend
-  implements `driveSpaceInfo` behind the same Port, matching every other Windows-specific adapter
-  call); any change to `StatusBarWidget` or `onStatusMessage`'s transient-message behavior.
+* **`MediaPreviewWidget`** (new, `src/ui/widgets`) — a composite `QWidget` (info `QLabel` + pixmap
+  `QLabel` + zoom `QLabel`, same three-label layout the old image page used) covering both
+  `FilePreviewKind::Image` and `::Video`, since their rendering is otherwise byte-identical (same
+  JPEG-decoded poster bytes; video only adds a bitrate suffix to the info line). Exposes
+  `bool setPreview(const FilePreview&)`, returning `false` on a decode failure (null pixmap) so the
+  caller falls back to its own shared "unsupported" label rather than this widget needing to know
+  that label exists. Owns its own `resizeEvent` override to rescale its pixmap/recompute the zoom
+  label — `PreviewPanelWidget::resizeEvent` is gone entirely now that nothing else needs it.
+* **`TextPreviewWidget`** (new) — subclasses `QPlainTextEdit` directly rather than wrapping one,
+  the same "dedicated widget that just *is* a specialized Qt view/edit control" pattern
+  `FolderTreeView` (§14.41) already established for `QTreeView`. Owns its own `SyntaxHighlighter`
+  (§14.27), constructed from the `SyntaxHighlightEngine&`/`HighlightThemeViewModel&` it now takes
+  directly instead of `PreviewPanelWidget` plumbing them through. Exposes `setPreview(const
+  FilePreview&)`.
+* **`FolderPreviewWidget`** (new) — subclasses `QListView` directly, same pattern; owns its own
+  `FolderPreviewListModel` (unchanged). Exposes `setPreview(const FilePreview&)`.
+* **`PreviewPanelWidget`** is now a thin coordinator: constructs the three widgets above plus the
+  three status `QLabel`s, and `onPreviewReady()` just calls the matching widget's `setPreview()`
+  and switches the stack to it (falling back to the unsupported label when `MediaPreviewWidget::
+  setPreview` returns `false`). All objectNames (`previewImageLabel`, `previewImageInfoLabel`,
+  `previewZoomLabel`, `previewTextView`, `previewFolderList`, `previewLoadingLabel`,
+  `previewUnsupportedLabel`, `previewErrorLabel`, `previewPanelWidget`) are unchanged, so
+  `ui_tests/framework/automation_id.py` needed no edits.
+* **Not built / changed:** no new preview kind, no `FilePreviewViewModel`/`FilePreviewUseCase`/
+  `FilePreview` change — this section is UI-layer only. `MainWindow`'s construction of
+  `PreviewPanelWidget` is unchanged (same public constructor signature).
+* **Testing**: no CTest coverage, consistent with §11's "UI is not covered by CTest in v1" — same
+  carve-out the original §14.26 widget already fell under. `ui_tests/` needed no changes since
+  every automation id resolves by objectName + Qt widget type, both unchanged.
 
-### 14.32 Git Status Integration (Details View)
+### 14.59 Preview Panel: Media Layout Rework (Name/Image/Properties/Zoom) + Smaller Folder Icons
 
-Per-file/folder git working-tree status badges in the Details-view file list, computed via
-**libgit2** (the plain C library — not libqgit2, which isn't in vcpkg's registry; libgit2 is
-wrapped by our own adapter, same posture as libarchive/libvips/FFmpeg/tree-sitter, so "use a
-wrapper, never the library directly" is satisfied the same way it already is for those). One status
-per file: `??` Untracked, `M` staged/unstaged (Modified), `A` staged (Added), `D` staged/unstaged
-(Deleted), `!!` Ignored — seven `GitFileStatus` values total, each mapped to a small colored badge
-icon (purple/blue/yellow/green/red/orange/grey respectively) rendered in a new column appended
-after Date Modified.
+`MediaPreviewWidget` (§14.58) packed the filename, resolution, and (for video) bitrate into one
+info line above the image, and centered the image both horizontally and vertically in the space
+below it. Reworked into four clearly separated rows, top to bottom: the full filename alone, the
+poster/thumbnail (top-aligned, `Qt::AlignHCenter | Qt::AlignTop`, no longer vertically centered), a
+properties block, and the unchanged zoom label.
 
-* **New Port**, `IGitStatusProvider` (`src/application`) — kept separate from
-  `IFileSystemRepository` (Interface Segregation, same reasoning that already keeps
-  `IContextMenuProvider`/`IMediaDecoder` as their own Ports): `statusForDirectory(directory) ->
-  Result<GitDirectoryStatus>`, where `GitDirectoryStatus` (`src/application/GitDirectoryStatus.h`,
-  a plain Port-adjacent data type, same posture as `DriveSpaceInfo`) holds an optional repository
-  root plus a `path -> GitFileStatus` map for `directory`'s immediate children only. `directory` not
-  inside any repository is `Ok({nullopt, {}})`, not an error — same "tolerate by blanking" posture
-  §14.31 established for `driveSpaceInfo`. **`GitStatusUseCase`** (new, stateless, depends only on
-  `IGitStatusProvider&`) is a thin passthrough, same single-Port-dependency shape as
-  `FilePreviewUseCase`.
-* **`src/adapters/git`** (new module, `explorer_adapters_git`, mirrors `adapters/archive`):
-  `LibGit2Repository` — the RAII wrapper around libgit2 itself (the only place its headers are
-  included): `open(startDirectory)` discovers a repository walking upward (`Err` if none found —
-  satisfies "in the current folder or a subfolder"), `statusForImmediateChildren(relativeDirectory)`
-  runs `git_status_list_new` scoped to that directory via `options.pathspec` (so a large repo isn't
-  fully re-walked on every navigation) with `GIT_STATUS_OPT_INCLUDE_UNTRACKED |
-  GIT_STATUS_OPT_INCLUDE_IGNORED`, `RECURSE_UNTRACKED_DIRS` left off — an entirely-untracked
-  subfolder is reported as itself (a single entry) rather than walked file-by-file, a real perf win
-  in large repos. Status-flag → `GitFileStatus` mapping has an explicit priority order for a
-  partially-staged file (worktree status wins over index status; see the plan record for the full
-  list) since req. "one status per file" rules out showing both. `LibGit2StatusProvider` implements
-  the Port on top of this, translating a "no repository found" `Err` into `Ok({nullopt, {}})` rather
-  than propagating it, and **rolls a nested entry up onto its immediate-child ancestor directory**
-  (the first path segment past `directory`) rather than dropping it — a modified file several levels
-  deep stays visible without opening every intermediate folder. A folder that rolls up more than one
-  nested change keeps its highest-priority one, via a rollup-specific priority order (its own
-  ranking, not the flag-collapsing one above): Conflicted, Untracked, DeletedUnstaged,
-  ModifiedUnstaged, DeletedStaged, AddedStaged, ModifiedStaged, Ignored last — Ignored sits at the
-  bottom here specifically so an ignored build artifact next to a genuinely modified tracked file in
-  the same folder doesn't hide the modification behind an "Ignored" badge on the folder row.
-* **Threading** — one dedicated background `QThread` (`GitStatusService` +
-  `GitStatusWorker`, `src/adapters/viewmodels`), same "one always-alive worker, not a pool" shape as
-  `FilePreviewViewModel`/`WindowsConPtyProcess`; every open tab/pane's status requests serialize
-  through it, sidestepping any libgit2 thread-safety question by construction (never touched from
-  two threads at once) the same way `SQLiteTagRepository` avoids `SQLITE_BUSY` by serializing DB
-  access (§5). Dispatch is `QMetaObject::invokeMethod` with a captured functor across both hops, not
-  real Qt signals — same reasoning `FilePreviewWorker.h` documents for avoiding meta-type
-  registration for non-default-constructible `Result<T>` payloads. `GitStatusService::requestStatus`
-  takes a `QObject* context` and guards its reply-marshaling callback with a `QPointer<QObject>`, so
-  a request outliving its requester (e.g. a closed tab) is silently dropped rather than dereferencing
-  a dangling `this`.
-* **Dispatch point is `TabViewModel`, not `FileListModel`** — `FileListModel` gains no new
-  constructor dependency, only a plain `setGitStatuses(...)` slot (storing the map, emitting
-  `dataChanged` for the new column), keeping it decoupled from git entirely, the same posture
-  `resolveDecoration()` keeps it decoupled from `FileDecorationsViewModel`'s concrete type (§14.30).
-  `TabViewModel` gains a `GitStatusService&` constructor dependency (threaded through
-  `WorkspacePaneViewModel`/`WorkspaceController` exactly like `TagManagementUseCase&`) and dispatches
-  a request on every `directoryContentsChanged` — the single funnel point `loadAndApply` already
-  provides for every navigation entry point, including the existing `refresh()` used after in-app
-  file operations, so a status refresh after e.g. a paste comes for free with no new wiring. Only the
-  tab's primary browsing `FileListModel` is wired this way — the two search-result `FileListModel`
-  instances never receive `setGitStatuses()`, which is how quick-search/advanced-search are excluded
-  (below) with no extra flag.
-* **`FileListModel`**: new `Column::GitStatusColumn`, appended after `DateModifiedColumn` (no
-  existing column index shifts). "Details view only" falls out for free from the existing
-  `QTreeView`/`QListView` split (§2.3.1) — `QListView`'s icon/list/tile modes already only read
-  column 0. `data()` returns `{}` (no badge) for any entry not present in the status map; a hit
-  returns a cached 16×16 badge icon (`Qt::DecorationRole`, one per `GitFileStatus` value, built
-  once) plus a human-readable `Qt::ToolTipRole` string. Synthetic rows are skipped, same as
-  decorations.
-* **Not built:** status in quick-search/advanced-search result views (those `FileListModel`
-  instances span arbitrary directories, which doesn't fit a per-directory status query — a
-  deliberate v1 scope cut); rollup past the immediate-child level (a folder's badge reflects
-  changes anywhere in its subtree, but a grandchild folder itself gets no separate entry unless
-  `directory` is queried directly for it); live/background refresh outside of navigation (no
-  filesystem or `.git`-index watcher — matches
-  §14.31's "event-driven only" precedent); rename detection (no "R" status in scope); any stage/
-  unstage/commit/other write action — read-only display only. No automated coverage for the
-  `FileListModel`/`TabViewModel`/`GitStatusService` glue, per the same §11 UI/ViewModel-glue
-  carve-out `FilePreviewViewModel`/`DriveSpaceInfoWorker` already fall under; `GitStatusUseCase` is
-  covered by an ordinary mock-based test and `LibGit2StatusProvider` by a real-temp-repo adapter
-  test (initialized via libgit2's own `git_repository_init`, not a `git` CLI shell-out), per §11.
+* **`MediaPreviewWidget`**: `m_infoLabel` (objectName `previewImageInfoLabel`) split into
+  `m_nameLabel` (`previewImageNameLabel`, filename only, bold and two points larger than the
+  default label font) and `m_propertiesLabel` (`previewImagePropertiesLabel`, one line each for
+  Resolution, Length (`::Video` only, `metadata.duration()` formatted `mm:ss`/`hh:mm:ss`), Bitrate
+  (`::Video` only), and Size, each shown only when the underlying value is known/positive), the
+  latter now wrapped in a `QGroupBox` titled "Properties"
+  (`previewImagePropertiesGroupBox`) instead of sitting bare in the layout. `m_imageLabel`'s
+  alignment changed from `Qt::AlignCenter` to `Qt::AlignHCenter | Qt::AlignTop`.
+  `ui_tests/framework/automation_id.py` defines neither old nor new info-label/group-box id (only
+  `PREVIEW_IMAGE_LABEL`), so no edit needed there.
+* **Shrink responsiveness fix**: `m_imageLabel` previously kept Qt's default size policy, so its
+  `sizeHint()`/`minimumSizeHint()` tracked whatever pixmap `rescaleImage()` had last set (i.e. the
+  prior, larger panel size) — shrinking the right panel's splitter couldn't make incremental
+  progress against that stale hint and instead jumped straight to the overall minimum on release.
+  Expanding was unaffected since a growing hint never blocks growth. Fixed by setting
+  `QSizePolicy::Ignored` on both axes plus an explicit `setMinimumSize(1, 1)`, so the layout no
+  longer consults the label's size hint at all and `resizeEvent()` → `rescaleImage()` tracks the
+  splitter continuously in both directions.
+* **Fixed-width fix**: `m_nameLabel`/`m_propertiesLabel` kept Qt's default (`Preferred`, which has
+  `ShrinkFlag` set) horizontal size policy, so per `qSmartMinSize()` the layout's floor for each was
+  `minimumSizeHint().width()` — for a word-wrapped `QLabel`, that's the width of its widest
+  *unbreakable* run of characters. A long filename (or property value) with no spaces can't wrap at
+  all, so its minimum width was its full unwrapped text width, forcing the whole right panel/splitter
+  wider whenever such a file was previewed, and it never shrank back (splitters only grow to satisfy
+  a rising minimum). Fixed by setting the horizontal policy on both labels to `QSizePolicy::Ignored`
+  (vertical policy unchanged), which drops that floor to 0 while word-wrap/`heightForWidth` still
+  reflow the text correctly within whatever width the layout actually hands it.
+* **`FilePreview`** (Domain, additive): `image()`/`video()` now take a `std::uintmax_t
+  fileSizeBytes` parameter, exposed via new accessor `fileSizeBytes()` (0 for every other kind) —
+  the same graceful-degradation posture as the rest of the entity, not a reshape of its existing
+  shape. `FilePreviewUseCase::generatePreview()` threads `target.size()` (already stat'd as part of
+  the `FileNode` passed in — no new filesystem call) through to both factory calls.
+* **`FolderPreviewWidget`** (§14.26): now calls `setIconSize(QSize(16, 16))` and
+  `setUniformItemSizes(true)` on construction — folder-preview rows previously used
+  `QListView`'s unset (style-default, visually large) icon size; 16×16 matches the icon size
+  `FileBrowserView` already uses for its own `ViewMode::List`/`::Details`.
+* **Not built/changed**: no new `FilePreviewKind`, no `IMediaDecoder`/`IFileSystemRepository`
+  change, no `FilePreviewViewModel` change.
+* **Testing**: `tests/domain/FilePreviewTest.cpp` and
+  `tests/application/FilePreviewUseCaseTest.cpp` updated for the new `fileSizeBytes` parameter/
+  accessor. No UI test changes (automation ids above unaffected); UI is still not covered by CTest
+  in v1 (§11).
 
-### 14.33 Live Directory Update (Visible Tabs, Non-Recursive)
+### 14.67 Simple Built-In Video Player (Widgets, not QML)
 
-Automatically reflects a file being created/deleted/modified in a browsed folder without the user
-pressing Refresh — scoped to the tabs currently **shown** (the active tab of each pane the current
-`SplitLayout` makes visible: 1 in Single, 2 in a split, 4 in the grid) and to that folder's
-**immediate children only**, never a nested subdirectory.
+Specification.md §2.4 and the original Architecture.md sketch called for a full-window QML viewer
+(`MediaPreviewViewModel`, via `QQuickWidget`) for video playback, but no QML file was ever added to
+the project -- every other media feature (poster frames, grid hover previews, §14.26/§14.58/
+§14.64) shipped in plain Qt Widgets instead. Rather than introduce the project's first QML surface
+and `Quick`/`Qml`/`QQuickWidget` CMake plumbing for what the user wants kept simple, the player is
+plain Qt Widgets + Qt Multimedia (`QMediaPlayer`/`QVideoWidget`/`QAudioOutput`), consistent with the
+rest of the codebase. `qtmultimedia`'s vcpkg port already default-builds the `widgets` feature and
+the `ffmpeg` decode backend, so no `vcpkg.json` change was needed -- only `find_package(Qt6 ...
+Multimedia MultimediaWidgets)` at the top level and linking those two modules into
+`explorer_ui_widgets`.
 
-* **New Port**, `IDirectoryWatcher` (`src/application`) — kept separate from
-  `IFileSystemRepository`, same Interface Segregation reasoning as `IGitStatusProvider`/
-  `IContextMenuProvider`/`IMediaDecoder`: `watch(directory, std::function<void()> onChanged) ->
-  Result<DirectoryWatchId>` (multiple independent watches on the same directory are allowed) /
-  `unwatch(DirectoryWatchId)`. A non-real path (the "This PC" sentinel, an archive-virtual path, a
-  path that no longer exists) surfaces as a `Result` failure rather than crashing; the caller
-  simply doesn't get live updates for that tab (same "tolerate by blanking" posture as
-  `driveSpaceInfo`, §14.31). **`DirectoryWatchUseCase`** (new, stateless, single-Port-dependency
-  passthrough, same shape as `GitStatusUseCase`).
-* **`src/adapters/filesystem`** gains `StandardDirectoryWatcher` (implements the Port on top of
-  one owned `QFileSystemWatcher` — chosen over hand-rolling `ReadDirectoryChangesW` because it's
-  already non-recursive per directory by construction, and its Windows backend watches
-  name/attribute/size/last-write changes of immediate children, covering create/delete/rename/
-  modify for free; it also gives a future Linux port (inotify backend) for free) and
-  `DirectoryWatchRegistry` (pure C++, no Qt — refcounted path→watcher-callbacks bookkeeping
-  deciding when to actually start/stop the native watch — same "pure logic factored out of OS
-  glue" split as `AnsiTerminalBuffer`/`WindowsConPtyProcess`, GTest-covered). Path conversion goes
-  through `.wstring()` → `QString::fromStdWString(...)`, never `.string()`/`PathUtf8::toUtf8()`
-  (§6). This is `adapters/filesystem`'s first Qt dependency (`Qt6::Core`, for
-  `QFileSystemWatcher`/`QObject`) — `StandardFileSystemRepository`/`DriveLabel` use plain
-  `std::filesystem`/Win32 only.
-* **`DirectoryWatchService`** (new, `src/adapters/viewmodels`) — owned long-lived by
-  `WorkspaceController` (constructed internally, same posture as `TagListViewModel`/
-  `FilePreviewViewModel`/`FileOperationsController`). `setVisibleTabs(tabs)` diffs against the
-  currently-watched set: newly-visible tabs are watched *and* refreshed once immediately to catch
-  up on anything missed while unwatched (mirrors `FilePreviewViewModel::setPanelActive(true)`'s
-  reactivate-and-catch-up posture); no-longer-visible tabs are unwatched. Each watched tab tracks
-  its `DirectoryWatchId`, a ~400ms debounce `QTimer` (coalesces a burst of native change events —
-  e.g. a multi-file copy — into one refresh), and connections to that tab's `currentPathChanged`
-  (re-point the watch at the new directory, same tab stays watched) and `destroyed()` (cleanup on
-  tab close). A debounced notification calls the existing `TabViewModel::refresh()` slot (§14.10)
-  — no new refresh path. Only the normal-browsing `FileListModel` is affected; a watched tab
-  currently showing quick/advanced-search results still refreshes its (hidden) primary listing in
-  the background, same scope cut §14.32 already made.
-* **`WorkspaceController`** gains a `DirectoryWatchUseCase&` constructor parameter and a private
-  `updateLiveWatchedTabs()` (`WorkspaceLayoutTopology::visiblePanes(m_layout)` → each visible
-  pane's `activeTab()` → `DirectoryWatchService::setVisibleTabs`), called after construction, from
-  `setLayout()`, and from the existing per-pane `activeTabChanged` connection loop — deliberately
-  **not** from `focusedPaneChanged`, since visibility (not focus) decides what's watched: all 4
-  panes' active tabs live-update under `FourGrid` even though only one pane has focus.
-* **Threading** — none new. Registering/unregistering a directory watch is a fast, non-blocking
-  syscall, same "cheap OS call stays synchronous on the UI thread" posture as `driveSpaceInfo`
-  (§14.31)/`ShellExecuteW` (§14.11); `QFileSystemWatcher` delivers notifications through Qt's own
-  event loop with no manual thread. Unlike git-status (a real disk/`.git` scan, needing
-  `GitStatusService`'s background thread), there is no scan to offload here.
-* **Known limitation:** `refresh()`'s `loadAndApply()` already clears the current selection and
-  fully resets `FileListModel` (`beginResetModel()`/`endResetModel()`) on every call — pre-existing
-  behavior for the manual Refresh button and the post-file-op refresh (§14.10), now also triggered
-  by external changes, more frequently and more disruptively than before (Explorer itself
-  preserves selection across a live update). Selection-preserving refresh is a real improvement but
-  a separate, larger change to `FileListModel`/`loadAndApply`; deliberately out of scope here.
-* **Not built:** watching inactive tabs or hidden-pane tabs (they simply go stale until shown or
-  manually refreshed); live updates inside quick-search/advanced-search result views; a Linux
-  `IDirectoryWatcher` implementation (deferred until Linux support is actually built, same posture
-  as every other Windows-first Port). No automated coverage beyond `DirectoryWatchRegistry`
-  (pure bookkeeping) and `DirectoryWatchUseCase` (mocked-Port passthrough) — `WorkspaceController`/
-  `DirectoryWatchService`/`StandardDirectoryWatcher` fall under the existing §11 UI/ViewModel-glue
-  and OS-shell carve-outs, smoke-tested manually.
+* **No new Port.** `QMediaPlayer` loads the video file directly from `FilePreview::path()`; there is
+  no business logic to express as a use case, so `VideoPlayerWidget` talks to Qt Multimedia
+  directly with no `IVideoPlayer`-style abstraction -- same posture as `TerminalWidget`/
+  `WindowsConPtyProcess` (Architecture.md §9/§10): a pure OS/Qt integration with no second
+  implementation ever in scope, so an interface would buy nothing.
+* **Standalone component** (`src/ui/widgets/video/VideoPlayerWidget`), not nested under `preview/`:
+  the user explicitly wants it reusable later (e.g. Media Viewer grid playback, a future
+  full-window viewer) without having to move code out from under an unrelated feature's folder
+  first. `PreviewPanelWidget` is just its first consumer -- the same relationship `preview/`
+  already has with `SyntaxHighlightEngine`/`HighlightThemeViewModel`.
+* **UI shape**: `QVideoWidget` on top (stretches); a controls row below with a play/pause toggle
+  `QToolButton` (`SP_MediaPlay`/`SP_MediaPause`), a separate Stop `QToolButton`
+  (`SP_MediaStop`, distinct from pause per the user's request), and a `mm:ss / mm:ss` time label;
+  a bottom row with the seek `QSlider` (stretch), a mute-toggle `QToolButton`
+  (`SP_MediaVolume`/`SP_MediaVolumeMuted`), and a volume `QSlider` (0-100, mapped to
+  `QAudioOutput::setVolume()`'s 0.0-1.0). All icons are Qt standard icons -- no new icon assets.
+* **Seek-drag handling**: while the seek slider is pressed (`sliderPressed` through
+  `sliderReleased`), incoming `positionChanged` updates are suppressed so playback doesn't fight the
+  drag; `sliderMoved` live-updates the time label; `sliderReleased` commits via
+  `player->setPosition()`.
+* **Public API**: `load(path)` sets the source (`QUrl::fromLocalFile(QString::fromStdWString(
+  path.wstring()))` -- never `.string()`/`.generic_string()`, per CLAUDE.md's non-ASCII-path rule)
+  and leaves playback **paused** (first frame visible, no autoplay/audio burst on selection).
+  `release()` stops playback and clears the source; called from every point the widget can stop
+  being the visible content -- `PreviewPanelWidget::hideEvent`, `onPreviewLoading`,
+  `onPreviewFailed`, `onPreviewCleared` (unconditionally, since a no-op release is harmless), and
+  whenever `onPreviewReady` resolves to a non-Video kind or the mode combo switches away from the
+  player -- so playback/audio never continues once the Preview tab is hidden, the selection changes,
+  or a newer preview generation supersedes it.
+* **Preview tab integration**: `PreviewPanelWidget` gains a `QComboBox` ("Static image" / "Video
+  player") shown only while the current preview's kind is `Video`, plus `VideoPlayerWidget` as a
+  new `m_stack` page. The last-seen Video `FilePreview` is kept as a member
+  (`std::optional<FilePreview>`) so switching the combo re-renders through the newly selected page
+  without re-asking `FilePreviewViewModel`; "Static image" renders through the existing
+  `MediaPreviewWidget::setPreview()` (same poster-frame path image/video already shared), "Video
+  player" calls `VideoPlayerWidget::load()`. The mode choice is a plain member, not persisted via
+  `AppConfig`/`QSettings` -- not requested, and avoids config/schema churn for a "simple" player.
+* **Deployment**: the FFmpeg and Windows Media Foundation playback-backend plugin DLLs
+  (`ffmpegmediaplugin.dll`, `windowsmediaplugin.dll`, targets `Qt6::QFFmpegMediaPlugin`/
+  `Qt6::QWindowsMediaPlugin`) are loaded by Qt Multimedia at runtime from a `multimedia/` subfolder
+  next to the executable -- vcpkg's applocal DLL copy doesn't reach plugin-loaded DLLs, so
+  `src/app/CMakeLists.txt` deploys them explicitly, same pattern as the existing `platforms/`/
+  `sqldrivers/`/`imageformats/` post-build steps. No separate Windows audio-backend plugin exists
+  (WASAPI is compiled in).
+* **Not built** (Specification.md §2.4 lists these; not requested now): fullscreen toggle,
+  aspect-ratio adjustments, loop playback; any playback in the Media Viewer grid/gallery mode
+  (stays poster + hover-preview only, §14.62/§14.64/§14.66); persisting the mode choice across
+  sessions; any change to the `IMediaDecoder`/`FFmpegMediaDecoder`/thumbnail-cache pipeline, which
+  keeps serving the poster frame and grid hover previews exactly as before.
+* **Testing**: no new GTest coverage -- pure UI-layer addition, no Domain/Application/Adapter
+  change, and UI stays uncovered by CTest in v1 (Architecture.md §11); manual smoke test only.
+
