@@ -93,7 +93,7 @@ std::unique_ptr<TabViewModel> CompositionRoot::createTabViewModel()
                                            m_fileDecorationsViewModel, m_gitStatusService, m_folderMonitorUseCase,
                                            m_advancedSearchService, m_fileTagsService, m_diskUsageService,
                                            m_fragmentationService, m_iconLoadingService, m_mediaThumbnailLoadingService,
-                                           m_tagChangeNotifier);
+                                           m_tagChangeNotifier, m_notificationCenter);
 }
 
 std::unique_ptr<WorkspacePaneViewModel> CompositionRoot::createWorkspacePaneViewModel(WorkspacePaneId id)
@@ -102,7 +102,8 @@ std::unique_ptr<WorkspacePaneViewModel> CompositionRoot::createWorkspacePaneView
                                                      m_fileDecorationsViewModel, m_gitStatusService, m_folderMonitorUseCase,
                                                      m_advancedSearchService, m_fileTagsService, m_diskUsageService,
                                                      m_fragmentationService, m_iconLoadingService,
-                                                     m_mediaThumbnailLoadingService, m_tagChangeNotifier, id);
+                                                     m_mediaThumbnailLoadingService, m_tagChangeNotifier,
+                                                     m_notificationCenter, id);
 }
 
 std::unique_ptr<WorkspaceController> CompositionRoot::createWorkspaceController()

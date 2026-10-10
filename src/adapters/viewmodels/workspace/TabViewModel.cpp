@@ -22,6 +22,7 @@
 #include "IconLoadingService.h"
 #include "MediaExtensions.h"
 #include "MediaThumbnailLoadingService.h"
+#include "NotificationCenter.h"
 #include "TagChangeNotifier.h"
 #include "TagManagementUseCase.h"
 #include "VirtualPaths.h"
@@ -42,7 +43,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
                            AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
                            DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
                            IconLoadingService& iconLoadingService, MediaThumbnailLoadingService& mediaThumbnailLoadingService,
-                           TagChangeNotifier& tagChangeNotifier, QObject* parent)
+                           TagChangeNotifier& tagChangeNotifier, NotificationCenter& notificationCenter, QObject* parent)
     : QObject(parent)
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagManagementUseCase(tagManagementUseCase)
@@ -55,6 +56,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     , m_iconLoadingService(iconLoadingService)
     , m_mediaThumbnailLoadingService(mediaThumbnailLoadingService)
     , m_tagChangeNotifier(tagChangeNotifier)
+    , m_notificationCenter(notificationCenter)
     , m_fileListModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_searchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_advancedSearchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
@@ -97,6 +99,16 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
             requestAdvancedSearchResultTags(m_advancedSearchGeneration, candidates);
         }
     });
+
+    // Entering Media Viewer mode's own progress-bar card (Architecture.md §14.65) -- only this
+    // tab's own in-flight notification cares about a Cancel click, same filter-by-id posture
+    // FragmentationViewModel/FolderSizeViewModel use.
+    connect(&m_notificationCenter, &NotificationCenter::progressCancelRequested, this, [this](NotificationCenter::ProgressId id) {
+        if (m_mediaViewerProgressId != 0 && id == m_mediaViewerProgressId)
+        {
+            exitMediaViewer();
+        }
+    });
 }
 
 TabViewModel::~TabViewModel()
@@ -111,6 +123,14 @@ TabViewModel::~TabViewModel()
     if (m_monitoringActive)
     {
         m_folderMonitorUseCase.stopMonitoring(m_monitoringId);
+    }
+
+    // Defensive guard mirroring the one above -- exitMediaViewer()/WorkspacePaneViewModel::closeTab
+    // normally terminate this first, but cover any other destruction path too (Architecture.md
+    // §14.65).
+    if (m_mediaViewerProgressId != 0)
+    {
+        m_notificationCenter.terminateProgressNotification(m_mediaViewerProgressId);
     }
 }
 
@@ -732,6 +752,20 @@ void TabViewModel::exitMediaViewer()
     // onMediaViewerCandidatesReady's generation check when it eventually arrives.
     ++m_mediaViewerGeneration;
 
+    // Covers both the notification's own Cancel button and the user manually toggling Media
+    // Viewer mode off mid-load (Architecture.md §14.65) -- "discard, not abort": any in-flight
+    // scan/decode batch for the now-stale generation is simply ignored when it lands.
+    if (m_mediaViewerProgressId != 0)
+    {
+        m_notificationCenter.terminateProgressNotification(m_mediaViewerProgressId);
+        m_mediaViewerProgressId = 0;
+    }
+    m_mediaViewerThumbnailsTotal = 0;
+    m_mediaViewerThumbnailsDone = 0;
+    m_mediaViewerCountedPaths.clear();
+    m_mediaViewerImageSweepRequested = false;
+    m_mediaViewerVideoSweepRequested = false;
+
     setSelectedEntries({});
     emit mediaViewerModeChanged(false);
 }
@@ -745,6 +779,10 @@ void TabViewModel::setMediaViewerKind(MediaViewerKind kind)
 
     m_mediaViewerKind = kind;
     applyMediaViewerFilter(false);
+    // Switching to a kind nobody has looked at yet this generation actually has to decode it
+    // (Architecture.md §14.66) -- requestKindSweep no-ops if `kind`'s sweep was already dispatched
+    // (e.g. switching back to a kind seen earlier this generation is a cheap re-filter only).
+    requestKindSweep(m_mediaViewerGeneration, kind);
     emit mediaViewerKindChanged(kind);
 }
 
@@ -797,8 +835,25 @@ void TabViewModel::runMediaViewerQuery()
 
     emit mediaViewerLoading();
 
+    // A tag-filter change re-querying while a previous scan/decode is still in flight terminates
+    // that notification first, rather than leaving it to onMediaViewerCandidatesReady/the
+    // destructor -- there would otherwise be a window where a stale bar from the superseded
+    // generation is still visible (Architecture.md §14.65).
+    if (m_mediaViewerProgressId != 0)
+    {
+        m_notificationCenter.terminateProgressNotification(m_mediaViewerProgressId);
+    }
+    m_mediaViewerThumbnailsTotal = 0;
+    m_mediaViewerThumbnailsDone = 0;
+    m_mediaViewerCountedPaths.clear();
+    m_mediaViewerProgressId = m_notificationCenter.createProgressNotification(tr("Loading Media Viewer..."), /*barCount=*/1,
+                                                                                /*cancellable=*/true);
+    m_notificationCenter.updateProgressBar(m_mediaViewerProgressId, 0, 0, 0, tr("Scanning folder..."), QString(), QString());
+
     if (!m_mediaViewerTagIds.empty())
     {
+        // No onProgress hook on this (typically much faster, DB-driven) path -- it keeps the
+        // static "Scanning folder..." text set above.
         m_advancedSearchService.requestTagFirstCandidates(
             this, m_mediaViewerRoot, m_mediaViewerTagIds, [this, generation](Result<std::vector<FileNode>> result) {
                 onMediaViewerCandidatesReady(generation, std::move(result));
@@ -808,7 +863,16 @@ void TabViewModel::runMediaViewerQuery()
 
     m_advancedSearchService.requestRecursiveScan(
         this, m_mediaViewerRoot,
-        [this, generation](Result<std::vector<FileNode>> result) { onMediaViewerCandidatesReady(generation, std::move(result)); });
+        [this, generation](Result<std::vector<FileNode>> result) { onMediaViewerCandidatesReady(generation, std::move(result)); },
+        [this, generation](std::vector<FileNode> partial) {
+            if (generation != m_mediaViewerGeneration)
+            {
+                return;
+            }
+
+            m_notificationCenter.updateProgressBar(m_mediaViewerProgressId, 0, 0, 0,
+                                                     tr("Scanning: %1 file(s) found").arg(partial.size()), QString(), QString());
+        });
 }
 
 void TabViewModel::onMediaViewerCandidatesReady(int generation, Result<std::vector<FileNode>> result)
@@ -821,19 +885,30 @@ void TabViewModel::onMediaViewerCandidatesReady(int generation, Result<std::vect
 
     if (result.hasError())
     {
+        if (m_mediaViewerProgressId != 0)
+        {
+            m_notificationCenter.terminateProgressNotification(m_mediaViewerProgressId);
+            m_mediaViewerProgressId = 0;
+        }
         emit mediaViewerFailed(QString::fromStdString(result.error().message));
         emit mediaViewerLoadingFinished();
         return;
     }
 
     m_mediaViewerCandidates = std::move(result).value();
+    // Fresh candidate set -- neither kind has had its background sweep dispatched yet
+    // (Architecture.md §14.66).
+    m_mediaViewerImageSweepRequested = false;
+    m_mediaViewerVideoSweepRequested = false;
+
     // Fresh candidate set from a new recursive/tag-first scan (possibly a different root than
     // whatever this tab's media viewer last showed) -- unlike a plain kind/name re-filter of
     // candidates already held, stale cached icons/thumbnails from the previous set are not worth
     // keeping around, so let applyMediaViewerFilter() clear them via setEntries().
     applyMediaViewerFilter(true);
-    requestMediaViewerResultIcons(generation, m_mediaViewerCandidates);
-    requestMediaViewerResultThumbnails(generation, m_mediaViewerCandidates);
+    // Only the currently-selected kind is decoded eagerly (Architecture.md §14.66) -- the other
+    // kind, if any, is only decoded if/when the dropdown switches to it (setMediaViewerKind).
+    requestKindSweep(generation, m_mediaViewerKind);
 
     emit mediaViewerLoadingFinished();
 }
@@ -877,8 +952,76 @@ void TabViewModel::applyMediaViewerFilter(bool freshCandidates)
     // valid. Still needed even when refilterEntries() preserved the cache: entries that are newly
     // visible after narrowing/widening the filter may not have been requested before.
     requestMediaViewerResultIcons(m_mediaViewerGeneration, filtered);
-    requestMediaViewerResultThumbnails(m_mediaViewerGeneration, filtered);
+    // High priority (Architecture.md §14.66): `filtered` is the kind+name match on screen right
+    // now, so it jumps ahead of a kind's background sweep that may already be mid-flight. Its
+    // completions still count toward the active progress notification (de-duplicated by path
+    // against the sweep's own total) -- see requestMediaViewerResultThumbnails's doc comment.
+    requestMediaViewerResultThumbnails(m_mediaViewerGeneration, filtered, MediaThumbnailLoadingService::Priority::High);
     emit mediaViewerResultsChanged(filtered);
+}
+
+void TabViewModel::requestKindSweep(int generation, MediaViewerKind kind)
+{
+    bool& sweepRequested = kind == MediaViewerKind::Image ? m_mediaViewerImageSweepRequested : m_mediaViewerVideoSweepRequested;
+    if (sweepRequested)
+    {
+        return;
+    }
+    sweepRequested = true;
+
+    // Ignores the name filter -- this is the whole-kind background sweep, so clearing the name
+    // filter later never has to wait on a fresh decode pass.
+    std::vector<FileNode> kindCandidates;
+    kindCandidates.reserve(m_mediaViewerCandidates.size());
+    for (const FileNode& candidate : m_mediaViewerCandidates)
+    {
+        const std::string extension = MediaExtensions::lowercaseExtension(candidate.path());
+        const bool matchesKind =
+            kind == MediaViewerKind::Image ? MediaExtensions::isImageExtension(extension) : MediaExtensions::isVideoExtension(extension);
+        if (matchesKind)
+        {
+            kindCandidates.push_back(candidate);
+        }
+    }
+
+    m_mediaViewerThumbnailsTotal = kindCandidates.size();
+    m_mediaViewerThumbnailsDone = 0;
+    m_mediaViewerCountedPaths.clear();
+
+    if (m_mediaViewerThumbnailsTotal == 0)
+    {
+        // Nothing to decode for this kind -- terminate now rather than leaving a determinate 0/0
+        // bar up until the next mode change.
+        if (m_mediaViewerProgressId != 0)
+        {
+            m_notificationCenter.terminateProgressNotification(m_mediaViewerProgressId);
+            m_mediaViewerProgressId = 0;
+        }
+    }
+    else
+    {
+        // Reuses an already-open notification in place (the "Scanning folder..." bar
+        // runMediaViewerQuery() just created, for the first sweep of a fresh fetch) rather than
+        // terminating and recreating it; otherwise (switching to a kind whose own sweep hasn't run
+        // yet this generation, well after the fetch's own bar already closed) opens a fresh one --
+        // this is what makes that switch visibly show loading progress (Architecture.md §14.66).
+        if (m_mediaViewerProgressId == 0)
+        {
+            m_mediaViewerProgressId =
+                m_notificationCenter.createProgressNotification(tr("Loading Media Viewer..."), /*barCount=*/1, /*cancellable=*/true);
+        }
+        m_notificationCenter.updateProgressBar(m_mediaViewerProgressId, 0, 0, static_cast<int>(m_mediaViewerThumbnailsTotal),
+                                                 tr("Loading %1 item(s)...").arg(m_mediaViewerThumbnailsTotal),
+                                                 tr("0 of %1").arg(m_mediaViewerThumbnailsTotal), QString());
+    }
+
+    // Icons for non-media files are never shown in the grid, so this (like the thumbnail request
+    // right after) is scoped to kindCandidates rather than every file in the tree.
+    requestMediaViewerResultIcons(generation, kindCandidates);
+    // Low priority (Architecture.md §14.66): this is the whole-kind background sweep, so it never
+    // blocks whatever currently matches the visible filter (dispatched High by
+    // applyMediaViewerFilter).
+    requestMediaViewerResultThumbnails(generation, kindCandidates, MediaThumbnailLoadingService::Priority::Low);
 }
 
 std::vector<Tag> TabViewModel::searchTagsForCriteria(const QString& query) const
@@ -1263,7 +1406,8 @@ void TabViewModel::requestMediaViewerResultIcons(int generation, const std::vect
         });
 }
 
-void TabViewModel::requestMediaViewerResultThumbnails(int generation, const std::vector<FileNode>& candidates)
+void TabViewModel::requestMediaViewerResultThumbnails(int generation, const std::vector<FileNode>& candidates,
+                                                        MediaThumbnailLoadingService::Priority priority)
 {
     // 256x256 matches FileBrowserView.cpp's iconSizeFor(ViewMode::ExtraLargeIcons) -- the fixed
     // grid sizing MediaViewerGrid mode locks to (Architecture.md §14.62).
@@ -1278,7 +1422,37 @@ void TabViewModel::requestMediaViewerResultThumbnails(int generation, const std:
             }
 
             m_mediaViewerResultsModel->setMediaThumbnails(batch);
-        });
+
+            if (m_mediaViewerProgressId != 0)
+            {
+                // De-duplicated by path (Architecture.md §14.66): a High-priority filter-match
+                // dispatch and this kind's Low-priority background sweep can both decode the same
+                // path, so raw batch-size summation would double-count it against
+                // m_mediaViewerThumbnailsTotal. Only a path not already counted advances "done".
+                for (auto it = batch.constBegin(); it != batch.constEnd(); ++it)
+                {
+                    if (m_mediaViewerCountedPaths.contains(it.key()))
+                    {
+                        continue;
+                    }
+                    m_mediaViewerCountedPaths.insert(it.key());
+                    ++m_mediaViewerThumbnailsDone;
+                }
+
+                const std::size_t done = std::min(m_mediaViewerThumbnailsDone, m_mediaViewerThumbnailsTotal);
+                m_notificationCenter.updateProgressBar(m_mediaViewerProgressId, 0, static_cast<int>(done),
+                                                         static_cast<int>(m_mediaViewerThumbnailsTotal),
+                                                         tr("Loading %1 item(s)...").arg(m_mediaViewerThumbnailsTotal),
+                                                         tr("%1 of %2").arg(done).arg(m_mediaViewerThumbnailsTotal), QString());
+
+                if (done >= m_mediaViewerThumbnailsTotal)
+                {
+                    m_notificationCenter.terminateProgressNotification(m_mediaViewerProgressId);
+                    m_mediaViewerProgressId = 0;
+                }
+            }
+        },
+        priority);
 }
 
 void TabViewModel::requestSearchResultTags(int generation, const std::vector<FileNode>& candidates)

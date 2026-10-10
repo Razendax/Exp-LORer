@@ -41,19 +41,19 @@ WorkspaceController::WorkspaceController(FileNavigationUseCase& fileNavigationUs
     m_panes[indexOf(WorkspacePaneId::PaneA)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
         folderMonitorUseCase, advancedSearchService, fileTagsService, diskUsageService, fragmentationService,
-        iconLoadingService, mediaThumbnailLoadingService, tagChangeNotifier, WorkspacePaneId::PaneA, this);
+        iconLoadingService, mediaThumbnailLoadingService, tagChangeNotifier, notificationCenter, WorkspacePaneId::PaneA, this);
     m_panes[indexOf(WorkspacePaneId::PaneB)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
         folderMonitorUseCase, advancedSearchService, fileTagsService, diskUsageService, fragmentationService,
-        iconLoadingService, mediaThumbnailLoadingService, tagChangeNotifier, WorkspacePaneId::PaneB, this);
+        iconLoadingService, mediaThumbnailLoadingService, tagChangeNotifier, notificationCenter, WorkspacePaneId::PaneB, this);
     m_panes[indexOf(WorkspacePaneId::PaneC)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
         folderMonitorUseCase, advancedSearchService, fileTagsService, diskUsageService, fragmentationService,
-        iconLoadingService, mediaThumbnailLoadingService, tagChangeNotifier, WorkspacePaneId::PaneC, this);
+        iconLoadingService, mediaThumbnailLoadingService, tagChangeNotifier, notificationCenter, WorkspacePaneId::PaneC, this);
     m_panes[indexOf(WorkspacePaneId::PaneD)] = new WorkspacePaneViewModel(
         fileNavigationUseCase, tagManagementUseCase, fileDecorationRules, fileDecorationsChangeSource, gitStatusService,
         folderMonitorUseCase, advancedSearchService, fileTagsService, diskUsageService, fragmentationService,
-        iconLoadingService, mediaThumbnailLoadingService, tagChangeNotifier, WorkspacePaneId::PaneD, this);
+        iconLoadingService, mediaThumbnailLoadingService, tagChangeNotifier, notificationCenter, WorkspacePaneId::PaneD, this);
 
     m_tagListViewModel = new TagListViewModel(tagManagementUseCase, fileNavigationUseCase, notificationCenter, tagChangeNotifier, this);
     m_filePreviewViewModel = new FilePreviewViewModel(filePreviewUseCase, fileSystemRepository, this);

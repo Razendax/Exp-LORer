@@ -2220,3 +2220,113 @@ no Domain/Application redesign.
   No new coverage for the `MediaThumbnailLoadingWorker`/`MediaGridTileDelegate`/`FileBrowserView`
   hover wiring, matching §14.61/§14.62's own precedent for this layer (no existing tests either) —
   manual smoke test only.
+
+### 14.65 Media Viewer Mode: Loading Progress Notification
+
+§14.61's "Not built" bullet flagged this gap directly: entering Media Viewer mode runs a recursive
+scan (§14.38) followed by chunked thumbnail decoding (§14.62, ×5 per video since §14.64) with no
+feedback beyond a static "Loading…" label bound only to the scan phase — the slower decode phase
+that follows gives no indication at all. This wires entering Media Viewer mode into the same generic
+progress-bar notification mechanism §14.47 built for copy/move
+(`NotificationCenter::createProgressNotification`/`updateProgressBar`/`terminateProgressNotification`,
+`src/adapters/notifications/NotificationCenter.h`) instead of inventing a second one. Entirely
+Adapters/UI — no new Port, no Domain/Application/schema change, no change to `NotificationCenter`/
+`NotificationOverlayWidget`/`ProgressNotificationWidget` itself (the existing single-bar/cancellable/
+three-text-row API already covers it).
+
+* **`TabViewModel`** is the owner/driver, exactly like `FileOperationsController` owns copy's progress
+  id — it already owns the per-tab `m_mediaViewerGeneration` counter and both result-fetching call
+  sites. Gains a `NotificationCenter&` constructor dependency (threaded through
+  `WorkspacePaneViewModel`'s constructor and `CompositionRoot`'s `createTabViewModel()`/
+  `createWorkspacePaneViewModel()` factories, alongside `WorkspaceController`'s existing
+  `m_notificationCenter`) plus a `NotificationCenter::ProgressId m_mediaViewerProgressId` (0 = none
+  active) and running `m_mediaViewerThumbnailsTotal`/`m_mediaViewerThumbnailsDone` counters.
+* **Two phases**, matching copy's own indeterminate-then-determinate shape: (1) *Scanning* —
+  indeterminate (0/0) while `AdvancedSearchService::requestRecursiveScan`/`requestTagFirstCandidates`
+  runs; the recursive-scan path now passes the `onProgress` callback `requestRecursiveScan` already
+  supported but `runMediaViewerQuery()` left unused, updating the bar's text with a running
+  files-found count (the tag-first path has no equivalent hook, and keeps static text — its DB-driven
+  lookup is comparatively fast). (2) *Loading thumbnails* — determinate `0..N`,
+  `N = m_mediaViewerCandidates.size()` (the same full, kind-unfiltered set
+  `requestMediaViewerResultThumbnails` already fetches); each `onBatch` chunk from
+  `MediaThumbnailLoadingService` advances the bar by `batch.size()`, terminating the notification once
+  `done == total`. Only the initial fresh-candidate load drives this — `applyMediaViewerFilter`'s
+  re-filter calls (kind toggle/name-query keystrokes) reuse the same generation but find
+  `m_mediaViewerProgressId` already back to `0` by then, so they never resurrect the notification for
+  thumbnails that are already cached.
+* **Cancellable** (matching copy): `NotificationCenter::progressCancelRequested(id)` is wired, when
+  `id` matches, to call `exitMediaViewer()`. Same "discard, not abort" posture Architecture.md §5
+  already documents for every background worker in this codebase except `FileTransferService` — no
+  mid-flight interrupt of in-flight decode chunks; `exitMediaViewer()`'s existing generation bump just
+  makes already-in-flight batches land and get silently discarded, same as manually toggling Media
+  Viewer mode off mid-load already did before this feature.
+* **Not built**: no progress reporting for `requestMediaViewerResultIcons` (generic shell icons via
+  `IconLoadingService` — fast enough today not to need it); no true abort of in-flight FFmpeg decodes
+  on cancel (see above).
+* **Testing**: no new GTest coverage — `TabViewModel` has no existing tests either (§11 UI/ViewModel-
+  glue carve-out, same precedent as §14.61/§14.62/§14.64); manual smoke test only.
+
+### 14.66 Media Viewer Mode: Kind-Scoped Loading + Filter-Priority Decoding
+
+§14.62/§14.65 had Media Viewer mode decode thumbnails for **both** Images and Videos the moment it's
+entered, even though the Images/Videos dropdown only ever shows one kind at a time — wasting decode
+time (FFmpeg video decode is the expensive case, ×5 frames/video since §14.64) on a kind the user may
+never look at, and giving no priority to whatever the current name filter actually matches over a
+large background sweep already mid-flight. Three fixes, entirely Adapters/UI — no new Port, no
+Domain/Application/schema change.
+
+* **Only the selected kind is decoded eagerly.** `TabViewModel::onMediaViewerCandidatesReady` no
+  longer computes a both-kinds `mediaCandidates` set; it calls a new `requestKindSweep(generation,
+  kind)` helper for just `m_mediaViewerKind` instead. `requestKindSweep` filters
+  `m_mediaViewerCandidates` by `kind` alone (ignoring the name filter, so clearing it later never
+  waits on a fresh decode pass), sizes/owns the "Loading Media Viewer" progress notification exactly
+  as §14.65 did (just for one kind's count instead of both), and dispatches
+  `requestMediaViewerResultIcons`/`requestMediaViewerResultThumbnails` for that kind-filtered set —
+  also fixing `requestMediaViewerResultIcons`'s previous "every file in the tree" call site, since
+  icons for non-media files were never shown in the grid anyway.
+* **Switching kind triggers a real load.** Two per-generation bools,
+  `m_mediaViewerImageSweepRequested`/`m_mediaViewerVideoSweepRequested` (reset in
+  `onMediaViewerCandidatesReady` whenever `m_mediaViewerCandidates` is replaced by a fresh fetch),
+  track which kind(s) have already had `requestKindSweep` dispatched this generation.
+  `setMediaViewerKind` calls `requestKindSweep(m_mediaViewerGeneration, kind)` right after its
+  existing `applyMediaViewerFilter(false)` re-filter; `requestKindSweep` no-ops if that kind's sweep
+  already ran, so switching to a never-seen kind now visibly decodes it (and shows the progress bar
+  for that switch, reusing the generic notification in place if one is already open, or opening a
+  fresh one if the previous kind's sweep had already terminated it).
+* **Filter-matching items jump the queue.** `MediaThumbnailLoadingService::requestThumbnails` gains a
+  `Priority` parameter (`High`/`Low`), replacing its old flat "post every chunk via
+  `QMetaObject::invokeMethod` immediately" dispatch with an internal mutex-guarded
+  `std::deque<PendingChunk>`, pumped one chunk at a time by the same single worker `QThread` (no
+  pool, same reasoning as before — everything shares one `MediaProcessingUseCase`/
+  `CachingMediaDecoder` instance). A `High` dispatch first purges any of that same context's
+  still-queued (not yet started) `High` chunks (a superseded filter value, e.g. the previous
+  keystroke's matches), then pushes its new chunks to the deque's front; `Low` chunks are always
+  left alone and simply appended to the back. The per-context "active root" staleness check moved
+  from enqueue time to pop time (checked right before a chunk is actually handed to the worker).
+  `TabViewModel::applyMediaViewerFilter` dispatches its kind+name-filtered subset at `High` (it's on
+  screen right now); `requestKindSweep`'s whole-kind background sweep dispatches at `Low`.
+  `MediaThumbnailLoadingWorker` itself is unchanged — only the service's dispatch/queueing wrapper
+  changed.
+* **Progress-counting correctness**: since a `High` and a `Low` dispatch can now legitimately
+  overlap (a filter-matching item is both in the priority subset and part of the kind's full sweep),
+  raw batch-size summation would double-count it against `m_mediaViewerThumbnailsTotal`. Replaced
+  with a de-duplicated `QSet<QString> m_mediaViewerCountedPaths` (reset alongside
+  `m_mediaViewerThumbnailsTotal`/`Done` whenever a sweep establishes a new total): each `onBatch`
+  only advances `done` for a path not already in that set. `requestMediaViewerResultThumbnails` lost
+  its original `reportProgress` bool, which gated counting to `requestKindSweep`'s own `Low` dispatch
+  only — with no active name filter, `applyMediaViewerFilter`'s `High` dispatch covers most or all of
+  the kind and, being the one that jumps the queue, is also the one that actually finishes decoding
+  first, so the bar sat stuck at 0 (visibly so on a large folder) while the grid was already filling
+  in, only catching up once the `Low` sweep's own redundant (cache-hit) decodes of the same paths
+  landed behind it. Every delivered batch now counts whenever `m_mediaViewerProgressId != 0`,
+  regardless of which dispatch delivered it; the path dedup already guarantees neither is counted
+  twice.
+* **Not built**: no change to `IconLoadingService` (icons are cheap/fast shell lookups, not the
+  bottleneck this is about); no true cancellation of an in-flight FFmpeg decode already running when
+  superseded — same "discard, not abort" posture §14.65 established, only **not-yet-started** chunks
+  are purged/reordered; no debounce on name-filter keystrokes (purging is a cheap deque scan, not
+  decode work); no persistence of sweep-requested state across restarts or re-entering Media Viewer
+  mode (reset every fresh candidate fetch, same as every other Media Viewer transient state).
+* **Testing**: no new GTest coverage, matching every existing Media Viewer entry in this decision log
+  (§14.61/§14.62/§14.64/§14.65 all note this layer stays under the §11 UI/ViewModel-glue carve-out);
+  manual smoke test only.

@@ -19,6 +19,7 @@ class FragmentationService;
 class IconLoadingService;
 class MediaThumbnailLoadingService;
 class TagChangeNotifier;
+class NotificationCenter;
 
 // Per-pane tab bookkeeping: owns an ordered list of TabViewModel children and tracks which one is
 // active. One instance per WorkspacePaneId, always alive for the pane's lifetime regardless of
@@ -35,7 +36,8 @@ public:
                             AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
                             DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
                             IconLoadingService& iconLoadingService, MediaThumbnailLoadingService& mediaThumbnailLoadingService,
-                            TagChangeNotifier& tagChangeNotifier, WorkspacePaneId id, QObject* parent = nullptr);
+                            TagChangeNotifier& tagChangeNotifier, NotificationCenter& notificationCenter, WorkspacePaneId id,
+                            QObject* parent = nullptr);
 
     WorkspacePaneId id() const noexcept { return m_id; }
     int tabCount() const noexcept { return static_cast<int>(m_tabs.size()); }
@@ -74,6 +76,7 @@ private:
     IconLoadingService& m_iconLoadingService;
     MediaThumbnailLoadingService& m_mediaThumbnailLoadingService;
     TagChangeNotifier& m_tagChangeNotifier;
+    NotificationCenter& m_notificationCenter;
     WorkspacePaneId m_id;
     std::vector<TabViewModel*> m_tabs;
     int m_activeIndex = -1;

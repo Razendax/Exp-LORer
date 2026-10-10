@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstddef>
 #include <deque>
 #include <filesystem>
 #include <functional>
@@ -9,6 +10,7 @@
 #include <vector>
 
 #include <QObject>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 
@@ -20,9 +22,11 @@
 #include "FolderMonitorUseCase.h"
 #include "FolderSizesByPath.h"
 #include "GitRepositorySummary.h"
+#include "MediaThumbnailLoadingService.h"
 #include "MediaViewerKind.h"
 #include "NameSearchOptions.h"
 #include "NavigationHistory.h"
+#include "NotificationCenter.h"
 #include "SearchCriteria.h"
 #include "Tag.h"
 #include "TagManagementUseCase.h"
@@ -39,7 +43,6 @@ class TagChangeNotifier;
 class DiskUsageService;
 class FragmentationService;
 class IconLoadingService;
-class MediaThumbnailLoadingService;
 
 // Binds address-bar/navigation-toolbar UI to FileNavigationUseCase and NavigationHistory for a
 // single tab. Owns the FileListModel that backs that tab's FileBrowserView, wiring
@@ -59,7 +62,7 @@ public:
                  AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
                  DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
                  IconLoadingService& iconLoadingService, MediaThumbnailLoadingService& mediaThumbnailLoadingService,
-                 TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
+                 TagChangeNotifier& tagChangeNotifier, NotificationCenter& notificationCenter, QObject* parent = nullptr);
 
     ~TabViewModel() override;
 
@@ -478,7 +481,19 @@ private:
     // (Architecture.md §14.62) rather than the plain DecorationRole icon -- called once per
     // candidate-set fetch (onMediaViewerCandidatesReady), same "only follows a real fetch" posture.
     // Discarded if `generation` no longer matches m_mediaViewerGeneration.
-    void requestMediaViewerResultThumbnails(int generation, const std::vector<FileNode>& candidates);
+    //
+    // Every delivered batch advances the Loading Media Viewer progress notification's determinate
+    // phase (Architecture.md §14.66), whenever one is active (m_mediaViewerProgressId != 0) --
+    // not just requestKindSweep's own Low-priority sweep dispatch. applyMediaViewerFilter's High-
+    // priority call (the kind+name-filtered subset, issued first so it jumps the queue ahead of an
+    // in-flight sweep) counts too: with no active name filter that subset is most or all of the
+    // kind, so leaving it uncounted left the bar stuck at 0 while the grid was already filling in
+    // (see "Progress-counting correctness" in the decision log). Counting is de-duplicated by path
+    // (m_mediaViewerCountedPaths) so the same file decoded by both the High and Low dispatch is
+    // only ever counted once. `priority` is forwarded as-is to MediaThumbnailLoadingService::
+    // requestThumbnails.
+    void requestMediaViewerResultThumbnails(int generation, const std::vector<FileNode>& candidates,
+                                             MediaThumbnailLoadingService::Priority priority);
 
     // Fetches tags for every file in `candidates` and, once they arrive (discarded if
     // `generation` no longer matches m_searchGeneration), caches them into m_searchSnapshotTags and
@@ -574,6 +589,18 @@ private:
     // widening the filter without flickering back to their placeholder (Architecture.md §14.62).
     void applyMediaViewerFilter(bool freshCandidates);
 
+    // Dispatches the "whole-kind background sweep" (Architecture.md §14.66) for `kind` -- every
+    // candidate matching `kind` alone (not the name filter), decoded at Low priority so it never
+    // blocks whatever currently matches the visible filter. No-op if `kind`'s sweep has already
+    // been requested this generation (per-generation m_mediaViewerImageSweepRequested/
+    // m_mediaViewerVideoSweepRequested, reset in onMediaViewerCandidatesReady). Owns the "Loading
+    // Media Viewer" progress notification's determinate phase, sized to just this kind's candidate
+    // count -- called once right after a fresh candidate fetch (for m_mediaViewerKind) and again
+    // from setMediaViewerKind whenever the dropdown switches to a kind not yet swept this
+    // generation, which is what makes that switch actually decode something instead of being a
+    // silent cache hit.
+    void requestKindSweep(int generation, MediaViewerKind kind);
+
     // Completion callback for runMediaViewerQuery()'s AdvancedSearchService request. Discards the
     // result if `generation` no longer matches m_mediaViewerGeneration (a newer request, or
     // exitMediaViewer(), superseded it in the meantime) -- the one piece of the generation-counter
@@ -591,6 +618,7 @@ private:
     IconLoadingService& m_iconLoadingService;
     MediaThumbnailLoadingService& m_mediaThumbnailLoadingService;
     TagChangeNotifier& m_tagChangeNotifier;
+    NotificationCenter& m_notificationCenter;
     NavigationHistory m_history;
     ViewMode m_viewMode = ViewMode::Details;
     // Per-tab column-visibility overrides (Architecture.md §14.49); see TabConfig::hiddenColumns
@@ -688,6 +716,24 @@ private:
     // Bumped on every candidate-fetch dispatch and on exitMediaViewer(); discards a stale reply
     // the same way m_advancedSearchGeneration/m_searchGeneration do.
     int m_mediaViewerGeneration = 0;
+    // The copy-style progress notification driving entering Media Viewer mode (Architecture.md
+    // §14.65) -- 0 means none currently active. Owned/driven directly by this class, same posture
+    // FileOperationsController has for copy/move's progress id.
+    NotificationCenter::ProgressId m_mediaViewerProgressId = 0;
+    std::size_t m_mediaViewerThumbnailsTotal = 0;
+    std::size_t m_mediaViewerThumbnailsDone = 0;
+    // De-duplicates m_mediaViewerThumbnailsDone's advance (Architecture.md §14.66): a path that
+    // the kind's background sweep (Low priority) and the current filter match (High priority) both
+    // cover would otherwise have its decode counted twice against the same total. Reset alongside
+    // m_mediaViewerThumbnailsTotal/Done whenever a sweep establishes a new total.
+    QSet<QString> m_mediaViewerCountedPaths;
+    // Per-generation "has this kind's whole-kind background sweep already been dispatched" tracker
+    // (Architecture.md §14.66), reset in onMediaViewerCandidatesReady whenever m_mediaViewerCandidates
+    // is replaced by a fresh fetch. Guards requestKindSweep against a redundant re-dispatch, and lets
+    // setMediaViewerKind tell whether switching to `kind` needs to kick off a real decode (never
+    // swept yet) or is a cheap re-filter of already-decoded entries (already swept).
+    bool m_mediaViewerImageSweepRequested = false;
+    bool m_mediaViewerVideoSweepRequested = false;
 
     // True from startMonitoring() dispatching StandardFolderMonitor's async open until that open's
     // onStarted callback runs (successfully or not) -- opening the directory handle is I/O and now
