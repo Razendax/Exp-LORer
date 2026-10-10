@@ -2443,3 +2443,86 @@ forward/up/refresh/address bar/view-mode button) keeps being disabled exactly as
   Media Viewer entry.
 * **Testing**: no new GTest coverage, same precedent as §14.61/§14.62/§14.67 (this layer sits under
   the Architecture.md §11 UI/ViewModel-glue carve-out); manual smoke test only.
+
+### 14.69 Media Viewer Mode: Filmstrip + Details View Modes
+
+§14.68 added the view combo but left `MediaViewerViewMode` a deliberate single-enumerator stub —
+nothing downstream of `TabViewModel::setMediaViewerViewMode` reconfigured the grid, and
+`FileBrowserView::setViewMode` unconditionally locked `DisplayMode::MediaViewerGrid` to the one
+icon-grid layout set up at construction. This adds the two promised view modes: **Filmstrip** (one
+full-width row per item, every decoded preview frame shown side-by-side, name underneath) and
+**Details** (one full-width row per item: hover-scrubbable preview on the left, name/length/size/
+resolution/tags on the right). No new Port, no schema change — purely Adapters(ViewModel) + UI,
+consistent with every other Media Viewer entry.
+
+* **`MediaViewerViewMode`** gains `Filmstrip`/`Details` alongside `Thumbnails`. `MediaViewerSortViewBar`'s
+  view combo gains the two matching items; its `currentIndexChanged` lambda and `setViewMode()`'s
+  switch extend to a 3-way mapping (same shape as the sort-criterion combo's existing 3-way one).
+* **Both new modes render through the existing `m_listView`**, not a new stack page or the
+  `QTreeView` — `QListView::ListMode` + `Flow::TopToBottom` + `setWrapping(false)` (the one
+  existing mode that sets `Wrapping(true)`, `ViewMode::List`, deliberately doesn't: it wants
+  Explorer's short multi-column list) gives single-column rows that stretch to the full viewport
+  width automatically, like a plain `QListWidget` — no gridSize/resize tracking needed.
+* **`FileBrowserView`** gains `setMediaViewerViewMode(MediaViewerViewMode)` (no-op outside
+  `DisplayMode::MediaViewerGrid`), swapping `m_listView`'s installed delegate and
+  flow/wrapping/gridSize/iconSize per mode: `Thumbnails` keeps today's IconMode/grid setup
+  (`m_mediaGridDelegate`); `Filmstrip`/`Details` both use the ListMode/no-wrap config above, with
+  `m_mediaFilmstripDelegate`/`m_mediaDetailsDelegate` respectively. The constructor's one-time
+  `MediaViewerGrid` setup now ends by calling `setMediaViewerViewMode(MediaViewerViewMode::Thumbnails)`
+  instead of inlining that branch's configuration twice.
+* **`WorkspacePaneWidget::addPageForTab`** connects `TabViewModel::mediaViewerViewModeChanged` to
+  the per-tab `mediaViewerBrowserView`'s new `setMediaViewerViewMode` slot, and applies the tab's
+  current value once at page-construction time — previously that signal only reached the toolbar
+  combo (`MediaViewerSortViewBar::setViewMode`, resync only), never the grid itself, which is why
+  the combo had no visible effect before this.
+* **`MediaFilmstripDelegate`** (`src/ui/widgets/media/`, new): `QStyledItemDelegate`, fixed-height
+  `sizeHint()` (row width comes from the ListView config above, not the delegate). Reuses
+  §14.64's `MediaThumbnailData::previewFrames` with no new decode work: a video with a full
+  `MediaPreviewFrames::kCount`-frame set paints all of them side-by-side (thin 1px dividers
+  between bands); an image, or a video not yet fully decoded, paints its single `image` stretched
+  across the whole row. Filename caption centered below a thin divider line, same font/
+  foreground-role handling as `MediaGridTileDelegate::paint`; dashed selection outline on
+  `State_Selected`, matching every other delegate here.
+* **`MediaDetailsDelegate`** (`src/ui/widgets/media/`, new): `QStyledItemDelegate` with hover
+  state mirroring `MediaGridTileDelegate`'s shape (`setHoveredPreview`/`hoveredIndex`/
+  `hoveredPreviewIndex`, a `thumbnailRectForCellRect` static over a small fixed-size square
+  anchored left, vertically centered) — Qt's per-cell single-delegate model means a literal
+  shared-delegate-instance reuse isn't possible for two independently-laid-out regions of one
+  cell, so this mirrors the API shape and shares the actual pixel-painting code instead (see
+  `MediaThumbnailPainting` below) rather than duplicating it a third time. Right side: bold/
+  larger-point name; a `duration | size | WxH` line (duration segment and its separator omitted
+  for an image row, same `MediaExtensions::isImageExtension` branch `MediaGridTileDelegate`
+  already uses; resolution omitted until known); a tag-pill row via `TagPillRowPainter` (below)
+  against `FileListModel::TagsRole`.
+* **`MediaThumbnailPainting`** (`src/ui/widgets/media/`, new): `paintThumbnail` (aspect-fit
+  letterbox)/`paintPlaceholderIcon`/`durationLabel`, lifted unchanged out of
+  `MediaGridTileDelegate.cpp`'s anonymous namespace so `MediaFilmstripDelegate`/
+  `MediaDetailsDelegate` can reuse the same non-trivial pixel-painting code instead of a third
+  copy — unlike the small layout-rect math this codebase deliberately keeps duplicated per
+  delegate (§14.62's own comment), real image-scaling/formatting logic earns a shared helper once
+  3 call sites need it. `MediaGridTileDelegate` itself is updated to call these instead of its own
+  copies; its behavior is unchanged.
+* **`TagPillRowPainter`** (`src/ui/widgets/tags/`, new): `paintTagPillRow`/`tagPillRowHeight`,
+  lifted out of `TagsCellDelegate.cpp`'s anonymous namespace (the pill-paint loop, including the
+  trailing "+N" overflow pill) for the same reason — now shared between `TagsCellDelegate` and
+  `MediaDetailsDelegate`. `TagsCellDelegate`'s own behavior is unchanged.
+* **`updateMediaViewerHover()`** (FileBrowserView's existing §14.64 hover-scrub handler) becomes
+  mode-aware: a no-op while `Filmstrip` is active (every frame is already visible at once, no
+  single-frame hover concept); while `Details` is active, resolves the thumbnail sub-rect via
+  `MediaDetailsDelegate::thumbnailRectForCellRect` instead of `MediaGridTileDelegate`'s, and
+  updates `m_mediaDetailsDelegate`'s hover state instead. The "skip non-video rows"/"repaint only
+  on an actual change" logic is otherwise unchanged.
+* **Tags weren't fetched for the Media Viewer results model at all before this** —
+  `TabViewModel::requestFileTags` was only ever called for the normal-browsing `m_fileListModel`,
+  never for `m_mediaViewerResultsModel`, since nothing needed them before Details' tag row.
+  `TabViewModel` gains `requestMediaViewerResultTags(generation, candidates)` (mirrors
+  `requestSearchResultTags`/`requestAdvancedSearchResultTags`'s existing shape), called from
+  `applyMediaViewerFilter()` alongside the existing icon/thumbnail requests and from the
+  `TagChangeNotifier::tagsChanged` handler alongside the search/advanced-search tag refreshes —
+  feeding `m_mediaViewerResultsModel->setFileTags(...)`.
+* **Not built**: persisting the view-mode choice across restarts (same as §14.68's existing
+  Thumbnails-only posture); hover-scrub for Filmstrip (see above); any change to the normal
+  file-browser's own `ViewMode::Details`/`ViewMode::List` (a separate enum/concept from
+  `MediaViewerViewMode`, untouched here).
+* **Testing**: no new GTest coverage, same precedent as §14.61/§14.62/§14.64/§14.67/§14.68 (this
+  layer sits under the Architecture.md §11 UI/ViewModel-glue carve-out); manual smoke test only.

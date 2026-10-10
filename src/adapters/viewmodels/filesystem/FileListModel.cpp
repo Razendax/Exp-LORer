@@ -339,7 +339,10 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
         return QVariant::fromValue(thumbnailIt.value());
     }
 
-    if (index.column() == TagsColumn && role == TagsRole)
+    // NameColumn override mirrors MediaThumbnailRole above -- Media Viewer's QListView-based modes
+    // (Filmstrip/Details/Thumbnails) only ever query column 0, but MediaDetailsDelegate still needs
+    // tag data to paint its tag-pill row.
+    if ((index.column() == TagsColumn || index.column() == NameColumn) && role == TagsRole)
     {
         if (entry.displayName())
         {

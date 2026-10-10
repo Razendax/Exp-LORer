@@ -98,6 +98,11 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
                 m_advancedSearchFullScanDone ? m_advancedSearchSnapshot : m_advancedSearchPartialSnapshot;
             requestAdvancedSearchResultTags(m_advancedSearchGeneration, candidates);
         }
+
+        if (m_mediaViewerActive)
+        {
+            requestMediaViewerResultTags(m_mediaViewerGeneration, m_mediaViewerResultsModel->entries());
+        }
     });
 
     // Entering Media Viewer mode's own progress-bar card (Architecture.md §14.65) -- only this
@@ -1036,6 +1041,9 @@ void TabViewModel::applyMediaViewerFilter(bool freshCandidates)
     // completions still count toward the active progress notification (de-duplicated by path
     // against the sweep's own total) -- see requestMediaViewerResultThumbnails's doc comment.
     requestMediaViewerResultThumbnails(m_mediaViewerGeneration, filtered, MediaThumbnailLoadingService::Priority::High);
+    // Details view's tag row (Architecture.md §14.69) -- harmless to fetch even while another
+    // view mode is active, mirroring requestMediaViewerResultIcons/Thumbnails above.
+    requestMediaViewerResultTags(m_mediaViewerGeneration, filtered);
     emit mediaViewerResultsChanged(filtered);
 }
 
@@ -1568,6 +1576,20 @@ void TabViewModel::requestAdvancedSearchResultTags(int generation, const std::ve
 
         m_advancedSearchSnapshotTags = result ? result.value() : TagsByPathMap{};
         m_advancedSearchResultsModel->setFileTags(m_advancedSearchSnapshotTags);
+    });
+}
+
+void TabViewModel::requestMediaViewerResultTags(int generation, const std::vector<FileNode>& candidates)
+{
+    m_fileTagsService.requestTags(this, candidates, [this, generation](Result<TagsByPathMap> result) {
+        if (generation != m_mediaViewerGeneration)
+        {
+            // Superseded/abandoned, same discard-by-generation-id approach
+            // onMediaViewerCandidatesReady uses.
+            return;
+        }
+
+        m_mediaViewerResultsModel->setFileTags(result ? result.value() : TagsByPathMap{});
     });
 }
 

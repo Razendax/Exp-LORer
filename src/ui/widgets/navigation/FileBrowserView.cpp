@@ -23,7 +23,9 @@
 #include "FileListModel.h"
 #include "FileNameEditDelegate.h"
 #include "FileTileDelegate.h"
+#include "MediaDetailsDelegate.h"
 #include "MediaExtensions.h"
+#include "MediaFilmstripDelegate.h"
 #include "MediaGridTileDelegate.h"
 #include "MediaPreviewFrames.h"
 #include "PercentCellDelegate.h"
@@ -98,6 +100,8 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     m_tileDelegate = new FileTileDelegate(this);
     m_iconDelegate = new FileIconDelegate(this);
     m_mediaGridDelegate = new MediaGridTileDelegate(this);
+    m_mediaFilmstripDelegate = new MediaFilmstripDelegate(this);
+    m_mediaDetailsDelegate = new MediaDetailsDelegate(this);
     m_tagsCellDelegate = new TagsCellDelegate(this);
     m_percentCellDelegate = new PercentCellDelegate(this);
 
@@ -119,18 +123,10 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     }
     else if (m_displayMode == DisplayMode::MediaViewerGrid)
     {
-        // Locked icon-grid rendering (Architecture.md §14.61), installed once here rather than
-        // per setViewMode() call -- mirrors the AdvancedSearchResults delegate setup above, and
-        // means the first setViewMode() call after construction is cheap. MediaGridTileDelegate
-        // (Architecture.md §14.62) replaces the plain FileIconDelegate here, painting a real
-        // decoded thumbnail + corner metadata chips instead of just the generic file-type icon.
-        m_listView->setItemDelegate(m_mediaGridDelegate);
-        m_listView->setUniformItemSizes(true);
-        m_listView->setViewMode(QListView::IconMode);
-        m_listView->setFlow(QListView::LeftToRight);
-        m_listView->setWrapping(true);
-        m_listView->setGridSize(QSize());
-        m_listView->setIconSize(iconSizeFor(ViewMode::ExtraLargeIcons));
+        // One-time setup (model/mouse-tracking) for Media Viewer mode (Architecture.md §14.61);
+        // the actual per-view-mode rendering (delegate/flow/wrapping/gridSize/iconSize) is
+        // delegated to setMediaViewerViewMode() below, called once at the end of this constructor
+        // (Architecture.md §14.69), rather than inlined here.
 
         // Hover-scrub previews (Architecture.md §14.64): mouse-move events only arrive without a
         // button held down when tracking is enabled.
@@ -222,6 +218,11 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     }
 
     setViewMode(ViewMode::Details);
+
+    if (m_displayMode == DisplayMode::MediaViewerGrid)
+    {
+        setMediaViewerViewMode(m_mediaViewerViewMode);
+    }
 }
 
 bool FileBrowserView::eventFilter(QObject* watched, QEvent* event)
@@ -236,8 +237,14 @@ bool FileBrowserView::eventFilter(QObject* watched, QEvent* event)
 
     // See isIconFamilyViewMode()'s comment: Qt's IconMode ignores ScrollPerItem, so icon-family
     // modes get manual wheel handling here, stepping by exactly one row's height per notch rather
-    // than Qt's small fixed per-pixel default.
-    if (watched == m_listView->viewport() && event->type() == QEvent::Wheel && isIconFamilyViewMode(m_viewMode))
+    // than Qt's small fixed per-pixel default. Media Viewer's Thumbnails sub-mode (Architecture.md
+    // §14.69) is the same IconMode case under a separate m_mediaViewerViewMode flag rather than
+    // m_viewMode, so it needs the same treatment explicitly; Filmstrip/Details use ListMode, which
+    // does honour ScrollPerItem, so they're left out.
+    const bool mediaViewerThumbnailsActive =
+        m_displayMode == DisplayMode::MediaViewerGrid && m_mediaViewerViewMode == MediaViewerViewMode::Thumbnails;
+    if (watched == m_listView->viewport() && event->type() == QEvent::Wheel
+        && (isIconFamilyViewMode(m_viewMode) || mediaViewerThumbnailsActive))
     {
         auto* wheelEvent = static_cast<QWheelEvent*>(event);
         const int notches = wheelEvent->angleDelta().y() / 120;
@@ -419,6 +426,46 @@ void FileBrowserView::setViewMode(ViewMode mode)
     m_listView->setFlow(QListView::LeftToRight);
     m_listView->setWrapping(true);
     m_listView->setGridSize(QSize());
+}
+
+void FileBrowserView::setMediaViewerViewMode(MediaViewerViewMode mode)
+{
+    if (m_displayMode != DisplayMode::MediaViewerGrid)
+    {
+        return;
+    }
+
+    m_mediaViewerViewMode = mode;
+    m_listView->setUniformItemSizes(true);
+    m_listView->setGridSize(QSize());
+
+    if (mode == MediaViewerViewMode::Thumbnails)
+    {
+        // Locked icon-grid rendering (Architecture.md §14.61/§14.62): a real decoded thumbnail +
+        // corner metadata chips instead of just the generic file-type icon.
+        m_listView->setItemDelegate(m_mediaGridDelegate);
+        m_listView->setViewMode(QListView::IconMode);
+        m_listView->setFlow(QListView::LeftToRight);
+        m_listView->setWrapping(true);
+        m_listView->setIconSize(iconSizeFor(ViewMode::ExtraLargeIcons));
+        return;
+    }
+
+    // Filmstrip/Details (Architecture.md §14.69): single-column rows stretching to the full
+    // viewport width, the same way a plain QListWidget behaves -- no gridSize/resize tracking
+    // needed.
+    m_listView->setItemDelegate(mode == MediaViewerViewMode::Filmstrip
+                                     ? static_cast<QAbstractItemDelegate*>(m_mediaFilmstripDelegate)
+                                     : static_cast<QAbstractItemDelegate*>(m_mediaDetailsDelegate));
+    m_listView->setViewMode(QListView::ListMode);
+    m_listView->setFlow(QListView::TopToBottom);
+    m_listView->setWrapping(false);
+    // Details' thumbnail is sized off this (MediaDetailsDelegate::thumbnailRectForCellRect) --
+    // match Thumbnails' own preview size so it isn't a much smaller row-left icon. Filmstrip's
+    // band height is fixed in MediaFilmstripDelegate regardless of iconSize, so this only matters
+    // for Details.
+    m_listView->setIconSize(mode == MediaViewerViewMode::Details ? iconSizeFor(ViewMode::ExtraLargeIcons)
+                                                                   : iconSizeFor(ViewMode::LargeIcons));
 }
 
 std::array<int, FileListModel::ColumnCount> FileBrowserView::columnWidths() const
@@ -653,6 +700,15 @@ void FileBrowserView::showColumnMenu(const QPoint& localPos)
 
 void FileBrowserView::updateMediaViewerHover(const QPoint& pos, bool isLeave)
 {
+    // Filmstrip shows every preview frame at once -- there's no single-frame hover concept to
+    // track (Architecture.md §14.69).
+    if (m_mediaViewerViewMode == MediaViewerViewMode::Filmstrip)
+    {
+        return;
+    }
+
+    const bool isDetails = m_mediaViewerViewMode == MediaViewerViewMode::Details;
+
     QModelIndex newHoveredIndex;
     int newHoveredPreviewIndex = -1;
 
@@ -665,7 +721,9 @@ void FileBrowserView::updateMediaViewerHover(const QPoint& pos, bool isLeave)
             if (MediaExtensions::isVideoExtension(MediaExtensions::lowercaseExtension(path)))
             {
                 const QRect cellRect = m_listView->visualRect(index);
-                const QRect thumbnailRect = MediaGridTileDelegate::thumbnailRectForCellRect(cellRect, m_listView->iconSize());
+                const QRect thumbnailRect = isDetails
+                    ? MediaDetailsDelegate::thumbnailRectForCellRect(cellRect, m_listView->iconSize())
+                    : MediaGridTileDelegate::thumbnailRectForCellRect(cellRect, m_listView->iconSize());
                 if (thumbnailRect.width() > 0)
                 {
                     const double fraction =
@@ -679,13 +737,22 @@ void FileBrowserView::updateMediaViewerHover(const QPoint& pos, bool isLeave)
         }
     }
 
-    const QModelIndex previousHoveredIndex = m_mediaGridDelegate->hoveredIndex();
-    if (previousHoveredIndex == newHoveredIndex && m_mediaGridDelegate->hoveredPreviewIndex() == newHoveredPreviewIndex)
+    const QModelIndex previousHoveredIndex = isDetails ? m_mediaDetailsDelegate->hoveredIndex() : m_mediaGridDelegate->hoveredIndex();
+    const int previousHoveredPreviewIndex =
+        isDetails ? m_mediaDetailsDelegate->hoveredPreviewIndex() : m_mediaGridDelegate->hoveredPreviewIndex();
+    if (previousHoveredIndex == newHoveredIndex && previousHoveredPreviewIndex == newHoveredPreviewIndex)
     {
         return;
     }
 
-    m_mediaGridDelegate->setHoveredPreview(newHoveredIndex, newHoveredPreviewIndex);
+    if (isDetails)
+    {
+        m_mediaDetailsDelegate->setHoveredPreview(newHoveredIndex, newHoveredPreviewIndex);
+    }
+    else
+    {
+        m_mediaGridDelegate->setHoveredPreview(newHoveredIndex, newHoveredPreviewIndex);
+    }
 
     if (previousHoveredIndex.isValid())
     {

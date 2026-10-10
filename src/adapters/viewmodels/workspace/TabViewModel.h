@@ -532,6 +532,16 @@ private:
     // the cached map directly.
     void requestAdvancedSearchResultTags(int generation, const std::vector<FileNode>& candidates);
 
+    // Same shape as requestSearchResultTags/requestAdvancedSearchResultTags, for the Media Viewer
+    // results model (Architecture.md §14.69's Details view tag row): fetches tags for
+    // `candidates`, discarded if `generation` no longer matches m_mediaViewerGeneration, then
+    // applies directly to m_mediaViewerResultsModel. Called from applyMediaViewerFilter() alongside
+    // the existing icon/thumbnail requests, and from the TagChangeNotifier::tagsChanged handler.
+    // Unlike the search/advanced-search siblings, no separate snapshot-tags cache is kept -- Media
+    // Viewer's own candidate list already survives in-memory kind/name re-filters without needing
+    // a fresh tag fetch (refilterEntries() leaves setFileTags()'s prior result alone).
+    void requestMediaViewerResultTags(int generation, const std::vector<FileNode>& candidates);
+
     // Shared implementation of startAdvancedSearch/updateAdvancedSearchCriteria/
     // addTagSearchCriterion/removeTagSearchCriterion. When criteria.tagIds is non-empty, the
     // search is tag-first: queries TagManagementUseCase::findFilesWithAllTags directly (no

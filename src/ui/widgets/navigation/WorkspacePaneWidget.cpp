@@ -418,6 +418,13 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     wireBrowserView(mediaViewerBrowserView, tab);
     stack->addWidget(mediaViewerBrowserView); // page 2: Media Viewer grid
 
+    // Keeps the grid itself in sync with the tab's view-mode state (Architecture.md §14.69) --
+    // previously mediaViewerViewModeChanged only reached the toolbar combo
+    // (MediaViewerSortViewBar::setViewMode, resync only), never the grid, which is why the combo
+    // had no visible effect before this.
+    connect(tab, &TabViewModel::mediaViewerViewModeChanged, mediaViewerBrowserView, &FileBrowserView::setMediaViewerViewMode);
+    mediaViewerBrowserView->setMediaViewerViewMode(tab->mediaViewerViewMode());
+
     // Keeps this tab's two FileBrowserView instances in sync (Architecture.md §14.x): toggling a
     // column in one (normally the visible one, but either works) hides/shows it in the other too,
     // since visibility is a per-*tab* concept, not a per-view one. The Search tab's own results

@@ -11,6 +11,7 @@
 
 #include "FileListModel.h"
 #include "FileNode.h"
+#include "MediaViewerViewMode.h"
 #include "ViewMode.h"
 
 class QModelIndex;
@@ -26,6 +27,8 @@ class FileListModel;
 class FileTileDelegate;
 class FileIconDelegate;
 class MediaGridTileDelegate;
+class MediaFilmstripDelegate;
+class MediaDetailsDelegate;
 class FileNameEditDelegate;
 class SearchResultDelegate;
 class TagsCellDelegate;
@@ -55,6 +58,11 @@ public:
     explicit FileBrowserView(FileListModel* model, QWidget* parent = nullptr, DisplayMode displayMode = DisplayMode::Normal);
 
     void setViewMode(ViewMode mode);
+
+    // MediaViewerGrid mode only (Architecture.md §14.69): switches m_listView's installed
+    // delegate/flow/wrapping/gridSize/iconSize to render `mode`'s layout. No-op outside
+    // DisplayMode::MediaViewerGrid.
+    void setMediaViewerViewMode(MediaViewerViewMode mode);
 
     // AdvancedSearchResults mode only: forwarded to the SearchResultDelegate. No-op in Normal mode.
     // caseSensitive (Architecture.md §14.44) defaults false, preserving the Advanced Search pane's
@@ -172,15 +180,17 @@ private:
 
     // MediaViewerGrid-only hover-scrub tracking (Architecture.md §14.64): called from eventFilter()
     // for every viewport MouseMove/Leave. Resolves which video tile (if any) the cursor is over and
-    // which of its MediaPreviewFrames::kCount bands `pos` falls in, updates
-    // m_mediaGridDelegate's hover state on an actual change, and issues a targeted repaint of just
-    // the previous and new hovered cells. isLeave forces the hover state to "cleared" regardless of
-    // pos.
+    // which of its MediaPreviewFrames::kCount bands `pos` falls in, updates the active delegate's
+    // (m_mediaGridDelegate for Thumbnails, m_mediaDetailsDelegate for Details -- a no-op while
+    // Filmstrip is active, Architecture.md §14.69) hover state on an actual change, and issues a
+    // targeted repaint of just the previous and new hovered cells. isLeave forces the hover state
+    // to "cleared" regardless of pos.
     void updateMediaViewerHover(const QPoint& pos, bool isLeave);
 
     FileListModel* m_model = nullptr;
     DisplayMode m_displayMode = DisplayMode::Normal;
     ViewMode m_viewMode = ViewMode::Details;
+    MediaViewerViewMode m_mediaViewerViewMode = MediaViewerViewMode::Thumbnails;
     QStackedWidget* m_stack = nullptr;
     QListView* m_listView = nullptr;
     QTreeView* m_treeView = nullptr;
@@ -189,6 +199,8 @@ private:
     SearchResultDelegate* m_searchResultDelegate = nullptr;
     FileIconDelegate* m_iconDelegate = nullptr;
     MediaGridTileDelegate* m_mediaGridDelegate = nullptr;
+    MediaFilmstripDelegate* m_mediaFilmstripDelegate = nullptr;
+    MediaDetailsDelegate* m_mediaDetailsDelegate = nullptr;
     TagsCellDelegate* m_tagsCellDelegate = nullptr;
     PercentCellDelegate* m_percentCellDelegate = nullptr;
     QItemSelectionModel* m_selectionModel = nullptr;

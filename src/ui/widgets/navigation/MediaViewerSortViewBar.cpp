@@ -25,6 +25,8 @@ MediaViewerSortViewBar::MediaViewerSortViewBar(QWidget* parent)
     m_viewModeCombo = new QComboBox(this);
     m_viewModeCombo->setObjectName(QStringLiteral("mediaViewerViewModeCombo"));
     m_viewModeCombo->addItem(tr("Thumbnails"));
+    m_viewModeCombo->addItem(tr("Filmstrip"));
+    m_viewModeCombo->addItem(tr("Details"));
     m_viewModeCombo->setToolTip(tr("View"));
 
     auto* layout = new QHBoxLayout(this);
@@ -41,8 +43,12 @@ MediaViewerSortViewBar::MediaViewerSortViewBar(QWidget* parent)
     });
     connect(m_sortDirectionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             [this](int index) { emit sortAscendingChanged(index == 0); });
-    connect(m_viewModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            [this](int) { emit viewModeChanged(MediaViewerViewMode::Thumbnails); });
+    connect(m_viewModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+        const auto mode = index == 1 ? MediaViewerViewMode::Filmstrip
+                           : index == 2 ? MediaViewerViewMode::Details
+                                        : MediaViewerViewMode::Thumbnails;
+        emit viewModeChanged(mode);
+    });
 }
 
 void MediaViewerSortViewBar::setSortCriterion(MediaViewerSortCriterion criterion)
@@ -75,6 +81,12 @@ void MediaViewerSortViewBar::setViewMode(MediaViewerViewMode mode)
     {
     case MediaViewerViewMode::Thumbnails:
         m_viewModeCombo->setCurrentIndex(0);
+        break;
+    case MediaViewerViewMode::Filmstrip:
+        m_viewModeCombo->setCurrentIndex(1);
+        break;
+    case MediaViewerViewMode::Details:
+        m_viewModeCombo->setCurrentIndex(2);
         break;
     }
 }

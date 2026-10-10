@@ -18,6 +18,7 @@
 #include "MediaExtensions.h"
 #include "MediaPreviewFrames.h"
 #include "MediaThumbnailData.h"
+#include "MediaThumbnailPainting.h"
 
 namespace
 {
@@ -33,56 +34,6 @@ namespace
     {
         const QVariant fontData = index.data(Qt::FontRole);
         return fontData.canConvert<QFont>() ? fontData.value<QFont>() : option.font;
-    }
-
-    // Placeholder-icon fallback while a real thumbnail hasn't arrived yet -- copied from
-    // FileIconDelegate::paintIcon (always stretches to fill `rect`, fine for a square system icon).
-    void paintPlaceholderIcon(QPainter* painter, const QIcon& icon, const QRect& rect)
-    {
-        if (icon.isNull())
-        {
-            return;
-        }
-
-        const QList<QSize> sizes = icon.availableSizes();
-        QSize bestSize = rect.size();
-        for (const QSize& size : sizes)
-        {
-            if (size.width() * size.height() > bestSize.width() * bestSize.height())
-            {
-                bestSize = size;
-            }
-        }
-
-        painter->setRenderHint(QPainter::SmoothPixmapTransform);
-        painter->drawPixmap(rect, icon.pixmap(bestSize));
-    }
-
-    // Aspect-fit, letterboxed inside `rect` -- unlike paintPlaceholderIcon() above (a square system
-    // icon can always be stretched to fill), a real photo/poster-frame's own aspect ratio must be
-    // preserved or it looks visibly distorted.
-    void paintThumbnail(QPainter* painter, const QImage& image, const QRect& rect)
-    {
-        if (image.isNull())
-        {
-            return;
-        }
-
-        const QSize scaled = image.size().scaled(rect.size(), Qt::KeepAspectRatio);
-        const QRect target(rect.left() + (rect.width() - scaled.width()) / 2, rect.top() + (rect.height() - scaled.height()) / 2,
-                            scaled.width(), scaled.height());
-
-        painter->setRenderHint(QPainter::SmoothPixmapTransform);
-        painter->drawImage(target, image);
-    }
-
-    // Same mm:ss/hh:mm:ss formatting as MediaPreviewWidget::setPreview.
-    QString durationLabel(std::chrono::milliseconds duration)
-    {
-        const auto totalSeconds = std::chrono::duration_cast<std::chrono::seconds>(duration).count();
-        const QTime time = QTime(0, 0).addSecs(static_cast<int>(totalSeconds));
-        const QString format = totalSeconds >= 3600 ? QStringLiteral("hh:mm:ss") : QStringLiteral("mm:ss");
-        return time.toString(format);
     }
 
     // Semi-transparent rounded-rect label chip anchored inside `bounds`'s bottom-left (alignRight ==
@@ -171,11 +122,11 @@ void MediaGridTileDelegate::paint(QPainter* painter, const QStyleOptionViewItem&
             }
         }
 
-        paintThumbnail(painter, imageToPaint, iconRect);
+        MediaThumbnailPainting::paintThumbnail(painter, imageToPaint, iconRect);
     }
     else
     {
-        paintPlaceholderIcon(painter, index.data(Qt::DecorationRole).value<QIcon>(), iconRect);
+        MediaThumbnailPainting::paintPlaceholderIcon(painter, index.data(Qt::DecorationRole).value<QIcon>(), iconRect);
     }
 
     const QRect textRect = nameRectFor(option, index);
@@ -215,7 +166,7 @@ void MediaGridTileDelegate::paint(QPainter* painter, const QStyleOptionViewItem&
         }
         else if (data.duration.count() > 0)
         {
-            rightLabel = durationLabel(data.duration);
+            rightLabel = MediaThumbnailPainting::durationLabel(data.duration);
         }
         paintCornerChip(painter, iconRect, rightLabel, true);
     }
