@@ -2395,3 +2395,51 @@ Multimedia MultimediaWidgets)` at the top level and linking those two modules in
   keeps serving the poster frame and grid hover previews exactly as before.
 * **Testing**: no new GTest coverage -- pure UI-layer addition, no Domain/Application/Adapter
   change, and UI stays uncovered by CTest in v1 (Architecture.md §11); manual smoke test only.
+
+### 14.68 Media Viewer Mode: Sort + View Controls
+
+Media Viewer mode's grid (§14.61) had no sort control at all -- `TabViewModel::applyMediaViewerFilter`
+hard-coded `FileNavigationUseCase::sortBy(filtered, SortCriterion::Name, true)` -- and no "view"
+concept beyond the single locked `FileBrowserView::DisplayMode::MediaViewerGrid`. This adds three
+dropdowns (sort-by, sort-direction, view), grouped in one container widget, to the per-pane
+navigation toolbar (`WorkspacePaneWidget`'s `QToolBar`) -- the toolbar that §14.61 disables
+entirely while Media Viewer mode is active. The new container sits right after the address bar
+and is the one piece of that toolbar that stays visible/enabled while every other control (back/
+forward/up/refresh/address bar/view-mode button) keeps being disabled exactly as before.
+
+* **New enums** (`src/adapters/viewmodels/media/MediaViewerSortCriterion.h`,
+  `MediaViewerViewMode.h`, same Qt-free posture as `MediaViewerKind.h`): `MediaViewerSortCriterion
+  { Name, Duration, Size }` and `MediaViewerViewMode { Thumbnails }`. A separate sort enum rather
+  than extending the existing (Application-layer) `SortCriterion` -- `Duration` is meaningless for
+  plain file browsing/directories, so it stays scoped to Media Viewer. `MediaViewerViewMode` has a
+  single enumerator today and is a deliberate stub for future view modes the user asked to be able
+  to add later (e.g. a list view) -- `setMediaViewerViewMode` only stores state and emits a signal
+  for the new combo to reflect; the grid itself stays locked to `DisplayMode::MediaViewerGrid`
+  regardless.
+* **State lives on `TabViewModel`** (`m_mediaViewerSortCriterion`, `m_mediaViewerSortAscending`,
+  `m_mediaViewerViewMode`, defaulting to Name/ascending/Thumbnails), per-tab like `m_mediaViewerKind`
+  -- UI only dispatches to it, no business logic in the widget.
+* **Duration sort reuses §14.62's thumbnail cache.** `FileNode`/the recursive-scan candidates never
+  carry a duration (it's only known once `MediaProcessingUseCase::generateThumbnail()` decodes a
+  video), so Duration-sort compares against `FileListModel::m_mediaThumbnailsByPath` via a new
+  `mediaThumbnailDuration(const QString& path)` accessor instead of adding a new field to `FileNode`.
+  An item whose thumbnail hasn't decoded yet always sorts after every item with a known duration
+  (regardless of ascending/descending) rather than being treated as a 0ms duration. Because that
+  cache fills in progressively, `TabViewModel::requestMediaViewerResultThumbnails`'s batch callback
+  re-sorts (`reapplyMediaViewerSort()`) whenever the active criterion is Duration, so the grid
+  reorders live as videos finish decoding instead of only once at load.
+* **`reapplyMediaViewerSort()`** is a cheap re-order only -- it re-filters the already-fetched
+  `m_mediaViewerCandidates` by kind/name (unchanged candidates, no new I/O) and re-sorts, then goes
+  through `FileListModel::refilterEntries()` so it never touches icon/thumbnail requests; changing
+  sort order never changes which paths need decoding.
+* **UI**: `MediaViewerSortViewBar` (`src/ui/widgets/navigation/`), a plain `QWidget` (same shape as
+  `AddressBarWidget`, no theme notifier) holding three tooltipped `QComboBox`es in a `QHBoxLayout`,
+  added to `WorkspacePaneWidget::createToolBar()` right after `AddressBarWidget` and hidden by
+  default; `updateToolBarEnabledForMediaViewer` shows/enables it exactly when Media Viewer mode is
+  active (mirroring how it disables everything else), and the pane's tab-bind/unbind lifecycle
+  resyncs it from (and forwards edits to) whichever `TabViewModel` is currently bound, the same
+  pattern already used for `viewModeChanged`/`mediaViewerModeChanged`.
+* **No new Port, no schema change.** Purely Adapters(ViewModel) + UI, consistent with every other
+  Media Viewer entry.
+* **Testing**: no new GTest coverage, same precedent as §14.61/§14.62/§14.67 (this layer sits under
+  the Architecture.md §11 UI/ViewModel-glue carve-out); manual smoke test only.

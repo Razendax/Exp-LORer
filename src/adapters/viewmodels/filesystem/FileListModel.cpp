@@ -507,10 +507,21 @@ std::optional<FileNode> FileListModel::entryAt(int row) const
 
 void FileListModel::setEntries(const std::filesystem::path& directory, const std::vector<FileNode>& entries)
 {
+    setEntriesImpl(directory,
+                    FileNavigationUseCase::sortBy(entries, m_sortCriterion, m_sortAscending,
+                                                    [this](const FileNode& entry) { return knownSizeOf(entry).value_or(0); }));
+}
+
+void FileListModel::setEntriesPreSorted(const std::filesystem::path& directory, const std::vector<FileNode>& entries)
+{
+    setEntriesImpl(directory, entries);
+}
+
+void FileListModel::setEntriesImpl(const std::filesystem::path& directory, std::vector<FileNode> entries)
+{
     beginResetModel();
     m_directory = directory;
-    m_entries = FileNavigationUseCase::sortBy(entries, m_sortCriterion, m_sortAscending,
-                                                [this](const FileNode& entry) { return knownSizeOf(entry).value_or(0); });
+    m_entries = std::move(entries);
     // A new directory's git status/tags/cached folder sizes haven't been (re)computed yet -- start
     // blank rather than momentarily showing the previous directory's badges/pills/sizes under the
     // new listing.
@@ -525,11 +536,12 @@ void FileListModel::setEntries(const std::filesystem::path& directory, const std
     endResetModel();
 }
 
-void FileListModel::refilterEntries(const std::vector<FileNode>& entries)
+void FileListModel::refilterEntries(const std::vector<FileNode>& entries, bool preSorted)
 {
     beginResetModel();
-    m_entries = FileNavigationUseCase::sortBy(entries, m_sortCriterion, m_sortAscending,
-                                                [this](const FileNode& entry) { return knownSizeOf(entry).value_or(0); });
+    m_entries = preSorted ? entries
+                          : FileNavigationUseCase::sortBy(entries, m_sortCriterion, m_sortAscending,
+                                                            [this](const FileNode& entry) { return knownSizeOf(entry).value_or(0); });
     recomputeTotalSize();
     rebuildVisibleRows();
     endResetModel();
@@ -701,6 +713,16 @@ void FileListModel::setMediaThumbnails(const QHash<QString, MediaThumbnailData>&
     }
 
     emit dataChanged(index(minRow, NameColumn), index(maxRow, NameColumn), { MediaThumbnailRole });
+}
+
+std::optional<std::chrono::milliseconds> FileListModel::mediaThumbnailDuration(const QString& path) const
+{
+    const auto it = m_mediaThumbnailsByPath.constFind(path);
+    if (it == m_mediaThumbnailsByPath.constEnd())
+    {
+        return std::nullopt;
+    }
+    return it->duration;
 }
 
 std::optional<FileDecorationRule> FileListModel::resolveDecoration(const FileNode& entry) const

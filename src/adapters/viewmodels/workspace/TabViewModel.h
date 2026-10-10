@@ -24,6 +24,8 @@
 #include "GitRepositorySummary.h"
 #include "MediaThumbnailLoadingService.h"
 #include "MediaViewerKind.h"
+#include "MediaViewerSortCriterion.h"
+#include "MediaViewerViewMode.h"
 #include "NameSearchOptions.h"
 #include "NavigationHistory.h"
 #include "NotificationCenter.h"
@@ -106,6 +108,9 @@ public:
     const std::vector<Tag::Id>& mediaViewerTagFilters() const noexcept { return m_mediaViewerTagIds; }
     QString mediaViewerNameFilter() const noexcept { return m_mediaViewerNameQuery; }
     NameSearchOptions mediaViewerNameOptions() const noexcept { return m_mediaViewerNameOptions; }
+    MediaViewerSortCriterion mediaViewerSortCriterion() const noexcept { return m_mediaViewerSortCriterion; }
+    bool mediaViewerSortAscending() const noexcept { return m_mediaViewerSortAscending; }
+    MediaViewerViewMode mediaViewerViewMode() const noexcept { return m_mediaViewerViewMode; }
 
     // Resolves mediaViewerTagFilters() into full Tag objects (for chip display), mirroring
     // resolveTagCriteria().
@@ -308,6 +313,18 @@ public slots:
     // candidates were fetched. No-op outside Media Viewer mode.
     void setMediaViewerNameFilter(const QString& query, const NameSearchOptions& options);
 
+    // Media Viewer mode's sort-by/direction/view controls (Architecture.md §14.68). Each is a
+    // no-op if unchanged, else updates the member, emits its signal, and re-sorts the already-
+    // fetched candidate set in memory only (reapplyMediaViewerSort) -- never dispatches a rescan,
+    // same posture as setMediaViewerNameFilter.
+    void setMediaViewerSortCriterion(MediaViewerSortCriterion criterion);
+    void setMediaViewerSortAscending(bool ascending);
+
+    // Stores the chosen view and emits the signal; has no behavioral effect yet (the grid stays
+    // locked to DisplayMode::MediaViewerGrid either way) -- deliberately stubbed "one option
+    // today, more later" per the request.
+    void setMediaViewerViewMode(MediaViewerViewMode mode);
+
     // No-op if already active or already starting, or if currentPath() is VirtualPaths::ThisPC/an
     // archive-virtual path (the Start button is also UI-disabled in that state, but this slot stays
     // defensive). Clears any previous session's log/total, then dispatches an async watch request
@@ -379,6 +396,10 @@ signals:
     // Lets the UI re-sync its applied-tag-filter chip row regardless of which entry point changed
     // the filter set (mirrors advancedSearchCriteriaChanged).
     void mediaViewerCriteriaChanged();
+    // Media Viewer mode's toolbar sort/view controls (Architecture.md §14.68).
+    void mediaViewerSortCriterionChanged(MediaViewerSortCriterion criterion);
+    void mediaViewerSortAscendingChanged(bool ascending);
+    void mediaViewerViewModeChanged(MediaViewerViewMode mode);
     void mediaViewerLoading();
     void mediaViewerLoadingFinished();
     void mediaViewerFailed(const QString& message);
@@ -587,7 +608,30 @@ private:
     // set; a plain in-memory kind/name-filter edit of the SAME candidates passes false, going
     // through refilterEntries() so already-resolved icons/thumbnails survive narrowing and
     // widening the filter without flickering back to their placeholder (Architecture.md §14.62).
+    // The kind+name filtering step itself is factored out into filterMediaViewerCandidates() and
+    // the sort step into sortMediaViewerResults() (Architecture.md §14.68) so reapplyMediaViewerSort()
+    // can re-sort without re-filtering.
     void applyMediaViewerFilter(bool freshCandidates);
+
+    // The kind+name filtering half of applyMediaViewerFilter (Architecture.md §14.68): filters
+    // m_mediaViewerCandidates by MediaExtensions::isImageExtension/isVideoExtension for
+    // m_mediaViewerKind, then by m_mediaViewerNameQuery/m_mediaViewerNameOptions.
+    std::vector<FileNode> filterMediaViewerCandidates() const;
+
+    // The sort half of applyMediaViewerFilter (Architecture.md §14.68): sorts `filtered` by
+    // m_mediaViewerSortCriterion/m_mediaViewerSortAscending. Name/Size delegate to
+    // FileNavigationUseCase::sortBy; Duration sorts via m_mediaViewerResultsModel's
+    // mediaThumbnailDuration() lookup, since duration isn't part of FileNode -- a path whose
+    // duration hasn't been decoded yet always sorts after one that has, regardless of ascending/
+    // descending.
+    std::vector<FileNode> sortMediaViewerResults(std::vector<FileNode> filtered) const;
+
+    // Re-sorts the currently-displayed Media Viewer grid in place (cheap re-order only -- doesn't
+    // touch icon/thumbnail requests, since changing sort order never changes which paths need
+    // decoding). Used by the three sort/view setters below and by the progressive duration-sort
+    // re-order in requestMediaViewerResultThumbnails's batch callback. No-op outside Media Viewer
+    // mode.
+    void reapplyMediaViewerSort();
 
     // Dispatches the "whole-kind background sweep" (Architecture.md §14.66) for `kind` -- every
     // candidate matching `kind` alone (not the name filter), decoded at Low priority so it never
@@ -705,6 +749,13 @@ private:
     FileListModel* m_mediaViewerResultsModel = nullptr;
     bool m_mediaViewerActive = false;
     MediaViewerKind m_mediaViewerKind = MediaViewerKind::Image;
+    // Sort/view toolbar state (Architecture.md §14.68). Not reset by enterMediaViewer/
+    // exitMediaViewer -- unlike m_mediaViewerKind/m_mediaViewerNameQuery, which are tied to the
+    // specific root/candidate set a session browses, these are a per-tab UI preference that
+    // persists across Media Viewer sessions on the same tab.
+    MediaViewerSortCriterion m_mediaViewerSortCriterion = MediaViewerSortCriterion::Name;
+    bool m_mediaViewerSortAscending = true;
+    MediaViewerViewMode m_mediaViewerViewMode = MediaViewerViewMode::Thumbnails;
     std::filesystem::path m_mediaViewerRoot;
     std::vector<Tag::Id> m_mediaViewerTagIds;
     QString m_mediaViewerNameQuery;

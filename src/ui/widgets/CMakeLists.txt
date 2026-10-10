@@ -27,6 +27,8 @@ add_library(explorer_ui_widgets STATIC
     navigation/WorkspacePaneWidget.cpp
     navigation/AddressBarWidget.h
     navigation/AddressBarWidget.cpp
+    navigation/MediaViewerSortViewBar.h
+    navigation/MediaViewerSortViewBar.cpp
     navigation/FileBrowserView.h
     navigation/FileBrowserView.cpp
     navigation/FolderTreeView.h

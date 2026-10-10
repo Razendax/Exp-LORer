@@ -26,6 +26,7 @@ class WorkspacePaneViewModel;
 class TabViewModel;
 class FileOperationsController;
 class AddressBarWidget;
+class MediaViewerSortViewBar;
 class BottomPanelWidget;
 class StatusBarWidget;
 class ColumnVisibilitySettingsViewModel;
@@ -213,6 +214,15 @@ private:
     QToolButton* m_newTabButton = nullptr;
     QToolBar* m_toolBar = nullptr;
     AddressBarWidget* m_addressBar = nullptr;
+    // Media Viewer mode's toolbar sort/view controls (Architecture.md §14.68), added right after
+    // m_addressBar; visible/enabled only while Media Viewer mode is active.
+    MediaViewerSortViewBar* m_mediaViewerSortViewBar = nullptr;
+    // The QWidgetAction QToolBar::addWidget() implicitly created for m_mediaViewerSortViewBar.
+    // Visibility is toggled through this action (not the widget's own setVisible()) -- QToolBar's
+    // internal layout keys its show/hide and space-reservation decisions off the action's visible
+    // property, not the embedded widget's, so toggling the widget directly leaves stale layout
+    // space in place.
+    QAction* m_mediaViewerSortViewBarAction = nullptr;
     StatusBarWidget* m_statusBar = nullptr;
     QAction* m_backAction = nullptr;
     QAction* m_forwardAction = nullptr;

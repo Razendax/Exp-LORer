@@ -33,6 +33,7 @@
 #include "FolderSizeWidget.h"
 #include "FragmentationWidget.h"
 #include "IContextMenuProvider.h"
+#include "MediaViewerSortViewBar.h"
 #include "PathContainment.h"
 #include "SearchCriteriaPanel.h"
 #include "SearchResultsPane.h"
@@ -287,6 +288,11 @@ QToolBar* WorkspacePaneWidget::createToolBar()
     m_addressBar->setClearButtonEnabled(true);
     toolBar->addWidget(m_addressBar);
 
+    m_mediaViewerSortViewBar = new MediaViewerSortViewBar(toolBar);
+    m_mediaViewerSortViewBar->setObjectName(QStringLiteral("paneMediaViewerSortViewBar"));
+    m_mediaViewerSortViewBarAction = toolBar->addWidget(m_mediaViewerSortViewBar);
+    m_mediaViewerSortViewBarAction->setVisible(false);
+
     connect(m_backAction, &QAction::triggered, this, &WorkspacePaneWidget::onBackRequested);
     connect(m_forwardAction, &QAction::triggered, this, &WorkspacePaneWidget::onForwardRequested);
     connect(m_upAction, &QAction::triggered, this, &WorkspacePaneWidget::onUpRequested);
@@ -294,6 +300,13 @@ QToolBar* WorkspacePaneWidget::createToolBar()
     connect(m_addressBar, &QLineEdit::returnPressed, this, &WorkspacePaneWidget::onAddressBarEdited);
     connect(m_addressBar, &AddressBarWidget::folderSuggestionsRequested, this,
             &WorkspacePaneWidget::onAddressBarFolderSuggestionsRequested);
+
+    connect(m_mediaViewerSortViewBar, &MediaViewerSortViewBar::sortCriterionChanged, this,
+            [this](MediaViewerSortCriterion criterion) { if (m_boundTab) m_boundTab->setMediaViewerSortCriterion(criterion); });
+    connect(m_mediaViewerSortViewBar, &MediaViewerSortViewBar::sortAscendingChanged, this,
+            [this](bool ascending) { if (m_boundTab) m_boundTab->setMediaViewerSortAscending(ascending); });
+    connect(m_mediaViewerSortViewBar, &MediaViewerSortViewBar::viewModeChanged, this,
+            [this](MediaViewerViewMode mode) { if (m_boundTab) m_boundTab->setMediaViewerViewMode(mode); });
 
     return toolBar;
 }
@@ -650,6 +663,12 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
         disconnect(m_boundTab, &TabViewModel::navigationFailed, this, &WorkspacePaneWidget::onNavigationFailed);
         disconnect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged);
         disconnect(m_boundTab, &TabViewModel::mediaViewerModeChanged, this, &WorkspacePaneWidget::updateToolBarEnabledForMediaViewer);
+        disconnect(m_boundTab, &TabViewModel::mediaViewerSortCriterionChanged, m_mediaViewerSortViewBar,
+                   &MediaViewerSortViewBar::setSortCriterion);
+        disconnect(m_boundTab, &TabViewModel::mediaViewerSortAscendingChanged, m_mediaViewerSortViewBar,
+                   &MediaViewerSortViewBar::setSortAscending);
+        disconnect(m_boundTab, &TabViewModel::mediaViewerViewModeChanged, m_mediaViewerSortViewBar,
+                   &MediaViewerSortViewBar::setViewMode);
 
         disconnect(m_boundTab, &TabViewModel::directoryContentsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
         disconnect(m_boundTab, &TabViewModel::advancedSearchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
@@ -685,6 +704,12 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
     connect(m_boundTab, &TabViewModel::navigationFailed, this, &WorkspacePaneWidget::onNavigationFailed);
     connect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged);
     connect(m_boundTab, &TabViewModel::mediaViewerModeChanged, this, &WorkspacePaneWidget::updateToolBarEnabledForMediaViewer);
+    connect(m_boundTab, &TabViewModel::mediaViewerSortCriterionChanged, m_mediaViewerSortViewBar,
+            &MediaViewerSortViewBar::setSortCriterion);
+    connect(m_boundTab, &TabViewModel::mediaViewerSortAscendingChanged, m_mediaViewerSortViewBar,
+            &MediaViewerSortViewBar::setSortAscending);
+    connect(m_boundTab, &TabViewModel::mediaViewerViewModeChanged, m_mediaViewerSortViewBar,
+            &MediaViewerSortViewBar::setViewMode);
 
     connect(m_boundTab, &TabViewModel::directoryContentsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
     connect(m_boundTab, &TabViewModel::advancedSearchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
@@ -709,6 +734,9 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
     m_statusBar->clearQuickSelect();
     onViewModeChanged(m_boundTab->viewMode());
     updateToolBarEnabledForMediaViewer(m_boundTab->mediaViewerActive());
+    m_mediaViewerSortViewBar->setSortCriterion(m_boundTab->mediaViewerSortCriterion());
+    m_mediaViewerSortViewBar->setSortAscending(m_boundTab->mediaViewerSortAscending());
+    m_mediaViewerSortViewBar->setViewMode(m_boundTab->mediaViewerViewMode());
     refreshStatusCounts();
     updateGitStatusBar(m_boundTab->lastGitRepositorySummary());
 }
@@ -732,11 +760,14 @@ void WorkspacePaneWidget::updateToolBarEnabledForMediaViewer(bool active)
         m_refreshAction->setEnabled(false);
         m_addressBar->setEnabled(false);
         m_viewModeButton->setEnabled(false);
+        m_mediaViewerSortViewBarAction->setVisible(true);
+        m_mediaViewerSortViewBar->setEnabled(true);
         return;
     }
 
     m_addressBar->setEnabled(true);
     m_viewModeButton->setEnabled(true);
+    m_mediaViewerSortViewBarAction->setVisible(false);
 
     if (!m_boundTab)
     {

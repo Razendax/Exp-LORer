@@ -829,6 +829,42 @@ void TabViewModel::setMediaViewerNameFilter(const QString& query, const NameSear
     applyMediaViewerFilter(false);
 }
 
+void TabViewModel::setMediaViewerSortCriterion(MediaViewerSortCriterion criterion)
+{
+    if (criterion == m_mediaViewerSortCriterion)
+    {
+        return;
+    }
+
+    m_mediaViewerSortCriterion = criterion;
+    emit mediaViewerSortCriterionChanged(criterion);
+    reapplyMediaViewerSort();
+}
+
+void TabViewModel::setMediaViewerSortAscending(bool ascending)
+{
+    if (ascending == m_mediaViewerSortAscending)
+    {
+        return;
+    }
+
+    m_mediaViewerSortAscending = ascending;
+    emit mediaViewerSortAscendingChanged(ascending);
+    reapplyMediaViewerSort();
+}
+
+void TabViewModel::setMediaViewerViewMode(MediaViewerViewMode mode)
+{
+    if (mode == m_mediaViewerViewMode)
+    {
+        return;
+    }
+
+    m_mediaViewerViewMode = mode;
+    emit mediaViewerViewModeChanged(mode);
+    reapplyMediaViewerSort();
+}
+
 void TabViewModel::runMediaViewerQuery()
 {
     const int generation = ++m_mediaViewerGeneration;
@@ -913,7 +949,7 @@ void TabViewModel::onMediaViewerCandidatesReady(int generation, Result<std::vect
     emit mediaViewerLoadingFinished();
 }
 
-void TabViewModel::applyMediaViewerFilter(bool freshCandidates)
+std::vector<FileNode> TabViewModel::filterMediaViewerCandidates() const
 {
     std::vector<FileNode> filtered;
     filtered.reserve(m_mediaViewerCandidates.size());
@@ -928,12 +964,55 @@ void TabViewModel::applyMediaViewerFilter(bool freshCandidates)
         }
     }
 
-    filtered = FileNavigationUseCase::filterByName(std::move(filtered), m_mediaViewerNameQuery.toStdString(), m_mediaViewerNameOptions);
-    filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
+    return FileNavigationUseCase::filterByName(std::move(filtered), m_mediaViewerNameQuery.toStdString(), m_mediaViewerNameOptions);
+}
+
+std::vector<FileNode> TabViewModel::sortMediaViewerResults(std::vector<FileNode> filtered) const
+{
+    switch (m_mediaViewerSortCriterion)
+    {
+    case MediaViewerSortCriterion::Name:
+        return FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, m_mediaViewerSortAscending);
+    case MediaViewerSortCriterion::Size:
+        return FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Size, m_mediaViewerSortAscending);
+    case MediaViewerSortCriterion::Duration:
+        std::stable_sort(filtered.begin(), filtered.end(), [this](const FileNode& a, const FileNode& b) {
+            const auto da = m_mediaViewerResultsModel->mediaThumbnailDuration(QString::fromStdWString(a.path().wstring()));
+            const auto db = m_mediaViewerResultsModel->mediaThumbnailDuration(QString::fromStdWString(b.path().wstring()));
+            if (da.has_value() != db.has_value())
+            {
+                // Unknown duration always sorts last, regardless of ascending/descending.
+                return da.has_value();
+            }
+            if (!da.has_value())
+            {
+                return false;
+            }
+            return m_mediaViewerSortAscending ? *da < *db : *da > *db;
+        });
+        return filtered;
+    }
+
+    return filtered;
+}
+
+void TabViewModel::reapplyMediaViewerSort()
+{
+    if (!m_mediaViewerActive)
+    {
+        return;
+    }
+
+    m_mediaViewerResultsModel->refilterEntries(sortMediaViewerResults(filterMediaViewerCandidates()), /*preSorted=*/true);
+}
+
+void TabViewModel::applyMediaViewerFilter(bool freshCandidates)
+{
+    std::vector<FileNode> filtered = sortMediaViewerResults(filterMediaViewerCandidates());
 
     if (freshCandidates)
     {
-        m_mediaViewerResultsModel->setEntries(m_mediaViewerRoot, filtered);
+        m_mediaViewerResultsModel->setEntriesPreSorted(m_mediaViewerRoot, filtered);
     }
     else
     {
@@ -944,7 +1023,7 @@ void TabViewModel::applyMediaViewerFilter(bool freshCandidates)
         // already-decoded thumbnail instead of flashing back to the placeholder icon while
         // MediaThumbnailLoadingService redundantly redecodes something it already decoded
         // (Architecture.md §14.62).
-        m_mediaViewerResultsModel->refilterEntries(filtered);
+        m_mediaViewerResultsModel->refilterEntries(filtered, /*preSorted=*/true);
     }
 
     // Reuses the current generation rather than bumping it: this is a re-filter/fresh-listing
@@ -1422,6 +1501,13 @@ void TabViewModel::requestMediaViewerResultThumbnails(int generation, const std:
             }
 
             m_mediaViewerResultsModel->setMediaThumbnails(batch);
+
+            if (m_mediaViewerSortCriterion == MediaViewerSortCriterion::Duration)
+            {
+                // Re-orders the grid progressively as video durations finish decoding, instead of
+                // only once (Architecture.md §14.68).
+                reapplyMediaViewerSort();
+            }
 
             if (m_mediaViewerProgressId != 0)
             {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <filesystem>
 #include <optional>
 #include <vector>
@@ -115,6 +116,10 @@ public:
     SortCriterion sortCriterion() const noexcept { return m_sortCriterion; }
     bool sortAscending() const noexcept { return m_sortAscending; }
 
+    // Known duration for `path` (Media Viewer grid key format, QString::fromStdWString(path.wstring())),
+    // or nullopt if its thumbnail hasn't been decoded yet. Used for Duration-sort comparisons.
+    std::optional<std::chrono::milliseconds> mediaThumbnailDuration(const QString& path) const;
+
     // Inverse of the column<->criterion mapping used by sort()/criterionForColumn, so
     // FileBrowserView can drive the QTreeView header's sort indicator from a SortCriterion.
     static int columnForCriterion(SortCriterion criterion);
@@ -128,6 +133,18 @@ public:
 public slots:
     void setEntries(const std::filesystem::path& directory, const std::vector<FileNode>& entries);
 
+    // Same as setEntries(), but stores `entries` in the order given instead of re-sorting them via
+    // FileNavigationUseCase::sortBy(m_sortCriterion, m_sortAscending). Needed by Media Viewer's
+    // results model: TabViewModel::sortMediaViewerResults() already applies that tab's own
+    // sort-by/direction (including Duration, a criterion FileListModel's own SortCriterion/sortBy
+    // can't express), so re-sorting here would silently discard it back to this model's unrelated,
+    // never-updated default (Name/ascending). A separately-named method rather than a defaulted
+    // bool parameter on setEntries() itself, since connect(..., &FileListModel::setEntries) above
+    // takes setEntries's address directly -- a default argument is calling-convention sugar, not
+    // part of a function's type, so taking its address there would still yield the 3-parameter
+    // pointer and fail to bind against the 2-parameter signal.
+    void setEntriesPreSorted(const std::filesystem::path& directory, const std::vector<FileNode>& entries);
+
     // Re-filters `entries` into the SAME listing setEntries() last established -- m_directory is
     // left untouched and, unlike setEntries(), none of the per-path caches (m_iconCache,
     // m_mediaThumbnailsByPath, git status, tags, folder/fragment counts) are cleared. Used by Media
@@ -135,8 +152,9 @@ public slots:
     // which narrow an already-fetched candidate set rather than fetch a new one: a path that drops
     // out of view and later comes back (toggling Image<->Video, say) stays resolved instead of
     // bouncing through its placeholder icon again while MediaThumbnailLoadingService redundantly
-    // redecodes something it already decoded (Architecture.md §14.62).
-    void refilterEntries(const std::vector<FileNode>& entries);
+    // redecodes something it already decoded (Architecture.md §14.62). See setEntries() above for
+    // `preSorted`.
+    void refilterEntries(const std::vector<FileNode>& entries, bool preSorted = false);
 
     // Re-sorts m_entries in place via FileNavigationUseCase::sortBy and emits sortOrderChanged.
     // No-op if criterion/ascending are unchanged.
@@ -198,6 +216,10 @@ private slots:
     void handleFileDecorationsChanged();
 
 private:
+    // Shared beginResetModel()/.../endResetModel() body for setEntries()/setEntriesPreSorted(),
+    // which differ only in whether `entries` needs sorting before this is called.
+    void setEntriesImpl(const std::filesystem::path& directory, std::vector<FileNode> entries);
+
     // Rebuilds m_visibleRows from m_entries/m_showHiddenFiles. Caller is responsible for the
     // surrounding beginResetModel()/endResetModel() pair.
     void rebuildVisibleRows();
