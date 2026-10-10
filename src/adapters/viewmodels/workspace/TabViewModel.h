@@ -516,6 +516,15 @@ private:
     void requestMediaViewerResultThumbnails(int generation, const std::vector<FileNode>& candidates,
                                              MediaThumbnailLoadingService::Priority priority);
 
+    // Extra Large Icons only (Architecture.md §14.71): mirrors requestMediaViewerResultThumbnails's
+    // shape, but scoped to the normal-browsing model (m_fileListModel) and gated to image/video
+    // entries only -- unlike Media Viewer's candidates, which are already media-only by
+    // construction, `entries` here is a plain directory listing. No-op if `entries` has no
+    // image/video files. Called from the same two places requestIcons(path, entries) already is,
+    // both gated to ViewMode::ExtraLargeIcons. Discarded if `path` no longer matches currentPath(),
+    // the same staleness guard requestIcons() uses.
+    void requestBrowsingThumbnails(const std::filesystem::path& path, const std::vector<FileNode>& entries);
+
     // Fetches tags for every file in `candidates` and, once they arrive (discarded if
     // `generation` no longer matches m_searchGeneration), caches them into m_searchSnapshotTags and
     // applies them to m_searchResultsModel. Used whenever the search candidate set itself changes

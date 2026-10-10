@@ -76,6 +76,10 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
                 requestFolderSizes(path, entries);
                 requestFragmentCounts(path, entries);
                 requestIcons(path, entries);
+                if (m_viewMode == ViewMode::ExtraLargeIcons)
+                {
+                    requestBrowsingThumbnails(path, entries);
+                }
             });
 
     // Architecture.md §14.x: a tag assigned/removed/renamed/deleted anywhere re-fetches this tab's
@@ -314,6 +318,16 @@ void TabViewModel::setViewMode(ViewMode mode)
 
     m_viewMode = mode;
     emit viewModeChanged(mode);
+
+    if (mode == ViewMode::ExtraLargeIcons)
+    {
+        // Architecture.md §14.71: every icon-grid tier resolves to the same IconSizeMask::Large, so
+        // the oldMask == newMask early-return below never fires for a tier-to-tier switch -- without
+        // this, switching between icon tiers would never (re)request thumbnails. A redundant
+        // request for an already-decoded path is cheap (CachingMediaDecoder/ThumbnailCache short-
+        // circuit on a cache hit), same cost profile as requestIcons() being re-called below.
+        requestBrowsingThumbnails(currentPath(), m_fileListModel->entries());
+    }
 
     if (newMask == oldMask)
     {
@@ -1444,6 +1458,43 @@ void TabViewModel::requestIcons(const std::filesystem::path& path, const std::ve
 
         m_fileListModel->setIcons(batch);
     });
+}
+
+void TabViewModel::requestBrowsingThumbnails(const std::filesystem::path& path, const std::vector<FileNode>& entries)
+{
+    std::vector<FileNode> mediaEntries;
+    for (const FileNode& entry : entries)
+    {
+        if (entry.isDirectory())
+        {
+            continue;
+        }
+
+        const std::string extension = MediaExtensions::lowercaseExtension(entry.path());
+        if (MediaExtensions::isImageExtension(extension) || MediaExtensions::isVideoExtension(extension))
+        {
+            mediaEntries.push_back(entry);
+        }
+    }
+
+    if (mediaEntries.empty())
+    {
+        return;
+    }
+
+    // 256x256 matches FileBrowserView.cpp's iconSizeFor(ViewMode::ExtraLargeIcons).
+    m_mediaThumbnailLoadingService.requestThumbnails(
+        m_fileListModel, path, std::move(mediaEntries), 256, 256,
+        [this, path](QHash<QString, MediaThumbnailData> batch) {
+            if (path != currentPath())
+            {
+                // A newer navigation has since happened; this reply is stale.
+                return;
+            }
+
+            m_fileListModel->setMediaThumbnails(batch);
+        },
+        MediaThumbnailLoadingService::Priority::High);
 }
 
 void TabViewModel::requestSearchResultIcons(int generation, const std::vector<FileNode>& candidates)

@@ -420,6 +420,7 @@ void FileBrowserView::setViewMode(ViewMode mode)
     }
 
     // ExtraLargeIcons / LargeIcons / MediumIcons / SmallIcons
+    m_iconDelegate->setViewMode(mode);
     m_listView->setItemDelegate(m_iconDelegate);
     m_listView->setUniformItemSizes(true);
     m_listView->setViewMode(QListView::IconMode);

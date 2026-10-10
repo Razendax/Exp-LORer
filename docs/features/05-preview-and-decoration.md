@@ -5,10 +5,11 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67 — the right-panel file Preview tab, its
+Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67, §14.71 — the right-panel file Preview tab, its
 text-preview syntax highlighting, archive browsing/preview/extraction, per-file/folder font &
-color decoration, the Preview panel's dedicated per-kind widgets and media-layout rework, and the
-built-in Widgets video player (first used here, before Media Viewer mode reused it). Section
+color decoration, the Preview panel's dedicated per-kind widgets and media-layout rework, the
+built-in Widgets video player (first used here, before Media Viewer mode reused it), and real
+image/video previews in the main browser's Extra Large Icons view. Section
 numbers are **not** contiguous with this file's neighbors — they were assigned chronologically as
 each feature was built and are kept stable since code comments cite them directly. See
 [Architecture.md](../Architecture.md) §14 for the full topic index across all nine files.
@@ -518,4 +519,46 @@ Multimedia MultimediaWidgets)` at the top level and linking those two modules in
   keeps serving the poster frame and grid hover previews exactly as before.
 * **Testing**: no new GTest coverage -- pure UI-layer addition, no Domain/Application/Adapter
   change, and UI stays uncovered by CTest in v1 (Architecture.md §11); manual smoke test only.
+
+### 14.71 Extra Large Icons: Real Image/Video Previews
+
+Extended `ViewMode::ExtraLargeIcons` (the main file browser's 256×256 icon-grid tier) to show a
+real decoded preview for image/video files instead of the generic Shell icon every other icon-size
+tier still shows — reusing Media Viewer grid's existing thumbnail pipeline (§14.62) rather than
+building a second one: **no Domain/Application/Port change**, pure UI/Adapters wiring.
+
+* **Reused unchanged**: `FileListModel::MediaThumbnailRole`/`setMediaThumbnails()`/
+  `m_mediaThumbnailsByPath` (already generic, keyed by path, with no Media-Viewer-specific
+  coupling), `MediaThumbnailLoadingService::requestThumbnails()`, `MediaThumbnailData`, and
+  `MediaThumbnailPainting::paintThumbnail`/`paintPlaceholderIcon`.
+* **`FileIconDelegate`** (`src/ui/widgets/navigation`) gained a `setViewMode(ViewMode)` setter;
+  `paint()` now reads `MediaThumbnailRole` and paints via `MediaThumbnailPainting::paintThumbnail`
+  (aspect-fit, letterboxed, same as `MediaGridTileDelegate`) when `m_viewMode ==
+  ExtraLargeIcons` and the row is a non-directory image/video file (`MediaExtensions::
+  isImageExtension`/`isVideoExtension`), falling back to the plain Shell icon otherwise/until the
+  real thumbnail arrives. The delegate's own local placeholder-icon painter was replaced by
+  `MediaThumbnailPainting::paintPlaceholderIcon` (functionally identical — largest available
+  `QIcon` pixmap stretched to fill the cell) to drop a duplicate implementation.
+  `FileBrowserView::setViewMode()` forwards the active mode to the delegate.
+* **`TabViewModel`** gained `requestBrowsingThumbnails(path, entries)`, mirroring
+  `requestMediaViewerResultThumbnails`'s shape but pre-filtering `entries` to non-directory image/
+  video files first (the browsing model's entries aren't media-only like Media Viewer's
+  candidates already are) before dispatching to `MediaThumbnailLoadingService` at 256×256/`High`
+  priority. Called from the same two places `requestIcons(path, entries)` already is — the
+  `directoryContentsChanged` funnel and `setViewMode()` — gated to `ViewMode::ExtraLargeIcons`
+  only. `setViewMode()`'s existing early-return-on-unchanged-`IconSizeMask` short-circuit (every
+  icon-grid tier resolves to the same `IconSizeMask::Large`, so it never fired for a tier-to-tier
+  switch) does not gate this new dispatch — entering Extra Large Icons from any other tier always
+  (re)requests thumbnails for the already-listed entries, same as a fresh directory listing does.
+  A request for an already-decoded path is cheap: `CachingMediaDecoder`/`ThumbnailCache` (§8)
+  short-circuit on a cache hit without re-invoking FFmpeg/libvips.
+* **Deliberately scoped to this one tier**: Large/Medium/Small Icons, Tiles, List, and Details
+  keep the plain Shell icon, matching the request's own "extra large" wording and Explorer's own
+  behavior (only its largest icon tier shows real thumbnails). Quick Search and Advanced Search
+  results panes are unaffected — both force Details/tree rendering regardless of `ViewMode`, so
+  Extra Large Icons never applies to `m_searchResultsModel`/`m_advancedSearchResultsModel`.
+* **Not built**: video hover-scrub preview frames (`MediaPreviewFrames`) for this view — that
+  stays a Media-Viewer-grid-only feature (§14.64); any change to Media Viewer mode itself.
+* **Testing**: no new GTest coverage — pure UI/Adapters wiring reusing an already-tested pipeline,
+  same carve-out Media Viewer's own grid thumbnail delegate falls under (§11, §14.62).
 

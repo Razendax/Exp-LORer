@@ -1,6 +1,7 @@
 #include "FileIconDelegate.h"
 
 #include <algorithm>
+#include <filesystem>
 
 #include <QColor>
 #include <QFont>
@@ -8,6 +9,11 @@
 #include <QPainter>
 #include <QPen>
 #include <QWidget>
+
+#include "FileListModel.h"
+#include "MediaExtensions.h"
+#include "MediaThumbnailData.h"
+#include "MediaThumbnailPainting.h"
 
 namespace
 {
@@ -23,31 +29,19 @@ namespace
         return fontData.canConvert<QFont>() ? fontData.value<QFont>() : option.font;
     }
 
-    // QIcon::paint() never upscales: its engine picks the closest available pixmap and only
-    // shrinks it to fit, never grows it, so a row icon resolved from a single native-resolution
-    // Shell pixmap (IconLoadingWorker's SHGFI_LARGEICON, ~32x32) renders tiny and centered inside
-    // a Medium/Large/Extra Large grid cell instead of filling it. Explorer itself stretches that
-    // same native pixmap to fill the cell in those modes, so draw the largest available pixmap
-    // straight into `rect` -- QPainter::drawPixmap(QRect, QPixmap) always scales to fill it.
-    void paintIcon(QPainter* painter, const QIcon& icon, const QRect& rect)
+    // Extra Large Icons only (Architecture.md §14.71): whether this row is a non-directory image/
+    // video file, the same candidate test MediaGridTileDelegate::paint applies to Media Viewer
+    // grid's rows.
+    bool isMediaRow(const QModelIndex& index)
     {
-        if (icon.isNull())
+        if (index.data(FileListModel::IsDirectoryRole).toBool())
         {
-            return;
+            return false;
         }
 
-        const QList<QSize> sizes = icon.availableSizes();
-        QSize bestSize = rect.size();
-        for (const QSize& size : sizes)
-        {
-            if (size.width() * size.height() > bestSize.width() * bestSize.height())
-            {
-                bestSize = size;
-            }
-        }
-
-        painter->setRenderHint(QPainter::SmoothPixmapTransform);
-        painter->drawPixmap(rect, icon.pixmap(bestSize));
+        const auto path = std::filesystem::path(index.data(FileListModel::FilePathRole).toString().toStdWString());
+        const std::string extension = MediaExtensions::lowercaseExtension(path);
+        return MediaExtensions::isImageExtension(extension) || MediaExtensions::isVideoExtension(extension);
     }
 }
 
@@ -75,13 +69,27 @@ void FileIconDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
 {
     painter->save();
 
-    const QIcon icon = index.data(Qt::DecorationRole).value<QIcon>();
     const QSize iconSize = option.decorationSize;
     const QRect iconRect(option.rect.left() + (option.rect.width() - iconSize.width()) / 2,
                           option.rect.top() + kPadding,
                           iconSize.width(),
                           iconSize.height());
-    paintIcon(painter, icon, iconRect);
+
+    bool paintedThumbnail = false;
+    if (m_viewMode == ViewMode::ExtraLargeIcons && isMediaRow(index))
+    {
+        const QVariant thumbnailVariant = index.data(FileListModel::MediaThumbnailRole);
+        if (thumbnailVariant.canConvert<MediaThumbnailData>() && !thumbnailVariant.value<MediaThumbnailData>().image.isNull())
+        {
+            MediaThumbnailPainting::paintThumbnail(painter, thumbnailVariant.value<MediaThumbnailData>().image, iconRect);
+            paintedThumbnail = true;
+        }
+    }
+
+    if (!paintedThumbnail)
+    {
+        MediaThumbnailPainting::paintPlaceholderIcon(painter, index.data(Qt::DecorationRole).value<QIcon>(), iconRect);
+    }
 
     const QRect textRect = nameRectFor(option, index);
 
