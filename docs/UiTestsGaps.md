@@ -3,8 +3,10 @@
 This is the companion to `UiTestsCoverage.md`: what the `ui_tests/` black-box suite does **not**
 exercise today, in plain language. Section numbers (§14.x) refer to the per-feature decision log
 split across `docs/features/01-workspace-navigation-and-search.md`,
-`docs/features/02-preview-decoration-and-status.md`, and
-`docs/features/03-monitoring-git-and-productivity.md`.
+`docs/features/02-preview-decoration-and-status.md`,
+`docs/features/03-monitoring-git-and-productivity.md`,
+`docs/features/04-search-persistence-and-file-tools.md`, and
+`docs/features/05-media-viewer-and-workspaces.md`.
 
 Within each item below, "no coverage" means no test file exercises that behavior at all; "partial"
 means some aspect is covered (see `UiTestsCoverage.md`) but a meaningful part of the same feature is

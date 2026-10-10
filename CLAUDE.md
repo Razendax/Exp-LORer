@@ -18,9 +18,16 @@ Do not restate their content here — refer to them.
 
 `Architecture.md` §14 is a per-feature decision log that outgrew one file; it's split across
 `docs/features/01-workspace-navigation-and-search.md`, `docs/features/02-preview-decoration-and-status.md`,
-and `docs/features/03-monitoring-git-and-productivity.md` (section numbers §14.1–§14.41 are continuous
-across the three). `Architecture.md` itself still holds §1–§13 (the core architecture) plus a short
-index into those three files — read the relevant one(s) for the feature you're touching.
+`docs/features/03-monitoring-git-and-productivity.md`, `docs/features/04-search-persistence-and-file-tools.md`,
+and `docs/features/05-media-viewer-and-workspaces.md` (section numbers §14.1–§14.70 are continuous
+across all five). `Architecture.md` itself still holds §1–§13 (the core architecture) plus a short
+index into those five files — read the relevant one(s) for the feature you're touching.
+
+Keep each `docs/features/*.md` file at or under **1000 lines**. When a plan-mode doc update (step 3
+below) would push a file past that, split the overflow into a new, next-numbered file instead of
+letting it keep growing — give it its own descriptive name, update the cross-file "Covers §.../
+Preceded by/Continued in" header on every file in the chain, and update `Architecture.md` §14's
+index the same way.
 
 ## Development Workflow
 

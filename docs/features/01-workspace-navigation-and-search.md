@@ -6,8 +6,10 @@ per feature, not an implementation walkthrough; see git history and the code's o
 (many cite these subsection numbers directly) for the detail.
 
 Covers §14.1–§14.26. Continued in
-[02-preview-decoration-and-status.md](02-preview-decoration-and-status.md) (§14.27–§14.33) and
-[03-monitoring-git-and-productivity.md](03-monitoring-git-and-productivity.md) (§14.34–§14.40).
+[02-preview-decoration-and-status.md](02-preview-decoration-and-status.md) (§14.27–§14.33),
+[03-monitoring-git-and-productivity.md](03-monitoring-git-and-productivity.md) (§14.34–§14.43),
+[04-search-persistence-and-file-tools.md](04-search-persistence-and-file-tools.md) (§14.44–§14.56),
+and [05-media-viewer-and-workspaces.md](05-media-viewer-and-workspaces.md) (§14.57–§14.70).
 
 ---
 
