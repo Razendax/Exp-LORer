@@ -131,6 +131,19 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
         // Hover-scrub previews (Architecture.md §14.64): mouse-move events only arrive without a
         // button held down when tracking is enabled.
         m_listView->viewport()->setMouseTracking(true);
+
+        // Details view's tag-pill click (Architecture.md §14.72): m_mediaDetailsDelegate is
+        // constructed for every FileBrowserView instance regardless of DisplayMode, but is only
+        // ever installed as the active delegate -- hence only ever fires editorEvent -- while
+        // DisplayMode::MediaViewerGrid + MediaViewerViewMode::Details is active, so this
+        // connection is harmless for the other two instances.
+        connect(m_mediaDetailsDelegate, &MediaDetailsDelegate::tagActivated, this,
+                [this](const QModelIndex& index, Tag::Id tagId, Qt::KeyboardModifiers modifiers) {
+                    if (const auto entry = m_model->entryAt(index.row()))
+                    {
+                        emit mediaViewerDetailsTagClicked(*entry, tagId, modifiers.testFlag(Qt::ControlModifier));
+                    }
+                });
     }
     else
     {

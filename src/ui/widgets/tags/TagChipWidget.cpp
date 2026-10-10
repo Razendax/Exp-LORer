@@ -68,7 +68,7 @@ void TagChipWidget::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton)
     {
-        emit clicked(m_tag.id());
+        emit clicked(m_tag.id(), event->modifiers());
         return;
     }
     QWidget::mousePressEvent(event);

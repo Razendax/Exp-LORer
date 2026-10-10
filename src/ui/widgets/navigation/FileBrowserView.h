@@ -12,6 +12,7 @@
 #include "FileListModel.h"
 #include "FileNode.h"
 #include "MediaViewerViewMode.h"
+#include "Tag.h"
 #include "ViewMode.h"
 
 class QModelIndex;
@@ -153,6 +154,10 @@ signals:
     // change onto this tab's other FileBrowserView instance (normal browsing and advanced-search
     // results share the same visibility per tab).
     void columnVisibilityChanged(FileListModel::Column column, bool visible);
+
+    // Media Viewer Details view's per-item tag-pill click (Architecture.md §14.72), relayed from
+    // MediaDetailsDelegate::tagActivated once the row index is resolved to a FileNode.
+    void mediaViewerDetailsTagClicked(const FileNode& entry, Tag::Id tagId, bool ctrlHeld);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;

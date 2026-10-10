@@ -5,6 +5,7 @@
 #include <QWidget>
 
 #include "MediaViewerKind.h"
+#include "MediaViewerTagBehaviour.h"
 #include "NameSearchOptions.h"
 #include "Tag.h"
 #include "UiColors.h"
@@ -37,11 +38,16 @@ public:
     void setTagSearchResults(const std::vector<Tag>& tags);
     void setNameFilter(const QString& query, const NameSearchOptions& options);
     void setLoading(bool loading);
+    void setTagBehaviour(MediaViewerTagBehaviour behaviour);
 
 signals:
     void kindChanged(MediaViewerKind kind);
     void exitRequested();
-    void tagFilterAdded(Tag::Id tagId);
+    void tagBehaviourChanged(MediaViewerTagBehaviour behaviour);
+    // Relays a search-results tag chip's click as-is -- the Filter/Apply decision lives in
+    // TabViewModel::handleMediaViewerSearchTagActivated, not here (this widget stays "dumb", same
+    // posture as kindChanged/tagFilterRemoved).
+    void tagSearchChipActivated(Tag::Id tagId, Qt::KeyboardModifiers modifiers);
     void tagFilterRemoved(Tag::Id tagId);
     void tagSearchQueryRequested(const QString& query);
     void nameFilterChanged(const QString& query, const NameSearchOptions& options);
@@ -81,6 +87,7 @@ private:
     FlowLayout* m_appliedFiltersLayout = nullptr;
 
     QLineEdit* m_tagSearchEdit = nullptr;
+    QComboBox* m_tagBehaviourCombo = nullptr;
     FlowLayout* m_tagMatchesLayout = nullptr;
 
     QToolButton* m_matchCaseButton = nullptr;

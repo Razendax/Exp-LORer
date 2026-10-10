@@ -25,6 +25,7 @@
 #include "MediaThumbnailLoadingService.h"
 #include "MediaViewerKind.h"
 #include "MediaViewerSortCriterion.h"
+#include "MediaViewerTagBehaviour.h"
 #include "MediaViewerViewMode.h"
 #include "NameSearchOptions.h"
 #include "NavigationHistory.h"
@@ -111,6 +112,7 @@ public:
     MediaViewerSortCriterion mediaViewerSortCriterion() const noexcept { return m_mediaViewerSortCriterion; }
     bool mediaViewerSortAscending() const noexcept { return m_mediaViewerSortAscending; }
     MediaViewerViewMode mediaViewerViewMode() const noexcept { return m_mediaViewerViewMode; }
+    MediaViewerTagBehaviour mediaViewerTagBehaviour() const noexcept { return m_mediaViewerTagBehaviour; }
 
     // Resolves mediaViewerTagFilters() into full Tag objects (for chip display), mirroring
     // resolveTagCriteria().
@@ -308,6 +310,27 @@ public slots:
     void addMediaViewerTagFilter(Tag::Id tagId);
     void removeMediaViewerTagFilter(Tag::Id tagId);
 
+    // Media Viewer mode's tag behaviour toggle (Architecture.md §14.72): flips what a plain click
+    // vs. a Ctrl+click on a tag chip/pill does in the two slots below. Not reset by
+    // enterMediaViewer()/exitMediaViewer() -- a per-tab UI preference, same posture as
+    // m_mediaViewerSortCriterion/m_mediaViewerViewMode.
+    void setMediaViewerTagBehaviour(MediaViewerTagBehaviour behaviour);
+
+    // The search-results tag-chip click (MediaViewerSearchPanelWidget's matching-tag row): XOR's
+    // ctrlHeld against the current behaviour to decide between adding tagId to the filter set and
+    // applying it to the current selection. No-op outside Media Viewer mode.
+    void handleMediaViewerSearchTagActivated(Tag::Id tagId, bool ctrlHeld);
+
+    // Assigns tagId to every entry in m_selectedEntries (ignoring a per-entry AlreadyExists),
+    // emitting mediaViewerFailed if the selection is empty and a "Tag Applied" popup + tagsChanged
+    // on at least one success. Used by handleMediaViewerSearchTagActivated's "Apply" branch.
+    void applyMediaViewerTagToSelection(Tag::Id tagId);
+
+    // The Details-view per-item tag-pill click: same XOR rule as above, but the "other" action is
+    // removing tagId from `entry` specifically rather than applying it to the whole selection. No-op
+    // outside Media Viewer mode.
+    void handleMediaViewerDetailsTagClick(const FileNode& entry, Tag::Id tagId, bool ctrlHeld);
+
     // Updates the name/Match Case/Whole Word/Exact Name/Match Regex filter and re-filters the
     // cached candidate set in memory only -- never dispatches a rescan, since neither affects which
     // candidates were fetched. No-op outside Media Viewer mode.
@@ -400,6 +423,7 @@ signals:
     void mediaViewerSortCriterionChanged(MediaViewerSortCriterion criterion);
     void mediaViewerSortAscendingChanged(bool ascending);
     void mediaViewerViewModeChanged(MediaViewerViewMode mode);
+    void mediaViewerTagBehaviourChanged(MediaViewerTagBehaviour behaviour);
     void mediaViewerLoading();
     void mediaViewerLoadingFinished();
     void mediaViewerFailed(const QString& message);
@@ -775,6 +799,9 @@ private:
     MediaViewerSortCriterion m_mediaViewerSortCriterion = MediaViewerSortCriterion::Name;
     bool m_mediaViewerSortAscending = true;
     MediaViewerViewMode m_mediaViewerViewMode = MediaViewerViewMode::Thumbnails;
+    // Tag-click behaviour toggle (Architecture.md §14.72). Not reset by enterMediaViewer/
+    // exitMediaViewer, same posture as m_mediaViewerSortCriterion/m_mediaViewerViewMode above.
+    MediaViewerTagBehaviour m_mediaViewerTagBehaviour = MediaViewerTagBehaviour::Filter;
     std::filesystem::path m_mediaViewerRoot;
     std::vector<Tag::Id> m_mediaViewerTagIds;
     QString m_mediaViewerNameQuery;

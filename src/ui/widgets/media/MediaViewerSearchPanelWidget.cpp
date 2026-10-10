@@ -43,6 +43,15 @@ MediaViewerSearchPanelWidget::MediaViewerSearchPanelWidget(UiThemeChangeNotifier
     m_tagSearchEdit->setObjectName(QStringLiteral("mediaViewerTagSearchEdit"));
     m_tagSearchEdit->setPlaceholderText(tr("Search tags..."));
 
+    m_tagBehaviourCombo = new QComboBox(this);
+    m_tagBehaviourCombo->setObjectName(QStringLiteral("mediaViewerTagBehaviourCombo"));
+    m_tagBehaviourCombo->addItem(tr("Filter"));
+    m_tagBehaviourCombo->addItem(tr("Apply"));
+
+    auto* tagSearchRow = new QHBoxLayout();
+    tagSearchRow->addWidget(m_tagSearchEdit);
+    tagSearchRow->addWidget(m_tagBehaviourCombo);
+
     // Match Case/Whole Word/Exact Name/Match Regex/Skip Git-Ignored toggles, copied verbatim from
     // SearchCriteriaPanel's own row (Architecture.md §14.61) rather than extracted into a shared
     // widget -- this codebase already duplicates this row between SearchPanelWidget and
@@ -121,7 +130,7 @@ MediaViewerSearchPanelWidget::MediaViewerSearchPanelWidget(UiThemeChangeNotifier
 
     layout->addSpacing(20);
 
-    layout->addWidget(m_tagSearchEdit);
+    layout->addLayout(tagSearchRow);
     m_tagMatchesLayout = addChipSection(layout, QString(), &UiColors::UiColorSet::matchingTagsBackground,
                                          QStringLiteral("mediaViewerTagMatchesSection"));
 
@@ -135,6 +144,9 @@ MediaViewerSearchPanelWidget::MediaViewerSearchPanelWidget(UiThemeChangeNotifier
 
     connect(m_kindCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             [this](int index) { emit kindChanged(index == 1 ? MediaViewerKind::Video : MediaViewerKind::Image); });
+    connect(m_tagBehaviourCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+        emit tagBehaviourChanged(index == 1 ? MediaViewerTagBehaviour::Apply : MediaViewerTagBehaviour::Filter);
+    });
     connect(m_exitButton, &QToolButton::clicked, this, &MediaViewerSearchPanelWidget::exitRequested);
     connect(m_tagSearchEdit, &QLineEdit::textChanged, this, &MediaViewerSearchPanelWidget::tagSearchQueryRequested);
     connect(m_nameEdit, &QLineEdit::textChanged, this, [this](const QString&) { emitNameFilterChanged(); });
@@ -206,9 +218,15 @@ void MediaViewerSearchPanelWidget::setTagSearchResults(const std::vector<Tag>& t
     for (const Tag& tag : tags)
     {
         auto* chip = new TagChipWidget(tag, TagChipWidget::Kind::ReadOnly);
-        connect(chip, &TagChipWidget::clicked, this, &MediaViewerSearchPanelWidget::tagFilterAdded);
+        connect(chip, &TagChipWidget::clicked, this, &MediaViewerSearchPanelWidget::tagSearchChipActivated);
         m_tagMatchesLayout->addWidget(chip);
     }
+}
+
+void MediaViewerSearchPanelWidget::setTagBehaviour(MediaViewerTagBehaviour behaviour)
+{
+    const QSignalBlocker blocker(m_tagBehaviourCombo);
+    m_tagBehaviourCombo->setCurrentIndex(behaviour == MediaViewerTagBehaviour::Apply ? 1 : 0);
 }
 
 void MediaViewerSearchPanelWidget::setNameFilter(const QString& query, const NameSearchOptions& options)

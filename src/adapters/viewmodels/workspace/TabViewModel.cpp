@@ -23,6 +23,7 @@
 #include "MediaExtensions.h"
 #include "MediaThumbnailLoadingService.h"
 #include "NotificationCenter.h"
+#include "NotificationType.h"
 #include "TagChangeNotifier.h"
 #include "TagManagementUseCase.h"
 #include "VirtualPaths.h"
@@ -882,6 +883,84 @@ void TabViewModel::setMediaViewerViewMode(MediaViewerViewMode mode)
     m_mediaViewerViewMode = mode;
     emit mediaViewerViewModeChanged(mode);
     reapplyMediaViewerSort();
+}
+
+void TabViewModel::setMediaViewerTagBehaviour(MediaViewerTagBehaviour behaviour)
+{
+    if (behaviour == m_mediaViewerTagBehaviour)
+    {
+        return;
+    }
+
+    m_mediaViewerTagBehaviour = behaviour;
+    emit mediaViewerTagBehaviourChanged(behaviour);
+}
+
+void TabViewModel::handleMediaViewerSearchTagActivated(Tag::Id tagId, bool ctrlHeld)
+{
+    if (!m_mediaViewerActive)
+    {
+        return;
+    }
+
+    if ((m_mediaViewerTagBehaviour == MediaViewerTagBehaviour::Filter) != ctrlHeld)
+    {
+        addMediaViewerTagFilter(tagId);
+    }
+    else
+    {
+        applyMediaViewerTagToSelection(tagId);
+    }
+}
+
+void TabViewModel::applyMediaViewerTagToSelection(Tag::Id tagId)
+{
+    if (m_selectedEntries.empty())
+    {
+        emit mediaViewerFailed(tr("No items selected to apply the tag to."));
+        return;
+    }
+
+    std::size_t successCount = 0;
+    for (const FileNode& entry : m_selectedEntries)
+    {
+        auto result = m_tagManagementUseCase.assignTag(entry, tagId);
+        if (result || result.error().code == ErrorCode::AlreadyExists)
+        {
+            ++successCount;
+        }
+    }
+
+    if (successCount == 0)
+    {
+        return;
+    }
+
+    m_notificationCenter.showPopup(NotificationType::Info, tr("Tag Applied"),
+                                    tr("Tagged %1 item(s).").arg(successCount));
+    emit m_tagChangeNotifier.tagsChanged();
+}
+
+void TabViewModel::handleMediaViewerDetailsTagClick(const FileNode& entry, Tag::Id tagId, bool ctrlHeld)
+{
+    if (!m_mediaViewerActive)
+    {
+        return;
+    }
+
+    if ((m_mediaViewerTagBehaviour == MediaViewerTagBehaviour::Filter) != ctrlHeld)
+    {
+        addMediaViewerTagFilter(tagId);
+        return;
+    }
+
+    auto result = m_tagManagementUseCase.unassignTag(entry, tagId);
+    if (!result)
+    {
+        emit mediaViewerFailed(QString::fromStdString(result.error().message));
+        return;
+    }
+    emit m_tagChangeNotifier.tagsChanged();
 }
 
 void TabViewModel::runMediaViewerQuery()

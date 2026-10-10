@@ -5,10 +5,11 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.61–14.66, §14.68–14.69 — the recursive tag/name-filtered image/video gallery mode and
+Covers §14.61–14.66, §14.68–14.69, §14.72 — the recursive tag/name-filtered image/video gallery mode and
 its follow-ups: thumbnail previews/metadata overlays, the `IMediaDecoder` thumbnail/metadata
-merge, video hover-scrub previews, loading-progress notification, kind-scoped loading, and
-sort/view/filmstrip/details controls. The built-in video player itself
+merge, video hover-scrub previews, loading-progress notification, kind-scoped loading,
+sort/view/filmstrip/details controls, and the Filter/Apply tag-click behaviour toggle. The built-in
+video player itself
 (§14.67) lives in [05-preview-and-decoration.md](05-preview-and-decoration.md), since it was built
 for and first used by the Preview tab. Section numbers are **not** contiguous with this file's
 neighbors — they were assigned chronologically as each feature was built and are kept stable
@@ -513,4 +514,70 @@ consistent with every other Media Viewer entry.
   `MediaViewerViewMode`, untouched here).
 * **Testing**: no new GTest coverage, same precedent as §14.61/§14.62/§14.64/§14.67/§14.68 (this
   layer sits under the Architecture.md §11 UI/ViewModel-glue carve-out); manual smoke test only.
+
+---
+### 14.72 Media Viewer: Clickable Tags with a Filter/Apply Behaviour Toggle
+
+Two Media-Viewer-only tag-click affordances, both gated by one new "Tag behaviour" dropdown
+(Filter/Apply) next to the Searcher tab's tag-search box: (1) a plain click vs. a Ctrl+click on a
+search-results tag chip now either adds the tag to the filter set or applies it to the current
+selection; (2) the Details view's per-item tag pills (previously purely decorative, painted by
+`TagPillRowPainter` against `FileListModel::TagsRole`) become clickable, with the same click/
+Ctrl+click split adding the tag to the filter or removing it from that one item. Scoped entirely to
+Media Viewer mode — the main file-browser panel's own Tag Panel/Advanced Search tag chips are
+unaffected. No Domain/Application change: reuses `TagManagementUseCase::assignTag`/`unassignTag`,
+`TabViewModel::m_selectedEntries`, and `TagChangeNotifier::tagsChanged()`.
+
+* **The Filter/Apply rule is one XOR, applied identically at both call sites**: a click is a
+  "filter" action when `(behaviour == Filter) != ctrlHeld`, otherwise it's the "other" action
+  (apply-to-selection for the search list, remove-from-item for the Details pills). Centralized in
+  `TabViewModel` rather than duplicated per widget.
+* **`MediaViewerTagBehaviour`** (`src/adapters/viewmodels/media/MediaViewerTagBehaviour.h`, new):
+  `enum class MediaViewerTagBehaviour { Filter, Apply }`, same minimal posture as
+  `MediaViewerKind.h`/`MediaViewerViewMode.h`.
+* **`TagChipWidget::clicked`** gains a `Qt::KeyboardModifiers` parameter (now
+  `clicked(Tag::Id, Qt::KeyboardModifiers)`), set from `mousePressEvent`'s `event->modifiers()`.
+  Every existing connection (`TagPanelWidget`, `TagManagerDialog`, `SearchCriteriaPanel`) keeps
+  working unchanged — Qt's `connect` allows a receiving slot/signal to take fewer trailing
+  arguments than the emitting signal.
+* **`TabViewModel`** gains `mediaViewerTagBehaviour()`/`setMediaViewerTagBehaviour()` (+
+  `mediaViewerTagBehaviourChanged` signal) — a per-tab UI preference, **not** reset by
+  `enterMediaViewer()`/`exitMediaViewer()`, same posture as `m_mediaViewerSortCriterion`/
+  `m_mediaViewerViewMode` — plus three new slots implementing the rule above:
+  `handleMediaViewerSearchTagActivated(Tag::Id, bool ctrlHeld)` (search-chip click: filter vs.
+  `applyMediaViewerTagToSelection`), `applyMediaViewerTagToSelection(Tag::Id)` (bulk `assignTag`
+  over `m_selectedEntries`, ignoring a per-entry `AlreadyExists`; emits `mediaViewerFailed` on an
+  empty selection, otherwise a "Tag Applied" popup + `tagsChanged()` on at least one success), and
+  `handleMediaViewerDetailsTagClick(const FileNode&, Tag::Id, bool ctrlHeld)` (Details-pill click:
+  filter vs. a single `unassignTag` on that entry). All three no-op outside Media Viewer mode.
+* **`MediaViewerSearchPanelWidget`** gains the "Tag behaviour" `QComboBox` (`m_tagBehaviourCombo`,
+  Filter/Apply) in a new `QHBoxLayout` alongside the tag-search box, `setTagBehaviour()` (resync,
+  `QSignalBlocker`-guarded like `setKind`), and a `tagBehaviourChanged` signal. Its old
+  `tagFilterAdded` signal (dead — only ever emitted from the search-results chip) is replaced by
+  `tagSearchChipActivated(Tag::Id, Qt::KeyboardModifiers)`, a plain relay of the chip's full click
+  payload — the widget stays "dumb"; the Filter/Apply decision lives in `TabViewModel` above, same
+  posture as `kindChanged`/`tagFilterRemoved`.
+* **`TagPillRowPainter`** gains `tagIdAt(rect, tags, font, pos)`, hit-testing the same pill layout
+  `paintTagPillRow` paints (a `layoutTagPillRow` helper now computes each pill's rect/text/
+  background once, shared by both) — returns the tag under `pos`, or `nullopt` for a miss or for
+  the "+N" overflow pill, which isn't associated with any single tag.
+* **`MediaDetailsDelegate`** overrides `editorEvent`: on a left-button release, hit-tests the tags
+  row via a new `computeTagsRect()` (the tags-row geometry factored out of `paint()` — it doesn't
+  depend on `hasThumbnail`, only what's drawn inside it does) + `TagPillRowPainter::tagIdAt`,
+  emitting a new `tagActivated(QModelIndex, Tag::Id, Qt::KeyboardModifiers)` signal on a hit.
+  `TagsCellDelegate` (the main-panel Details view) is untouched — this is Media-Viewer-only.
+* **`FileBrowserView`** gains a `mediaViewerDetailsTagClicked(const FileNode&, Tag::Id, bool
+  ctrlHeld)` signal, wired from `MediaDetailsDelegate::tagActivated` in the constructor's
+  `DisplayMode::MediaViewerGrid` branch (resolving the row index to a `FileNode` via
+  `FileListModel::entryAt`). `m_mediaDetailsDelegate` exists on every instance regardless of
+  `DisplayMode`, but only the Media-Viewer-grid instance ever actually installs it as the active
+  delegate (hence only it ever fires `editorEvent`), so this connection is harmless elsewhere.
+* **Wiring**: `MainWindow` connects `tagSearchChipActivated` to
+  `TabViewModel::handleMediaViewerSearchTagActivated` and `tagBehaviourChanged` to
+  `setMediaViewerTagBehaviour` (plus the matching per-focused-tab resync pair, mirroring
+  `mediaViewerKindChanged`/`setKind`). `WorkspacePaneWidget::wireBrowserView` (shared by all three
+  per-tab `FileBrowserView` instances) connects `mediaViewerDetailsTagClicked` straight to
+  `TabViewModel::handleMediaViewerDetailsTagClick`.
+* **Testing**: no new GTest coverage, same precedent as the rest of this file (Architecture.md §11
+  UI/ViewModel-glue carve-out); manual smoke test only.
 

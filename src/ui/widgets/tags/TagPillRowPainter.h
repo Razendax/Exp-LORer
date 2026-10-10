@@ -1,10 +1,13 @@
 #pragma once
 
+#include <cstdint>
+#include <optional>
 #include <vector>
 
 class QFont;
 class QFontMetrics;
 class QPainter;
+class QPoint;
 class QRect;
 class Tag;
 
@@ -22,4 +25,9 @@ namespace TagPillRowPainter
     // Height of one pill row for `fontMetrics` -- lets a caller size a layout rect before calling
     // paintTagPillRow() above.
     int tagPillRowHeight(const QFontMetrics& fontMetrics);
+
+    // Returns the id of the tag whose pill contains `pos` within `rect` (laid out exactly as
+    // paintTagPillRow would), or nullopt if pos misses every pill, including the "+N" overflow
+    // pill, which isn't associated with any single tag (Architecture.md §14.72).
+    std::optional<std::int64_t> tagIdAt(const QRect& rect, const std::vector<Tag>& tags, const QFont& font, const QPoint& pos);
 }

@@ -587,12 +587,20 @@ void MainWindow::createWorkspace()
             tab->exitMediaViewer();
         }
     });
-    connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagFilterAdded, this, [this](Tag::Id tagId) {
-        if (TabViewModel* tab = m_workspaceController->focusedTab())
-        {
-            tab->addMediaViewerTagFilter(tagId);
-        }
-    });
+    connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagSearchChipActivated, this,
+            [this](Tag::Id tagId, Qt::KeyboardModifiers modifiers) {
+                if (TabViewModel* tab = m_workspaceController->focusedTab())
+                {
+                    tab->handleMediaViewerSearchTagActivated(tagId, modifiers.testFlag(Qt::ControlModifier));
+                }
+            });
+    connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagBehaviourChanged, this,
+            [this](MediaViewerTagBehaviour behaviour) {
+                if (TabViewModel* tab = m_workspaceController->focusedTab())
+                {
+                    tab->setMediaViewerTagBehaviour(behaviour);
+                }
+            });
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagFilterRemoved, this, [this](Tag::Id tagId) {
         if (TabViewModel* tab = m_workspaceController->focusedTab())
         {
@@ -1173,6 +1181,8 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
             [this](MediaViewerKind kind) { m_mediaViewerSearchPanelWidget->setKind(kind); });
     connect(tab, &TabViewModel::mediaViewerCriteriaChanged, m_mediaViewerSearchPanelWidget,
             [this, tab]() { m_mediaViewerSearchPanelWidget->setAppliedTagFilters(tab->resolveMediaViewerTagFilters()); });
+    connect(tab, &TabViewModel::mediaViewerTagBehaviourChanged, m_mediaViewerSearchPanelWidget,
+            [this](MediaViewerTagBehaviour behaviour) { m_mediaViewerSearchPanelWidget->setTagBehaviour(behaviour); });
     connect(tab, &TabViewModel::mediaViewerLoading, m_mediaViewerSearchPanelWidget,
             [this]() { m_mediaViewerSearchPanelWidget->setLoading(true); });
     connect(tab, &TabViewModel::mediaViewerLoadingFinished, m_mediaViewerSearchPanelWidget,
@@ -1181,6 +1191,7 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
             [this]() { m_mediaViewerSearchPanelWidget->setLoading(false); });
 
     m_mediaViewerSearchPanelWidget->setKind(tab->mediaViewerKind());
+    m_mediaViewerSearchPanelWidget->setTagBehaviour(tab->mediaViewerTagBehaviour());
     m_mediaViewerSearchPanelWidget->setAppliedTagFilters(tab->resolveMediaViewerTagFilters());
     m_mediaViewerSearchPanelWidget->setNameFilter(tab->mediaViewerNameFilter(), tab->mediaViewerNameOptions());
     // Prepopulate with every tag (searchTagsForCriteria("") -> all tags, alphabetically) rather

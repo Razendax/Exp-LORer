@@ -611,6 +611,11 @@ void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewM
     // background tab's selection doesn't leak into another tab's, and is preserved when revisited.
     connect(browserView, &FileBrowserView::selectionChanged, tab, &TabViewModel::setSelectedEntries);
 
+    // Media Viewer Details view's per-item tag-pill click (Architecture.md §14.72) -- only ever
+    // fires for the Media-Viewer-grid instance in practice, same as the comment on
+    // FileBrowserView's own connection to MediaDetailsDelegate::tagActivated.
+    connect(browserView, &FileBrowserView::mediaViewerDetailsTagClicked, tab, &TabViewModel::handleMediaViewerDetailsTagClick);
+
     connect(browserView, &FileBrowserView::copyRequested, tab, [this, tab]() {
         if (tab->selectedEntries().empty())
         {

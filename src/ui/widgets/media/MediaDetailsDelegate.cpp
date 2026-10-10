@@ -9,6 +9,7 @@
 #include <QFontMetrics>
 #include <QIcon>
 #include <QImage>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPen>
 #include <QStringList>
@@ -84,6 +85,47 @@ QRect MediaDetailsDelegate::thumbnailRectFor(const QStyleOptionViewItem& option)
     return thumbnailRectForCellRect(option.rect, option.decorationSize);
 }
 
+QRect MediaDetailsDelegate::computeTagsRect(const QStyleOptionViewItem& option, const QModelIndex& index) const
+{
+    const QRect thumbnailRect = thumbnailRectFor(option);
+    const QFont baseFont = resolvedFont(option, index);
+    const QFont nameFont = nameFontFor(baseFont);
+    const QFontMetrics nameMetrics(nameFont);
+    const QFontMetrics lineMetrics(baseFont);
+    const int tagsRowHeight = TagPillRowPainter::tagPillRowHeight(lineMetrics);
+
+    const int textLeft = thumbnailRect.right() + kPadding;
+    const int textWidth = option.rect.right() - kPadding - textLeft;
+    const int textTop = option.rect.top() + kPadding;
+
+    const QRect nameRect(textLeft, textTop, textWidth, nameMetrics.height());
+    const QRect metadataRect(textLeft, nameRect.bottom() + kLineSpacing, textWidth, lineMetrics.height());
+
+    return QRect(textLeft, metadataRect.bottom() + kTagsSpacing, textWidth, tagsRowHeight);
+}
+
+bool MediaDetailsDelegate::editorEvent(QEvent* event, QAbstractItemModel* model, const QStyleOptionViewItem& option,
+                                        const QModelIndex& index)
+{
+    if (event->type() == QEvent::MouseButtonRelease)
+    {
+        auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() == Qt::LeftButton)
+        {
+            const QRect tagsRect = computeTagsRect(option, index);
+            const auto tags = index.data(FileListModel::TagsRole).value<std::vector<Tag>>();
+            const QFont baseFont = resolvedFont(option, index);
+            if (const auto tagId = TagPillRowPainter::tagIdAt(tagsRect, tags, baseFont, mouseEvent->position().toPoint()))
+            {
+                emit tagActivated(index, *tagId, mouseEvent->modifiers());
+                return true;
+            }
+        }
+    }
+
+    return QStyledItemDelegate::editorEvent(event, model, option, index);
+}
+
 void MediaDetailsDelegate::setHoveredPreview(const QModelIndex& index, int previewIndex)
 {
     m_hoveredIndex = index;
@@ -125,7 +167,6 @@ void MediaDetailsDelegate::paint(QPainter* painter, const QStyleOptionViewItem& 
     const QFont nameFont = nameFontFor(baseFont);
     const QFontMetrics nameMetrics(nameFont);
     const QFontMetrics lineMetrics(baseFont);
-    const int tagsRowHeight = TagPillRowPainter::tagPillRowHeight(lineMetrics);
 
     const int textLeft = thumbnailRect.right() + kPadding;
     const int textWidth = option.rect.right() - kPadding - textLeft;
@@ -152,7 +193,7 @@ void MediaDetailsDelegate::paint(QPainter* painter, const QStyleOptionViewItem& 
                            lineMetrics.elidedText(metadataLine, Qt::ElideRight, metadataRect.width()));
     }
 
-    const QRect tagsRect(textLeft, metadataRect.bottom() + kTagsSpacing, textWidth, tagsRowHeight);
+    const QRect tagsRect = computeTagsRect(option, index);
     const auto tags = index.data(FileListModel::TagsRole).value<std::vector<Tag>>();
     TagPillRowPainter::paintTagPillRow(painter, tagsRect, tags, baseFont);
 

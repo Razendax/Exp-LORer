@@ -3,6 +3,8 @@
 #include <QPersistentModelIndex>
 #include <QStyledItemDelegate>
 
+#include "Tag.h"
+
 // Media Viewer mode's "Details" view (Architecture.md §14.69): one full-width row per item, a
 // hover-scrubbable preview thumbnail on the left (same interaction as the Thumbnails grid,
 // Architecture.md §14.64) and name/duration-or-size-or-resolution/tags on the right. Installed as
@@ -24,6 +26,12 @@ public:
     void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
     QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override;
 
+    // Hit-tests the tags row (Architecture.md §14.72): on a left-button release over a tag pill,
+    // emits tagActivated and consumes the event; otherwise falls through to the base
+    // implementation.
+    bool editorEvent(QEvent* event, QAbstractItemModel* model, const QStyleOptionViewItem& option,
+                      const QModelIndex& index) override;
+
     void setHoveredPreview(const QModelIndex& index, int previewIndex);
     QModelIndex hoveredIndex() const { return m_hoveredIndex; }
     int hoveredPreviewIndex() const { return m_hoveredPreviewIndex; }
@@ -33,8 +41,16 @@ public:
     // FileBrowserView's hover-band math can reuse it the same way.
     static QRect thumbnailRectForCellRect(const QRect& cellRect, const QSize& iconSize);
 
+signals:
+    void tagActivated(const QModelIndex& index, Tag::Id tagId, Qt::KeyboardModifiers modifiers);
+
 private:
     static QRect thumbnailRectFor(const QStyleOptionViewItem& option);
+
+    // Factored out of paint() (Architecture.md §14.72) so editorEvent()'s hit-test uses the exact
+    // same geometry paint() draws the tag pills at -- the geometry doesn't depend on hasThumbnail,
+    // only what text gets drawn inside it does.
+    QRect computeTagsRect(const QStyleOptionViewItem& option, const QModelIndex& index) const;
 
     QPersistentModelIndex m_hoveredIndex;
     int m_hoveredPreviewIndex = -1;

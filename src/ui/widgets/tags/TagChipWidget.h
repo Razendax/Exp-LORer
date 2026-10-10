@@ -33,7 +33,7 @@ public:
 signals:
     void addClicked(Tag::Id tagId);
     void removeClicked(Tag::Id tagId);
-    void clicked(Tag::Id tagId);
+    void clicked(Tag::Id tagId, Qt::KeyboardModifiers modifiers);
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
