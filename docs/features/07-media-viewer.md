@@ -771,6 +771,18 @@ Details), reusing `FileOperationsController::renamePath` via the existing displa
 * **Testing**: no new GTest coverage, same precedent as the rest of this file (Architecture.md §11
   UI/ViewModel-glue carve-out; `FileNameEditDelegate` itself has no dedicated test either); manual
   smoke test only.
+* **Follow-up bug fix**: a committed rename left the tile showing its old name. `WorkspaceController`'s
+  existing rename funnel (`directoryContentsMayHaveChanged`/`refreshTabsShowing`) only re-lists a
+  tab's *normal* `FileListModel` for its current directory — Media Viewer's `m_mediaViewerCandidates`/
+  `m_mediaViewerResultsModel` are a separate cached snapshot (this section's own intro) that re-list
+  never touches, and is otherwise only refreshed when the applied tag set changes. Fixed by a new
+  `TabViewModel::renameMediaViewerEntry(source, destination)`, called from
+  `WorkspaceController::onPathRenamed` for every tab alongside its existing `currentPath()` rebase:
+  no-ops outside Media Viewer mode, else rebases every cached candidate (and `m_mediaViewerCurrentFolder`,
+  for a renamed ancestor folder in Folder-Grouped mode) via `PathContainment.h`'s `rebasePath`/
+  `isPathWithinOrEqual` and re-filters in memory only (`applyMediaViewerFilter(false)`) — never a
+  rescan, same posture as the sort/filter mutators above. Added `FileNode::withPath()`, mirroring
+  `withHash`/`withDisplayName`.
 
 ---
 ### 14.76 Media Viewer Mode: Full-Workspace Display While Active

@@ -44,6 +44,10 @@ public:
 
     FileNode withHash(std::uint64_t hash) const;
 
+    // Rebinds this entry to a new path (e.g. after a rename/move) while keeping every other field
+    // verbatim, mirroring withHash/withDisplayName.
+    FileNode withPath(std::filesystem::path path) const;
+
     // Overrides name() for synthetic entries whose path() has no filename component (e.g. drive
     // roots like "C:\", whose filename() is empty per std::filesystem) — used by the "This PC"
     // virtual location (Architecture.md §14.15).

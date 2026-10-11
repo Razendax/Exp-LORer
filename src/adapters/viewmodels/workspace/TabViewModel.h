@@ -336,6 +336,16 @@ public slots:
     // Clears Media Viewer state and flips mediaViewerActive off. No-op if already inactive.
     void exitMediaViewer();
 
+    // Called by WorkspaceController::onPathRenamed for every tab, regardless of focus or
+    // currentPath(): Media Viewer's results model is a cached snapshot (§14.61) that a directory
+    // re-list never touches (unlike normal browsing's m_fileListModel), so without this a rename
+    // committed from the grid left the tile showing the old name until the tab exited and
+    // re-entered the mode. No-op outside Media Viewer mode or if `source` isn't one of the cached
+    // candidates (or their containing folder, for a renamed ancestor directory). Rebases every
+    // affected candidate's path via PathContainment.h's rebasePath and re-filters in memory only
+    // (applyMediaViewerFilter(false)) -- never a rescan.
+    void renameMediaViewerEntry(const std::filesystem::path& source, const std::filesystem::path& destination);
+
     // Switches the grid between images and videos -- re-filters the cached candidate set in
     // memory only (no rescan: the cached set is already post-tag-filter, pre-kind/name-filter).
     // No-op if already active or outside Media Viewer mode.

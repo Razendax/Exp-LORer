@@ -805,6 +805,36 @@ void TabViewModel::exitMediaViewer()
     emit mediaViewerModeChanged(false);
 }
 
+void TabViewModel::renameMediaViewerEntry(const std::filesystem::path& source, const std::filesystem::path& destination)
+{
+    if (!m_mediaViewerActive)
+    {
+        return;
+    }
+
+    bool changed = false;
+    for (FileNode& candidate : m_mediaViewerCandidates)
+    {
+        if (isPathWithinOrEqual(candidate.path(), source))
+        {
+            candidate = candidate.withPath(rebasePath(candidate.path(), source, destination));
+            changed = true;
+        }
+    }
+
+    if (!changed)
+    {
+        return;
+    }
+
+    if (isPathWithinOrEqual(m_mediaViewerCurrentFolder, source))
+    {
+        m_mediaViewerCurrentFolder = rebasePath(m_mediaViewerCurrentFolder, source, destination);
+    }
+
+    applyMediaViewerFilter(false);
+}
+
 void TabViewModel::setMediaViewerKind(MediaViewerKind kind)
 {
     if (!m_mediaViewerActive || kind == m_mediaViewerKind)

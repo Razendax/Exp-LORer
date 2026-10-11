@@ -41,6 +41,11 @@ FileNode FileNode::withHash(std::uint64_t hash) const
     return FileNode(m_path, m_size, m_creationDate, m_modificationDate, m_fileType, m_isHidden, hash, m_displayName);
 }
 
+FileNode FileNode::withPath(std::filesystem::path path) const
+{
+    return FileNode(std::move(path), m_size, m_creationDate, m_modificationDate, m_fileType, m_isHidden, m_hash, m_displayName);
+}
+
 FileNode FileNode::withDisplayName(std::string displayName) const
 {
     return FileNode(

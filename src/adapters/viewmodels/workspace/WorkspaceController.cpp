@@ -222,6 +222,12 @@ void WorkspaceController::onPathRenamed(const std::filesystem::path& source, con
             {
                 tab->replaceCurrentPath(rebasePath(tab->currentPath(), source, destination));
             }
+
+            // Media Viewer's results model is a separate cached snapshot untouched by the re-list
+            // above (Architecture.md §14.61/§14.75's follow-up) -- patch it directly so a rename
+            // committed from the grid doesn't leave the tile showing its old name. No-op inside
+            // the method itself unless this tab's Media Viewer mode is active.
+            tab->renameMediaViewerEntry(source, destination);
         }
     }
 }
