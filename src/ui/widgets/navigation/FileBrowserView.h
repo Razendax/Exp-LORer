@@ -5,6 +5,7 @@
 #include <optional>
 #include <vector>
 
+#include <QImage>
 #include <QPoint>
 #include <QRect>
 #include <QString>
@@ -25,6 +26,7 @@ class QListView;
 class QTreeView;
 class QAbstractItemDelegate;
 class QKeyEvent;
+class QTimer;
 class FileListModel;
 class FileTileDelegate;
 class FileIconDelegate;
@@ -35,6 +37,7 @@ class FileNameEditDelegate;
 class SearchResultDelegate;
 class TagsCellDelegate;
 class PercentCellDelegate;
+class MediaHoverPreviewPopup;
 
 // The tab's content widget: a QStackedWidget switching between a QListView (icon/list/tiles view
 // modes) and a QTreeView (details view mode), both bound to the same FileListModel
@@ -123,7 +126,22 @@ public:
     // in its parent listing after navigating there").
     void selectEntryByPath(const std::filesystem::path& path);
 
+    // Hover preview popup (Architecture.md §14.76): whether the normal file browser's hover
+    // preview popup is enabled, persisted via QSettings. Read fresh on every hover check -- no
+    // live cross-pane propagation needed (mirrors FileListModel::showHiddenFilesEnabled()).
+    static constexpr const char* kHoverPreviewEnabledSettingsKey = "View/HoverPreviewEnabled";
+    static bool hoverPreviewEnabled();
+
+    // Delivers the decoded preview image requested via TabViewModel::requestHoverPreviewThumbnail
+    // (Architecture.md §14.76). No-op if `path` no longer matches the currently-tracked hover
+    // target (a newer hover, or a mode change, superseded it) or if `image` is null.
+    void showHoverPreviewResult(const std::filesystem::path& path, const QImage& image);
+
 signals:
+    // Emitted (after a short debounce) when the mouse has settled over a previewable image/video
+    // row in the normal file browser (Architecture.md §14.76). Never emitted in
+    // DisplayMode::MediaViewerGrid, which owns its own hover-scrub concept (§14.64).
+    void mediaHoverPreviewRequested(const FileNode& entry);
     // Emitted on double-click/Enter on a row; isDirectory decides whether MainWindow forwards
     // this to TabViewModel::navigateTo (file activation is out of scope, no viewer yet).
     void itemActivated(const std::filesystem::path& path, bool isDirectory);
@@ -201,6 +219,18 @@ private:
     // to "cleared" regardless of pos.
     void updateMediaViewerHover(const QPoint& pos, bool isLeave);
 
+    // Hover preview popup tracking (Architecture.md §14.76), Normal/AdvancedSearchResults modes
+    // only -- parallel to, but independent from, updateMediaViewerHover() above. Called from
+    // eventFilter() for every m_listView/m_treeView viewport MouseMove/Leave outside
+    // DisplayMode::MediaViewerGrid. Resolves the row under `pos` in `view`, classifies it via
+    // MediaExtensions, and (re)starts/stops m_hoverPreviewTimer as the hover target changes.
+    // isLeave forces the hover state to "cleared" regardless of pos.
+    void updateHoverPreview(const QPoint& pos, QAbstractItemView* view, bool isLeave);
+
+    // Hides the popup (if shown) and clears the tracked hover target/timer -- shared by a
+    // row-change, Leave, and a mouse button press on either viewport.
+    void clearHoverPreview();
+
     FileListModel* m_model = nullptr;
     DisplayMode m_displayMode = DisplayMode::Normal;
     ViewMode m_viewMode = ViewMode::Details;
@@ -218,4 +248,10 @@ private:
     TagsCellDelegate* m_tagsCellDelegate = nullptr;
     PercentCellDelegate* m_percentCellDelegate = nullptr;
     QItemSelectionModel* m_selectionModel = nullptr;
+
+    // Hover preview popup state (Architecture.md §14.76).
+    QTimer* m_hoverPreviewTimer = nullptr;
+    std::optional<std::filesystem::path> m_hoverPreviewTargetPath;
+    std::optional<FileNode> m_hoverPreviewEntry;
+    MediaHoverPreviewPopup* m_hoverPreviewPopup = nullptr;
 };

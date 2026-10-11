@@ -4,6 +4,7 @@
 
 #include <QAbstractItemView>
 #include <QAction>
+#include <QCursor>
 #include <QEvent>
 #include <QFontMetrics>
 #include <QHeaderView>
@@ -13,9 +14,12 @@
 #include <QListView>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QPixmap>
 #include <QScrollBar>
+#include <QSettings>
 #include <QStackedWidget>
 #include <QStyledItemDelegate>
+#include <QTimer>
 #include <QTreeView>
 #include <QVBoxLayout>
 #include <QWheelEvent>
@@ -28,6 +32,7 @@
 #include "MediaExtensions.h"
 #include "MediaFilmstripDelegate.h"
 #include "MediaGridTileDelegate.h"
+#include "MediaHoverPreviewPopup.h"
 #include "MediaPreviewFrames.h"
 #include "PercentCellDelegate.h"
 #include "SearchResultDelegate.h"
@@ -35,6 +40,10 @@
 
 namespace
 {
+    // Hover preview popup (Architecture.md §14.76): how long the mouse must settle over a
+    // previewable row before the popup is requested.
+    constexpr int kHoverPreviewDebounceMs = 350;
+
     // Icon-mode sizing steps, matching Explorer's own steps (Architecture.md §2.3.1).
     QSize iconSizeFor(ViewMode mode)
     {
@@ -253,6 +262,22 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     m_listView->viewport()->installEventFilter(this);
     m_treeView->viewport()->installEventFilter(this);
 
+    // Hover preview popup (Architecture.md §14.76): mouse-move events only arrive without a
+    // button held down when tracking is enabled. Re-setting m_listView's is a harmless no-op
+    // where the MediaViewerGrid branch above already set it for its own hover-scrub.
+    m_listView->viewport()->setMouseTracking(true);
+    m_treeView->viewport()->setMouseTracking(true);
+
+    m_hoverPreviewTimer = new QTimer(this);
+    m_hoverPreviewTimer->setSingleShot(true);
+    m_hoverPreviewTimer->setInterval(kHoverPreviewDebounceMs);
+    connect(m_hoverPreviewTimer, &QTimer::timeout, this, [this]() {
+        if (m_hoverPreviewEntry)
+        {
+            emit mediaHoverPreviewRequested(*m_hoverPreviewEntry);
+        }
+    });
+
     m_listView->setContextMenuPolicy(Qt::CustomContextMenu);
     m_treeView->setContextMenuPolicy(Qt::CustomContextMenu);
     connect(m_listView, &QWidget::customContextMenuRequested, this,
@@ -334,12 +359,30 @@ bool FileBrowserView::eventFilter(QObject* watched, QEvent* event)
         return QWidget::eventFilter(watched, event);
     }
 
+    // Hover preview popup (Architecture.md §14.76), Normal/AdvancedSearchResults modes only --
+    // parallel to, but independent from, the MediaViewerGrid hover-scrub block above. Observes
+    // without consuming, same posture.
+    if ((watched == m_listView->viewport() || watched == m_treeView->viewport()) && m_displayMode != DisplayMode::MediaViewerGrid
+        && (event->type() == QEvent::MouseMove || event->type() == QEvent::Leave))
+    {
+        const bool isLeave = event->type() == QEvent::Leave;
+        const QPoint pos = isLeave ? QPoint() : static_cast<QMouseEvent*>(event)->position().toPoint();
+        auto* view = (watched == m_listView->viewport()) ? static_cast<QAbstractItemView*>(m_listView)
+                                                           : static_cast<QAbstractItemView*>(m_treeView);
+        updateHoverPreview(pos, view, isLeave);
+        return QWidget::eventFilter(watched, event);
+    }
+
     // Clicking empty space in the view (no item under the cursor) deselects the current item,
     // matching Explorer. Selection is only cleared, not consumed, so rubber-band selection from
     // empty space still works normally.
     if ((watched == m_listView->viewport() || watched == m_treeView->viewport())
         && event->type() == QEvent::MouseButtonPress)
     {
+        // Hover preview popup (Architecture.md §14.76): dismissed immediately on any press so it
+        // doesn't linger during a drag-select or click.
+        clearHoverPreview();
+
         const auto* mouseEvent = static_cast<QMouseEvent*>(event);
         if (mouseEvent->button() == Qt::BackButton)
         {
@@ -844,6 +887,74 @@ void FileBrowserView::updateMediaViewerHover(const QPoint& pos, bool isLeave)
     {
         m_listView->update(newHoveredIndex);
     }
+}
+
+bool FileBrowserView::hoverPreviewEnabled()
+{
+    QSettings settings;
+    return settings.value(QLatin1String(kHoverPreviewEnabledSettingsKey), true).toBool();
+}
+
+void FileBrowserView::updateHoverPreview(const QPoint& pos, QAbstractItemView* view, bool isLeave)
+{
+    std::optional<FileNode> candidate;
+    if (!isLeave)
+    {
+        const QModelIndex index = view->indexAt(pos);
+        if (index.isValid())
+        {
+            if (const auto entry = m_model->entryAt(index.row()); entry && !entry->isDirectory())
+            {
+                const std::string extension = MediaExtensions::lowercaseExtension(entry->path());
+                if (MediaExtensions::isImageExtension(extension) || MediaExtensions::isVideoExtension(extension))
+                {
+                    candidate = entry;
+                }
+            }
+        }
+    }
+
+    const std::optional<std::filesystem::path> candidatePath =
+        candidate ? std::optional<std::filesystem::path>(candidate->path()) : std::nullopt;
+    if (candidatePath == m_hoverPreviewTargetPath)
+    {
+        return;
+    }
+
+    // Row changed (including to a non-previewable row, empty space, or Leave): always clear first.
+    clearHoverPreview();
+
+    if (candidate && hoverPreviewEnabled())
+    {
+        m_hoverPreviewTargetPath = candidatePath;
+        m_hoverPreviewEntry = candidate;
+        m_hoverPreviewTimer->start();
+    }
+}
+
+void FileBrowserView::clearHoverPreview()
+{
+    m_hoverPreviewTimer->stop();
+    m_hoverPreviewTargetPath.reset();
+    m_hoverPreviewEntry.reset();
+    if (m_hoverPreviewPopup)
+    {
+        m_hoverPreviewPopup->hide();
+    }
+}
+
+void FileBrowserView::showHoverPreviewResult(const std::filesystem::path& path, const QImage& image)
+{
+    if (image.isNull() || !m_hoverPreviewTargetPath || path != *m_hoverPreviewTargetPath)
+    {
+        return;
+    }
+
+    if (!m_hoverPreviewPopup)
+    {
+        m_hoverPreviewPopup = new MediaHoverPreviewPopup(this);
+    }
+    m_hoverPreviewPopup->showPreview(QPixmap::fromImage(image), QCursor::pos());
 }
 
 void FileBrowserView::handleContextMenuRequested(QAbstractItemView* view, const QPoint& localPos)

@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include <QImage>
 #include <QObject>
 #include <QSet>
 #include <QString>
@@ -141,6 +142,19 @@ public:
     // Resolves mediaViewerTagFilters() into full Tag objects (for chip display), mirroring
     // resolveTagCriteria().
     std::vector<Tag> resolveMediaViewerTagFilters() const;
+
+    // Hover preview popup (Architecture.md §14.76): a thin wrapper over
+    // MediaThumbnailLoadingService::requestThumbnails for the single hovered `entry`, at
+    // Priority::High. Unlike requestBrowsingThumbnails/requestMediaViewerResultThumbnails, the
+    // context passed to the service is `this` rather than m_fileListModel -- a hover request must
+    // not purge or be purged by an unrelated in-flight grid-icon request for the same model -- and
+    // `entry.path()` itself (not a containing directory) is passed as the service's `root` tag, so
+    // its existing per-context staleness check doubles as "superseded by a newer hover target"
+    // with no new cancellation plumbing. onReady is invoked with the decoded image once available,
+    // unless a newer hover request for a different path has since superseded this one. Does not
+    // filter by extension -- the caller (FileBrowserView) already classifies the hover target
+    // before calling this.
+    void requestHoverPreviewThumbnail(const FileNode& entry, int maxWidth, int maxHeight, std::function<void(QImage)> onReady);
 
     const std::vector<FileNode>& selectedEntries() const noexcept { return m_selectedEntries; }
     SortCriterion sortCriterion() const noexcept;

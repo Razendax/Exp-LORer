@@ -31,6 +31,8 @@ add_library(explorer_ui_widgets STATIC
     navigation/MediaViewerSortViewBar.cpp
     navigation/FileBrowserView.h
     navigation/FileBrowserView.cpp
+    navigation/MediaHoverPreviewPopup.h
+    navigation/MediaHoverPreviewPopup.cpp
     navigation/FolderTreeView.h
     navigation/FolderTreeView.cpp
     navigation/FileNameEditDelegate.h

@@ -43,6 +43,7 @@
 #include "DuplicateFinderDialog.h"
 #include "EnvironmentVariablesDialog.h"
 #include "FavoritesViewModel.h"
+#include "FileBrowserView.h"
 #include "FileDecorationsViewModel.h"
 #include "FileItemContextMenu.h"
 #include "FileOperationsController.h"
@@ -296,6 +297,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     createContextMenuModeAction();
     createShowHiddenFilesAction();
     createMediaViewerModeAction();
+    createHoverPreviewAction();
     createMenuBar();
     createLayoutToolBar();
     createWorkspace();
@@ -450,6 +452,18 @@ void MainWindow::createMediaViewerModeAction()
     });
 }
 
+void MainWindow::createHoverPreviewAction()
+{
+    m_hoverPreviewEnabledAction = new QAction(tr("Enable Hover Preview"), this);
+    m_hoverPreviewEnabledAction->setCheckable(true);
+    m_hoverPreviewEnabledAction->setChecked(FileBrowserView::hoverPreviewEnabled());
+
+    connect(m_hoverPreviewEnabledAction, &QAction::toggled, this, [](bool checked) {
+        QSettings settings;
+        settings.setValue(QLatin1String(FileBrowserView::kHoverPreviewEnabledSettingsKey), checked);
+    });
+}
+
 void MainWindow::createMenuBar()
 {
     QMenu* fileMenu = menuBar()->addMenu(tr("&File"));
@@ -478,6 +492,11 @@ void MainWindow::createMenuBar()
     viewMenu->addAction(m_extendedContextMenuAction);
     viewMenu->addAction(m_showHiddenFilesAction);
     viewMenu->addAction(m_mediaViewerModeAction);
+
+    // A single-item submenu is intentionally future-proof for additional related toggles without
+    // a menu-structure change later (Architecture.md §14.76).
+    QMenu* hoverPreviewMenu = viewMenu->addMenu(tr("Hover Preview"));
+    hoverPreviewMenu->addAction(m_hoverPreviewEnabledAction);
 
     createFavoritesMenu();
     QMenu* toolsMenu = menuBar()->addMenu(tr("&Tools"));

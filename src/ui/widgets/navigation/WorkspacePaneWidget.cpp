@@ -116,6 +116,10 @@ namespace
     // reserved strip doesn't look oddly large once scroll buttons are actually showing there too.
     constexpr int kNewTabButtonReservedWidth = 32;
 
+    // Hover preview popup (Architecture.md §14.76): decode at the size it's actually displayed at
+    // (MediaHoverPreviewPopup's own max display size), no upscaling.
+    constexpr int kHoverPreviewMaxSize = 360;
+
     QString viewModeLabel(ViewMode mode)
     {
         switch (mode)
@@ -673,6 +677,16 @@ void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewM
             });
     connect(browserView, &FileBrowserView::folderContextMenuRequested, tab, [this, tab, browserView](const QPoint& globalPos) {
         showBackgroundContextMenu(tab, browserView, globalPos);
+    });
+
+    // Hover preview popup (Architecture.md §14.76): never fires for the Media-Viewer-grid
+    // instance (its eventFilter branch is gated on DisplayMode != MediaViewerGrid), so this
+    // connection is a safe no-op there, consistent with this function's existing pattern.
+    connect(browserView, &FileBrowserView::mediaHoverPreviewRequested, browserView, [browserView, tab](const FileNode& entry) {
+        tab->requestHoverPreviewThumbnail(entry, kHoverPreviewMaxSize, kHoverPreviewMaxSize,
+                                           [browserView, path = entry.path()](const QImage& image) {
+                                               browserView->showHoverPreviewResult(path, image);
+                                           });
     });
 }
 

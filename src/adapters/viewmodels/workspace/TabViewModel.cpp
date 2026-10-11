@@ -27,6 +27,7 @@
 #include "NotificationType.h"
 #include "PathContainment.h"
 #include "PathHash.h"
+#include "PathUtf8.h"
 #include "TagChangeNotifier.h"
 #include "TagColorPalette.h"
 #include "TagManagementUseCase.h"
@@ -1864,6 +1865,22 @@ void TabViewModel::requestBrowsingThumbnails(const std::filesystem::path& path, 
             }
 
             m_fileListModel->setMediaThumbnails(batch);
+        },
+        MediaThumbnailLoadingService::Priority::High);
+}
+
+void TabViewModel::requestHoverPreviewThumbnail(const FileNode& entry, int maxWidth, int maxHeight,
+                                                 std::function<void(QImage)> onReady)
+{
+    const std::filesystem::path path = entry.path();
+    m_mediaThumbnailLoadingService.requestThumbnails(
+        this, path, { entry }, maxWidth, maxHeight,
+        [path, onReady = std::move(onReady)](QHash<QString, MediaThumbnailData> batch) {
+            const auto it = batch.find(QString::fromStdString(PathUtf8::toUtf8(path)));
+            if (it != batch.end())
+            {
+                onReady(it->image);
+            }
         },
         MediaThumbnailLoadingService::Priority::High);
 }

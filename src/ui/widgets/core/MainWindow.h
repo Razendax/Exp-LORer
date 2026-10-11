@@ -91,6 +91,7 @@ private:
     void createContextMenuModeAction();
     void createShowHiddenFilesAction();
     void createMediaViewerModeAction();
+    void createHoverPreviewAction();
     void createMenuBar();
     void createFavoritesMenu();
     void createWorkspacesMenu(QMenu* fileMenu);
@@ -252,6 +253,11 @@ private:
     // posture as m_showHiddenFilesAction is NOT -- this one specifically mirrors
     // m_searchTrackedTab's per-tab, not-restored-on-restart posture).
     QAction* m_mediaViewerModeAction = nullptr;
+
+    // Hover preview popup toggle (Architecture.md §14.76), persisted via QSettings under
+    // FileBrowserView::kHoverPreviewEnabledSettingsKey -- same "read fresh at next use" posture as
+    // m_extendedContextMenuAction, not m_showHiddenFilesAction's live-broadcast one.
+    QAction* m_hoverPreviewEnabledAction = nullptr;
 
     // Right panel's active tab index right before Media Viewer mode's Searcher tab took over, so
     // exiting the mode restores whichever tab (Tags/Preview/Monitoring) was showing before. -1 if

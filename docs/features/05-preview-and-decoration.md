@@ -5,11 +5,12 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67, §14.71 — the right-panel file Preview tab, its
+Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67, §14.71, §14.76 — the right-panel file Preview tab, its
 text-preview syntax highlighting, archive browsing/preview/extraction, per-file/folder font &
 color decoration, the Preview panel's dedicated per-kind widgets and media-layout rework, the
-built-in Widgets video player (first used here, before Media Viewer mode reused it), and real
-image/video previews in the main browser's Extra Large Icons view. Section
+built-in Widgets video player (first used here, before Media Viewer mode reused it), real
+image/video previews in the main browser's Extra Large Icons view, and the mouse-hover preview
+popup. Section
 numbers are **not** contiguous with this file's neighbors — they were assigned chronologically as
 each feature was built and are kept stable since code comments cite them directly. See
 [Architecture.md](../Architecture.md) §14 for the full topic index across all nine files.
@@ -561,4 +562,58 @@ building a second one: **no Domain/Application/Port change**, pure UI/Adapters w
   stays a Media-Viewer-grid-only feature (§14.64); any change to Media Viewer mode itself.
 * **Testing**: no new GTest coverage — pure UI/Adapters wiring reusing an already-tested pipeline,
   same carve-out Media Viewer's own grid thumbnail delegate falls under (§11, §14.62).
+
+---
+### 14.76 Hover Preview Popup for Images/Videos
+
+A frameless popup, anchored to the right of the mouse cursor, showing an image/video file's
+preview while the mouse hovers its row in the normal file browser (not Media Viewer Mode, which
+already owns the grid's own per-tile hover-scrub, §14.64) — lets the user preview a file without
+selecting or opening it. A third, independent consumer of the already-shared decode pipeline; no
+Domain/Application/Port or schema change.
+
+* **`TabViewModel::requestHoverPreviewThumbnail(entry, maxWidth, maxHeight, onReady)`** — a thin
+  wrapper over `MediaThumbnailLoadingService::requestThumbnails`, mirroring
+  `requestBrowsingThumbnails`/`requestMediaViewerResultThumbnails`'s shape. Two deliberate
+  deviations from those: it passes `this` (the `TabViewModel`) as the service's `context`, not
+  `m_fileListModel` — a shared context would let a hover request purge or be purged by an
+  unrelated in-flight grid-icon request for the same model (`MediaThumbnailLoadingService`'s
+  per-context `High`-priority purge, §14.62); and it tags the request's `root` with the hovered
+  file's own path, not a containing directory — `root` is only ever compared for equality, so this
+  repurposing makes the service's existing staleness check double as hover's own
+  "superseded by a newer hover target" cancellation, with no new plumbing. A decode already
+  in-flight still runs to completion (no decoder here supports true mid-call abort, §14.26) but
+  simply isn't delivered to a stale target.
+* **`MediaHoverPreviewPopup`** (new, `src/ui/widgets/navigation`) — a `QWidget` with
+  `Qt::ToolTip | Qt::FramelessWindowHint`, `WA_ShowWithoutActivating`, and (unlike the similar
+  `AddressBarWidget`/`TagSearchEdit` popups, which are interactive lists) `WA_TransparentForMouseEvents`
+  and `Qt::NoFocus`, since this one is purely informational. Shows a single static frame
+  (`previewIndex` 0; no scrubbing) scaled to fit a fixed max size, positioned beside the cursor via
+  `QGuiApplication::screenAt()`'s geometry, flipping to the cursor's left/clamping vertically near
+  a screen edge.
+* **`FileBrowserView`** — mouse tracking, previously enabled only for `m_listView`'s viewport in
+  `DisplayMode::MediaViewerGrid` (for hover-scrub, §14.64), is now enabled unconditionally on both
+  `m_listView`/`m_treeView` viewports. A new `eventFilter` branch (gated on
+  `m_displayMode != DisplayMode::MediaViewerGrid`, so it never fires for the Media-Viewer-grid
+  instance) resolves the row under the cursor on `MouseMove`/`Leave`, classifies it via the
+  already-shared `MediaExtensions::isImageExtension`/`isVideoExtension`, and — if the hover target
+  changed and the feature is enabled — (re)starts a ~350ms single-shot debounce timer before
+  emitting `mediaHoverPreviewRequested(entry)`. `showHoverPreviewResult(path, image)` discards a
+  reply whose path no longer matches the currently-tracked target. The popup is also hidden
+  immediately on `Leave` or any mouse button press (drag/click).
+* **Enable/disable**: one checkable `QAction` ("Enable Hover Preview") under a new `View ▸ Hover
+  Preview` submenu, following `MainWindow::createContextMenuModeAction`'s simplest existing
+  pattern — a plain `QSettings`-backed flag (`FileBrowserView::kHoverPreviewEnabledSettingsKey`/
+  `hoverPreviewEnabled()`) read fresh on every hover check, no live propagation across
+  panes/tabs needed.
+* **Wiring**: `WorkspacePaneWidget::wireBrowserView` (already called unconditionally for all
+  three of a tab's `FileBrowserView` instances) connects `mediaHoverPreviewRequested` to
+  `TabViewModel::requestHoverPreviewThumbnail`, forwarding the result back to the originating
+  `FileBrowserView::showHoverPreviewResult` — same "wire unconditionally, fires only where
+  applicable" posture already used for `mediaViewerDetailsTagClicked`.
+* **Not built**: separate image/video toggles (one flat enable/disable flag); reopening §14.71's
+  "no hover-scrub outside Media Viewer grid" boundary (this popup never scrubs); any interaction
+  with the popup itself; any change to the Preview panel (§14.26) or Media Viewer's own hover-scrub
+  (§14.64).
+* **Testing**: no new GTest coverage — same UI/ViewModel-glue carve-out as §14.71 above.
 
