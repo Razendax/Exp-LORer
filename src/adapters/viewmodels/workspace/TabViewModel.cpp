@@ -1,6 +1,7 @@
 #include "TabViewModel.h"
 
 #include <algorithm>
+#include <unordered_map>
 #include <utility>
 
 #include <QPointer>
@@ -24,6 +25,8 @@
 #include "MediaThumbnailLoadingService.h"
 #include "NotificationCenter.h"
 #include "NotificationType.h"
+#include "PathContainment.h"
+#include "PathHash.h"
 #include "TagChangeNotifier.h"
 #include "TagColorPalette.h"
 #include "TagManagementUseCase.h"
@@ -744,6 +747,14 @@ void TabViewModel::enterMediaViewer()
     m_mediaViewerNameOptions = NameSearchOptions();
     m_mediaViewerCandidates.clear();
 
+    // Folder-Grouped Browsing's own navigation state (Architecture.md §14.74) -- reset
+    // unconditionally regardless of m_mediaViewerGroupMode's current value (a toolbar preference
+    // that persists across sessions), so a session left browsing a deep subfolder last time starts
+    // back at the root this time.
+    m_mediaViewerCurrentFolder = m_mediaViewerRoot;
+    m_mediaViewerFolderHistory = NavigationHistory();
+    m_mediaViewerFolderHistory.navigate(m_mediaViewerRoot);
+
     m_mediaViewerActive = true;
     setSelectedEntries({});
     emit mediaViewerModeChanged(true);
@@ -769,6 +780,8 @@ void TabViewModel::exitMediaViewer()
     m_mediaViewerNameQuery.clear();
     m_mediaViewerNameOptions = NameSearchOptions();
     m_mediaViewerCandidates.clear();
+    m_mediaViewerCurrentFolder.clear();
+    m_mediaViewerFolderHistory = NavigationHistory();
     // Invalidates any fetch still in flight -- its (now-stale) result is discarded by
     // onMediaViewerCandidatesReady's generation check when it eventually arrives.
     ++m_mediaViewerGeneration;
@@ -884,6 +897,101 @@ void TabViewModel::setMediaViewerViewMode(MediaViewerViewMode mode)
     m_mediaViewerViewMode = mode;
     emit mediaViewerViewModeChanged(mode);
     reapplyMediaViewerSort();
+}
+
+void TabViewModel::setMediaViewerGroupMode(MediaViewerGroupMode mode)
+{
+    if (!m_mediaViewerActive || mode == m_mediaViewerGroupMode)
+    {
+        return;
+    }
+
+    m_mediaViewerGroupMode = mode;
+
+    // Neither direction touches mediaViewerCurrentFolder()/the folder-nav history -- switching
+    // Recursive<->ByFolder preserves wherever Folder-mode browsing currently is (Architecture.md
+    // §14.74), rather than snapping Folder mode back to the root every time it's re-selected.
+
+    applyMediaViewerFilter(false);
+    emit mediaViewerGroupModeChanged(mode);
+}
+
+std::filesystem::path TabViewModel::mediaViewerUpTarget() const
+{
+    if (pathsEqualCaseInsensitive(m_mediaViewerCurrentFolder, m_mediaViewerRoot))
+    {
+        // No legal parent within the confined subtree -- returning the current folder itself
+        // signals "nothing to navigate to", mirroring upTarget()'s ThisPC clamp.
+        return m_mediaViewerCurrentFolder;
+    }
+
+    return m_mediaViewerCurrentFolder.parent_path();
+}
+
+std::optional<std::filesystem::path> TabViewModel::mediaViewerPeekBack() const
+{
+    return m_mediaViewerFolderHistory.peekBack();
+}
+
+std::optional<std::filesystem::path> TabViewModel::mediaViewerPeekForward() const
+{
+    return m_mediaViewerFolderHistory.peekForward();
+}
+
+void TabViewModel::mediaViewerNavigateTo(const std::filesystem::path& path)
+{
+    if (!m_mediaViewerActive || !isPathWithinOrEqual(path, m_mediaViewerRoot))
+    {
+        return;
+    }
+
+    m_mediaViewerFolderHistory.navigate(path);
+    m_mediaViewerCurrentFolder = path;
+    applyMediaViewerFilter(false);
+
+    emit mediaViewerCurrentFolderChanged(m_mediaViewerCurrentFolder);
+    emitMediaViewerFolderAvailability();
+}
+
+void TabViewModel::mediaViewerGoUp()
+{
+    const std::filesystem::path target = mediaViewerUpTarget();
+    if (target == m_mediaViewerCurrentFolder)
+    {
+        return;
+    }
+
+    mediaViewerNavigateTo(target);
+}
+
+void TabViewModel::mediaViewerGoBack()
+{
+    const auto path = m_mediaViewerFolderHistory.goBack();
+    if (!path)
+    {
+        return;
+    }
+
+    m_mediaViewerCurrentFolder = *path;
+    applyMediaViewerFilter(false);
+
+    emit mediaViewerCurrentFolderChanged(m_mediaViewerCurrentFolder);
+    emitMediaViewerFolderAvailability();
+}
+
+void TabViewModel::mediaViewerGoForward()
+{
+    const auto path = m_mediaViewerFolderHistory.goForward();
+    if (!path)
+    {
+        return;
+    }
+
+    m_mediaViewerCurrentFolder = *path;
+    applyMediaViewerFilter(false);
+
+    emit mediaViewerCurrentFolderChanged(m_mediaViewerCurrentFolder);
+    emitMediaViewerFolderAvailability();
 }
 
 void TabViewModel::setMediaViewerTagBehaviour(MediaViewerTagBehaviour behaviour)
@@ -1105,6 +1213,16 @@ std::vector<FileNode> TabViewModel::filterMediaViewerCandidates() const
     filtered.reserve(m_mediaViewerCandidates.size());
     for (const FileNode& candidate : m_mediaViewerCandidates)
     {
+        // Scoped to mediaViewerCurrentFolder() rather than m_mediaViewerRoot (Architecture.md
+        // §14.74): equal to m_mediaViewerRoot whenever Folder mode hasn't navigated anywhere, so
+        // this is a no-op for the common case, but lets switching from ByFolder back to Recursive
+        // show a recursive gallery of wherever Folder-mode browsing currently is instead of
+        // snapping back out to the full original root.
+        if (!isPathWithinOrEqual(candidate.path(), m_mediaViewerCurrentFolder))
+        {
+            continue;
+        }
+
         const std::string extension = MediaExtensions::lowercaseExtension(candidate.path());
         const bool matchesKind = m_mediaViewerKind == MediaViewerKind::Image ? MediaExtensions::isImageExtension(extension)
                                                                               : MediaExtensions::isVideoExtension(extension);
@@ -1146,6 +1264,108 @@ std::vector<FileNode> TabViewModel::sortMediaViewerResults(std::vector<FileNode>
     return filtered;
 }
 
+TabViewModel::FolderGroupedView TabViewModel::buildFolderGroupedView(const std::vector<FileNode>& filtered) const
+{
+    FolderGroupedView view;
+
+    // First pass: partition `filtered` into direct children of m_mediaViewerCurrentFolder (kept
+    // as-is) and everything else still under it, bucketed by immediate child-of-current-folder
+    // ancestor directory.
+    std::vector<std::filesystem::path> bucketOrder; // first-seen order, for deterministic iteration
+    std::unordered_map<std::filesystem::path, std::vector<FileNode>, PathHash> buckets;
+
+    for (const FileNode& candidate : filtered)
+    {
+        if (!isPathWithinOrEqual(candidate.path(), m_mediaViewerCurrentFolder))
+        {
+            continue;
+        }
+
+        const std::filesystem::path parent = candidate.path().parent_path();
+        if (pathsEqualCaseInsensitive(parent, m_mediaViewerCurrentFolder))
+        {
+            view.combined.push_back(candidate);
+            view.directChildFiles.push_back(candidate);
+            continue;
+        }
+
+        // Climb from the candidate's parent until reaching the ancestor directory whose own
+        // parent is m_mediaViewerCurrentFolder -- that directory is the bucket key.
+        std::filesystem::path bucketKey = parent;
+        for (;;)
+        {
+            const std::filesystem::path bucketParent = bucketKey.parent_path();
+            if (pathsEqualCaseInsensitive(bucketParent, m_mediaViewerCurrentFolder) || bucketParent == bucketKey)
+            {
+                break;
+            }
+            bucketKey = bucketParent;
+        }
+
+        auto [it, inserted] = buckets.try_emplace(bucketKey);
+        if (inserted)
+        {
+            bucketOrder.push_back(bucketKey);
+        }
+        it->second.push_back(candidate);
+    }
+
+    // Second pass: synthesize one directory FileNode + preview seed per non-empty bucket, sampling
+    // from each bucket's own entries in the current sort order (Architecture.md §14.74).
+    for (const std::filesystem::path& bucketKey : bucketOrder)
+    {
+        auto node = FileNode::create(bucketKey, 0, std::chrono::system_clock::now(), std::chrono::system_clock::now(),
+                                      FileType::Directory);
+        if (!node)
+        {
+            continue;
+        }
+
+        const std::vector<FileNode> bucketEntries = sortMediaViewerResults(buckets.at(bucketKey));
+
+        FolderPreviewSeed seed;
+        seed.itemCount = static_cast<int>(bucketEntries.size());
+        const std::size_t sampleCount = std::min<std::size_t>(4, bucketEntries.size());
+        seed.samplePaths.reserve(sampleCount);
+        for (std::size_t i = 0; i < sampleCount; ++i)
+        {
+            seed.samplePaths.push_back(QString::fromStdWString(bucketEntries[i].path().wstring()));
+            view.previewSampleFiles.push_back(bucketEntries[i]);
+        }
+
+        view.previewsByPath.insert(QString::fromStdWString(bucketKey.wstring()), seed);
+        view.combined.push_back(node.value());
+    }
+
+    return view;
+}
+
+TabViewModel::MediaViewerDisplay TabViewModel::buildMediaViewerDisplay() const
+{
+    MediaViewerDisplay display;
+    std::vector<FileNode> kindNameFiltered = filterMediaViewerCandidates();
+
+    display.grouped = m_mediaViewerGroupMode == MediaViewerGroupMode::ByFolder && m_mediaViewerViewMode == MediaViewerViewMode::Thumbnails;
+
+    if (!display.grouped)
+    {
+        display.entries = sortMediaViewerResults(std::move(kindNameFiltered));
+        display.dispatchTargets = display.entries;
+        return display;
+    }
+
+    FolderGroupedView grouped = buildFolderGroupedView(kindNameFiltered);
+    display.entries = sortMediaViewerResults(std::move(grouped.combined));
+    display.dispatchTargets = std::move(grouped.directChildFiles);
+    // Folder tiles' collage samples need their own icon/thumbnail/tag request too (Architecture.md
+    // §14.74) -- otherwise they'd only ever fill in once requestKindSweep's whole-tree Low-priority
+    // background sweep happens to reach them, which can take a long time in a large tree even
+    // though only a handful of samples are actually on screen right now.
+    display.dispatchTargets.insert(display.dispatchTargets.end(), grouped.previewSampleFiles.begin(), grouped.previewSampleFiles.end());
+    display.folderPreviews = std::move(grouped.previewsByPath);
+    return display;
+}
+
 void TabViewModel::reapplyMediaViewerSort()
 {
     if (!m_mediaViewerActive)
@@ -1153,43 +1373,56 @@ void TabViewModel::reapplyMediaViewerSort()
         return;
     }
 
-    m_mediaViewerResultsModel->refilterEntries(sortMediaViewerResults(filterMediaViewerCandidates()), /*preSorted=*/true);
+    const MediaViewerDisplay display = buildMediaViewerDisplay();
+    m_mediaViewerResultsModel->refilterEntries(display.entries, /*preSorted=*/true);
+    if (display.grouped)
+    {
+        m_mediaViewerResultsModel->setFolderPreviews(display.folderPreviews);
+    }
 }
 
 void TabViewModel::applyMediaViewerFilter(bool freshCandidates)
 {
-    std::vector<FileNode> filtered = sortMediaViewerResults(filterMediaViewerCandidates());
+    const MediaViewerDisplay display = buildMediaViewerDisplay();
 
     if (freshCandidates)
     {
-        m_mediaViewerResultsModel->setEntriesPreSorted(m_mediaViewerRoot, filtered);
+        m_mediaViewerResultsModel->setEntriesPreSorted(display.grouped ? m_mediaViewerCurrentFolder : m_mediaViewerRoot, display.entries);
     }
     else
     {
-        // Image<->Video kind toggle or a name-query keystroke: narrowing the SAME already-fetched
-        // candidate set, not a new one, so this goes through refilterEntries() instead of
-        // setEntries() -- it leaves the model's icon/thumbnail caches alone, so a tile that drops
-        // out of view and later comes back (toggling the kind filter back, say) stays showing its
-        // already-decoded thumbnail instead of flashing back to the placeholder icon while
-        // MediaThumbnailLoadingService redundantly redecodes something it already decoded
-        // (Architecture.md §14.62).
-        m_mediaViewerResultsModel->refilterEntries(filtered, /*preSorted=*/true);
+        // Image<->Video kind toggle, a name-query keystroke, or a Folder-mode regroup: narrowing/
+        // regrouping the SAME already-fetched candidate set, not a new one, so this goes through
+        // refilterEntries() instead of setEntries() -- it leaves the model's icon/thumbnail caches
+        // alone, so a tile that drops out of view and later comes back (toggling the kind filter
+        // back, say) stays showing its already-decoded thumbnail instead of flashing back to the
+        // placeholder icon while MediaThumbnailLoadingService redundantly redecodes something it
+        // already decoded (Architecture.md §14.62).
+        m_mediaViewerResultsModel->refilterEntries(display.entries, /*preSorted=*/true);
+    }
+
+    if (display.grouped)
+    {
+        m_mediaViewerResultsModel->setFolderPreviews(display.folderPreviews);
     }
 
     // Reuses the current generation rather than bumping it: this is a re-filter/fresh-listing
     // handled above, not itself a new fetch, so in-flight replies for this generation are still
     // valid. Still needed even when refilterEntries() preserved the cache: entries that are newly
-    // visible after narrowing/widening the filter may not have been requested before.
-    requestMediaViewerResultIcons(m_mediaViewerGeneration, filtered);
-    // High priority (Architecture.md §14.66): `filtered` is the kind+name match on screen right
-    // now, so it jumps ahead of a kind's background sweep that may already be mid-flight. Its
-    // completions still count toward the active progress notification (de-duplicated by path
-    // against the sweep's own total) -- see requestMediaViewerResultThumbnails's doc comment.
-    requestMediaViewerResultThumbnails(m_mediaViewerGeneration, filtered, MediaThumbnailLoadingService::Priority::High);
+    // visible after narrowing/widening the filter may not have been requested before. Scoped to
+    // display.dispatchTargets rather than display.entries when grouped (Architecture.md §14.74):
+    // synthesized subfolder rows never need their own icon/thumbnail/tag request, since their
+    // collage is drawn entirely from already-requested sample children.
+    requestMediaViewerResultIcons(m_mediaViewerGeneration, display.dispatchTargets);
+    // High priority (Architecture.md §14.66): `display.dispatchTargets` is the kind+name match on
+    // screen right now, so it jumps ahead of a kind's background sweep that may already be mid-
+    // flight. Its completions still count toward the active progress notification (de-duplicated by
+    // path against the sweep's own total) -- see requestMediaViewerResultThumbnails's doc comment.
+    requestMediaViewerResultThumbnails(m_mediaViewerGeneration, display.dispatchTargets, MediaThumbnailLoadingService::Priority::High);
     // Details view's tag row (Architecture.md §14.69) -- harmless to fetch even while another
     // view mode is active, mirroring requestMediaViewerResultIcons/Thumbnails above.
-    requestMediaViewerResultTags(m_mediaViewerGeneration, filtered);
-    emit mediaViewerResultsChanged(filtered);
+    requestMediaViewerResultTags(m_mediaViewerGeneration, display.dispatchTargets);
+    emit mediaViewerResultsChanged(display.entries);
 }
 
 void TabViewModel::requestKindSweep(int generation, MediaViewerKind kind)
@@ -1474,6 +1707,13 @@ void TabViewModel::emitAvailability()
     emit backAvailableChanged(backAvailable());
     emit forwardAvailableChanged(forwardAvailable());
     emit upAvailableChanged(upAvailable());
+}
+
+void TabViewModel::emitMediaViewerFolderAvailability()
+{
+    emit mediaViewerBackAvailableChanged(m_mediaViewerFolderHistory.canGoBack());
+    emit mediaViewerForwardAvailableChanged(m_mediaViewerFolderHistory.canGoForward());
+    emit mediaViewerUpAvailableChanged(mediaViewerUpTarget() != m_mediaViewerCurrentFolder);
 }
 
 void TabViewModel::requestGitStatus(const std::filesystem::path& path)

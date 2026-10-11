@@ -5,11 +5,11 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.61–14.66, §14.68–14.69, §14.72–14.73 — the recursive tag/name-filtered image/video gallery mode and
+Covers §14.61–14.66, §14.68–14.69, §14.72–14.74 — the recursive tag/name-filtered image/video gallery mode and
 its follow-ups: thumbnail previews/metadata overlays, the `IMediaDecoder` thumbnail/metadata
 merge, video hover-scrub previews, loading-progress notification, kind-scoped loading,
-sort/view/filmstrip/details controls, and the Filter/Apply tag-click behaviour toggle. The built-in
-video player itself
+sort/view/filmstrip/details controls, the Filter/Apply tag-click behaviour toggle, and
+folder-grouped browsing. The built-in video player itself
 (§14.67) lives in [05-preview-and-decoration.md](05-preview-and-decoration.md), since it was built
 for and first used by the Preview tab. Section numbers are **not** contiguous with this file's
 neighbors — they were assigned chronologically as each feature was built and are kept stable
@@ -630,6 +630,90 @@ matching-tag chip (§14.72). No Domain/Application change: reuses
 * **Wiring**: `MainWindow` connects `tagSearchQueryAccepted` → `TabViewModel::acceptMediaViewerSearchTagQuery`
   and `tagCreateRequested` → `TabViewModel::createAndApplyMediaViewerTag`, both through the same
   `focusedTab()`-lookup lambda style as the rest of this panel's signals.
+* **Testing**: no new GTest coverage, same precedent as the rest of this file (Architecture.md §11
+  UI/ViewModel-glue carve-out); manual smoke test only.
+
+---
+### 14.74 Media Viewer Mode: Folder-Grouped Browsing
+
+§14.61's grid has always been one flat, recursively-gathered list regardless of view mode. This
+adds a second grouping mode, scoped to the Thumbnails view only: items are shown one folder at a
+time (the entered root, or any subfolder descended into), with a tile per subfolder containing
+qualifying media alongside the current folder's own direct media files. Entirely Adapters(ViewModel)/
+UI — no new Port, no Domain/Application/schema change — built entirely on data already fetched:
+`m_mediaViewerCandidates` (the full recursive, kind/name-filtered set) is simply regrouped in
+memory per folder, and `requestKindSweep`'s existing Low-priority decode sweep (§14.66) already
+covers every candidate regardless of grouping, so folder tiles' sample thumbnails arrive from the
+same cache with no new decode dispatch.
+
+* **`MediaViewerGroupMode`** (`src/adapters/viewmodels/media/MediaViewerGroupMode.h`, new):
+  `enum class MediaViewerGroupMode { Recursive, ByFolder }`, same minimal posture as
+  `MediaViewerKind.h`. A fourth `QComboBox` on `MediaViewerSortViewBar` drives it, same
+  construction/signal/resync shape as the existing three.
+* **`TabViewModel`** gains `m_mediaViewerGroupMode` (a toolbar preference like
+  `m_mediaViewerSortCriterion`/`m_mediaViewerViewMode` — not reset by enter/exitMediaViewer),
+  `m_mediaViewerCurrentFolder` (the folder currently displayed in Folder mode, reset to
+  `m_mediaViewerRoot` on `enterMediaViewer()` and whenever group mode switches into `ByFolder`),
+  and a second `NavigationHistory m_mediaViewerFolderHistory` instance (the existing plain
+  path-only back/forward stack class, unchanged, seeded with the root) scoped entirely to
+  Folder-mode sub-browsing — kept completely separate from the tab's real `currentPath()`/`m_history`
+  so exiting Media Viewer is unaffected.
+* **Folder-confined sub-navigation reuses the real toolbar actions and `AddressBarWidget`**,
+  rather than a new breadcrumb widget or the Tree side panel (resolved with the user over the Tree
+  panel and a dedicated breadcrumb as alternatives) — this is the one piece of §14.61's navigation
+  lock this feature deliberately reverses, and only while `mediaViewerGroupMode() == ByFolder &&
+  mediaViewerViewMode() == Thumbnails`. New `TabViewModel` methods mirror the existing
+  `navigateTo`/`upTarget`/`goUp`/`goBack`/`goForward`/`peekBack`/`peekForward` shape exactly, but
+  operate on `m_mediaViewerCurrentFolder`/`m_mediaViewerFolderHistory` and never touch disk/Ports —
+  `mediaViewerNavigateTo(path)` rejects anything outside `isPathWithinOrEqual(path,
+  m_mediaViewerRoot)` (`src/domain/PathContainment.h`), and `mediaViewerUpTarget()` clamps at the
+  root the same way `upTarget()` clamps at `ThisPC`. `WorkspacePaneWidget`'s
+  `onUpRequested`/`onBackRequested`/`onForwardRequested`/address-bar-submit handlers each gain an
+  early branch to the `mediaViewer*` equivalents when folder-nav is active instead of the normal
+  ones (skipping `confirmLeavingMonitoredScope`, not relevant here); `updateToolBarEnabledForMediaViewer`
+  now keeps back/forward/up/address-bar enabled exactly under that same condition instead of
+  always disabling them, pulling the shown state from the `mediaViewer*` accessors. A folder tile's
+  double-click (`wireBrowserView`'s `itemActivated`) is likewise redirected to
+  `mediaViewerNavigateTo(path)` instead of the normal `navigateTo(path)` whenever Folder mode is
+  active.
+* **`applyMediaViewerFilter()`** branches when `ByFolder` + `Thumbnails` are both active: a new
+  private `buildFolderGroupedView()` partitions `filterMediaViewerCandidates()` into the current
+  folder's direct-child files (unchanged `FileNode`s) and, for every other still-under-the-current-
+  folder candidate, buckets it by its immediate child-of-current-folder ancestor directory,
+  synthesizing one `FileType::Directory` `FileNode` per non-empty bucket plus a
+  `{ itemCount, up to 4 sample paths }` side record — **recursive**, i.e. covering every qualifying
+  file nested anywhere below that subfolder, not just its direct children (resolved with the
+  user). The combined folder+file list is sorted via the existing `sortMediaViewerResults()`
+  unchanged — `FileNavigationUseCase::sortBy`'s Name/ModificationDate/FileType criteria already
+  group directories before files, so folder tiles lead for free under the default Name sort. Only
+  the direct-child files are dispatched through `requestMediaViewerResultIcons`/
+  `requestMediaViewerResultThumbnails`; folder tiles never need their own path decoded. Any other
+  mode combination (`Recursive`, or `ByFolder` outside `Thumbnails`) keeps exactly the prior flat
+  behaviour — "works only for Thumbnails view, other views show all items" per the original ask.
+* **`FileListModel`** gains a `FolderPreviewRole` and a small `Q_DECLARE_METATYPE`'d value type
+  (`{ int itemCount; std::vector<QImage> previewImages; }`) resolved, for a `Directory` row, by
+  looking its seed's sample paths up against the *existing* `m_mediaThumbnailsByPath` cache —
+  no new decode request path. `setMediaThumbnails()`'s batch-merge gains an extra `dataChanged`
+  sweep over `FolderPreviewRole` across currently-held directory rows (cheap — a handful of
+  visible folder tiles) so an arriving sample thumbnail backfills any folder tile referencing it,
+  same "placeholder now, real data later" relationship every other role here already has.
+* **`MediaGridTileDelegate`** branches on a row's `fileType` being `Directory`: a new
+  `MediaThumbnailPainting::paintFolderPreviewCollage` (lifted into the same shared-helper home
+  §14.69 established) divides the thumbnail rect into a 2×2 grid, reusing the existing
+  `paintThumbnail` per quadrant for each available sample image and leaving any still-undecoded
+  quadrant as a neutral placeholder; the size/resolution bottom corner chips are skipped (meaningless
+  for a folder) and replaced by a new top-right folder-glyph + item-count badge, overlapping the
+  collage per the original ask — `paintCornerChip`'s `bool alignRight` parameter is generalized to
+  a `Qt::Corner` (four positions) to support the new anchor without a third copy of the chip-paint
+  code.
+* **Supersedes** §14.61's "Not built: live re-scoping of the grid if the user could somehow
+  navigate mid-session (they can't — navigation is locked)" bullet, for the Folder mode +
+  Thumbnails combination specifically — every other mode combination keeps that lock exactly as
+  before.
+* **Not built:** persisting the group-mode choice or current folder across restarts (same posture
+  as every other Media Viewer toolbar preference); any change to normal browsing's or search
+  results' own directory-row rendering; a true breadcrumb trail widget (the real address bar
+  fills that role instead, per the resolved design above).
 * **Testing**: no new GTest coverage, same precedent as the rest of this file (Architecture.md §11
   UI/ViewModel-glue carve-out); manual smoke test only.
 

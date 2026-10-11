@@ -29,11 +29,18 @@ MediaViewerSortViewBar::MediaViewerSortViewBar(QWidget* parent)
     m_viewModeCombo->addItem(tr("Details"));
     m_viewModeCombo->setToolTip(tr("View"));
 
+    m_groupModeCombo = new QComboBox(this);
+    m_groupModeCombo->setObjectName(QStringLiteral("mediaViewerGroupModeCombo"));
+    m_groupModeCombo->addItem(tr("Recursive"));
+    m_groupModeCombo->addItem(tr("Folder"));
+    m_groupModeCombo->setToolTip(tr("Group"));
+
     auto* layout = new QHBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(m_sortCriterionCombo);
     layout->addWidget(m_sortDirectionCombo);
     layout->addWidget(m_viewModeCombo);
+    layout->addWidget(m_groupModeCombo);
 
     connect(m_sortCriterionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
         const auto criterion = index == 1 ? MediaViewerSortCriterion::Duration
@@ -48,6 +55,9 @@ MediaViewerSortViewBar::MediaViewerSortViewBar(QWidget* parent)
                            : index == 2 ? MediaViewerViewMode::Details
                                         : MediaViewerViewMode::Thumbnails;
         emit viewModeChanged(mode);
+    });
+    connect(m_groupModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+        emit groupModeChanged(index == 1 ? MediaViewerGroupMode::ByFolder : MediaViewerGroupMode::Recursive);
     });
 }
 
@@ -89,4 +99,10 @@ void MediaViewerSortViewBar::setViewMode(MediaViewerViewMode mode)
         m_viewModeCombo->setCurrentIndex(2);
         break;
     }
+}
+
+void MediaViewerSortViewBar::setGroupMode(MediaViewerGroupMode mode)
+{
+    const QSignalBlocker blocker(m_groupModeCombo);
+    m_groupModeCombo->setCurrentIndex(mode == MediaViewerGroupMode::ByFolder ? 1 : 0);
 }

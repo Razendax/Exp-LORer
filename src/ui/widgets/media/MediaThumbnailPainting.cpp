@@ -1,5 +1,6 @@
 #include "MediaThumbnailPainting.h"
 
+#include <QColor>
 #include <QIcon>
 #include <QImage>
 #include <QList>
@@ -46,6 +47,33 @@ void MediaThumbnailPainting::paintPlaceholderIcon(QPainter* painter, const QIcon
 
     painter->setRenderHint(QPainter::SmoothPixmapTransform);
     painter->drawPixmap(rect, icon.pixmap(bestSize));
+}
+
+void MediaThumbnailPainting::paintFolderPreviewCollage(QPainter* painter, const std::vector<QImage>& images, const QRect& rect)
+{
+    const int halfWidth = rect.width() / 2;
+    const int halfHeight = rect.height() / 2;
+
+    const QRect quadrants[4] = {
+        QRect(rect.left(), rect.top(), halfWidth, halfHeight),
+        QRect(rect.left() + halfWidth, rect.top(), rect.width() - halfWidth, halfHeight),
+        QRect(rect.left(), rect.top() + halfHeight, halfWidth, rect.height() - halfHeight),
+        QRect(rect.left() + halfWidth, rect.top() + halfHeight, rect.width() - halfWidth, rect.height() - halfHeight),
+    };
+
+    for (int i = 0; i < 4; ++i)
+    {
+        if (static_cast<std::size_t>(i) < images.size() && !images[static_cast<std::size_t>(i)].isNull())
+        {
+            paintThumbnail(painter, images[static_cast<std::size_t>(i)], quadrants[i]);
+        }
+        else
+        {
+            // No sample decoded for this quadrant yet -- a neutral placeholder square rather than
+            // leaving it blank.
+            painter->fillRect(quadrants[i], QColor(128, 128, 128, 60));
+        }
+    }
 }
 
 QString MediaThumbnailPainting::durationLabel(std::chrono::milliseconds duration)

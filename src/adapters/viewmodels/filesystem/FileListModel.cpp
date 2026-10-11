@@ -339,6 +339,38 @@ QVariant FileListModel::data(const QModelIndex& index, int role) const
         return QVariant::fromValue(thumbnailIt.value());
     }
 
+    if (role == FolderPreviewRole && index.column() == NameColumn)
+    {
+        if (!entry.isDirectory())
+        {
+            // Only Media Viewer Folder-Grouped Browsing's synthesized subfolder rows have a seed
+            // (Architecture.md §14.74) -- a plain file row has nothing to resolve.
+            return {};
+        }
+
+        const auto seedIt = m_folderPreviewsByPath.constFind(toQString(entry.path()));
+        if (seedIt == m_folderPreviewsByPath.constEnd())
+        {
+            return {};
+        }
+
+        MediaFolderPreviewData data;
+        data.itemCount = seedIt->itemCount;
+        data.previewImages.reserve(seedIt->samplePaths.size());
+        for (const QString& samplePath : seedIt->samplePaths)
+        {
+            // Only whichever samples have already decoded -- the rest fill in progressively as
+            // setMediaThumbnails() delivers them, same "placeholder now, real data later"
+            // relationship MediaThumbnailRole itself has.
+            const auto thumbnailIt = m_mediaThumbnailsByPath.constFind(samplePath);
+            if (thumbnailIt != m_mediaThumbnailsByPath.constEnd() && !thumbnailIt->image.isNull())
+            {
+                data.previewImages.push_back(thumbnailIt->image);
+            }
+        }
+        return QVariant::fromValue(data);
+    }
+
     // NameColumn override mirrors MediaThumbnailRole above -- Media Viewer's QListView-based modes
     // (Filmstrip/Details/Thumbnails) only ever query column 0, but MediaDetailsDelegate still needs
     // tag data to paint its tag-pill row.
@@ -534,6 +566,7 @@ void FileListModel::setEntriesImpl(const std::filesystem::path& directory, std::
     m_fragmentCountsByPath.clear();
     m_iconCache.clear();
     m_mediaThumbnailsByPath.clear();
+    m_folderPreviewsByPath.clear();
     recomputeTotalSize();
     rebuildVisibleRows();
     endResetModel();
@@ -716,6 +749,26 @@ void FileListModel::setMediaThumbnails(const QHash<QString, MediaThumbnailData>&
     }
 
     emit dataChanged(index(minRow, NameColumn), index(maxRow, NameColumn), { MediaThumbnailRole });
+
+    // Backfills any Folder-Grouped Browsing subfolder tile referencing one of the just-arrived
+    // sample thumbnails (Architecture.md §14.74) -- cheap even though it isn't scoped to the exact
+    // rows touched, since at most a handful of folder tiles are ever held/visible at once.
+    if (!m_folderPreviewsByPath.isEmpty())
+    {
+        emit dataChanged(index(0, NameColumn), index(static_cast<int>(m_visibleRows.size()) - 1, NameColumn), { FolderPreviewRole });
+    }
+}
+
+void FileListModel::setFolderPreviews(const QHash<QString, FolderPreviewSeed>& previewsByPath)
+{
+    m_folderPreviewsByPath = previewsByPath;
+
+    if (m_visibleRows.empty())
+    {
+        return;
+    }
+
+    emit dataChanged(index(0, NameColumn), index(static_cast<int>(m_visibleRows.size()) - 1, NameColumn), { FolderPreviewRole });
 }
 
 std::optional<std::chrono::milliseconds> FileListModel::mediaThumbnailDuration(const QString& path) const

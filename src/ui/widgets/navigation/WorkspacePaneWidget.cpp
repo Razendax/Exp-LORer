@@ -307,6 +307,8 @@ QToolBar* WorkspacePaneWidget::createToolBar()
             [this](bool ascending) { if (m_boundTab) m_boundTab->setMediaViewerSortAscending(ascending); });
     connect(m_mediaViewerSortViewBar, &MediaViewerSortViewBar::viewModeChanged, this,
             [this](MediaViewerViewMode mode) { if (m_boundTab) m_boundTab->setMediaViewerViewMode(mode); });
+    connect(m_mediaViewerSortViewBar, &MediaViewerSortViewBar::groupModeChanged, this,
+            [this](MediaViewerGroupMode mode) { if (m_boundTab) m_boundTab->setMediaViewerGroupMode(mode); });
 
     return toolBar;
 }
@@ -588,6 +590,16 @@ void WorkspacePaneWidget::applyRestoredColumnVisibility(FileBrowserView* browser
 void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewModel* tab)
 {
     connect(browserView, &FileBrowserView::itemActivated, tab, [this, tab](const std::filesystem::path& path, bool isDirectory) {
+        // Folder-Grouped Browsing's own subfolder tiles (Architecture.md §14.74) -- the only place
+        // a Directory-typed FileNode can reach itemActivated from the Media Viewer grid, since
+        // normal browsing's own directory rows still go through the unchanged navigateTo() branch
+        // below.
+        if (tab->mediaViewerActive() && tab->mediaViewerGroupMode() == MediaViewerGroupMode::ByFolder && isDirectory)
+        {
+            tab->mediaViewerNavigateTo(path);
+            return;
+        }
+
         // Archive browsing (Architecture.md §14.28): a real, not-yet-entered archive file
         // navigates in (like a folder) instead of launching an external app. An archive-looking
         // entry already *inside* another archive degrades gracefully via navigateTo's own
@@ -681,6 +693,19 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
                    &MediaViewerSortViewBar::setSortAscending);
         disconnect(m_boundTab, &TabViewModel::mediaViewerViewModeChanged, m_mediaViewerSortViewBar,
                    &MediaViewerSortViewBar::setViewMode);
+        disconnect(m_boundTab, &TabViewModel::mediaViewerGroupModeChanged, m_mediaViewerSortViewBar,
+                   &MediaViewerSortViewBar::setGroupMode);
+        disconnect(m_boundTab, &TabViewModel::mediaViewerGroupModeChanged, this,
+                   &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
+        disconnect(m_boundTab, &TabViewModel::mediaViewerViewModeChanged, this,
+                   &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
+        disconnect(m_boundTab, &TabViewModel::mediaViewerBackAvailableChanged, this,
+                   &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
+        disconnect(m_boundTab, &TabViewModel::mediaViewerForwardAvailableChanged, this,
+                   &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
+        disconnect(m_boundTab, &TabViewModel::mediaViewerUpAvailableChanged, this,
+                   &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
+        disconnect(m_boundTab, &TabViewModel::mediaViewerCurrentFolderChanged, this, &WorkspacePaneWidget::onCurrentPathChanged);
 
         disconnect(m_boundTab, &TabViewModel::directoryContentsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
         disconnect(m_boundTab, &TabViewModel::advancedSearchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
@@ -722,6 +747,20 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
             &MediaViewerSortViewBar::setSortAscending);
     connect(m_boundTab, &TabViewModel::mediaViewerViewModeChanged, m_mediaViewerSortViewBar,
             &MediaViewerSortViewBar::setViewMode);
+    connect(m_boundTab, &TabViewModel::mediaViewerGroupModeChanged, m_mediaViewerSortViewBar,
+            &MediaViewerSortViewBar::setGroupMode);
+    // Folder-Grouped Browsing (Architecture.md §14.74): back/forward/up/address-bar enabled state
+    // depends on mediaViewerGroupMode()/mediaViewerViewMode() (whether folder-nav is even active)
+    // and on the folder-nav history's own availability, so every one of these needs to re-run
+    // updateToolBarEnabledForMediaViewer(), not just mediaViewerModeChanged above.
+    connect(m_boundTab, &TabViewModel::mediaViewerGroupModeChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
+    connect(m_boundTab, &TabViewModel::mediaViewerViewModeChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
+    connect(m_boundTab, &TabViewModel::mediaViewerBackAvailableChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
+    connect(m_boundTab, &TabViewModel::mediaViewerForwardAvailableChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
+    connect(m_boundTab, &TabViewModel::mediaViewerUpAvailableChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
+    // Folder-nav's own address-bar text sync -- mirrors onCurrentPathChanged's role for real
+    // navigation (both just set m_addressBar's text from a path), so the same slot serves both.
+    connect(m_boundTab, &TabViewModel::mediaViewerCurrentFolderChanged, this, &WorkspacePaneWidget::onCurrentPathChanged);
 
     connect(m_boundTab, &TabViewModel::directoryContentsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
     connect(m_boundTab, &TabViewModel::advancedSearchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
@@ -749,6 +788,7 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
     m_mediaViewerSortViewBar->setSortCriterion(m_boundTab->mediaViewerSortCriterion());
     m_mediaViewerSortViewBar->setSortAscending(m_boundTab->mediaViewerSortAscending());
     m_mediaViewerSortViewBar->setViewMode(m_boundTab->mediaViewerViewMode());
+    m_mediaViewerSortViewBar->setGroupMode(m_boundTab->mediaViewerGroupMode());
     refreshStatusCounts();
     updateGitStatusBar(m_boundTab->lastGitRepositorySummary());
 }
@@ -766,11 +806,20 @@ void WorkspacePaneWidget::updateToolBarEnabledForMediaViewer(bool active)
 
     if (active)
     {
-        m_backAction->setEnabled(false);
-        m_forwardAction->setEnabled(false);
-        m_upAction->setEnabled(false);
+        // Folder-Grouped Browsing (Architecture.md §14.74) reverses §14.61's navigation lock, but
+        // only for this one combination -- every other combination (Recursive, or ByFolder outside
+        // Thumbnails view) keeps back/forward/up/address-bar disabled exactly as before.
+        const bool folderNavActive = mediaViewerFolderNavActive();
+
+        m_backAction->setEnabled(folderNavActive && m_boundTab->mediaViewerPeekBack().has_value());
+        m_forwardAction->setEnabled(folderNavActive && m_boundTab->mediaViewerPeekForward().has_value());
+        m_upAction->setEnabled(folderNavActive && m_boundTab->mediaViewerUpTarget() != m_boundTab->mediaViewerCurrentFolder());
         m_refreshAction->setEnabled(false);
-        m_addressBar->setEnabled(false);
+        m_addressBar->setEnabled(folderNavActive);
+        if (folderNavActive)
+        {
+            m_addressBar->setText(displayPathText(m_boundTab->mediaViewerCurrentFolder()));
+        }
         m_viewModeButton->setEnabled(false);
         m_mediaViewerSortViewBarAction->setVisible(true);
         m_mediaViewerSortViewBar->setEnabled(true);
@@ -790,6 +839,25 @@ void WorkspacePaneWidget::updateToolBarEnabledForMediaViewer(bool active)
     m_forwardAction->setEnabled(m_boundTab->forwardAvailable());
     m_upAction->setEnabled(m_boundTab->upAvailable());
     m_refreshAction->setEnabled(true);
+    // Folder-nav may have repointed the address bar at mediaViewerCurrentFolder() while active --
+    // restore it to the tab's real currentPath() now that Media Viewer mode is (or stays) inactive.
+    m_addressBar->setText(displayPathText(m_boundTab->currentPath()));
+}
+
+bool WorkspacePaneWidget::mediaViewerFolderNavActive() const
+{
+    return m_boundTab && m_boundTab->mediaViewerActive() && m_boundTab->mediaViewerGroupMode() == MediaViewerGroupMode::ByFolder &&
+           m_boundTab->mediaViewerViewMode() == MediaViewerViewMode::Thumbnails;
+}
+
+void WorkspacePaneWidget::onMediaViewerFolderNavChanged()
+{
+    if (!m_boundTab)
+    {
+        return;
+    }
+
+    updateToolBarEnabledForMediaViewer(m_boundTab->mediaViewerActive());
 }
 
 int WorkspacePaneWidget::indexOfTab(TabViewModel* tab) const
@@ -863,6 +931,14 @@ void WorkspacePaneWidget::onUpRequested()
         return;
     }
 
+    if (mediaViewerFolderNavActive())
+    {
+        // Folder-Grouped Browsing (Architecture.md §14.74): confined to m_mediaViewerRoot's
+        // subtree, so there's no monitored-scope guard to run here.
+        m_boundTab->mediaViewerGoUp();
+        return;
+    }
+
     const std::filesystem::path target = m_boundTab->upTarget();
     if (target == m_boundTab->currentPath())
     {
@@ -881,6 +957,12 @@ void WorkspacePaneWidget::onBackRequested()
 {
     if (!m_boundTab)
     {
+        return;
+    }
+
+    if (mediaViewerFolderNavActive())
+    {
+        m_boundTab->mediaViewerGoBack();
         return;
     }
 
@@ -913,6 +995,12 @@ void WorkspacePaneWidget::onForwardRequested()
 {
     if (!m_boundTab)
     {
+        return;
+    }
+
+    if (mediaViewerFolderNavActive())
+    {
+        m_boundTab->mediaViewerGoForward();
         return;
     }
 
@@ -990,6 +1078,22 @@ void WorkspacePaneWidget::onAddressBarEdited()
     const std::filesystem::path expanded =
         m_boundTab->expandEnvironmentVariables(std::filesystem::path(trimmed.toStdWString()));
     const QString expandedText = QString::fromStdWString(expanded.wstring());
+
+    if (mediaViewerFolderNavActive())
+    {
+        // Folder-Grouped Browsing (Architecture.md §14.74): confined to m_mediaViewerRoot's
+        // subtree -- "This PC" and the monitored-scope guard below make no sense here.
+        std::filesystem::path newPath(expandedText.toStdWString());
+        newPath.make_preferred();
+
+        m_boundTab->mediaViewerNavigateTo(newPath);
+        if (!pathsEqualCaseInsensitive(m_boundTab->mediaViewerCurrentFolder(), newPath))
+        {
+            // Outside the confined subtree -- mediaViewerNavigateTo() silently rejected it.
+            m_addressBar->setText(displayPathText(m_boundTab->mediaViewerCurrentFolder()));
+        }
+        return;
+    }
 
     if (expandedText.compare(QStringLiteral("this pc"), Qt::CaseInsensitive) == 0)
     {

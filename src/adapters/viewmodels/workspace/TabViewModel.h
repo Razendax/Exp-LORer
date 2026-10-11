@@ -22,7 +22,9 @@
 #include "FolderMonitorUseCase.h"
 #include "FolderSizesByPath.h"
 #include "GitRepositorySummary.h"
+#include "MediaFolderPreviewData.h"
 #include "MediaThumbnailLoadingService.h"
+#include "MediaViewerGroupMode.h"
 #include "MediaViewerKind.h"
 #include "MediaViewerSortCriterion.h"
 #include "MediaViewerTagBehaviour.h"
@@ -113,6 +115,28 @@ public:
     bool mediaViewerSortAscending() const noexcept { return m_mediaViewerSortAscending; }
     MediaViewerViewMode mediaViewerViewMode() const noexcept { return m_mediaViewerViewMode; }
     MediaViewerTagBehaviour mediaViewerTagBehaviour() const noexcept { return m_mediaViewerTagBehaviour; }
+
+    // Folder-Grouped Browsing (Architecture.md §14.74): a second, root-confined navigation state
+    // scoped to Folder mode + Thumbnails view, kept entirely separate from this tab's real
+    // currentPath()/m_history so exiting Media Viewer is unaffected. mediaViewerGroupMode() is a
+    // toolbar preference like mediaViewerSortCriterion()/mediaViewerViewMode() -- not reset by
+    // enter/exitMediaViewer(). mediaViewerCurrentFolder() is the folder currently displayed in
+    // Folder mode, equal to m_mediaViewerRoot until Folder-mode sub-navigation moves it elsewhere.
+    // Switching the group mode never touches it either way: Recursive mode also scopes its
+    // (flat, ungrouped) gallery to mediaViewerCurrentFolder() -- see filterMediaViewerCandidates()
+    // -- so switching Folder->Recursive shows a recursive view of wherever Folder-mode browsing
+    // currently is, rather than snapping back out to the full original root.
+    MediaViewerGroupMode mediaViewerGroupMode() const noexcept { return m_mediaViewerGroupMode; }
+    std::filesystem::path mediaViewerCurrentFolder() const { return m_mediaViewerCurrentFolder; }
+
+    // Pure queries, no history/state side effects -- mirror upTarget()/peekBack()/peekForward()
+    // above, but scoped to m_mediaViewerFolderHistory/m_mediaViewerCurrentFolder.
+    // mediaViewerUpTarget() clamps at m_mediaViewerRoot the same way upTarget() clamps at
+    // VirtualPaths::ThisPC: returning mediaViewerCurrentFolder() itself signals "nothing to
+    // navigate to" (already at the root).
+    std::filesystem::path mediaViewerUpTarget() const;
+    std::optional<std::filesystem::path> mediaViewerPeekBack() const;
+    std::optional<std::filesystem::path> mediaViewerPeekForward() const;
 
     // Resolves mediaViewerTagFilters() into full Tag objects (for chip display), mirroring
     // resolveTagCriteria().
@@ -361,6 +385,26 @@ public slots:
     // today, more later" per the request.
     void setMediaViewerViewMode(MediaViewerViewMode mode);
 
+    // Folder-Grouped Browsing's own group-mode toggle (Architecture.md §14.74). No-op if unchanged
+    // or outside Media Viewer mode. Neither direction touches mediaViewerCurrentFolder()/the
+    // folder-nav history -- switching Recursive->ByFolder resumes Folder-mode browsing wherever it
+    // last was (m_mediaViewerRoot the first time, since nothing has navigated it yet), and
+    // switching ByFolder->Recursive keeps the recursive gallery scoped to that same folder (see
+    // filterMediaViewerCandidates()), rather than either direction snapping back out to the full
+    // root. Re-applies the current filter so the grid reflects the new grouping immediately.
+    void setMediaViewerGroupMode(MediaViewerGroupMode mode);
+
+    // Folder-Grouped Browsing's sub-navigation (Architecture.md §14.74) -- exact mirror of
+    // navigateTo()/goUp()/goBack()/goForward(), but confined to m_mediaViewerRoot's subtree and
+    // never touching disk/Ports: these just rebuild the already-cached candidate list for the new
+    // current folder. No-op outside Media Viewer mode. mediaViewerNavigateTo() additionally no-ops
+    // (silently rejects) a path outside m_mediaViewerRoot's subtree -- the one piece of real
+    // validation here, done via PathContainment.h rather than a disk round-trip.
+    void mediaViewerNavigateTo(const std::filesystem::path& path);
+    void mediaViewerGoUp();
+    void mediaViewerGoBack();
+    void mediaViewerGoForward();
+
     // No-op if already active or already starting, or if currentPath() is VirtualPaths::ThisPC/an
     // archive-virtual path (the Start button is also UI-disabled in that state, but this slot stays
     // defensive). Clears any previous session's log/total, then dispatches an async watch request
@@ -437,6 +481,12 @@ signals:
     void mediaViewerSortAscendingChanged(bool ascending);
     void mediaViewerViewModeChanged(MediaViewerViewMode mode);
     void mediaViewerTagBehaviourChanged(MediaViewerTagBehaviour behaviour);
+    // Folder-Grouped Browsing (Architecture.md §14.74).
+    void mediaViewerGroupModeChanged(MediaViewerGroupMode mode);
+    void mediaViewerCurrentFolderChanged(const std::filesystem::path& folder);
+    void mediaViewerBackAvailableChanged(bool available);
+    void mediaViewerForwardAvailableChanged(bool available);
+    void mediaViewerUpAvailableChanged(bool available);
     void mediaViewerLoading();
     void mediaViewerLoadingFinished();
     void mediaViewerFailed(const QString& message);
@@ -464,6 +514,11 @@ private:
     };
     void loadAndApply(const std::filesystem::path& path, HistoryUpdate historyUpdate);
     void emitAvailability();
+
+    // Folder-Grouped Browsing's own availability-signal emit (Architecture.md §14.74), mirroring
+    // emitAvailability() above -- shared tail for mediaViewerNavigateTo/mediaViewerGoUp/
+    // mediaViewerGoBack/mediaViewerGoForward/setMediaViewerGroupMode's into-ByFolder branch.
+    void emitMediaViewerFolderAvailability();
 
     // Shared by showAdvancedSearchPanel/startAdvancedSearch/updateAdvancedSearchCriteria/
     // removeTagSearchCriterion for the "criteria is (now) empty" case (Architecture.md §14.56):
@@ -682,6 +737,52 @@ private:
     // descending.
     std::vector<FileNode> sortMediaViewerResults(std::vector<FileNode> filtered) const;
 
+    // Folder-Grouped Browsing's own regroup step (Architecture.md §14.74): buckets `filtered`
+    // (already kind+name filtered, all under m_mediaViewerRoot per filterMediaViewerCandidates())
+    // into mediaViewerCurrentFolder()'s direct-child files (kept as-is) plus one synthesized
+    // FileType::Directory FileNode per non-empty immediate-subfolder bucket -- recursive, i.e.
+    // every qualifying file nested anywhere below that subfolder, not just its direct children.
+    struct FolderGroupedView
+    {
+        // Direct-child files + synthesized subfolder FileNodes, unsorted -- the caller
+        // (buildMediaViewerDisplay()) runs this through sortMediaViewerResults() itself, same as
+        // the flat (non-grouped) path does.
+        std::vector<FileNode> combined;
+        // Just the direct-child files -- these need their own icon/thumbnail/tag requests, same as
+        // the flat (non-grouped) path.
+        std::vector<FileNode> directChildFiles;
+        // The (up to 4 per bucket) sample files backing previewsByPath's seeds -- a folder tile's
+        // collage is drawn entirely from these once decoded (see FolderPreviewRole), so they need
+        // their own thumbnail request too, same as directChildFiles, rather than waiting on
+        // requestKindSweep's whole-tree Low-priority background sweep to eventually reach them
+        // (Architecture.md §14.74).
+        std::vector<FileNode> previewSampleFiles;
+        // One seed per synthesized subfolder row, keyed by its absolute path -- itemCount plus up
+        // to 4 sample paths (in the current sort order) for FileListModel::setFolderPreviews().
+        QHash<QString, FolderPreviewSeed> previewsByPath;
+    };
+    FolderGroupedView buildFolderGroupedView(const std::vector<FileNode>& filtered) const;
+
+    // The full "what should the grid show right now" computation shared by applyMediaViewerFilter()
+    // and reapplyMediaViewerSort() (Architecture.md §14.74): filters, then -- when Folder mode +
+    // Thumbnails view are both active -- regroups via buildFolderGroupedView(), then sorts. Kept as
+    // one shared helper (rather than inlined into both callers) specifically so reapplyMediaViewerSort()
+    // can pick up a regroup/re-sort without re-dispatching the icon/thumbnail/tag requests
+    // applyMediaViewerFilter() issues for its `dispatchTargets` -- a plain re-sort never changes
+    // which paths need decoding.
+    struct MediaViewerDisplay
+    {
+        // Sorted, display-ready list -- includes synthesized subfolder FileNodes when grouped.
+        std::vector<FileNode> entries;
+        // What needs icon/thumbnail/tag requests: equals entries itself when not grouped, or just
+        // the direct-child files when grouped.
+        std::vector<FileNode> dispatchTargets;
+        // Only non-empty when grouped.
+        QHash<QString, FolderPreviewSeed> folderPreviews;
+        bool grouped = false;
+    };
+    MediaViewerDisplay buildMediaViewerDisplay() const;
+
     // Re-sorts the currently-displayed Media Viewer grid in place (cheap re-order only -- doesn't
     // touch icon/thumbnail requests, since changing sort order never changes which paths need
     // decoding). Used by the three sort/view setters below and by the progressive duration-sort
@@ -815,6 +916,16 @@ private:
     // Tag-click behaviour toggle (Architecture.md §14.72). Not reset by enterMediaViewer/
     // exitMediaViewer, same posture as m_mediaViewerSortCriterion/m_mediaViewerViewMode above.
     MediaViewerTagBehaviour m_mediaViewerTagBehaviour = MediaViewerTagBehaviour::Filter;
+    // Folder-Grouped Browsing (Architecture.md §14.74). m_mediaViewerGroupMode is a toolbar
+    // preference like m_mediaViewerSortCriterion/m_mediaViewerViewMode above -- not reset by
+    // enterMediaViewer/exitMediaViewer. m_mediaViewerCurrentFolder/m_mediaViewerFolderHistory are a
+    // second, root-confined navigation state scoped to Folder-mode sub-browsing, reset to
+    // m_mediaViewerRoot by enterMediaViewer() and whenever setMediaViewerGroupMode() switches into
+    // ByFolder -- kept entirely separate from m_history/currentPath() so exiting Media Viewer is
+    // unaffected.
+    MediaViewerGroupMode m_mediaViewerGroupMode = MediaViewerGroupMode::Recursive;
+    std::filesystem::path m_mediaViewerCurrentFolder;
+    NavigationHistory m_mediaViewerFolderHistory;
     std::filesystem::path m_mediaViewerRoot;
     std::vector<Tag::Id> m_mediaViewerTagIds;
     QString m_mediaViewerNameQuery;

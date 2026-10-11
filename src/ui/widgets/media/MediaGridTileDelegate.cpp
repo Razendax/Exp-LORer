@@ -16,6 +16,7 @@
 #include "FileListModel.h"
 #include "FileSizeFormat.h"
 #include "MediaExtensions.h"
+#include "MediaFolderPreviewData.h"
 #include "MediaPreviewFrames.h"
 #include "MediaThumbnailData.h"
 #include "MediaThumbnailPainting.h"
@@ -36,10 +37,10 @@ namespace
         return fontData.canConvert<QFont>() ? fontData.value<QFont>() : option.font;
     }
 
-    // Semi-transparent rounded-rect label chip anchored inside `bounds`'s bottom-left (alignRight ==
-    // false) or bottom-right (alignRight == true) corner, ~4-6px padded (Architecture.md §14.62).
-    // No-op for an empty label (e.g. an image whose dimensions aren't known yet).
-    void paintCornerChip(QPainter* painter, const QRect& bounds, const QString& text, bool alignRight)
+    // Semi-transparent rounded-rect label chip anchored inside `bounds`'s given corner, ~4-6px
+    // padded (Architecture.md §14.62/§14.74). No-op for an empty label (e.g. an image whose
+    // dimensions aren't known yet).
+    void paintCornerChip(QPainter* painter, const QRect& bounds, const QString& text, Qt::Corner corner)
     {
         if (text.isEmpty())
         {
@@ -53,8 +54,11 @@ namespace
 
         const int chipWidth = textSize.width() + 2 * kChipPadding;
         const int chipHeight = textSize.height() + 2 * kChipPadding;
+        const bool alignRight = corner == Qt::TopRightCorner || corner == Qt::BottomRightCorner;
+        const bool alignTop = corner == Qt::TopLeftCorner || corner == Qt::TopRightCorner;
         const int left = alignRight ? bounds.right() - kChipMargin - chipWidth : bounds.left() + kChipMargin;
-        const QRect chipRect(left, bounds.bottom() - kChipMargin - chipHeight, chipWidth, chipHeight);
+        const int top = alignTop ? bounds.top() + kChipMargin : bounds.bottom() - kChipMargin - chipHeight;
+        const QRect chipRect(left, top, chipWidth, chipHeight);
 
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing);
@@ -103,11 +107,22 @@ void MediaGridTileDelegate::paint(QPainter* painter, const QStyleOptionViewItem&
     painter->save();
 
     const QRect iconRect = thumbnailRectFor(option);
+    // A Directory-typed row only ever exists as Media Viewer Folder-Grouped Browsing's synthesized
+    // subfolder tile (Architecture.md §14.74) -- a plain media file row is never a directory.
+    const bool isFolderTile = index.data(FileListModel::IsDirectoryRole).toBool();
+
     const QVariant thumbnailVariant = index.data(FileListModel::MediaThumbnailRole);
-    const bool hasThumbnail = thumbnailVariant.canConvert<MediaThumbnailData>()
+    const bool hasThumbnail = !isFolderTile && thumbnailVariant.canConvert<MediaThumbnailData>()
                                && !thumbnailVariant.value<MediaThumbnailData>().image.isNull();
 
-    if (hasThumbnail)
+    if (isFolderTile)
+    {
+        const QVariant previewVariant = index.data(FileListModel::FolderPreviewRole);
+        const MediaFolderPreviewData previewData =
+            previewVariant.canConvert<MediaFolderPreviewData>() ? previewVariant.value<MediaFolderPreviewData>() : MediaFolderPreviewData{};
+        MediaThumbnailPainting::paintFolderPreviewCollage(painter, previewData.previewImages, iconRect);
+    }
+    else if (hasThumbnail)
     {
         const MediaThumbnailData& thumbnailData = thumbnailVariant.value<MediaThumbnailData>();
 
@@ -147,12 +162,20 @@ void MediaGridTileDelegate::paint(QPainter* painter, const QStyleOptionViewItem&
     painter->drawText(textRect, Qt::AlignHCenter | Qt::AlignVCenter,
                        fontMetrics.elidedText(name, Qt::ElideRight, textRect.width()));
 
-    if (hasThumbnail)
+    if (isFolderTile)
+    {
+        // Size/resolution chips are meaningless for a folder -- a top-right folder-glyph +
+        // item-count badge instead (Architecture.md §14.74), overlapping the collage.
+        const QVariant previewVariant = index.data(FileListModel::FolderPreviewRole);
+        const int itemCount = previewVariant.canConvert<MediaFolderPreviewData>() ? previewVariant.value<MediaFolderPreviewData>().itemCount : 0;
+        paintCornerChip(painter, iconRect, QStringLiteral("\U0001F4C1 %1").arg(itemCount), Qt::TopRightCorner);
+    }
+    else if (hasThumbnail)
     {
         const MediaThumbnailData data = thumbnailVariant.value<MediaThumbnailData>();
 
         const QString sizeLabel = FileSizeFormat::format(index.data(FileListModel::SizeBytesRole).toULongLong());
-        paintCornerChip(painter, iconRect, sizeLabel, false);
+        paintCornerChip(painter, iconRect, sizeLabel, Qt::BottomLeftCorner);
 
         const auto path = std::filesystem::path(index.data(FileListModel::FilePathRole).toString().toStdWString());
         const std::string extension = MediaExtensions::lowercaseExtension(path);
@@ -168,7 +191,7 @@ void MediaGridTileDelegate::paint(QPainter* painter, const QStyleOptionViewItem&
         {
             rightLabel = MediaThumbnailPainting::durationLabel(data.duration);
         }
-        paintCornerChip(painter, iconRect, rightLabel, true);
+        paintCornerChip(painter, iconRect, rightLabel, Qt::BottomRightCorner);
     }
 
     if (option.state & QStyle::State_Selected)

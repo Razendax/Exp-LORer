@@ -18,6 +18,7 @@
 #include "FolderSizesByPath.h"
 #include "FragmentCountsByPath.h"
 #include "GitDirectoryStatus.h"
+#include "MediaFolderPreviewData.h"
 #include "MediaThumbnailData.h"
 #include "Tag.h"
 
@@ -70,6 +71,13 @@ public:
         // the delegate falls back to Qt::DecorationRole's placeholder icon, same relationship
         // setIcons() already has with resolveIcon()'s cache-miss fallback.
         MediaThumbnailRole,
+        // NameColumn's Media Viewer Folder-Grouped Browsing collage data (Architecture.md §14.74),
+        // a MediaFolderPreviewData QVariant -- consulted only by MediaGridTileDelegate, and only
+        // meaningful for a FileType::Directory row (a synthesized subfolder tile). Resolved on
+        // demand from m_folderPreviewsByPath's seed against the already-decoded
+        // m_mediaThumbnailsByPath cache, so it fills in progressively the same way
+        // MediaThumbnailRole does.
+        FolderPreviewRole,
     };
 
     // `fileDecorationsChangeSource` is a bare QObject& (not FileDecorationsViewModel&, the concrete
@@ -205,6 +213,15 @@ public slots:
     // delivery shape as setIcons() (Architecture.md §14.62).
     void setMediaThumbnails(const QHash<QString, MediaThumbnailData>& thumbnailsByPath);
 
+    // Sets the per-folder preview seeds (item count + up to 4 sample paths) backing FolderPreviewRole
+    // for Media Viewer Folder-Grouped Browsing's synthesized subfolder rows (Architecture.md
+    // §14.74), keyed by each subfolder's absolute path. Called by
+    // TabViewModel::buildFolderGroupedView() right after setEntries()/setEntriesPreSorted(), mirroring
+    // setIcons()/setMediaThumbnails(). Entries for a path no longer present (narrower/different
+    // folder) are simply not looked up again -- the whole map is replaced wholesale, same posture as
+    // setGitStatuses()/setFileTags().
+    void setFolderPreviews(const QHash<QString, FolderPreviewSeed>& previewsByPath);
+
 signals:
     void sortOrderChanged(SortCriterion criterion, bool ascending);
 
@@ -283,6 +300,12 @@ private:
     // that it's missing. Cleared in setEntries() alongside m_iconCache and every other per-
     // directory map (Architecture.md §14.62).
     QHash<QString, MediaThumbnailData> m_mediaThumbnailsByPath;
+
+    // Per-folder preview seed, populated wholesale by setFolderPreviews() right after a Folder-
+    // Grouped Browsing regroup (Architecture.md §14.74) and consulted by data()'s FolderPreviewRole
+    // handling -- keyed by each synthesized subfolder row's absolute path. Cleared in setEntries()/
+    // setEntriesPreSorted() alongside m_mediaThumbnailsByPath and every other per-directory map.
+    QHash<QString, FolderPreviewSeed> m_folderPreviewsByPath;
 
     SortCriterion m_sortCriterion = SortCriterion::Name;
     bool m_sortAscending = true;

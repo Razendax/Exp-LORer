@@ -47,9 +47,11 @@ add_library(explorer_adapters_viewmodels STATIC
     media/FilePreviewViewModel.h
     media/FilePreviewViewModel.cpp
     media/MediaViewerKind.h
+    media/MediaViewerGroupMode.h
     media/MediaViewerSortCriterion.h
     media/MediaViewerViewMode.h
     media/MediaThumbnailData.h
+    media/MediaFolderPreviewData.h
     media/MediaThumbnailLoadingWorker.h
     media/MediaThumbnailLoadingWorker.cpp
     media/MediaThumbnailLoadingService.h

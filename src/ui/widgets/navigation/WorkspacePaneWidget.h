@@ -146,6 +146,18 @@ private:
     // bound tab's live mediaViewerModeChanged signal and by bindToolBarToTab on every tab switch.
     void updateToolBarEnabledForMediaViewer(bool active);
 
+    // Folder-Grouped Browsing (Architecture.md §14.74): true exactly when m_boundTab is in Media
+    // Viewer mode with Folder group mode + Thumbnails view both active -- the one combination
+    // where back/forward/up/address-bar act on the folder-nav state instead of being disabled.
+    bool mediaViewerFolderNavActive() const;
+
+    // Folder-Grouped Browsing (Architecture.md §14.74): re-runs updateToolBarEnabledForMediaViewer()
+    // against the bound tab's current mediaViewerActive() state. Connected to
+    // mediaViewerGroupModeChanged/mediaViewerViewModeChanged/mediaViewerBack|Forward|UpAvailableChanged
+    // -- any of those can change whether folder-nav is active or what it's enabled against, even
+    // while mediaViewerModeChanged itself (Media Viewer on/off) hasn't fired.
+    void onMediaViewerFolderNavChanged();
+
     // Resolves the FileBrowserView backing whichever page (normal browsing, search results, or
     // advanced search results) the current tab is currently showing -- factors out the splitter ->
     // QStackedWidget -> (FileBrowserView or SearchResultsPane::browserView()) unwrap also used by
