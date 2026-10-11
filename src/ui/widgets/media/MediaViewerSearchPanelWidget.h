@@ -16,6 +16,7 @@ class QPushButton;
 class QToolButton;
 class QLabel;
 class FlowLayout;
+class TagSearchEdit;
 class UiThemeChangeNotifier;
 
 // Content of the right panel's "Searcher" tab (Architecture.md §14.61): Images/Videos kind picker,
@@ -50,6 +51,12 @@ signals:
     void tagSearchChipActivated(Tag::Id tagId, Qt::KeyboardModifiers modifiers);
     void tagFilterRemoved(Tag::Id tagId);
     void tagSearchQueryRequested(const QString& query);
+    // Enter in the tag-search field -- decision (assign exact match vs. create-then-assign) lives
+    // in TabViewModel::acceptMediaViewerSearchTagQuery, not here (same "dumb relay" posture as
+    // tagSearchChipActivated).
+    void tagSearchQueryAccepted(const QString& query);
+    // "Create tag" button click, shown when the typed text has no exact existing-tag match.
+    void tagCreateRequested(const QString& name);
     void nameFilterChanged(const QString& query, const NameSearchOptions& options);
 
 private:
@@ -61,6 +68,12 @@ private:
     NameSearchOptions currentNameOptions() const;
     void emitNameFilterChanged();
     static void clearLayout(FlowLayout* layout);
+
+    // Shows/hides m_createTagButton based on whether the trimmed tag-search text has no
+    // case-insensitive exact match in `matches` (same predicate as
+    // TagListViewModel::refreshSearchSection). Called from setTagSearchResults, which already runs
+    // on every tagSearchQueryRequested round-trip.
+    void updateCreateTagAffordance(const std::vector<Tag>& matches);
 
     // Ports SearchCriteriaPanel::onMatchModeButtonToggled's hand-rolled "exclusive but
     // deselectable" behavior for Whole Word/Exact Name/Regex.
@@ -86,7 +99,8 @@ private:
 
     FlowLayout* m_appliedFiltersLayout = nullptr;
 
-    QLineEdit* m_tagSearchEdit = nullptr;
+    TagSearchEdit* m_tagSearchEdit = nullptr;
+    QPushButton* m_createTagButton = nullptr;
     QComboBox* m_tagBehaviourCombo = nullptr;
     FlowLayout* m_tagMatchesLayout = nullptr;
 

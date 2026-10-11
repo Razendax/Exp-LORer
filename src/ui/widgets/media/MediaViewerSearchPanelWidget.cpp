@@ -1,17 +1,22 @@
 #include "MediaViewerSearchPanelWidget.h"
 
+#include <algorithm>
+
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPushButton>
 #include <QScrollArea>
 #include <QSignalBlocker>
 #include <QSizePolicy>
+#include <QStringList>
 #include <QToolButton>
 #include <QVBoxLayout>
 
 #include "FlowLayout.h"
 #include "TagChipWidget.h"
+#include "TagSearchEdit.h"
 #include "UiThemeChangeNotifier.h"
 
 MediaViewerSearchPanelWidget::MediaViewerSearchPanelWidget(UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent)
@@ -39,7 +44,7 @@ MediaViewerSearchPanelWidget::MediaViewerSearchPanelWidget(UiThemeChangeNotifier
     topRow->addStretch();
     topRow->addWidget(m_exitButton);
 
-    m_tagSearchEdit = new QLineEdit(this);
+    m_tagSearchEdit = new TagSearchEdit(this);
     m_tagSearchEdit->setObjectName(QStringLiteral("mediaViewerTagSearchEdit"));
     m_tagSearchEdit->setPlaceholderText(tr("Search tags..."));
 
@@ -51,6 +56,10 @@ MediaViewerSearchPanelWidget::MediaViewerSearchPanelWidget(UiThemeChangeNotifier
     auto* tagSearchRow = new QHBoxLayout();
     tagSearchRow->addWidget(m_tagSearchEdit);
     tagSearchRow->addWidget(m_tagBehaviourCombo);
+
+    m_createTagButton = new QPushButton(this);
+    m_createTagButton->setObjectName(QStringLiteral("mediaViewerCreateTagButton"));
+    m_createTagButton->hide();
 
     // Match Case/Whole Word/Exact Name/Match Regex/Skip Git-Ignored toggles, copied verbatim from
     // SearchCriteriaPanel's own row (Architecture.md §14.61) rather than extracted into a shared
@@ -131,6 +140,7 @@ MediaViewerSearchPanelWidget::MediaViewerSearchPanelWidget(UiThemeChangeNotifier
     layout->addSpacing(20);
 
     layout->addLayout(tagSearchRow);
+    layout->addWidget(m_createTagButton);
     m_tagMatchesLayout = addChipSection(layout, QString(), &UiColors::UiColorSet::matchingTagsBackground,
                                          QStringLiteral("mediaViewerTagMatchesSection"));
 
@@ -149,6 +159,14 @@ MediaViewerSearchPanelWidget::MediaViewerSearchPanelWidget(UiThemeChangeNotifier
     });
     connect(m_exitButton, &QToolButton::clicked, this, &MediaViewerSearchPanelWidget::exitRequested);
     connect(m_tagSearchEdit, &QLineEdit::textChanged, this, &MediaViewerSearchPanelWidget::tagSearchQueryRequested);
+    connect(m_tagSearchEdit, &QLineEdit::returnPressed, this, [this]() {
+        emit tagSearchQueryAccepted(m_tagSearchEdit->text());
+        m_tagSearchEdit->clear();
+    });
+    connect(m_createTagButton, &QPushButton::clicked, this, [this]() {
+        emit tagCreateRequested(m_tagSearchEdit->text().trimmed());
+        m_tagSearchEdit->clear();
+    });
     connect(m_nameEdit, &QLineEdit::textChanged, this, [this](const QString&) { emitNameFilterChanged(); });
 
     applyThemeColors();
@@ -215,12 +233,17 @@ void MediaViewerSearchPanelWidget::setAppliedTagFilters(const std::vector<Tag>& 
 void MediaViewerSearchPanelWidget::setTagSearchResults(const std::vector<Tag>& tags)
 {
     clearLayout(m_tagMatchesLayout);
+    QStringList names;
+    names.reserve(static_cast<int>(tags.size()));
     for (const Tag& tag : tags)
     {
         auto* chip = new TagChipWidget(tag, TagChipWidget::Kind::ReadOnly);
         connect(chip, &TagChipWidget::clicked, this, &MediaViewerSearchPanelWidget::tagSearchChipActivated);
         m_tagMatchesLayout->addWidget(chip);
+        names.append(QString::fromStdString(tag.name()));
     }
+    m_tagSearchEdit->setSuggestions(names);
+    updateCreateTagAffordance(tags);
 }
 
 void MediaViewerSearchPanelWidget::setTagBehaviour(MediaViewerTagBehaviour behaviour)
@@ -252,6 +275,21 @@ void MediaViewerSearchPanelWidget::setNameFilter(const QString& query, const Nam
 void MediaViewerSearchPanelWidget::setLoading(bool loading)
 {
     m_loadingLabel->setVisible(loading);
+}
+
+void MediaViewerSearchPanelWidget::updateCreateTagAffordance(const std::vector<Tag>& matches)
+{
+    const QString trimmed = m_tagSearchEdit->text().trimmed();
+    const bool canCreate = !trimmed.isEmpty() &&
+        std::none_of(matches.begin(), matches.end(), [&trimmed](const Tag& tag) {
+            return QString::fromStdString(tag.name()).compare(trimmed, Qt::CaseInsensitive) == 0;
+        });
+
+    m_createTagButton->setVisible(canCreate);
+    if (canCreate)
+    {
+        m_createTagButton->setText(tr("Create tag \"%1\"").arg(trimmed));
+    }
 }
 
 void MediaViewerSearchPanelWidget::clearLayout(FlowLayout* layout)

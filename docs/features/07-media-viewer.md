@@ -5,7 +5,7 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.61–14.66, §14.68–14.69, §14.72 — the recursive tag/name-filtered image/video gallery mode and
+Covers §14.61–14.66, §14.68–14.69, §14.72–14.73 — the recursive tag/name-filtered image/video gallery mode and
 its follow-ups: thumbnail previews/metadata overlays, the `IMediaDecoder` thumbnail/metadata
 merge, video hover-scrub previews, loading-progress notification, kind-scoped loading,
 sort/view/filmstrip/details controls, and the Filter/Apply tag-click behaviour toggle. The built-in
@@ -578,6 +578,58 @@ unaffected. No Domain/Application change: reuses `TagManagementUseCase::assignTa
   `mediaViewerKindChanged`/`setKind`). `WorkspacePaneWidget::wireBrowserView` (shared by all three
   per-tab `FileBrowserView` instances) connects `mediaViewerDetailsTagClicked` straight to
   `TabViewModel::handleMediaViewerDetailsTagClick`.
+* **Testing**: no new GTest coverage, same precedent as the rest of this file (Architecture.md §11
+  UI/ViewModel-glue carve-out); manual smoke test only.
+
+---
+### 14.73 Media Viewer Tag Search: Autocomplete, Create-Tag Affordance, Enter-to-Apply-or-Create
+
+Ports the Tag Panel's keyboard-driven tag-entry pattern (§14.70) onto the Media Viewer Searcher
+tab's tag-search box, which until now was a plain `QLineEdit` with no autocomplete, no create-tag
+path, and no Enter-key handling at all — tags could only be acted on by clicking an existing
+matching-tag chip (§14.72). No Domain/Application change: reuses
+`TagManagementUseCase::searchTags`/`createTag`, `TagColorPalette::pickColorFor`, and
+`TabViewModel::applyMediaViewerTagToSelection` (§14.72).
+
+* **`MediaViewerSearchPanelWidget::m_tagSearchEdit`** changes type from a plain `QLineEdit` to
+  `TagSearchEdit` (`src/ui/widgets/tags/TagSearchEdit.h`, §14.70's autocomplete popup/ghost-suffix/
+  Tab-complete `QLineEdit` subclass) — a drop-in swap; the existing `textChanged` wiring to
+  `tagSearchQueryRequested` is untouched. `setTagSearchResults(...)` now also pushes the matching
+  tags' names into `m_tagSearchEdit->setSuggestions(...)`, same as
+  `TagPanelWidget::updateSearchSuggestions`.
+* **Create-tag affordance, computed locally rather than ViewModel-pushed**: a new
+  `m_createTagButton` (hidden by default, mirrors `TagPanelWidget::m_createTagButton`) is shown
+  with the label `Create tag "<text>"` whenever `setTagSearchResults(...)` runs and the search
+  edit's current trimmed text has no case-insensitive exact match among the tags just received.
+  Unlike `TagListViewModel::canCreateTagFromQueryChanged`, there's no new ViewModel-side boolean
+  for this — `MediaViewerSearchPanelWidget` already receives both the live query text (its own
+  field) and the latest matches (`setTagSearchResults`'s argument) on every round-trip, so the
+  "no exact match" predicate (same one `TagListViewModel::refreshSearchSection` uses) is evaluated
+  directly in the widget.
+* **Enter-key commit and the create button are both "dumb" relays**, same posture as
+  `tagSearchChipActivated` (§14.72) — the widget never decides apply-vs-create itself:
+  - `m_tagSearchEdit`'s `returnPressed` emits a new `tagSearchQueryAccepted(const QString&)` with
+    the raw typed text, then clears the edit.
+  - `m_createTagButton`'s `clicked` emits a new `tagCreateRequested(const QString&)` with the
+    trimmed text, then clears the edit.
+* **`TabViewModel`** gains two slots implementing the decision, both no-op outside Media Viewer
+  mode:
+  - `acceptMediaViewerSearchTagQuery(const QString& query)` — re-queries
+    `TagManagementUseCase::searchTags` for an exact case-insensitive name match; if found, calls
+    `applyMediaViewerTagToSelection(id)` (same bulk-assign-over-`m_selectedEntries` behavior
+    §14.72 already uses for chip clicks); otherwise defers to the slot below. Mirrors
+    `TagListViewModel::acceptSearchQuery`.
+  - `createAndApplyMediaViewerTag(const QString& name)` — creates the tag (color via
+    `TagColorPalette::pickColorFor`) and applies it via `applyMediaViewerTagToSelection`; emits
+    `mediaViewerFailed` on a `createTag` failure. Mirrors
+    `TagListViewModel::createAndAddTagFromQuery`.
+  - Deliberate divergence from §14.70: Enter here always **applies to the full current selection**
+    (`m_selectedEntries`), never the single resolved target `TagListViewModel` uses, and is
+    completely independent of the Filter/Apply behaviour toggle (§14.72) — that toggle only ever
+    governs a tag-chip/pill *click*, not this field's Enter key.
+* **Wiring**: `MainWindow` connects `tagSearchQueryAccepted` → `TabViewModel::acceptMediaViewerSearchTagQuery`
+  and `tagCreateRequested` → `TabViewModel::createAndApplyMediaViewerTag`, both through the same
+  `focusedTab()`-lookup lambda style as the rest of this panel's signals.
 * **Testing**: no new GTest coverage, same precedent as the rest of this file (Architecture.md §11
   UI/ViewModel-glue carve-out); manual smoke test only.
 

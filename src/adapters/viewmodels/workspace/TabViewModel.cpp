@@ -25,6 +25,7 @@
 #include "NotificationCenter.h"
 #include "NotificationType.h"
 #include "TagChangeNotifier.h"
+#include "TagColorPalette.h"
 #include "TagManagementUseCase.h"
 #include "VirtualPaths.h"
 
@@ -939,6 +940,57 @@ void TabViewModel::applyMediaViewerTagToSelection(Tag::Id tagId)
     m_notificationCenter.showPopup(NotificationType::Info, tr("Tag Applied"),
                                     tr("Tagged %1 item(s).").arg(successCount));
     emit m_tagChangeNotifier.tagsChanged();
+}
+
+void TabViewModel::acceptMediaViewerSearchTagQuery(const QString& query)
+{
+    if (!m_mediaViewerActive)
+    {
+        return;
+    }
+
+    const QString trimmed = query.trimmed();
+    if (trimmed.isEmpty())
+    {
+        return;
+    }
+
+    const auto results = searchTagsForCriteria(trimmed);
+    const auto it = std::find_if(results.begin(), results.end(), [&trimmed](const Tag& tag) {
+        return QString::fromStdString(tag.name()).compare(trimmed, Qt::CaseInsensitive) == 0;
+    });
+    if (it != results.end())
+    {
+        applyMediaViewerTagToSelection(it->id());
+    }
+    else
+    {
+        createAndApplyMediaViewerTag(trimmed);
+    }
+}
+
+void TabViewModel::createAndApplyMediaViewerTag(const QString& name)
+{
+    if (!m_mediaViewerActive)
+    {
+        return;
+    }
+
+    const QString trimmed = name.trimmed();
+    if (trimmed.isEmpty())
+    {
+        return;
+    }
+
+    const std::string colorHex = TagColorPalette::pickColorFor(trimmed.toStdString());
+    auto created = m_tagManagementUseCase.createTag(trimmed.toStdString(), colorHex);
+    if (!created)
+    {
+        emit mediaViewerFailed(QString::fromStdString(created.error().message));
+        return;
+    }
+
+    applyMediaViewerTagToSelection(created.value().id());
 }
 
 void TabViewModel::handleMediaViewerDetailsTagClick(const FileNode& entry, Tag::Id tagId, bool ctrlHeld)

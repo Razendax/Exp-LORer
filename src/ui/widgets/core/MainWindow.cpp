@@ -613,6 +613,20 @@ void MainWindow::createWorkspace()
             m_mediaViewerSearchPanelWidget->setTagSearchResults(tab->searchTagsForCriteria(query));
         }
     });
+    connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagSearchQueryAccepted, this,
+            [this](const QString& query) {
+                if (TabViewModel* tab = m_workspaceController->focusedTab())
+                {
+                    tab->acceptMediaViewerSearchTagQuery(query);
+                }
+            });
+    connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagCreateRequested, this,
+            [this](const QString& name) {
+                if (TabViewModel* tab = m_workspaceController->focusedTab())
+                {
+                    tab->createAndApplyMediaViewerTag(name);
+                }
+            });
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::nameFilterChanged, this,
             [this](const QString& query, const NameSearchOptions& options) {
                 if (TabViewModel* tab = m_workspaceController->focusedTab())

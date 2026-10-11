@@ -326,6 +326,19 @@ public slots:
     // on at least one success. Used by handleMediaViewerSearchTagActivated's "Apply" branch.
     void applyMediaViewerTagToSelection(Tag::Id tagId);
 
+    // Enter-key commit for the Media Viewer tag-search field: assigns the existing exact-name match
+    // (re-queried via TagManagementUseCase::searchTags, same as the chip row) to the current
+    // selection if there is one, otherwise creates the tag and assigns it. No-op on an empty query
+    // or outside Media Viewer mode. Unlike handleMediaViewerSearchTagActivated, never filters -- this
+    // always applies, independent of mediaViewerTagBehaviour().
+    void acceptMediaViewerSearchTagQuery(const QString& query);
+
+    // Creates a new tag named `name` (color auto-picked via TagColorPalette::pickColorFor, same as
+    // TagListViewModel::createAndAddTagFromQuery) and assigns it to the current selection via
+    // applyMediaViewerTagToSelection. No-op on an empty name or outside Media Viewer mode; emits
+    // mediaViewerFailed on a TagManagementUseCase::createTag failure.
+    void createAndApplyMediaViewerTag(const QString& name);
+
     // The Details-view per-item tag-pill click: same XOR rule as above, but the "other" action is
     // removing tagId from `entry` specifically rather than applying it to the whole selection. No-op
     // outside Media Viewer mode.
