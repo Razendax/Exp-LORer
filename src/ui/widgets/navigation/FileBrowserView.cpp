@@ -5,6 +5,7 @@
 #include <QAbstractItemView>
 #include <QAction>
 #include <QEvent>
+#include <QFontMetrics>
 #include <QHeaderView>
 #include <QItemSelection>
 #include <QItemSelectionModel>
@@ -77,6 +78,39 @@ namespace
         }
         return false;
     }
+
+    // Restricts a SelectedClicked-triggered edit() to a click landing on the current Media Viewer
+    // view mode's name rect (Architecture.md §14.75), swapped in for m_listView only in
+    // DisplayMode::MediaViewerGrid. Normal mode's identical SelectedClicked trigger already proves
+    // Qt's own click/double-click disambiguation doesn't race a double-click-to-activate, so this
+    // only narrows *where* a plain click is allowed to start an edit, never *when* -- every other
+    // trigger (AllEditTriggers, used by beginRename()/F2) passes straight through unrestricted.
+    class MediaViewerGridListView : public QListView
+    {
+    public:
+        MediaViewerGridListView(FileBrowserView* owner, QWidget* parent)
+            : QListView(parent)
+            , m_owner(owner)
+        {
+        }
+
+    protected:
+        bool edit(const QModelIndex& index, EditTrigger trigger, QEvent* event) override
+        {
+            if (trigger == QAbstractItemView::SelectedClicked && event)
+            {
+                const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+                if (!m_owner->mediaViewerNameRectFor(index).contains(mouseEvent->position().toPoint()))
+                {
+                    return false;
+                }
+            }
+            return QListView::edit(index, trigger, event);
+        }
+
+    private:
+        FileBrowserView* m_owner = nullptr;
+    };
 }
 
 FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayMode displayMode)
@@ -88,7 +122,10 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     // results instance to "searchListResultsView") -- see Architecture.md §11's UI Automation convention.
     setObjectName(QStringLiteral("fileBrowserView"));
 
-    m_listView = new QListView(this);
+    // MediaViewerGrid mode installs MediaViewerGridListView (Architecture.md §14.75) instead of a
+    // plain QListView, so a click-to-rename only fires when it lands on the name text itself.
+    m_listView = (displayMode == DisplayMode::MediaViewerGrid) ? static_cast<QListView*>(new MediaViewerGridListView(this, this))
+                                                                 : new QListView(this);
     m_listView->setObjectName(QStringLiteral("fileBrowserListView"));
     m_listView->setModel(m_model);
 
@@ -223,9 +260,17 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     connect(m_treeView, &QWidget::customContextMenuRequested, this,
             [this](const QPoint& localPos) { handleContextMenuRequested(m_treeView, localPos); });
 
+    // All six delegates connect renameCommitted -> onRenameCommitted unconditionally, same
+    // "connected unconditionally, fires only where actually installed" posture already used for
+    // MediaDetailsDelegate::tagActivated above -- harmless no-op wiring for whichever three of
+    // m_mediaGridDelegate/m_mediaFilmstripDelegate/m_mediaDetailsDelegate aren't the active
+    // delegate on a given instance (Architecture.md §14.75).
     for (FileNameEditDelegate* delegate : {static_cast<FileNameEditDelegate*>(m_nameEditDelegate),
                                             static_cast<FileNameEditDelegate*>(m_iconDelegate),
-                                            static_cast<FileNameEditDelegate*>(m_tileDelegate)})
+                                            static_cast<FileNameEditDelegate*>(m_tileDelegate),
+                                            static_cast<FileNameEditDelegate*>(m_mediaGridDelegate),
+                                            static_cast<FileNameEditDelegate*>(m_mediaFilmstripDelegate),
+                                            static_cast<FileNameEditDelegate*>(m_mediaDetailsDelegate)})
     {
         connect(delegate, &FileNameEditDelegate::renameCommitted, this, &FileBrowserView::onRenameCommitted);
     }
@@ -337,7 +382,7 @@ bool FileBrowserView::handleKeyPress(QKeyEvent* event)
     if (event->matches(QKeySequence::Paste)) { emit pasteRequested(); return true; }
     if (event->key() == Qt::Key_Backspace)   { emit navigateUpRequested(); return true; }
 
-    if (event->key() == Qt::Key_F2 && m_displayMode == DisplayMode::Normal)
+    if (event->key() == Qt::Key_F2 && m_displayMode != DisplayMode::AdvancedSearchResults)
     {
         const QModelIndexList selectedRows = m_selectionModel->selectedRows();
         if (selectedRows.size() == 1 && (selectedRows.front().flags() & Qt::ItemIsEditable))
@@ -598,9 +643,32 @@ void FileBrowserView::selectEntryByPath(const std::filesystem::path& path)
     selectFirstEntry();
 }
 
+QRect FileBrowserView::mediaViewerNameRectFor(const QModelIndex& index) const
+{
+    if (m_displayMode != DisplayMode::MediaViewerGrid || !index.isValid())
+    {
+        return QRect();
+    }
+
+    const QRect cellRect = m_listView->visualRect(index);
+    const QSize iconSize = m_listView->iconSize();
+    const QFontMetrics fontMetrics(m_listView->font());
+
+    switch (m_mediaViewerViewMode)
+    {
+        case MediaViewerViewMode::Thumbnails:
+            return MediaGridTileDelegate::nameRectForCellRect(cellRect, iconSize, fontMetrics);
+        case MediaViewerViewMode::Filmstrip:
+            return MediaFilmstripDelegate::captionRectForCellRect(cellRect, fontMetrics);
+        case MediaViewerViewMode::Details:
+            return MediaDetailsDelegate::nameRectForCellRect(cellRect, iconSize, m_listView->font());
+    }
+    return QRect();
+}
+
 void FileBrowserView::beginRename(const std::filesystem::path& path)
 {
-    if (m_displayMode != DisplayMode::Normal)
+    if (m_displayMode == DisplayMode::AdvancedSearchResults)
     {
         return;
     }

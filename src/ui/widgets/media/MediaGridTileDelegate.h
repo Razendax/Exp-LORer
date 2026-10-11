@@ -1,21 +1,25 @@
 #pragma once
 
+#include <QFontMetrics>
 #include <QPersistentModelIndex>
-#include <QStyledItemDelegate>
+
+#include "FileNameEditDelegate.h"
 
 // Paints a real decoded thumbnail (Architecture.md §14.62) + filename caption + two small corner
 // metadata chips (size bottom-left, resolution-or-duration bottom-right) for Media Viewer mode's
 // locked icon grid (FileBrowserView::DisplayMode::MediaViewerGrid) -- the only delegate installed
-// in that mode. Plain QStyledItemDelegate, not FileIconDelegate/FileNameEditDelegate: F2/rename is
-// already disabled in MediaViewerGrid mode, so there's no reason to carry that plumbing here.
-// Layout math (icon box + one caption line, dashed selection outline) is copied from
-// FileIconDelegate rather than inherited, for the same reason.
+// in that mode. Layout math (icon box + one caption line, dashed selection outline) is copied from
+// FileIconDelegate rather than inherited, since the two still differ in what they paint.
+//
+// Inherits inline-rename editing from FileNameEditDelegate (Architecture.md §14.75); only the
+// editor's on-screen geometry needs overriding here, to match the name-caption rect paint()
+// computes below -- same pattern FileIconDelegate/FileTileDelegate already use for Normal mode.
 //
 // Hover-scrub state (Architecture.md §14.64): FileBrowserView drives setHoveredPreview() from its
 // own viewport mouse tracking (this delegate has no mouse-event handling of its own -- painting
 // only). m_hoveredIndex/m_hoveredPreviewIndex are read back by FileBrowserView via the accessors
 // below to know what to repaint when hover moves off a cell.
-class MediaGridTileDelegate : public QStyledItemDelegate
+class MediaGridTileDelegate : public FileNameEditDelegate
 {
     Q_OBJECT
 
@@ -24,6 +28,7 @@ public:
 
     void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
     QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override;
+    void updateEditorGeometry(QWidget* editor, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
 
     // Sets which of a video row's MediaPreviewFrames::kCount frames to paint instead of its
     // default poster frame. An invalid index clears hover entirely (no separate clear method
@@ -37,6 +42,12 @@ public:
     // so FileBrowserView's hover-band math can reuse the exact same layout this delegate paints
     // with. thumbnailRectFor() below is now a one-line wrapper around this.
     static QRect thumbnailRectForCellRect(const QRect& cellRect, const QSize& iconSize);
+
+    // Computes the name-caption sub-rect within a plain cell rect, same reasoning as
+    // thumbnailRectForCellRect() above -- shared by nameRectFor()'s paint()-facing wrapper, the
+    // click-to-rename hit-test (FileBrowserView::mediaViewerNameRectFor), and
+    // updateEditorGeometry().
+    static QRect nameRectForCellRect(const QRect& cellRect, const QSize& iconSize, const QFontMetrics& fontMetrics);
 
 private:
     static QRect nameRectFor(const QStyleOptionViewItem& option, const QModelIndex& index);

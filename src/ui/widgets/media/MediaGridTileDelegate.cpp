@@ -74,7 +74,7 @@ namespace
 }
 
 MediaGridTileDelegate::MediaGridTileDelegate(QObject* parent)
-    : QStyledItemDelegate(parent)
+    : FileNameEditDelegate(parent)
 {
 }
 
@@ -95,11 +95,16 @@ void MediaGridTileDelegate::setHoveredPreview(const QModelIndex& index, int prev
     m_hoveredPreviewIndex = previewIndex;
 }
 
+QRect MediaGridTileDelegate::nameRectForCellRect(const QRect& cellRect, const QSize& iconSize, const QFontMetrics& fontMetrics)
+{
+    const QRect iconRect = thumbnailRectForCellRect(cellRect, iconSize);
+    return QRect(cellRect.left() + kPadding, iconRect.bottom() + kPadding, cellRect.width() - 2 * kPadding, fontMetrics.height());
+}
+
 QRect MediaGridTileDelegate::nameRectFor(const QStyleOptionViewItem& option, const QModelIndex& index)
 {
-    const QRect iconRect = thumbnailRectFor(option);
     const QFontMetrics fontMetrics(resolvedFont(option, index));
-    return QRect(option.rect.left() + kPadding, iconRect.bottom() + kPadding, option.rect.width() - 2 * kPadding, fontMetrics.height());
+    return nameRectForCellRect(option.rect, option.decorationSize, fontMetrics);
 }
 
 void MediaGridTileDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
@@ -214,4 +219,9 @@ QSize MediaGridTileDelegate::sizeHint(const QStyleOptionViewItem& option, const 
     const int height = iconSize.height() + kPadding + fontMetrics.height() + kPadding;
 
     return QSize(width, height);
+}
+
+void MediaGridTileDelegate::updateEditorGeometry(QWidget* editor, const QStyleOptionViewItem& option, const QModelIndex& index) const
+{
+    editor->setGeometry(nameRectFor(option, index));
 }

@@ -5,11 +5,11 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.61–14.66, §14.68–14.69, §14.72–14.74 — the recursive tag/name-filtered image/video gallery mode and
+Covers §14.61–14.66, §14.68–14.69, §14.72–14.75 — the recursive tag/name-filtered image/video gallery mode and
 its follow-ups: thumbnail previews/metadata overlays, the `IMediaDecoder` thumbnail/metadata
 merge, video hover-scrub previews, loading-progress notification, kind-scoped loading,
-sort/view/filmstrip/details controls, the Filter/Apply tag-click behaviour toggle, and
-folder-grouped browsing. The built-in video player itself
+sort/view/filmstrip/details controls, the Filter/Apply tag-click behaviour toggle,
+folder-grouped browsing, and inline rename support. The built-in video player itself
 (§14.67) lives in [05-preview-and-decoration.md](05-preview-and-decoration.md), since it was built
 for and first used by the Preview tab. Section numbers are **not** contiguous with this file's
 neighbors — they were assigned chronologically as each feature was built and are kept stable
@@ -716,4 +716,58 @@ same cache with no new decode dispatch.
   fills that role instead, per the resolved design above).
 * **Testing**: no new GTest coverage, same precedent as the rest of this file (Architecture.md §11
   UI/ViewModel-glue carve-out); manual smoke test only.
+
+---
+### 14.75 Media Viewer Mode: Inline Rename Support
+
+§14.61 explicitly disabled rename in Media Viewer mode (`FileBrowserView::beginRename()`/the F2
+handler both no-op outside `DisplayMode::Normal`), on the premise this grid is read-only browsing.
+This adds real inline rename across all three view modes (§14.68/§14.69's Thumbnails/Filmstrip/
+Details), reusing `FileOperationsController::renamePath` via the existing displayMode-agnostic
+`FileBrowserView::renameRequested` wiring — no new Port, no Domain/Application/schema change.
+
+* **`MediaGridTileDelegate`/`MediaFilmstripDelegate`/`MediaDetailsDelegate`** change base class
+  from plain `QStyledItemDelegate` to `FileNameEditDelegate`, the same pattern `FileIconDelegate`/
+  `FileTileDelegate` already use for Normal mode's icon/tile views — gaining prefill-with-stem-
+  selected (Explorer-style) editing, the forbidden-char validator, and the `renameCommitted` signal
+  for free. Each gains a public, cell-rect-based name-rect static mirroring the
+  `thumbnailRectForCellRect` precedent §14.64/§14.69 already established for hover-band math (same
+  reasoning: so both the painted text and the editor geometry/click-hit-test agree on one rect) —
+  `MediaGridTileDelegate::nameRectForCellRect`, `MediaFilmstripDelegate::captionRectForCellRect`,
+  `MediaDetailsDelegate::nameRectForCellRect` — plus an `updateEditorGeometry()` override
+  positioning the editor at exactly that rect, same one-line pattern as
+  `FileIconDelegate::updateEditorGeometry`.
+* **Filmstrip's caption moves from centered to left-aligned** (`paint()`'s `drawText` flag changes
+  from `Qt::AlignHCenter` to `Qt::AlignLeft`) per the resolved design — Thumbnails (centered under
+  the preview) and Details (top-right of the row, already true of its existing name-line position)
+  needed no repositioning, only the new editor wiring.
+* **Click-to-rename is restricted to the name text itself**, not the whole tile/row, without
+  reimplementing Qt's own click/double-click disambiguation — Normal mode's existing
+  `SelectedClicked`-based click-to-rename already proves Qt's trigger machinery doesn't race a
+  double-click-to-activate, so a new `MediaViewerGridListView` (a small `QListView` subclass local
+  to `FileBrowserView.cpp`, swapped in for `m_listView` only in `DisplayMode::MediaViewerGrid`)
+  overrides the protected `edit(index, trigger, event)` virtual to reject (`return false`) a
+  `SelectedClicked`-triggered call whose click position misses the current view mode's name rect
+  (via a new public `FileBrowserView::mediaViewerNameRectFor(index)`), while leaving every other
+  trigger (F2, context-menu, `beginRename()`'s direct `edit()` call — all `AllEditTriggers`)
+  unrestricted. This also covers the "a double-click must not start a rename" requirement for free,
+  the same way Normal mode's identical, unrestricted `SelectedClicked` trigger already does.
+* **`beginRename()`/the F2 handler's guard** widens from "only `DisplayMode::Normal`" to "anything
+  except `DisplayMode::AdvancedSearchResults`" — so the context menu's already-built "Rename"
+  action and F2 both start working in Media Viewer mode instead of silently no-oping; search
+  results remain rename-disabled, unchanged.
+* **`FileNameEditDelegate::nameCollidesWithSibling()` bug fix**: it previously treated every row in
+  the model as a same-directory sibling (true by construction for Normal mode's single-directory
+  listing, so harmless there) — Media Viewer's results model is a recursively-gathered,
+  potentially-multi-folder flat list, so two unrelated files in different folders sharing a
+  filename would have false-positive blocked a valid rename. Fixed to also compare each candidate's
+  parent directory (via `FileListModel::FilePathRole`) against the renamed row's own, with no
+  behavior change for Normal mode.
+* **Not built**: no change to Normal mode's existing "click anywhere in the icon/tile cell"
+  rename-trigger behavior (out of scope — this is Media-Viewer-only); no special-casing of
+  Folder-Grouped Browsing's (§14.74) synthesized folder tiles — renaming one renames the real
+  underlying subfolder, same as any other directory row.
+* **Testing**: no new GTest coverage, same precedent as the rest of this file (Architecture.md §11
+  UI/ViewModel-glue carve-out; `FileNameEditDelegate` itself has no dedicated test either); manual
+  smoke test only.
 

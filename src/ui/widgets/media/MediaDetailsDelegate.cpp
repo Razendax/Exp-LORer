@@ -70,7 +70,7 @@ namespace
 }
 
 MediaDetailsDelegate::MediaDetailsDelegate(QObject* parent)
-    : QStyledItemDelegate(parent)
+    : FileNameEditDelegate(parent)
 {
 }
 
@@ -85,23 +85,33 @@ QRect MediaDetailsDelegate::thumbnailRectFor(const QStyleOptionViewItem& option)
     return thumbnailRectForCellRect(option.rect, option.decorationSize);
 }
 
+QRect MediaDetailsDelegate::nameRectForCellRect(const QRect& cellRect, const QSize& iconSize, const QFont& baseFont)
+{
+    const QRect thumbnailRect = thumbnailRectForCellRect(cellRect, iconSize);
+    const QFontMetrics nameMetrics(nameFontFor(baseFont));
+
+    const int textLeft = thumbnailRect.right() + kPadding;
+    const int textWidth = cellRect.right() - kPadding - textLeft;
+    const int textTop = cellRect.top() + kPadding;
+
+    return QRect(textLeft, textTop, textWidth, nameMetrics.height());
+}
+
+QRect MediaDetailsDelegate::computeNameRect(const QStyleOptionViewItem& option, const QModelIndex& index) const
+{
+    return nameRectForCellRect(option.rect, option.decorationSize, resolvedFont(option, index));
+}
+
 QRect MediaDetailsDelegate::computeTagsRect(const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
-    const QRect thumbnailRect = thumbnailRectFor(option);
     const QFont baseFont = resolvedFont(option, index);
-    const QFont nameFont = nameFontFor(baseFont);
-    const QFontMetrics nameMetrics(nameFont);
     const QFontMetrics lineMetrics(baseFont);
     const int tagsRowHeight = TagPillRowPainter::tagPillRowHeight(lineMetrics);
 
-    const int textLeft = thumbnailRect.right() + kPadding;
-    const int textWidth = option.rect.right() - kPadding - textLeft;
-    const int textTop = option.rect.top() + kPadding;
+    const QRect nameRect = computeNameRect(option, index);
+    const QRect metadataRect(nameRect.left(), nameRect.bottom() + kLineSpacing, nameRect.width(), lineMetrics.height());
 
-    const QRect nameRect(textLeft, textTop, textWidth, nameMetrics.height());
-    const QRect metadataRect(textLeft, nameRect.bottom() + kLineSpacing, textWidth, lineMetrics.height());
-
-    return QRect(textLeft, metadataRect.bottom() + kTagsSpacing, textWidth, tagsRowHeight);
+    return QRect(nameRect.left(), metadataRect.bottom() + kTagsSpacing, nameRect.width(), tagsRowHeight);
 }
 
 bool MediaDetailsDelegate::editorEvent(QEvent* event, QAbstractItemModel* model, const QStyleOptionViewItem& option,
@@ -123,7 +133,7 @@ bool MediaDetailsDelegate::editorEvent(QEvent* event, QAbstractItemModel* model,
         }
     }
 
-    return QStyledItemDelegate::editorEvent(event, model, option, index);
+    return FileNameEditDelegate::editorEvent(event, model, option, index);
 }
 
 void MediaDetailsDelegate::setHoveredPreview(const QModelIndex& index, int previewIndex)
@@ -168,10 +178,6 @@ void MediaDetailsDelegate::paint(QPainter* painter, const QStyleOptionViewItem& 
     const QFontMetrics nameMetrics(nameFont);
     const QFontMetrics lineMetrics(baseFont);
 
-    const int textLeft = thumbnailRect.right() + kPadding;
-    const int textWidth = option.rect.right() - kPadding - textLeft;
-    const int textTop = option.rect.top() + kPadding;
-
     const QVariant foreground = index.data(Qt::ForegroundRole);
     const QColor textColor = (!(option.state & QStyle::State_Selected) && foreground.canConvert<QColor>())
         ? foreground.value<QColor>()
@@ -179,11 +185,11 @@ void MediaDetailsDelegate::paint(QPainter* painter, const QStyleOptionViewItem& 
 
     painter->setPen(textColor);
     painter->setFont(nameFont);
-    const QRect nameRect(textLeft, textTop, textWidth, nameMetrics.height());
+    const QRect nameRect = computeNameRect(option, index);
     const QString name = index.data(Qt::DisplayRole).toString();
     painter->drawText(nameRect, Qt::AlignLeft | Qt::AlignVCenter, nameMetrics.elidedText(name, Qt::ElideRight, nameRect.width()));
 
-    const QRect metadataRect(textLeft, nameRect.bottom() + kLineSpacing, textWidth, lineMetrics.height());
+    const QRect metadataRect(nameRect.left(), nameRect.bottom() + kLineSpacing, nameRect.width(), lineMetrics.height());
     if (hasThumbnail)
     {
         painter->setFont(baseFont);
@@ -218,4 +224,9 @@ QSize MediaDetailsDelegate::sizeHint(const QStyleOptionViewItem& option, const Q
 
     const int height = std::max(option.decorationSize.height(), textBlockHeight) + 2 * kPadding;
     return QSize(option.rect.width(), height);
+}
+
+void MediaDetailsDelegate::updateEditorGeometry(QWidget* editor, const QStyleOptionViewItem& option, const QModelIndex& index) const
+{
+    editor->setGeometry(computeNameRect(option, index));
 }

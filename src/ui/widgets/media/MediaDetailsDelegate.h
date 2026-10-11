@@ -1,8 +1,9 @@
 #pragma once
 
+#include <QFont>
 #include <QPersistentModelIndex>
-#include <QStyledItemDelegate>
 
+#include "FileNameEditDelegate.h"
 #include "Tag.h"
 
 // Media Viewer mode's "Details" view (Architecture.md §14.69): one full-width row per item, a
@@ -16,7 +17,10 @@
 // code is shared via MediaThumbnailPainting). FileBrowserView drives setHoveredPreview() from its
 // own viewport mouse tracking; m_hoveredIndex/m_hoveredPreviewIndex are read back by
 // FileBrowserView to know what to repaint when hover moves off a cell.
-class MediaDetailsDelegate : public QStyledItemDelegate
+//
+// Inherits inline-rename editing from FileNameEditDelegate (Architecture.md §14.75); only the
+// editor's on-screen geometry needs overriding here, to match the name rect paint() computes.
+class MediaDetailsDelegate : public FileNameEditDelegate
 {
     Q_OBJECT
 
@@ -25,6 +29,7 @@ public:
 
     void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
     QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override;
+    void updateEditorGeometry(QWidget* editor, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
 
     // Hit-tests the tags row (Architecture.md §14.72): on a left-button release over a tag pill,
     // emits tagActivated and consumes the event; otherwise falls through to the base
@@ -41,6 +46,13 @@ public:
     // FileBrowserView's hover-band math can reuse it the same way.
     static QRect thumbnailRectForCellRect(const QRect& cellRect, const QSize& iconSize);
 
+    // Computes the name-line sub-rect within a plain cell rect, same reasoning as
+    // thumbnailRectForCellRect() above -- shared by computeNameRect()'s paint()-facing wrapper,
+    // the click-to-rename hit-test (FileBrowserView::mediaViewerNameRectFor), and
+    // updateEditorGeometry(). Takes the base QFont (not QFontMetrics) since the bold/+1-point name
+    // font is derived from it internally.
+    static QRect nameRectForCellRect(const QRect& cellRect, const QSize& iconSize, const QFont& baseFont);
+
 signals:
     void tagActivated(const QModelIndex& index, Tag::Id tagId, Qt::KeyboardModifiers modifiers);
 
@@ -51,6 +63,10 @@ private:
     // same geometry paint() draws the tag pills at -- the geometry doesn't depend on hasThumbnail,
     // only what text gets drawn inside it does.
     QRect computeTagsRect(const QStyleOptionViewItem& option, const QModelIndex& index) const;
+
+    // Thin option/index-based wrapper over nameRectForCellRect(), used by both paint() and
+    // computeTagsRect().
+    QRect computeNameRect(const QStyleOptionViewItem& option, const QModelIndex& index) const;
 
     QPersistentModelIndex m_hoveredIndex;
     int m_hoveredPreviewIndex = -1;

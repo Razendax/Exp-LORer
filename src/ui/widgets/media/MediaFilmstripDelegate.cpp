@@ -40,16 +40,20 @@ namespace
 
     QRect captionRectFor(const QStyleOptionViewItem& option, const QModelIndex& index)
     {
-        const QRect bandRect = bandRectFor(option);
         const QFontMetrics fontMetrics(resolvedFont(option, index));
-        return QRect(option.rect.left() + kPadding, bandRect.bottom() + kPadding, option.rect.width() - 2 * kPadding,
-                     fontMetrics.height());
+        return MediaFilmstripDelegate::captionRectForCellRect(option.rect, fontMetrics);
     }
 }
 
 MediaFilmstripDelegate::MediaFilmstripDelegate(QObject* parent)
-    : QStyledItemDelegate(parent)
+    : FileNameEditDelegate(parent)
 {
+}
+
+QRect MediaFilmstripDelegate::captionRectForCellRect(const QRect& cellRect, const QFontMetrics& fontMetrics)
+{
+    const QRect bandRect(cellRect.left() + kPadding, cellRect.top() + kPadding, cellRect.width() - 2 * kPadding, kBandHeight);
+    return QRect(cellRect.left() + kPadding, bandRect.bottom() + kPadding, cellRect.width() - 2 * kPadding, fontMetrics.height());
 }
 
 void MediaFilmstripDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
@@ -105,7 +109,7 @@ void MediaFilmstripDelegate::paint(QPainter* painter, const QStyleOptionViewItem
         painter->setPen(option.palette.text().color());
     }
     const QString name = index.data(Qt::DisplayRole).toString();
-    painter->drawText(captionRect, Qt::AlignHCenter | Qt::AlignVCenter, fontMetrics.elidedText(name, Qt::ElideRight, captionRect.width()));
+    painter->drawText(captionRect, Qt::AlignLeft | Qt::AlignVCenter, fontMetrics.elidedText(name, Qt::ElideRight, captionRect.width()));
 
     if (option.state & QStyle::State_Selected)
     {
@@ -123,4 +127,9 @@ QSize MediaFilmstripDelegate::sizeHint(const QStyleOptionViewItem& option, const
     const QFontMetrics fontMetrics(resolvedFont(option, index));
     const int height = kPadding + kBandHeight + kPadding + fontMetrics.height() + kPadding;
     return QSize(option.rect.width(), height);
+}
+
+void MediaFilmstripDelegate::updateEditorGeometry(QWidget* editor, const QStyleOptionViewItem& option, const QModelIndex& index) const
+{
+    editor->setGeometry(captionRectFor(option, index));
 }

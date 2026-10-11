@@ -1,5 +1,7 @@
 #include "FileNameEditDelegate.h"
 
+#include <filesystem>
+
 #include <QLineEdit>
 #include <QPoint>
 #include <QPointer>
@@ -24,9 +26,16 @@ namespace
 
     // True if some other entry in the same directory already has newName. Windows filesystems are
     // case-insensitive, so this is a case-insensitive comparison regardless of view sort order.
+    // The directory comparison matters for Media Viewer's flat, recursively-gathered results model
+    // (Architecture.md §14.75): index.parent() is always the invalid root there too (FileListModel
+    // is a flat QAbstractTableModel), but unlike Normal mode's single-directory listing, two
+    // unrelated files in different folders can share a filename without actually colliding.
     bool nameCollidesWithSibling(const QAbstractItemModel* model, const QModelIndex& index, const QString& newName)
     {
         const QModelIndex parent = index.parent();
+        const auto ownDirectory =
+            std::filesystem::path(index.data(FileListModel::FilePathRole).toString().toStdWString()).parent_path();
+
         const int rows = model->rowCount(parent);
         for (int row = 0; row < rows; ++row)
         {
@@ -36,6 +45,13 @@ namespace
             }
 
             const QModelIndex sibling = model->index(row, FileListModel::NameColumn, parent);
+            const auto siblingDirectory =
+                std::filesystem::path(sibling.data(FileListModel::FilePathRole).toString().toStdWString()).parent_path();
+            if (siblingDirectory != ownDirectory)
+            {
+                continue;
+            }
+
             if (sibling.data(Qt::DisplayRole).toString().compare(newName, Qt::CaseInsensitive) == 0)
             {
                 return true;

@@ -6,6 +6,7 @@
 #include <vector>
 
 #include <QPoint>
+#include <QRect>
 #include <QString>
 #include <QWidget>
 
@@ -96,6 +97,14 @@ public:
     // Starts inline in-place rename editing on the row for `path` (Architecture.md §14.13.4/
     // §14.13.6). No-op in AdvancedSearchResults mode, or if `path` isn't currently listed.
     void beginRename(const std::filesystem::path& path);
+
+    // MediaViewerGrid mode only (Architecture.md §14.75): the on-screen rect of `index`'s name
+    // text under the current MediaViewerViewMode, in m_listView viewport coordinates. Used by
+    // MediaViewerGridListView's click-to-rename hit-test, built from the view itself
+    // (m_listView->visualRect/iconSize/font -- the per-row Qt::FontRole override is deliberately
+    // skipped here, a harmless approximation for hit-testing only; painting is unaffected). Returns
+    // an empty QRect outside DisplayMode::MediaViewerGrid or for an invalid index.
+    QRect mediaViewerNameRectFor(const QModelIndex& index) const;
 
     // Quick-select (status bar, Architecture.md §14.27): selects and scrolls to every row whose
     // displayed Name contains `text` (case-insensitive, substring match anywhere in the name).
