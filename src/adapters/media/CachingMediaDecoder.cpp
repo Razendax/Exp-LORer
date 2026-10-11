@@ -127,3 +127,79 @@ Result<MediaThumbnail> CachingMediaDecoder::generateThumbnail(const std::filesys
 
     return generated;
 }
+
+std::vector<Result<MediaThumbnail>> CachingMediaDecoder::generateThumbnails(const std::filesystem::path& mediaFile, int maxWidth,
+                                                                                int maxHeight,
+                                                                                const std::vector<int>& previewIndices) const
+{
+    namespace fs = std::filesystem;
+
+    const fs::path target = WindowsLongPath::withPrefix(mediaFile);
+
+    std::error_code sizeEc;
+    const std::uintmax_t size = fs::file_size(target, sizeEc);
+    std::error_code timeEc;
+    const auto mtime = fs::last_write_time(target, timeEc);
+
+    if (sizeEc || timeEc)
+    {
+        // Can't build a reliable cache key -- fall through uncached; the inner decoder will
+        // produce a proper Error for each slot.
+        return m_inner.generateThumbnails(mediaFile, maxWidth, maxHeight, previewIndices);
+    }
+
+    std::vector<std::optional<MediaThumbnail>> hits(previewIndices.size());
+    std::vector<int> missIndices;
+
+    for (std::size_t i = 0; i < previewIndices.size(); ++i)
+    {
+        const int previewIndex = previewIndices[i];
+        const ThumbnailCache::Key key{ mediaFile, size, mtime.time_since_epoch().count(), maxWidth, maxHeight, previewIndex };
+
+        if (auto cachedBlob = m_cache.get(key))
+        {
+            if (auto cached = deserialize(*cachedBlob))
+            {
+                Logging::debug("CachingMediaDecoder: thumbnail cache hit");
+                hits[i] = std::move(cached);
+                continue;
+            }
+            Logging::warn("CachingMediaDecoder: discarding unparsable cache entry, regenerating");
+        }
+
+        missIndices.push_back(previewIndex);
+    }
+
+    std::vector<Result<MediaThumbnail>> generated;
+    if (!missIndices.empty())
+    {
+        Logging::debug("CachingMediaDecoder: thumbnail cache miss");
+        generated = m_inner.generateThumbnails(mediaFile, maxWidth, maxHeight, missIndices);
+        for (std::size_t j = 0; j < missIndices.size(); ++j)
+        {
+            if (generated[j])
+            {
+                const ThumbnailCache::Key missKey{ mediaFile, size, mtime.time_since_epoch().count(), maxWidth, maxHeight,
+                                                    missIndices[j] };
+                m_cache.put(missKey, serialize(generated[j].value()));
+            }
+        }
+    }
+
+    std::vector<Result<MediaThumbnail>> results;
+    results.reserve(previewIndices.size());
+    std::size_t missCursor = 0;
+    for (std::size_t i = 0; i < previewIndices.size(); ++i)
+    {
+        if (hits[i])
+        {
+            results.push_back(Result<MediaThumbnail>::success(std::move(*hits[i])));
+        }
+        else
+        {
+            results.push_back(std::move(generated[missCursor++]));
+        }
+    }
+
+    return results;
+}

@@ -81,29 +81,200 @@ namespace
 
         return Result<void>::success();
     }
+
+    // Seeks to one of MediaPreviewFrames::kCount equally-spaced positions into an already-open
+    // session and decodes one frame from it (Architecture.md §14.25/§14.64); falls back to the
+    // first decodable frame when duration is unavailable. previewIndex 0 reproduces the original
+    // ~10% position. Caller owns the returned AVFrame (av_frame_free).
+    Result<AVFrame*> decodeFrameAt(OpenedVideo& opened, int previewIndex, const std::string& url)
+    {
+        if (opened.formatContext->duration > 0)
+        {
+            const int clampedPreviewIndex = std::clamp(previewIndex, 0, MediaPreviewFrames::kCount - 1);
+            const int64_t seekTarget = static_cast<int64_t>(
+                static_cast<double>(opened.formatContext->duration) * MediaPreviewFrames::fractionForIndex(clampedPreviewIndex));
+            av_seek_frame(opened.formatContext, -1, seekTarget, AVSEEK_FLAG_BACKWARD);
+            avcodec_flush_buffers(opened.decoderContext);
+        }
+
+        AVPacket* packet = av_packet_alloc();
+        AVFrame* decodedFrame = av_frame_alloc();
+
+        bool gotFrame = false;
+        while (!gotFrame && av_read_frame(opened.formatContext, packet) >= 0)
+        {
+            if (packet->stream_index == opened.videoStreamIndex && avcodec_send_packet(opened.decoderContext, packet) == 0)
+            {
+                gotFrame = avcodec_receive_frame(opened.decoderContext, decodedFrame) == 0;
+            }
+            av_packet_unref(packet);
+        }
+        if (!gotFrame)
+        {
+            // Drain: the last packet sent may need one more receive call to flush a buffered frame.
+            avcodec_send_packet(opened.decoderContext, nullptr);
+            gotFrame = avcodec_receive_frame(opened.decoderContext, decodedFrame) == 0;
+        }
+        av_packet_free(&packet);
+
+        if (!gotFrame)
+        {
+            av_frame_free(&decodedFrame);
+            return Result<AVFrame*>::failure(Error(ErrorCode::IoError, "FFmpeg failed to decode a frame from " + url));
+        }
+
+        return Result<AVFrame*>::success(decodedFrame);
+    }
+
+    // sws/MJPEG-encoder context shared across every frame decoded within one generateThumbnails()
+    // batch (Architecture.md §14.77) -- target dimensions are constant for a given call (same
+    // source video, same maxWidth/maxHeight), so creating these once on the first successfully
+    // decoded frame and reusing them for the rest avoids a redundant context alloc per frame.
+    struct SharedEncodeContext
+    {
+        SwsContext* swsContext = nullptr;
+        AVCodecContext* encoderContext = nullptr;
+        int targetWidth = 0;
+        int targetHeight = 0;
+        std::int64_t nextPts = 0;
+
+        ~SharedEncodeContext()
+        {
+            if (encoderContext != nullptr)
+            {
+                avcodec_free_context(&encoderContext);
+            }
+            if (swsContext != nullptr)
+            {
+                sws_freeContext(swsContext);
+            }
+        }
+    };
+
+    // Scales `decodedFrame` (not freed here -- caller's responsibility) via `shared`'s
+    // lazily-created SwsContext and JPEG-encodes it via `shared`'s lazily-created MJPEG encoder
+    // context, creating either the first time this is called for a given `shared` instance.
+    Result<std::vector<std::byte>> scaleAndEncode(const AVFrame* decodedFrame, int maxWidth, int maxHeight,
+                                                     SharedEncodeContext& shared, const std::string& url)
+    {
+        if (shared.swsContext == nullptr)
+        {
+            const double widthScale = static_cast<double>(maxWidth) / decodedFrame->width;
+            const double heightScale = static_cast<double>(maxHeight) / decodedFrame->height;
+            const double scale = std::min({ widthScale, heightScale, 1.0 });
+            shared.targetWidth = std::max(1, static_cast<int>(decodedFrame->width * scale));
+            shared.targetHeight = std::max(1, static_cast<int>(decodedFrame->height * scale));
+
+            shared.swsContext = sws_getContext(decodedFrame->width, decodedFrame->height,
+                                                 static_cast<AVPixelFormat>(decodedFrame->format), shared.targetWidth,
+                                                 shared.targetHeight, AV_PIX_FMT_YUVJ420P, SWS_BILINEAR, nullptr, nullptr, nullptr);
+            if (shared.swsContext == nullptr)
+            {
+                return Result<std::vector<std::byte>>::failure(Error(ErrorCode::Unknown, "Failed to create a scaling context for " + url));
+            }
+        }
+
+        AVFrame* scaledFrame = av_frame_alloc();
+        scaledFrame->format = AV_PIX_FMT_YUVJ420P;
+        scaledFrame->width = shared.targetWidth;
+        scaledFrame->height = shared.targetHeight;
+        if (av_frame_get_buffer(scaledFrame, 0) < 0)
+        {
+            av_frame_free(&scaledFrame);
+            return Result<std::vector<std::byte>>::failure(Error(ErrorCode::Unknown, "Failed to allocate the scaled frame for " + url));
+        }
+
+        sws_scale(shared.swsContext, decodedFrame->data, decodedFrame->linesize, 0, decodedFrame->height, scaledFrame->data,
+                   scaledFrame->linesize);
+
+        if (shared.encoderContext == nullptr)
+        {
+            const AVCodec* encoder = avcodec_find_encoder(AV_CODEC_ID_MJPEG);
+            if (encoder == nullptr)
+            {
+                av_frame_free(&scaledFrame);
+                return Result<std::vector<std::byte>>::failure(Error(ErrorCode::Unknown, "MJPEG encoder not available"));
+            }
+
+            shared.encoderContext = avcodec_alloc_context3(encoder);
+            if (shared.encoderContext == nullptr)
+            {
+                av_frame_free(&scaledFrame);
+                return Result<std::vector<std::byte>>::failure(
+                    Error(ErrorCode::Unknown, "Failed to allocate the MJPEG encoder context for " + url));
+            }
+            shared.encoderContext->width = shared.targetWidth;
+            shared.encoderContext->height = shared.targetHeight;
+            shared.encoderContext->pix_fmt = AV_PIX_FMT_YUVJ420P;
+            shared.encoderContext->time_base = AVRational{ 1, 25 };
+
+            if (avcodec_open2(shared.encoderContext, encoder, nullptr) < 0)
+            {
+                av_frame_free(&scaledFrame);
+                avcodec_free_context(&shared.encoderContext);
+                return Result<std::vector<std::byte>>::failure(Error(ErrorCode::Unknown, "Failed to open the MJPEG encoder for " + url));
+            }
+        }
+
+        scaledFrame->pts = shared.nextPts++;
+
+        Result<std::vector<std::byte>> result = Result<std::vector<std::byte>>::failure(Error(ErrorCode::Unknown, "unreachable"));
+
+        if (avcodec_send_frame(shared.encoderContext, scaledFrame) < 0)
+        {
+            result =
+                Result<std::vector<std::byte>>::failure(Error(ErrorCode::Unknown, "Failed to send a frame to the MJPEG encoder for " + url));
+        }
+        else
+        {
+            AVPacket* encodedPacket = av_packet_alloc();
+            if (avcodec_receive_packet(shared.encoderContext, encodedPacket) < 0)
+            {
+                result = Result<std::vector<std::byte>>::failure(
+                    Error(ErrorCode::Unknown, "MJPEG encoder produced no packet for " + url));
+            }
+            else
+            {
+                std::vector<std::byte> encoded(static_cast<std::size_t>(encodedPacket->size));
+                std::memcpy(encoded.data(), encodedPacket->data, encoded.size());
+                result = Result<std::vector<std::byte>>::success(std::move(encoded));
+            }
+            av_packet_free(&encodedPacket);
+        }
+
+        av_frame_free(&scaledFrame);
+        return result;
+    }
 }
 
 Result<MediaThumbnail> FFmpegMediaDecoder::generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth,
                                                                 int maxHeight, int previewIndex) const
+{
+    return generateThumbnails(mediaFile, maxWidth, maxHeight, { previewIndex })[0];
+}
+
+std::vector<Result<MediaThumbnail>> FFmpegMediaDecoder::generateThumbnails(const std::filesystem::path& mediaFile, int maxWidth,
+                                                                              int maxHeight,
+                                                                              const std::vector<int>& previewIndices) const
 {
     const std::string url = PathUtf8::toUtf8(WindowsLongPath::withPrefix(mediaFile));
 
     OpenedVideo opened;
     if (auto openResult = openVideo(url, opened); !openResult)
     {
-        Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(openResult.error().code)));
-        return Result<MediaThumbnail>::failure(std::move(openResult).error());
+        Logging::warn("FFmpegMediaDecoder::generateThumbnails failed: " + std::string(toLogString(openResult.error().code)));
+        return std::vector<Result<MediaThumbnail>>(previewIndices.size(), Result<MediaThumbnail>::failure(openResult.error()));
     }
     if (auto decoderResult = openDecoder(opened, url); !decoderResult)
     {
-        Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(decoderResult.error().code)));
-        return Result<MediaThumbnail>::failure(std::move(decoderResult).error());
+        Logging::warn("FFmpegMediaDecoder::generateThumbnails failed: " + std::string(toLogString(decoderResult.error().code)));
+        return std::vector<Result<MediaThumbnail>>(previewIndices.size(), Result<MediaThumbnail>::failure(decoderResult.error()));
     }
 
-    // Built from the same already-open session used for the frame grab below (Architecture.md
+    // Built from the same already-open session used for every frame grab below (Architecture.md
     // §14.63), rather than a second avformat_open_input/avformat_find_stream_info probe of the
     // same file -- falls back to zero-valued metadata (graceful degradation) if these fields
-    // somehow don't form a valid MediaMetadata; the thumbnail below is still useful on its own.
+    // somehow don't form a valid MediaMetadata; the thumbnails below are still useful on their own.
     MediaMetadata metadata;
     {
         const AVCodecParameters* codecpar = opened.formatContext->streams[opened.videoStreamIndex]->codecpar;
@@ -123,134 +294,35 @@ Result<MediaThumbnail> FFmpegMediaDecoder::generateThumbnail(const std::filesyst
         }
     }
 
-    // Seek to one of MediaPreviewFrames::kCount equally-spaced positions into the stream for a
-    // representative frame (Architecture.md §14.25/§14.64); falls back to the first decodable
-    // frame when duration is unavailable. previewIndex 0 reproduces the original ~10% position.
-    if (opened.formatContext->duration > 0)
-    {
-        const int clampedPreviewIndex = std::clamp(previewIndex, 0, MediaPreviewFrames::kCount - 1);
-        const int64_t seekTarget = static_cast<int64_t>(
-            static_cast<double>(opened.formatContext->duration) * MediaPreviewFrames::fractionForIndex(clampedPreviewIndex));
-        av_seek_frame(opened.formatContext, -1, seekTarget, AVSEEK_FLAG_BACKWARD);
-        avcodec_flush_buffers(opened.decoderContext);
-    }
+    SharedEncodeContext shared;
+    std::vector<Result<MediaThumbnail>> results;
+    results.reserve(previewIndices.size());
 
-    AVPacket* packet = av_packet_alloc();
-    AVFrame* decodedFrame = av_frame_alloc();
-
-    bool gotFrame = false;
-    while (!gotFrame && av_read_frame(opened.formatContext, packet) >= 0)
+    for (int previewIndex : previewIndices)
     {
-        if (packet->stream_index == opened.videoStreamIndex && avcodec_send_packet(opened.decoderContext, packet) == 0)
+        Result<AVFrame*> decoded = decodeFrameAt(opened, previewIndex, url);
+        if (!decoded)
         {
-            gotFrame = avcodec_receive_frame(opened.decoderContext, decodedFrame) == 0;
+            Logging::warn("FFmpegMediaDecoder::generateThumbnails failed: " + std::string(toLogString(decoded.error().code)));
+            results.push_back(Result<MediaThumbnail>::failure(decoded.error()));
+            continue;
         }
-        av_packet_unref(packet);
-    }
-    if (!gotFrame)
-    {
-        // Drain: the last packet sent may need one more receive call to flush a buffered frame.
-        avcodec_send_packet(opened.decoderContext, nullptr);
-        gotFrame = avcodec_receive_frame(opened.decoderContext, decodedFrame) == 0;
-    }
-    av_packet_free(&packet);
 
-    if (!gotFrame)
-    {
+        AVFrame* decodedFrame = decoded.value();
+        Result<std::vector<std::byte>> encoded = scaleAndEncode(decodedFrame, maxWidth, maxHeight, shared, url);
         av_frame_free(&decodedFrame);
-        Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(ErrorCode::IoError)));
-        return Result<MediaThumbnail>::failure(Error(ErrorCode::IoError, "FFmpeg failed to decode a frame from " + url));
-    }
 
-    const double widthScale = static_cast<double>(maxWidth) / decodedFrame->width;
-    const double heightScale = static_cast<double>(maxHeight) / decodedFrame->height;
-    const double scale = std::min({ widthScale, heightScale, 1.0 });
-    const int targetWidth = std::max(1, static_cast<int>(decodedFrame->width * scale));
-    const int targetHeight = std::max(1, static_cast<int>(decodedFrame->height * scale));
-
-    SwsContext* swsContext = sws_getContext(decodedFrame->width, decodedFrame->height,
-                                             static_cast<AVPixelFormat>(decodedFrame->format), targetWidth, targetHeight,
-                                             AV_PIX_FMT_YUVJ420P, SWS_BILINEAR, nullptr, nullptr, nullptr);
-    if (swsContext == nullptr)
-    {
-        av_frame_free(&decodedFrame);
-        Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(ErrorCode::Unknown)));
-        return Result<MediaThumbnail>::failure(Error(ErrorCode::Unknown, "Failed to create a scaling context for " + url));
-    }
-
-    AVFrame* scaledFrame = av_frame_alloc();
-    scaledFrame->format = AV_PIX_FMT_YUVJ420P;
-    scaledFrame->width = targetWidth;
-    scaledFrame->height = targetHeight;
-    if (av_frame_get_buffer(scaledFrame, 0) < 0)
-    {
-        sws_freeContext(swsContext);
-        av_frame_free(&scaledFrame);
-        av_frame_free(&decodedFrame);
-        return Result<MediaThumbnail>::failure(Error(ErrorCode::Unknown, "Failed to allocate the scaled frame for " + url));
-    }
-
-    sws_scale(swsContext, decodedFrame->data, decodedFrame->linesize, 0, decodedFrame->height, scaledFrame->data,
-              scaledFrame->linesize);
-    sws_freeContext(swsContext);
-    av_frame_free(&decodedFrame);
-
-    const AVCodec* encoder = avcodec_find_encoder(AV_CODEC_ID_MJPEG);
-    if (encoder == nullptr)
-    {
-        av_frame_free(&scaledFrame);
-        return Result<MediaThumbnail>::failure(Error(ErrorCode::Unknown, "MJPEG encoder not available"));
-    }
-
-    AVCodecContext* encoderContext = avcodec_alloc_context3(encoder);
-    if (encoderContext == nullptr)
-    {
-        av_frame_free(&scaledFrame);
-        return Result<MediaThumbnail>::failure(Error(ErrorCode::Unknown, "Failed to allocate the MJPEG encoder context for " + url));
-    }
-    encoderContext->width = targetWidth;
-    encoderContext->height = targetHeight;
-    encoderContext->pix_fmt = AV_PIX_FMT_YUVJ420P;
-    encoderContext->time_base = AVRational{ 1, 25 };
-
-    Result<std::vector<std::byte>> result = Result<std::vector<std::byte>>::failure(Error(ErrorCode::Unknown, "unreachable"));
-
-    if (avcodec_open2(encoderContext, encoder, nullptr) < 0)
-    {
-        result = Result<std::vector<std::byte>>::failure(Error(ErrorCode::Unknown, "Failed to open the MJPEG encoder for " + url));
-    }
-    else if (avcodec_send_frame(encoderContext, scaledFrame) < 0)
-    {
-        result =
-            Result<std::vector<std::byte>>::failure(Error(ErrorCode::Unknown, "Failed to send a frame to the MJPEG encoder for " + url));
-    }
-    else
-    {
-        AVPacket* encodedPacket = av_packet_alloc();
-        if (avcodec_receive_packet(encoderContext, encodedPacket) < 0)
+        if (!encoded)
         {
-            result = Result<std::vector<std::byte>>::failure(
-                Error(ErrorCode::Unknown, "MJPEG encoder produced no packet for " + url));
+            Logging::warn("FFmpegMediaDecoder::generateThumbnails failed: " + std::string(toLogString(encoded.error().code)));
+            results.push_back(Result<MediaThumbnail>::failure(std::move(encoded).error()));
+            continue;
         }
-        else
-        {
-            std::vector<std::byte> encoded(static_cast<std::size_t>(encodedPacket->size));
-            std::memcpy(encoded.data(), encodedPacket->data, encoded.size());
-            result = Result<std::vector<std::byte>>::success(std::move(encoded));
-        }
-        av_packet_free(&encodedPacket);
+
+        Logging::debug("FFmpegMediaDecoder::generateThumbnails succeeded: " + std::to_string(shared.targetWidth) + "x" +
+                        std::to_string(shared.targetHeight));
+        results.push_back(Result<MediaThumbnail>::success(MediaThumbnail{ std::move(encoded).value(), metadata }));
     }
 
-    avcodec_free_context(&encoderContext);
-    av_frame_free(&scaledFrame);
-
-    if (!result)
-    {
-        Logging::warn("FFmpegMediaDecoder::generateThumbnail failed: " + std::string(toLogString(result.error().code)));
-        return Result<MediaThumbnail>::failure(std::move(result).error());
-    }
-
-    Logging::debug("FFmpegMediaDecoder::generateThumbnail succeeded: " + std::to_string(targetWidth) + "x" +
-                    std::to_string(targetHeight));
-    return Result<MediaThumbnail>::success(MediaThumbnail{ std::move(result).value(), std::move(metadata) });
+    return results;
 }

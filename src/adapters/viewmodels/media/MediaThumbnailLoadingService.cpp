@@ -5,27 +5,49 @@
 
 #include <QMetaObject>
 #include <QMutexLocker>
+#include <QThread>
 
 #include "MediaThumbnailLoadingWorker.h"
 
 namespace
 {
     constexpr std::size_t kChunkSize = 10;
+
+    // Clamped to [2, 4]: enough to actually parallelize decode across independent videos/images,
+    // while leaving headroom for the UI thread and every other background service's own worker(s)
+    // -- same formula as IconLoadingService::poolSize() (Architecture.md §14.78).
+    std::size_t poolSize()
+    {
+        return static_cast<std::size_t>(std::clamp(QThread::idealThreadCount() / 2, 2, 4));
+    }
 }
 
 MediaThumbnailLoadingService::MediaThumbnailLoadingService(MediaProcessingUseCase& mediaProcessingUseCase, QObject* parent)
     : QObject(parent)
 {
-    m_worker = new MediaThumbnailLoadingWorker(mediaProcessingUseCase);
-    m_worker->moveToThread(&m_workerThread);
-    m_workerThread.start();
+    const std::size_t count = poolSize();
+    m_pool.reserve(count);
+    for (std::size_t i = 0; i < count; ++i)
+    {
+        PoolWorker entry;
+        entry.worker = new MediaThumbnailLoadingWorker(mediaProcessingUseCase);
+        entry.thread = new QThread();
+        entry.worker->moveToThread(entry.thread);
+        entry.thread->start();
+        m_pool.push_back(entry);
+        m_idleWorkers.push_back(i);
+    }
 }
 
 MediaThumbnailLoadingService::~MediaThumbnailLoadingService()
 {
-    m_workerThread.quit();
-    m_workerThread.wait();
-    delete m_worker;
+    for (PoolWorker& entry : m_pool)
+    {
+        entry.thread->quit();
+        entry.thread->wait();
+        delete entry.worker;
+        delete entry.thread;
+    }
 }
 
 void MediaThumbnailLoadingService::requestThumbnails(QObject* context, const std::filesystem::path& root,
@@ -85,50 +107,58 @@ void MediaThumbnailLoadingService::requestThumbnails(QObject* context, const std
 
 void MediaThumbnailLoadingService::startNextIfIdle()
 {
-    std::optional<PendingChunk> next;
+    while (true)
     {
-        QMutexLocker locker(&m_pendingMutex);
-        if (m_processing || m_pending.empty())
+        std::optional<PendingChunk> next;
+        std::size_t workerIndex = 0;
         {
-            return;
+            QMutexLocker locker(&m_pendingMutex);
+            if (m_pending.empty() || m_idleWorkers.empty())
+            {
+                return;
+            }
+            next = std::move(m_pending.front());
+            m_pending.pop_front();
+            workerIndex = m_idleWorkers.front();
+            m_idleWorkers.pop_front();
         }
-        next = std::move(m_pending.front());
-        m_pending.pop_front();
-        m_processing = true;
+
+        MediaThumbnailLoadingWorker* worker = m_pool[workerIndex].worker;
+
+        QMetaObject::invokeMethod(
+            worker,
+            [this, next = std::move(*next), worker, workerIndex]() mutable {
+                bool stale = false;
+                {
+                    QMutexLocker locker(&m_activeRootMutex);
+                    const auto activeIt = m_activeRootByContext.constFind(next.context);
+                    stale = activeIt == m_activeRootByContext.constEnd() || activeIt.value() != next.root;
+                }
+
+                QHash<QString, MediaThumbnailData> batch;
+                if (!stale)
+                {
+                    // Superseded by a newer request from this same context -- skip decoding
+                    // thumbnails nobody will see, but still deliver an (empty) completion so the
+                    // pump advances.
+                    batch = worker->thumbnailsFor(next.chunk, next.maxWidth, next.maxHeight);
+                }
+
+                QMetaObject::invokeMethod(
+                    this,
+                    [this, guard = next.guard, onBatch = next.onBatch, batch = std::move(batch), workerIndex]() {
+                        {
+                            QMutexLocker locker(&m_pendingMutex);
+                            m_idleWorkers.push_back(workerIndex);
+                        }
+                        if (guard)
+                        {
+                            onBatch(batch);
+                        }
+                        startNextIfIdle();
+                    },
+                    Qt::QueuedConnection);
+            },
+            Qt::QueuedConnection);
     }
-
-    QMetaObject::invokeMethod(
-        m_worker,
-        [this, next = std::move(*next)]() mutable {
-            bool stale = false;
-            {
-                QMutexLocker locker(&m_activeRootMutex);
-                const auto activeIt = m_activeRootByContext.constFind(next.context);
-                stale = activeIt == m_activeRootByContext.constEnd() || activeIt.value() != next.root;
-            }
-
-            QHash<QString, MediaThumbnailData> batch;
-            if (!stale)
-            {
-                // Superseded by a newer request from this same context -- skip decoding thumbnails
-                // nobody will see, but still deliver an (empty) completion so the pump advances.
-                batch = m_worker->thumbnailsFor(next.chunk, next.maxWidth, next.maxHeight);
-            }
-
-            QMetaObject::invokeMethod(
-                this,
-                [this, guard = next.guard, onBatch = next.onBatch, batch = std::move(batch)]() {
-                    {
-                        QMutexLocker locker(&m_pendingMutex);
-                        m_processing = false;
-                    }
-                    if (guard)
-                    {
-                        onBatch(batch);
-                    }
-                    startNextIfIdle();
-                },
-                Qt::QueuedConnection);
-        },
-        Qt::QueuedConnection);
 }

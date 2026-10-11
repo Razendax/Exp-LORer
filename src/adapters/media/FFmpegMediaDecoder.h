@@ -13,4 +13,13 @@ class FFmpegMediaDecoder : public IMediaDecoder
 public:
     Result<MediaThumbnail> generateThumbnail(const std::filesystem::path& mediaFile, int maxWidth, int maxHeight,
                                                int previewIndex = 0) const override;
+
+    // Opens/probes the container once and decodes every requested previewIndex from that one
+    // session, reusing a single SwsContext/MJPEG AVCodecContext across the whole batch
+    // (Architecture.md §14.77) -- amortizes the demux/probe + encoder-setup cost that the
+    // single-frame path above would otherwise pay once per hover-scrub frame. A failure decoding
+    // one index produces a Result::failure for that slot only; it does not abort the rest of the
+    // batch.
+    std::vector<Result<MediaThumbnail>> generateThumbnails(const std::filesystem::path& mediaFile, int maxWidth, int maxHeight,
+                                                              const std::vector<int>& previewIndices) const override;
 };

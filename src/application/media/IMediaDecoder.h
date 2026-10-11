@@ -23,4 +23,14 @@ public:
                                                        int maxWidth,
                                                        int maxHeight,
                                                        int previewIndex = 0) const = 0;
+
+    // Batched form of generateThumbnail() for multiple previewIndices against the same mediaFile
+    // (Architecture.md §14.77), one result per entry of previewIndices in the same order. The
+    // default implementation simply loops generateThumbnail() per index -- correct for any
+    // decoder, but only a decoder with real open/probe cost to amortize across frames
+    // (FFmpegMediaDecoder) needs to override this for batching to actually help.
+    virtual std::vector<Result<MediaThumbnail>> generateThumbnails(const std::filesystem::path& mediaFile,
+                                                                     int maxWidth,
+                                                                     int maxHeight,
+                                                                     const std::vector<int>& previewIndices) const;
 };

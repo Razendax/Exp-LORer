@@ -19,6 +19,7 @@ add_library(explorer_application STATIC
     tags/TagManagementUseCase.h
     tags/TagManagementUseCase.cpp
     media/IMediaDecoder.h
+    media/IMediaDecoder.cpp
     media/MediaExtensions.h
     media/MediaPreviewFrames.h
     media/MediaProcessingUseCase.h

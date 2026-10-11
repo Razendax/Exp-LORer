@@ -26,16 +26,18 @@ class MediaThumbnailLoadingWorker;
 // already-shared MediaProcessingUseCase/CachingMediaDecoder instance -- same decode+cache path the
 // Preview panel already uses.
 //
-// One dedicated worker QThread, not a pool (unlike IconLoadingService): every chunk goes through
-// the same shared MediaProcessingUseCase/CachingMediaDecoder instance, so running chunks
-// concurrently wouldn't parallelize actual decode work the way IconLoadingService's pool
-// parallelizes independent synchronous shell/GDI calls -- it would just contend for the same
-// decoder/cache. A single serialized worker is the safer, more consistent default, matching every
-// other background *Service in this codebase (GitStatusService/DiskUsageService/
-// FragmentationService/FilePreviewWorker).
+// A small fixed-size worker pool (Architecture.md §14.78), mirroring IconLoadingService's pool
+// pattern -- not the single dedicated QThread this originally shipped with. That original choice
+// reasoned a pool would just contend for the same decoder/cache rather than parallelize real work,
+// which holds for a cheap-but-many synchronous call but not for FFmpeg video decode: each
+// generateThumbnail/generateThumbnails call (§14.77) is CPU-bound and self-contained (its own
+// AVFormatContext/decoder), and the only state actually shared across calls, ThumbnailCache, is
+// already std::mutex-guarded (§8). Unlike IconLoadingService's pool, every
+// MediaThumbnailLoadingWorker instance here is stateless (it only forwards to the shared
+// MediaProcessingUseCase&), so there's no per-worker cache to duplicate.
 //
 // Chunks are not dispatched eagerly -- they sit in an internal priority deque (Architecture.md
-// §14.66) and are pumped through the single worker one at a time, so a High-priority request (the
+// §14.66) and are pumped through whichever pool workers are idle, so a High-priority request (the
 // Media Viewer grid's current kind+name filter match) can jump ahead of a Low-priority request (a
 // whole-kind background sweep) already queued, instead of waiting behind its entire backlog.
 class MediaThumbnailLoadingService : public QObject
@@ -85,14 +87,20 @@ private:
         Priority priority = Priority::High;
     };
 
-    // Pops the front of m_pending (if any, and if nothing is already in flight) and posts it to the
-    // worker thread; its completion callback flips m_processing back off and calls this again, so
-    // exactly one chunk is ever being decoded at a time. Called both when a dispatch arrives (in
-    // case the deque was empty/idle) and after each chunk finishes.
+    struct PoolWorker
+    {
+        QThread* thread = nullptr;
+        MediaThumbnailLoadingWorker* worker = nullptr;
+    };
+
+    // While m_pending and m_idleWorkers are both non-empty, pops one of each and dispatches that
+    // chunk to that pool worker; its completion callback returns the worker's index to
+    // m_idleWorkers and calls this again, so every idle pool worker stays busy as long as there's
+    // a queued chunk (Architecture.md §14.78). Called both when a dispatch arrives (in case a
+    // worker was idle) and after each chunk finishes.
     void startNextIfIdle();
 
-    QThread m_workerThread;
-    MediaThumbnailLoadingWorker* m_worker = nullptr;
+    std::vector<PoolWorker> m_pool;
 
     QMutex m_activeRootMutex;
     // Latest requested root per context, compared by pointer value only (never dereferenced) --
@@ -102,5 +110,7 @@ private:
 
     QMutex m_pendingMutex;
     std::deque<PendingChunk> m_pending;
-    bool m_processing = false;
+    // Indices into m_pool that are currently idle, guarded by m_pendingMutex alongside m_pending
+    // since both are consulted/mutated together in startNextIfIdle().
+    std::deque<std::size_t> m_idleWorkers;
 };

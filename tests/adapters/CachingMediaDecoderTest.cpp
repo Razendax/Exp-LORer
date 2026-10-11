@@ -19,6 +19,9 @@ namespace
     public:
         MOCK_METHOD(Result<MediaThumbnail>, generateThumbnail,
                     (const std::filesystem::path& mediaFile, int maxWidth, int maxHeight, int previewIndex), (const, override));
+        MOCK_METHOD(std::vector<Result<MediaThumbnail>>, generateThumbnails,
+                    (const std::filesystem::path& mediaFile, int maxWidth, int maxHeight, const std::vector<int>& previewIndices),
+                    (const, override));
     };
 
     MediaThumbnail makeThumbnail(std::vector<std::byte> bytes, int width = 100, int height = 100)
@@ -178,4 +181,62 @@ TEST_F(CachingMediaDecoderTest, GenerateThumbnailWithDifferentPreviewIndexCallsI
     EXPECT_EQ(first4.value().bytes, frame4.bytes);
     EXPECT_EQ(second0.value().bytes, frame0.bytes);
     EXPECT_EQ(second4.value().bytes, frame4.bytes);
+}
+
+TEST_F(CachingMediaDecoderTest, GenerateThumbnailsWithMixedHitAndMissCallsInnerBatchOnceForOnlyTheMisses)
+{
+    MockInnerDecoder inner;
+    ThumbnailCache cache(m_tempDir / "cache");
+    const MediaThumbnail frame0 = makeThumbnail({ std::byte{ 0x01 } });
+    const MediaThumbnail frame2 = makeThumbnail({ std::byte{ 0x02 } });
+    const MediaThumbnail frame4 = makeThumbnail({ std::byte{ 0x03 } });
+
+    // Warm the cache for indices 0 and 2 only, via the single-frame path.
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128, 0)).WillOnce(Return(Result<MediaThumbnail>::success(frame0)));
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128, 2)).WillOnce(Return(Result<MediaThumbnail>::success(frame2)));
+
+    CachingMediaDecoder decorator(inner, cache);
+    decorator.generateThumbnail(m_filePath, 128, 128, 0);
+    decorator.generateThumbnail(m_filePath, 128, 128, 2);
+
+    // A batch for {0, 2, 4} must hit the cache for 0 and 2, and call the inner batched method
+    // exactly once with only the missing index 4.
+    EXPECT_CALL(inner, generateThumbnails(m_filePath, 128, 128, std::vector<int>{ 4 }))
+        .Times(1)
+        .WillOnce(Return(std::vector<Result<MediaThumbnail>>{ Result<MediaThumbnail>::success(frame4) }));
+
+    auto results = decorator.generateThumbnails(m_filePath, 128, 128, { 0, 2, 4 });
+
+    ASSERT_EQ(results.size(), 3u);
+    ASSERT_TRUE(results[0].hasValue());
+    ASSERT_TRUE(results[1].hasValue());
+    ASSERT_TRUE(results[2].hasValue());
+    EXPECT_EQ(results[0].value().bytes, frame0.bytes);
+    EXPECT_EQ(results[1].value().bytes, frame2.bytes);
+    EXPECT_EQ(results[2].value().bytes, frame4.bytes);
+}
+
+TEST_F(CachingMediaDecoderTest, GenerateThumbnailsWithAllCacheHitsNeverCallsInnerBatch)
+{
+    MockInnerDecoder inner;
+    ThumbnailCache cache(m_tempDir / "cache");
+    const MediaThumbnail frame0 = makeThumbnail({ std::byte{ 0x01 } });
+    const MediaThumbnail frame1 = makeThumbnail({ std::byte{ 0x02 } });
+
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128, 0)).WillOnce(Return(Result<MediaThumbnail>::success(frame0)));
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128, 1)).WillOnce(Return(Result<MediaThumbnail>::success(frame1)));
+
+    CachingMediaDecoder decorator(inner, cache);
+    decorator.generateThumbnail(m_filePath, 128, 128, 0);
+    decorator.generateThumbnail(m_filePath, 128, 128, 1);
+
+    EXPECT_CALL(inner, generateThumbnails(_, _, _, _)).Times(0);
+
+    auto results = decorator.generateThumbnails(m_filePath, 128, 128, { 0, 1 });
+
+    ASSERT_EQ(results.size(), 2u);
+    ASSERT_TRUE(results[0].hasValue());
+    ASSERT_TRUE(results[1].hasValue());
+    EXPECT_EQ(results[0].value().bytes, frame0.bytes);
+    EXPECT_EQ(results[1].value().bytes, frame1.bytes);
 }

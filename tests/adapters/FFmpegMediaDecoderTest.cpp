@@ -69,3 +69,45 @@ TEST_F(FFmpegMediaDecoderTest, GenerateThumbnailClampsOutOfRangePreviewIndexInst
     EXPECT_TRUE(decoder.generateThumbnail(missing, 128, 128, -1).hasError());
     EXPECT_TRUE(decoder.generateThumbnail(missing, 128, 128, 99).hasError());
 }
+
+// Same "fails cleanly" shape as the single-frame cases above -- no real video fixture exists in
+// this suite to assert a batch's distinct frame content (Architecture.md §14.77), but a missing
+// file must still fail every requested slot rather than abort partway through the batch.
+TEST_F(FFmpegMediaDecoderTest, GenerateThumbnailsOnMissingFileReturnsOneFailurePerIndex)
+{
+    FFmpegMediaDecoder decoder;
+    const fs::path missing = m_tempDir / "does-not-exist.mp4";
+
+    auto results = decoder.generateThumbnails(missing, 128, 128, { 0, 1, 2, 3, 4 });
+
+    ASSERT_EQ(results.size(), 5u);
+    for (const auto& result : results)
+    {
+        EXPECT_TRUE(result.hasError());
+    }
+}
+
+TEST_F(FFmpegMediaDecoderTest, GenerateThumbnailsOnGarbageBytesReturnsOneFailurePerIndex)
+{
+    const fs::path garbageFile = m_tempDir / "not-a-video.avi";
+    std::ofstream stream(garbageFile, std::ios::binary);
+    stream << "definitely not an AVI container";
+    stream.close();
+
+    FFmpegMediaDecoder decoder;
+    auto results = decoder.generateThumbnails(garbageFile, 128, 128, { 0, 1 });
+
+    ASSERT_EQ(results.size(), 2u);
+    EXPECT_TRUE(results[0].hasError());
+    EXPECT_TRUE(results[1].hasError());
+}
+
+TEST_F(FFmpegMediaDecoderTest, GenerateThumbnailsWithEmptyIndicesReturnsEmptyResult)
+{
+    FFmpegMediaDecoder decoder;
+    const fs::path missing = m_tempDir / "does-not-exist.mp4";
+
+    auto results = decoder.generateThumbnails(missing, 128, 128, {});
+
+    EXPECT_TRUE(results.empty());
+}

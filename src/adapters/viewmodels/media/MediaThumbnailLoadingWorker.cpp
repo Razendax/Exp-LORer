@@ -38,10 +38,17 @@ namespace
         MediaThumbnailData data;
         data.previewFrames.resize(MediaPreviewFrames::kCount);
 
+        std::vector<int> previewIndices(MediaPreviewFrames::kCount);
+        for (int i = 0; i < MediaPreviewFrames::kCount; ++i)
+        {
+            previewIndices[static_cast<std::size_t>(i)] = i;
+        }
+        const std::vector<Result<MediaThumbnail>> thumbnails = useCase.generateThumbnails(path, maxWidth, maxHeight, previewIndices);
+
         bool anySucceeded = false;
         for (int i = 0; i < MediaPreviewFrames::kCount; ++i)
         {
-            const Result<MediaThumbnail> thumbnail = useCase.generateThumbnail(path, maxWidth, maxHeight, i);
+            const Result<MediaThumbnail>& thumbnail = thumbnails[static_cast<std::size_t>(i)];
             if (thumbnail.hasError())
             {
                 continue;

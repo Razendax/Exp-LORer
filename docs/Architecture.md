@@ -520,7 +520,7 @@ walkthrough; see git history and the code's own comments (many cite these subsec
 directly) for the detail.
 
 The log grew too large for one document and is split across nine files under `docs/features/`,
-organized **by feature topic** rather than by when each was built. Section numbers (§14.1–§14.75)
+organized **by feature topic** rather than by when each was built. Section numbers (§14.1–§14.78)
 were assigned chronologically as each feature shipped and are kept stable within whichever file
 now holds them, since code comments cite them directly — so a file's own section numbers are not
 necessarily contiguous; each file's intro lists its exact set. **Keep each file at or under 1000
@@ -550,7 +550,8 @@ growing, and update both that file's intro and this index to match.
 * **[features/07-media-viewer.md](features/07-media-viewer.md)** — Media Viewer mode (recursive
   tag/name-filtered image/video gallery) and its follow-ups: thumbnail previews/metadata overlays,
   decoder merge, video hover-scrub, loading progress, kind-scoped loading, sort/view/filmstrip/
-  details controls, folder-grouped browsing, inline rename.
+  details controls, folder-grouped browsing, inline rename, thumbnail-decode performance (batched
+  multi-frame decode, parallel decode pool).
 * **[features/08-disk-and-file-tools.md](features/08-disk-and-file-tools.md)** — customizable
   Details-view columns (+ per-tab persistence), disk usage/folder size, duplicate file finder, disk
   fragmentation viewer (+ Details-view fragments column), bulk/batch rename.

@@ -5,11 +5,12 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.61–14.66, §14.68–14.69, §14.72–14.76 — the recursive tag/name-filtered image/video gallery mode and
+Covers §14.61–14.66, §14.68–14.69, §14.72–14.78 — the recursive tag/name-filtered image/video gallery mode and
 its follow-ups: thumbnail previews/metadata overlays, the `IMediaDecoder` thumbnail/metadata
 merge, video hover-scrub previews, loading-progress notification, kind-scoped loading,
 sort/view/filmstrip/details controls, the Filter/Apply tag-click behaviour toggle,
-folder-grouped browsing, and inline rename support. The built-in video player itself
+folder-grouped browsing, inline rename support, and thumbnail-decode performance work (batched
+multi-frame video decode, a parallel decode pool). The built-in video player itself
 (§14.67) lives in [05-preview-and-decoration.md](05-preview-and-decoration.md), since it was built
 for and first used by the Preview tab. Section numbers are **not** contiguous with this file's
 neighbors — they were assigned chronologically as each feature was built and are kept stable
@@ -808,4 +809,102 @@ Domain/Application/schema change, and no change to `WorkspaceController`'s own `
   the one pane.
 * **Testing**: no new GTest coverage, same precedent as the rest of this file (Architecture.md §11
   UI/ViewModel-glue carve-out); manual smoke test only.
+
+---
+### 14.77 Media Viewer: Batched Multi-Frame Video Thumbnail Decode (Performance)
+
+§14.64's 5 hover-scrub frames per video are each requested via a separate
+`IMediaDecoder::generateThumbnail()` call. Since every call independently did
+`avformat_open_input`/`avformat_find_stream_info`/`avcodec_open2` from scratch, a cache-cold video
+paid that demux/probe cost 5 times, plus a fresh `sws`/MJPEG-encoder context per frame despite
+every frame sharing the same target dimensions. This adds a batched Port method that opens the
+container once and decodes every requested frame from that one session. No Domain/UI change;
+touches the `IMediaDecoder` Port and `MediaProcessingUseCase` (Application layer) plus their
+Adapters implementations — same posture as §14.63's earlier `generateThumbnail`/`extractMetadata`
+merge, which also touched the Port for a decode-cost reason.
+
+* **`IMediaDecoder`** (`src/application/media/`) gains
+  `generateThumbnails(mediaFile, maxWidth, maxHeight, previewIndices) -> std::vector<Result<MediaThumbnail>>`,
+  non-pure with a default body (new `IMediaDecoder.cpp`) that loops the existing
+  `generateThumbnail()` once per index — correct for any decoder, but only one with an actual
+  open/probe cost to amortize needs to override it. `MediaProcessingUseCase` gains a matching
+  method, applying the same `maxWidth/maxHeight > 0`/`previewIndex` range validation as the
+  single-frame method, per index.
+* **`FFmpegMediaDecoder`** overrides `generateThumbnails`: opens/probes the container and builds
+  `MediaMetadata` once, then loops the requested indices doing only the seek →
+  `avcodec_flush_buffers` → decode → `sws_scale` → MJPEG-encode steps per frame, reusing one
+  `SwsContext` and one MJPEG `AVCodecContext` across the whole batch (dimensions are constant per
+  call). A single index's decode/encode failure yields a `Result::failure` for that slot only, so
+  one bad seek doesn't fail the rest of the batch — same per-frame-failure tolerance
+  `MediaThumbnailLoadingWorker`'s existing neighbor-backfill logic already expects. The existing
+  single-frame `generateThumbnail()` is now a one-line wrapper calling `generateThumbnails(...)`
+  with a single-element index list.
+* **`CachingMediaDecoder`** overrides `generateThumbnails`: checks the cache per requested index
+  first, then calls `m_inner.generateThumbnails()` exactly once for whatever indices missed (an
+  all-cache-hit batch never touches the inner decoder at all; a partially-warm batch — e.g. 2 of 5
+  frames already cached — still only reopens the container once, for the 3 misses), caching each
+  newly-generated result before returning the merged, input-ordered vector.
+* **`MediaThumbnailLoadingWorker::decodeVideoThumbnail`** replaces its 5 separate
+  `generateThumbnail(path, w, h, i)` calls with one `generateThumbnails(path, w, h, {0,1,2,3,4})`
+  call; the existing per-slot `QImage` decode, metadata capture, and nearest-neighbor backfill for
+  a failed slot are unchanged, just indexed into the returned vector.
+* **`VipsImageDecoder`** is untouched — inherits the default loop-based `generateThumbnails`
+  (never exercised by current call sites, since images only ever go through the single-frame path,
+  but correct if ever called).
+* **Not built**: no change to the existing single-frame `generateThumbnail()` call sites
+  (`FilePreviewUseCase`'s Preview-panel calls keep working unchanged); no cross-video batching
+  (each video's 5 frames are one batch; separate videos are still separate calls — see §14.78 for
+  how separate videos get decoded concurrently instead).
+* **Testing**: `MockMediaDecoder`/the local `MockInnerDecoder` in `CachingMediaDecoderTest` gain a
+  `generateThumbnails` mock method; `FFmpegMediaDecoderTest` gains missing-file/garbage-file cases
+  for the batched method (same "fails cleanly" shape as its existing single-frame cases — no real
+  video fixture exists in this suite); `CachingMediaDecoderTest` gains cases asserting a mixed
+  hit/miss batch calls the inner decoder's `generateThumbnails` exactly once with only the missing
+  indices, and that an all-cached batch never calls it; `MediaProcessingUseCaseTest` gains cases for
+  the new method's validation and forwarding. No new coverage for
+  `MediaThumbnailLoadingWorker` (no existing tests either, same §11 carve-out as the rest of this
+  file).
+
+### 14.78 Media Viewer: Parallel Thumbnail Decode Pool (Performance)
+
+§14.62 gave `MediaThumbnailLoadingService` one dedicated worker `QThread`, reasoning that a pool
+would "just contend for the same decoder/cache rather than parallelizing real work" — the same
+language `IconLoadingService`'s own class comment uses to justify its pool for a different reason
+(many cheap synchronous shell/GDI calls). That reasoning doesn't hold for FFmpeg video decode
+specifically: each `generateThumbnail`/`generateThumbnails` call (§14.77) is CPU-bound and
+self-contained — its own `AVFormatContext`/decoder — and the only state actually shared across
+calls, `ThumbnailCache`, is already `std::mutex`-guarded (§8). A folder full of videos was
+decoding them one at a time regardless of core count. This replaces the single worker thread with
+a small fixed pool, mirroring `IconLoadingService`'s existing pool pattern. No Port, Domain, or
+Application change — entirely Adapters(ViewModel).
+
+* **`MediaThumbnailLoadingService`** (`src/adapters/viewmodels/media/`) replaces its single
+  `QThread`/`MediaThumbnailLoadingWorker*` with `std::vector<PoolWorker> m_pool` (same
+  `{ QThread* thread; MediaThumbnailLoadingWorker* worker; }` shape as
+  `IconLoadingService::PoolWorker`) plus a `std::deque<std::size_t> m_idleWorkers` of free pool
+  indices, both guarded by the existing `m_pendingMutex`. Pool size uses the same
+  `std::clamp(QThread::idealThreadCount() / 2, 2, 4)` formula as
+  `IconLoadingService::poolSize()`, leaving headroom for the UI thread and every other background
+  service. Each pool worker is a fresh `MediaThumbnailLoadingWorker` sharing the one injected
+  `MediaProcessingUseCase&` — safe because the worker holds no per-instance state of its own,
+  simpler than `IconLoadingWorker`'s pool (which keeps an independent per-worker icon cache).
+* **`startNextIfIdle()`** becomes a loop instead of a single dispatch: while `m_pending` and
+  `m_idleWorkers` are both non-empty, pop one of each and dispatch — same two-hop
+  `QMetaObject::invokeMethod` shape as before (a staleness check on the worker thread, then
+  `Qt::QueuedConnection` back to `this` for the batch callback), just targeting
+  `m_pool[workerIndex].worker`. The completion closure returns that worker's index to
+  `m_idleWorkers` before looping `startNextIfIdle()` again, replacing the old single `m_processing`
+  bool.
+* **§14.66's High/Low priority-deque logic in `requestThumbnails`** (High purges this context's
+  still-queued High chunks and pushes to the front; Low appends to the back) is unchanged — it only
+  ever manipulates the single shared `m_pending` deque, which now simply feeds every idle pool
+  worker instead of one.
+* **Not built**: no change to `MediaThumbnailLoadingWorker` itself beyond its class comment (already
+  stateless, so no per-worker cache to duplicate the way `IconLoadingWorker` does); no dynamic pool
+  resizing; no cross-service thread budget coordination with `IconLoadingService`'s own pool (both
+  size independently off `QThread::idealThreadCount()`, same as today).
+* **Testing**: no new GTest coverage — this layer has none today either (§11 UI/ViewModel-glue
+  carve-out, same precedent as every other entry in this file); manual smoke test only (hover/scrub
+  several videos at once, and open a video-heavy folder in Media Viewer mode to confirm thumbnails
+  now populate concurrently rather than strictly one at a time).
 
