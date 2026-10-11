@@ -5,7 +5,7 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.61–14.66, §14.68–14.69, §14.72–14.75 — the recursive tag/name-filtered image/video gallery mode and
+Covers §14.61–14.66, §14.68–14.69, §14.72–14.76 — the recursive tag/name-filtered image/video gallery mode and
 its follow-ups: thumbnail previews/metadata overlays, the `IMediaDecoder` thumbnail/metadata
 merge, video hover-scrub previews, loading-progress notification, kind-scoped loading,
 sort/view/filmstrip/details controls, the Filter/Apply tag-click behaviour toggle,
@@ -770,4 +770,42 @@ Details), reusing `FileOperationsController::renamePath` via the existing displa
 * **Testing**: no new GTest coverage, same precedent as the rest of this file (Architecture.md §11
   UI/ViewModel-glue carve-out; `FileNameEditDelegate` itself has no dedicated test either); manual
   smoke test only.
+
+---
+### 14.76 Media Viewer Mode: Full-Workspace Display While Active
+
+§14.61's stack-page swap only replaced content inside the one `WorkspacePaneWidget` that owns the
+tab entering Media Viewer — correct in `SplitLayout::Single`, but in `TwoVertical`/`TwoHorizontal`/
+`FourGrid` the grid was squeezed into one of 2-4 visible panes while sibling panes kept showing
+ordinary browsing beside it. This makes Media Viewer take over the whole workspace area regardless
+of the active split, and locks split switching for the duration. Entirely UI — no new Port, no
+Domain/Application/schema change, and no change to `WorkspaceController`'s own `SplitLayout` state
+(so session persistence, §14.14, is unaffected).
+
+* **`WorkspaceLayoutWidget`** gains a display-only override, orthogonal to
+  `WorkspaceController::layout()`: `std::optional<WorkspacePaneId> m_forcedSinglePane` plus
+  `forceSinglePane(WorkspacePaneId)`/`clearForcedSinglePane()`, both just setting the member and
+  re-running the existing `applyLayout(m_controller->layout())` + `updatePaneActiveStates()`.
+  `applyLayout`/`updatePaneActiveStates` compute their visible-pane set from
+  `{ *m_forcedSinglePane }` instead of `WorkspaceLayoutTopology::visiblePanes(layout)` whenever the
+  override is set; `buildContent` likewise short-circuits to returning that one pane directly,
+  mirroring exactly what the existing `SplitLayout::Single` case already does for `PaneA`, just
+  parameterized by the forced id. No new `SplitLayout` enumerator and no 5th pane — the override
+  reuses the focused pane's own existing `WorkspacePaneWidget`, which already owns the
+  `MediaViewerGrid` stack page and the per-pane toolbar lock from §14.61; only *which pane(s) are
+  visible* changes, not how Media Viewer itself renders.
+* **`MainWindow::onMediaViewerModeChanged`** (the existing handler for the focused tab's
+  `mediaViewerModeChanged`, already toggling the left/right panels) additionally calls
+  `m_workspaceLayoutWidget->forceSinglePane(m_workspaceController->focusedPane())` on entry (Media
+  Viewer is always entered on the focused tab, hence the focused pane) and
+  `clearForcedSinglePane()` on exit. Split-layout switching is locked for the same duration via
+  `m_layoutActionGroup->setEnabled(false/true)` — `QActionGroup::setEnabled` already propagates to
+  every action in the group, disabling both the Layout toolbar's 4 buttons and the View ▸ Layout
+  submenu's 4 items (the same `QAction` instances feed both) in one call.
+* **Not built**: persisting the forced-single-pane state (purely transient, same posture as every
+  other Media Viewer transient); any change to per-pane toolbar/tab locking
+  (`WorkspacePaneWidget::updateToolBarEnabledForMediaViewer`, §14.61) — unaffected, still scoped to
+  the one pane.
+* **Testing**: no new GTest coverage, same precedent as the rest of this file (Architecture.md §11
+  UI/ViewModel-glue carve-out); manual smoke test only.
 

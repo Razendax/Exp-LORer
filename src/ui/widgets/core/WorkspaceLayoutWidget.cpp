@@ -21,6 +21,15 @@ namespace
     }
 }
 
+std::vector<WorkspacePaneId> WorkspaceLayoutWidget::effectiveVisiblePanes(SplitLayout layout) const
+{
+    if (m_forcedSinglePane)
+    {
+        return { *m_forcedSinglePane };
+    }
+    return WorkspaceLayoutTopology::visiblePanes(layout);
+}
+
 WorkspaceLayoutWidget::WorkspaceLayoutWidget(WorkspaceController* controller,
                                               ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
                                               DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
@@ -67,7 +76,7 @@ WorkspacePaneWidget* WorkspaceLayoutWidget::paneWidget(WorkspacePaneId id) const
 
 void WorkspaceLayoutWidget::applyLayout(SplitLayout layout)
 {
-    const auto visible = WorkspaceLayoutTopology::visiblePanes(layout);
+    const auto visible = effectiveVisiblePanes(layout);
     auto isVisible = [&visible](WorkspacePaneId id) {
         return std::find(visible.begin(), visible.end(), id) != visible.end();
     };
@@ -128,6 +137,13 @@ void WorkspaceLayoutWidget::applyLayout(SplitLayout layout)
 
 QWidget* WorkspaceLayoutWidget::buildContent(SplitLayout layout)
 {
+    if (m_forcedSinglePane)
+    {
+        WorkspacePaneWidget* pane = m_paneWidgets[indexOf(*m_forcedSinglePane)];
+        pane->setParent(this);
+        return pane;
+    }
+
     switch (layout)
     {
         case SplitLayout::Single:
@@ -177,7 +193,7 @@ QWidget* WorkspaceLayoutWidget::buildContent(SplitLayout layout)
 
 void WorkspaceLayoutWidget::updatePaneActiveStates()
 {
-    const auto visible = WorkspaceLayoutTopology::visiblePanes(m_controller->layout());
+    const auto visible = effectiveVisiblePanes(m_controller->layout());
     const bool multiplePanesVisible = visible.size() > 1;
     const WorkspacePaneId focused = m_controller->focusedPane();
 
@@ -186,6 +202,20 @@ void WorkspaceLayoutWidget::updatePaneActiveStates()
         const bool active = multiplePanesVisible && static_cast<WorkspacePaneId>(i) == focused;
         m_paneWidgets[static_cast<size_t>(i)]->setActive(active);
     }
+}
+
+void WorkspaceLayoutWidget::forceSinglePane(WorkspacePaneId id)
+{
+    m_forcedSinglePane = id;
+    applyLayout(m_controller->layout());
+    updatePaneActiveStates();
+}
+
+void WorkspaceLayoutWidget::clearForcedSinglePane()
+{
+    m_forcedSinglePane.reset();
+    applyLayout(m_controller->layout());
+    updatePaneActiveStates();
 }
 
 void WorkspaceLayoutWidget::onFocusChanged(QWidget* old, QWidget* now)

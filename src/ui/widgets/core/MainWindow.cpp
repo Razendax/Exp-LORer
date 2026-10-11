@@ -1057,6 +1057,9 @@ void MainWindow::onMediaViewerModeChanged(bool active)
 
     if (active)
     {
+        m_workspaceLayoutWidget->forceSinglePane(m_workspaceController->focusedPane());
+        m_layoutActionGroup->setEnabled(false);
+
         m_rightPanelActiveIndexBeforeMediaViewer = m_rightPanelWidget->activeTabIndex();
         m_rightPanelWidget->setPanelTabButtonVisible(0, false);
         m_rightPanelWidget->setPanelTabButtonVisible(1, false);
@@ -1065,6 +1068,9 @@ void MainWindow::onMediaViewerModeChanged(bool active)
         m_rightPanelWidget->activateTab(3);
         return;
     }
+
+    m_workspaceLayoutWidget->clearForcedSinglePane();
+    m_layoutActionGroup->setEnabled(true);
 
     m_rightPanelWidget->setPanelTabButtonVisible(0, true);
     m_rightPanelWidget->setPanelTabButtonVisible(1, true);
