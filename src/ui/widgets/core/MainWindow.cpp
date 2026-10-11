@@ -436,16 +436,20 @@ void MainWindow::createMediaViewerModeAction()
     m_mediaViewerModeAction->setEnabled(false); // re-enabled by onFocusedTabChanged once a tab exists
 
     connect(m_mediaViewerModeAction, &QAction::toggled, this, [this](bool checked) {
-        TabViewModel* tab = m_workspaceController->focusedTab();
-        if (!tab)
-        {
-            return;
-        }
         if (checked)
         {
-            tab->enterMediaViewer();
+            // Entering targets the currently-focused tab, same as before.
+            if (TabViewModel* tab = m_workspaceController->focusedTab())
+            {
+                tab->enterMediaViewer();
+            }
+            return;
         }
-        else
+
+        // Exiting targets the tab actually in Media Viewer mode, not focusedTab() -- in a split
+        // workspace, focus may have moved to a different tab since Media Viewer mode was entered
+        // (Architecture.md §14.61), and exitMediaViewer() on an unrelated tab is a silent no-op.
+        if (TabViewModel* tab = mediaViewerTargetTab())
         {
             tab->exitMediaViewer();
         }
@@ -591,64 +595,65 @@ void MainWindow::createWorkspace()
     m_rightPanelWidget->addPanelTab(tr("Searcher"), m_mediaViewerSearchPanelWidget, QStringLiteral("rightPanelSearcherButton"));
     m_rightPanelWidget->setPanelTabButtonVisible(3, false);
 
-    // Window-wide, single instance (like m_searchPanelWidget) -- wired once here with a dynamic
-    // focusedTab() lookup rather than retargeted per focus change, same posture as
-    // createSearchPanel()'s own queryChanged wiring below.
+    // Window-wide, single instance (like m_searchPanelWidget) -- wired once here. Resolves its
+    // target tab via mediaViewerTargetTab() rather than a live focusedTab() lookup: in a split
+    // workspace, focus can move to a different tab while this panel is still showing/controlling
+    // whichever tab is actually in Media Viewer mode (Architecture.md §14.61).
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::kindChanged, this, [this](MediaViewerKind kind) {
-        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        if (TabViewModel* tab = mediaViewerTargetTab())
         {
             tab->setMediaViewerKind(kind);
         }
     });
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::exitRequested, this, [this]() {
-        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        if (TabViewModel* tab = mediaViewerTargetTab())
         {
             tab->exitMediaViewer();
         }
     });
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagSearchChipActivated, this,
             [this](Tag::Id tagId, Qt::KeyboardModifiers modifiers) {
-                if (TabViewModel* tab = m_workspaceController->focusedTab())
+                if (TabViewModel* tab = mediaViewerTargetTab())
                 {
                     tab->handleMediaViewerSearchTagActivated(tagId, modifiers.testFlag(Qt::ControlModifier));
                 }
             });
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagBehaviourChanged, this,
             [this](MediaViewerTagBehaviour behaviour) {
-                if (TabViewModel* tab = m_workspaceController->focusedTab())
+                if (TabViewModel* tab = mediaViewerTargetTab())
                 {
                     tab->setMediaViewerTagBehaviour(behaviour);
                 }
             });
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagFilterRemoved, this, [this](Tag::Id tagId) {
-        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        if (TabViewModel* tab = mediaViewerTargetTab())
         {
             tab->removeMediaViewerTagFilter(tagId);
         }
     });
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagSearchQueryRequested, this, [this](const QString& query) {
-        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        if (TabViewModel* tab = mediaViewerTargetTab())
         {
             m_mediaViewerSearchPanelWidget->setTagSearchResults(tab->searchTagsForCriteria(query));
         }
     });
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagSearchQueryAccepted, this,
             [this](const QString& query) {
-                if (TabViewModel* tab = m_workspaceController->focusedTab())
+                if (TabViewModel* tab = mediaViewerTargetTab())
                 {
                     tab->acceptMediaViewerSearchTagQuery(query);
                 }
             });
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagCreateRequested, this,
             [this](const QString& name) {
-                if (TabViewModel* tab = m_workspaceController->focusedTab())
+                if (TabViewModel* tab = mediaViewerTargetTab())
                 {
                     tab->createAndApplyMediaViewerTag(name);
                 }
             });
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::nameFilterChanged, this,
             [this](const QString& query, const NameSearchOptions& options) {
-                if (TabViewModel* tab = m_workspaceController->focusedTab())
+                if (TabViewModel* tab = mediaViewerTargetTab())
                 {
                     tab->setMediaViewerNameFilter(query, options);
                 }
@@ -1112,6 +1117,11 @@ void MainWindow::onMediaViewerModeChanged(bool active)
     }
 }
 
+TabViewModel* MainWindow::mediaViewerTargetTab() const
+{
+    return m_activeMediaViewerTab ? m_activeMediaViewerTab : m_workspaceController->focusedTab();
+}
+
 void MainWindow::onFocusedTabChanged(TabViewModel* tab)
 {
     if (m_sortTrackedTab)
@@ -1132,18 +1142,82 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     }
     m_searchTrackedTab = tab;
 
-    if (m_mediaViewerTrackedTab)
+    // Media Viewer mode (Architecture.md §14.61): tracks whichever tab is actually in Media
+    // Viewer mode (m_activeMediaViewerTab), not the newly-focused tab -- in a split workspace,
+    // focus can move to an unrelated tab (a different pane, or another tab in the same pane)
+    // while a different tab is still showing Media Viewer mode, forced single-pane. Falls back to
+    // the newly-focused tab when no tab is currently in Media Viewer mode, matching the original
+    // "track whatever's focused" behavior for the case this was split out of.
+    if (TabViewModel* mediaViewerTarget = m_activeMediaViewerTab ? m_activeMediaViewerTab : tab; mediaViewerTarget != m_mediaViewerTrackedTab)
     {
-        disconnect(m_mediaViewerTrackedTab, &TabViewModel::mediaViewerModeChanged, this, &MainWindow::onMediaViewerModeChanged);
-        disconnect(m_mediaViewerTrackedTab, &TabViewModel::mediaViewerFailed, this, &MainWindow::onStatusMessage);
-        // Every mediaViewerResultsChanged/mediaViewerKindChanged/mediaViewerCriteriaChanged/
-        // mediaViewerLoading*/mediaViewerFailed connection into m_mediaViewerSearchPanelWidget
-        // below is a lambda (receiver == m_mediaViewerSearchPanelWidget, never `this`) --
-        // disconnecting all of them by receiver alone is safe and precise, same pattern as
-        // m_searchTrackedTab/m_searchPanelWidget above.
-        disconnect(m_mediaViewerTrackedTab, nullptr, m_mediaViewerSearchPanelWidget, nullptr);
+        if (m_mediaViewerTrackedTab)
+        {
+            disconnect(m_mediaViewerTrackedTab, &TabViewModel::mediaViewerModeChanged, this, nullptr);
+            disconnect(m_mediaViewerTrackedTab, &TabViewModel::mediaViewerFailed, this, &MainWindow::onStatusMessage);
+            // Every mediaViewerResultsChanged/mediaViewerKindChanged/mediaViewerCriteriaChanged/
+            // mediaViewerLoading*/mediaViewerFailed/mediaViewerModeChanged connection into
+            // m_mediaViewerSearchPanelWidget or m_mediaViewerModeAction below is a lambda (never a
+            // plain `this` member-function connection) -- disconnecting all of them by receiver
+            // alone is safe and precise, same pattern as m_searchTrackedTab/m_searchPanelWidget
+            // above.
+            disconnect(m_mediaViewerTrackedTab, nullptr, m_mediaViewerSearchPanelWidget, nullptr);
+            disconnect(m_mediaViewerTrackedTab, nullptr, m_mediaViewerModeAction, nullptr);
+        }
+        m_mediaViewerTrackedTab = mediaViewerTarget;
+
+        if (TabViewModel* viewerTab = m_mediaViewerTrackedTab)
+        {
+            {
+                const QSignalBlocker mediaViewerActionBlocker(m_mediaViewerModeAction);
+                m_mediaViewerModeAction->setChecked(viewerTab->mediaViewerActive());
+            }
+
+            connect(viewerTab, &TabViewModel::mediaViewerModeChanged, this, [this, viewerTab](bool active) {
+                if (active)
+                {
+                    m_activeMediaViewerTab = viewerTab;
+                }
+                else if (m_activeMediaViewerTab == viewerTab)
+                {
+                    m_activeMediaViewerTab = nullptr;
+                }
+                onMediaViewerModeChanged(active);
+            });
+            connect(viewerTab, &TabViewModel::mediaViewerFailed, this, &MainWindow::onStatusMessage);
+
+            connect(viewerTab, &TabViewModel::mediaViewerModeChanged, m_mediaViewerModeAction, [this](bool active) {
+                const QSignalBlocker blocker(m_mediaViewerModeAction);
+                m_mediaViewerModeAction->setChecked(active);
+            });
+
+            connect(viewerTab, &TabViewModel::mediaViewerKindChanged, m_mediaViewerSearchPanelWidget,
+                    [this](MediaViewerKind kind) { m_mediaViewerSearchPanelWidget->setKind(kind); });
+            connect(viewerTab, &TabViewModel::mediaViewerCriteriaChanged, m_mediaViewerSearchPanelWidget, [this, viewerTab]() {
+                m_mediaViewerSearchPanelWidget->setAppliedTagFilters(viewerTab->resolveMediaViewerTagFilters());
+            });
+            connect(viewerTab, &TabViewModel::mediaViewerTagBehaviourChanged, m_mediaViewerSearchPanelWidget,
+                    [this](MediaViewerTagBehaviour behaviour) { m_mediaViewerSearchPanelWidget->setTagBehaviour(behaviour); });
+            connect(viewerTab, &TabViewModel::mediaViewerLoading, m_mediaViewerSearchPanelWidget,
+                    [this]() { m_mediaViewerSearchPanelWidget->setLoading(true); });
+            connect(viewerTab, &TabViewModel::mediaViewerLoadingFinished, m_mediaViewerSearchPanelWidget,
+                    [this]() { m_mediaViewerSearchPanelWidget->setLoading(false); });
+            connect(viewerTab, &TabViewModel::mediaViewerFailed, m_mediaViewerSearchPanelWidget,
+                    [this]() { m_mediaViewerSearchPanelWidget->setLoading(false); });
+
+            m_mediaViewerSearchPanelWidget->setKind(viewerTab->mediaViewerKind());
+            m_mediaViewerSearchPanelWidget->setTagBehaviour(viewerTab->mediaViewerTagBehaviour());
+            m_mediaViewerSearchPanelWidget->setAppliedTagFilters(viewerTab->resolveMediaViewerTagFilters());
+            m_mediaViewerSearchPanelWidget->setNameFilter(viewerTab->mediaViewerNameFilter(), viewerTab->mediaViewerNameOptions());
+            // Prepopulate with every tag (searchTagsForCriteria("") -> all tags, alphabetically)
+            // rather than leaving the matching-tags section empty until the user types something.
+            m_mediaViewerSearchPanelWidget->setTagSearchResults(viewerTab->searchTagsForCriteria(QString()));
+        }
+        else
+        {
+            const QSignalBlocker mediaViewerActionBlocker(m_mediaViewerModeAction);
+            m_mediaViewerModeAction->setChecked(false);
+        }
     }
-    m_mediaViewerTrackedTab = tab;
 
     if (m_driveInfoTrackedTab)
     {
@@ -1162,9 +1236,14 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     {
         m_sortByMenu->setEnabled(false);
         m_searchPanelWidget->clearForNoTab();
-        const QSignalBlocker mediaViewerActionBlocker(m_mediaViewerModeAction);
-        m_mediaViewerModeAction->setChecked(false);
-        m_mediaViewerModeAction->setEnabled(false);
+        // Still enabled/checked against m_activeMediaViewerTab's own state when one exists -- it
+        // may still be showing Media Viewer mode on another pane even though this pane has no
+        // focused tab (handled by the mediaViewerTarget block above; nothing else to do here).
+        if (!m_activeMediaViewerTab)
+        {
+            const QSignalBlocker mediaViewerActionBlocker(m_mediaViewerModeAction);
+            m_mediaViewerModeAction->setEnabled(false);
+        }
         onActiveTabPathChanged({});
         updateFavoritesActionEnabled();
         return;
@@ -1201,41 +1280,10 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
         m_searchPanelWidget->setResults({}, {});
     }
 
-    // Media Viewer mode (Architecture.md §14.61).
-    {
-        const QSignalBlocker mediaViewerActionBlocker(m_mediaViewerModeAction);
-        m_mediaViewerModeAction->setEnabled(true);
-        m_mediaViewerModeAction->setChecked(tab->mediaViewerActive());
-    }
-
-    connect(tab, &TabViewModel::mediaViewerModeChanged, this, &MainWindow::onMediaViewerModeChanged);
-    connect(tab, &TabViewModel::mediaViewerFailed, this, &MainWindow::onStatusMessage);
-
-    connect(tab, &TabViewModel::mediaViewerModeChanged, m_mediaViewerModeAction, [this](bool active) {
-        const QSignalBlocker blocker(m_mediaViewerModeAction);
-        m_mediaViewerModeAction->setChecked(active);
-    });
-
-    connect(tab, &TabViewModel::mediaViewerKindChanged, m_mediaViewerSearchPanelWidget,
-            [this](MediaViewerKind kind) { m_mediaViewerSearchPanelWidget->setKind(kind); });
-    connect(tab, &TabViewModel::mediaViewerCriteriaChanged, m_mediaViewerSearchPanelWidget,
-            [this, tab]() { m_mediaViewerSearchPanelWidget->setAppliedTagFilters(tab->resolveMediaViewerTagFilters()); });
-    connect(tab, &TabViewModel::mediaViewerTagBehaviourChanged, m_mediaViewerSearchPanelWidget,
-            [this](MediaViewerTagBehaviour behaviour) { m_mediaViewerSearchPanelWidget->setTagBehaviour(behaviour); });
-    connect(tab, &TabViewModel::mediaViewerLoading, m_mediaViewerSearchPanelWidget,
-            [this]() { m_mediaViewerSearchPanelWidget->setLoading(true); });
-    connect(tab, &TabViewModel::mediaViewerLoadingFinished, m_mediaViewerSearchPanelWidget,
-            [this]() { m_mediaViewerSearchPanelWidget->setLoading(false); });
-    connect(tab, &TabViewModel::mediaViewerFailed, m_mediaViewerSearchPanelWidget,
-            [this]() { m_mediaViewerSearchPanelWidget->setLoading(false); });
-
-    m_mediaViewerSearchPanelWidget->setKind(tab->mediaViewerKind());
-    m_mediaViewerSearchPanelWidget->setTagBehaviour(tab->mediaViewerTagBehaviour());
-    m_mediaViewerSearchPanelWidget->setAppliedTagFilters(tab->resolveMediaViewerTagFilters());
-    m_mediaViewerSearchPanelWidget->setNameFilter(tab->mediaViewerNameFilter(), tab->mediaViewerNameOptions());
-    // Prepopulate with every tag (searchTagsForCriteria("") -> all tags, alphabetically) rather
-    // than leaving the matching-tags section empty until the user types something.
-    m_mediaViewerSearchPanelWidget->setTagSearchResults(tab->searchTagsForCriteria(QString()));
+    // Media Viewer mode (Architecture.md §14.61): the toggle action is always enabled once any tab
+    // is focused -- entering Media Viewer mode targets the focused tab (createMediaViewerModeAction()),
+    // independent of which tab mediaViewerTargetTab() currently resolves to above.
+    m_mediaViewerModeAction->setEnabled(true);
 
     connect(tab, &TabViewModel::currentPathChanged, this, &MainWindow::onActiveTabPathChanged);
     onActiveTabPathChanged(tab->currentPath());

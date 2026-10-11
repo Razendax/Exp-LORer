@@ -136,6 +136,12 @@ private:
     // Tags/Preview/Monitoring/Searcher tab buttons, and switches the right panel to the Searcher
     // tab, in response to the focused tab's own mediaViewerModeChanged.
     void onMediaViewerModeChanged(bool active);
+
+    // Resolves which tab Media-Viewer-related actions (the toggle action, the Searcher panel's
+    // exit/kind/filter/tag controls) should act on: the tab actually in Media Viewer mode
+    // (m_activeMediaViewerTab) when one exists, since focus may have moved elsewhere in a split
+    // workspace; otherwise the currently-focused tab (e.g. for entering Media Viewer mode).
+    TabViewModel* mediaViewerTargetTab() const;
     void onSortOrderChanged(SortCriterion criterion, bool ascending);
     void onActiveTabPathChanged(const std::filesystem::path& path);
     void onDriveSpaceInfoReady(int generation, Result<DriveSpaceInfo> result);
@@ -198,6 +204,13 @@ private:
     TabViewModel* m_sortTrackedTab = nullptr;
     TabViewModel* m_searchTrackedTab = nullptr;
     TabViewModel* m_mediaViewerTrackedTab = nullptr;
+    // The tab actually in Media Viewer mode, independent of which tab/pane currently has focus --
+    // set when its mediaViewerModeChanged(true) fires, cleared on its mediaViewerModeChanged(false).
+    // In a split workspace, focus can move to a different tab while this one still shows Media
+    // Viewer mode (forced single-pane); mediaViewerTargetTab() is what every Media-Viewer action
+    // (toggle, exit, kind/filter changes from the Searcher panel) should resolve its target tab
+    // through, instead of re-deriving m_workspaceController->focusedTab() live.
+    TabViewModel* m_activeMediaViewerTab = nullptr;
     TabViewModel* m_driveInfoTrackedTab = nullptr;
     MainStatusBarWidget* m_mainStatusBarWidget = nullptr;
 
