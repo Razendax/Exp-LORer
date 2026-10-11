@@ -12,10 +12,11 @@ class QFocusEvent;
 // while typing, shows a popup of matching existing tag names directly under the box, with
 // keyboard/mouse navigation and inline "ghost" suffix completion -- the same popup/Tab/ghost
 // mechanics as AddressBarWidget (§14.21), mirrored closely, with one deliberate divergence: Enter
-// here always acts on the literal typed text (assign-if-exists / create-then-assign) and never
-// accepts whatever's highlighted in the popup -- Tab is the only way to pull a suggestion into the
-// text box. Has no debounce timer or async suggestion request of its own: the owning
-// TagPanelWidget pushes the already-computed candidate list via setSuggestions() on every
+// acts on the literal typed text (assign-if-exists / create-then-assign) *unless* the user has
+// explicitly navigated to a popup row with Up/Down, in which case Enter commits that row first, same
+// as Tab. An unaccepted ghosted suffix (no explicit row highlight) is never implicitly accepted by
+// Enter. Has no debounce timer or async suggestion request of its own: the owning TagPanelWidget
+// pushes the already-computed candidate list via setSuggestions() on every
 // TagListViewModel::searchResultsChanged.
 class TagSearchEdit : public QLineEdit
 {

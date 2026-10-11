@@ -7,6 +7,7 @@
 #include <QFocusEvent>
 #include <QKeyEvent>
 #include <QListWidget>
+#include <QSignalBlocker>
 
 namespace
 {
@@ -84,42 +85,61 @@ void TagSearchEdit::applyInlineCompletion()
 
     const QString suffix = first.mid(text().length());
     const int insertPos = text().length();
-    setText(text() + suffix);
+    {
+        // Ghosting the suffix must not feed back into the search query via textChanged -- otherwise
+        // the viewmodel would re-narrow searchResults down to just this one tag (since the ghosted
+        // text now matches only itself), and the next setSuggestions() would collapse the popup to
+        // a single item instead of showing every match for what the user actually typed.
+        const QSignalBlocker blocker(this);
+        setText(text() + suffix);
+    }
     setSelection(insertPos, suffix.length());
 }
 
 bool TagSearchEdit::acceptPendingCompletion()
 {
+    bool committed = false;
+
     if (m_popup->isVisible() && m_popup->currentRow() >= 0)
     {
         setText(m_popup->currentItem()->text());
         deselect();
         setCursorPosition(text().length());
-        hidePopup();
-        return true;
+        committed = true;
     }
-
-    if (hasSelectedText())
+    else if (hasSelectedText())
     {
         // A ghosted inline-completion suffix is already in the text, selected -- commit it in
         // place (deselect) rather than assigning anything.
         deselect();
         setCursorPosition(text().length());
-        hidePopup();
-        return true;
+        committed = true;
     }
-
-    if (m_popup->isVisible() && m_popup->count() > 0)
+    else if (m_popup->isVisible() && m_popup->count() > 0)
     {
         // Substring-only match (the top suggestion didn't extend the typed text as a prefix, so
         // nothing got ghosted): fall back to the first, top-ranked suggestion.
         setText(m_popup->item(0)->text());
         setCursorPosition(text().length());
-        hidePopup();
-        return true;
+        committed = true;
     }
 
-    return false;
+    if (!committed)
+    {
+        return false;
+    }
+
+    hidePopup();
+
+    // applyInlineCompletion() blocks textChanged while ghosting (so the search query it feeds
+    // doesn't self-narrow to the ghosted text), and setText() above is a no-op when the committed
+    // text already matches what's on screen (accepting the very suggestion that was already
+    // ghosted) -- Qt then elides textChanged entirely. Either way the viewmodel's search query can
+    // be left stuck at the pre-ghost prefix, which would make the caller's return-key handling
+    // create a new tag from that stale prefix instead of acting on the tag actually committed here.
+    // Force the signal so the query always matches what's in the box after a commit.
+    emit textChanged(text());
+    return true;
 }
 
 void TagSearchEdit::moveHighlight(int delta)
@@ -169,15 +189,25 @@ void TagSearchEdit::keyPressEvent(QKeyEvent* event)
             }
             break;
 
+        case Qt::Key_Return:
+        case Qt::Key_Enter:
+            if (popupVisible && m_popup->currentRow() >= 0)
+            {
+                // The user navigated to a popup row with Up/Down -- commit it into the text first,
+                // then fall through to QLineEdit's default handling so returnPressed() still fires,
+                // now acting on the selected tag instead of the literal typed text.
+                acceptPendingCompletion();
+            }
+            break;
+
         default:
             break;
     }
 
-    // Return/Enter deliberately *not* intercepted here, unlike AddressBarWidget: this input's
-    // Enter must always act on the literal typed text (assign-if-exists / create-then-assign),
-    // never on whatever's highlighted in the popup -- it falls straight through to QLineEdit's
-    // default handling, which just emits the inherited returnPressed() signal. Tab is the only way
-    // to pull a suggestion into the text box.
+    // Return/Enter otherwise (no explicit popup row highlighted) falls straight through to
+    // QLineEdit's default handling, which just emits the inherited returnPressed() signal, acting
+    // on the literal typed text (assign-if-exists / create-then-assign) -- it never accepts an
+    // unaccepted ghosted suffix. Tab is the other way to pull a suggestion into the text box.
 
     m_lastEditWasDeletion = (event->key() == Qt::Key_Backspace || event->key() == Qt::Key_Delete);
 
