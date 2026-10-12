@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <vector>
 
+#include <QRectF>
+#include <QString>
 #include <QWidget>
 
 #include "DiskUsageNode.h"
@@ -41,7 +43,21 @@ private:
         bool isOther = false;       // synthetic "everything not individually shown" wedge, not real data
     };
 
+    // One row in the right-hand label column: `clickRect` is the whole row's clickable hit area
+    // (not just the swatch or text), in widget coordinates. Computed by computeLabelLayout() and
+    // shared between paintEvent (drawing) and mousePressEvent (hit-testing) so they can never drift
+    // out of sync with each other.
+    struct LabelLayout
+    {
+        std::size_t wedgeIndex = 0;
+        double centerY = 0.0;
+        QRectF clickRect;
+        QString text;
+    };
+
     QRect chartRect() const;
+    double labelColumnX() const;
+    std::vector<LabelLayout> computeLabelLayout() const;
     const Wedge* wedgeAt(const QPoint& widgetPos) const;
 
     std::filesystem::path m_folder;
