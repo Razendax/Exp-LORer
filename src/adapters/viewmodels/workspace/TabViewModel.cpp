@@ -35,6 +35,23 @@
 
 namespace
 {
+    // Shared by filterMediaViewerCandidates() and requestKindSweep() (Architecture.md §14.80) so
+    // the three buckets can't drift out of sync: Animation (GIF) is carved out of what would
+    // otherwise be the Image bucket, so Image itself excludes it.
+    bool mediaViewerKindMatches(const std::string& extension, MediaViewerKind kind)
+    {
+        switch (kind)
+        {
+        case MediaViewerKind::Image:
+            return MediaExtensions::isImageExtension(extension) && !MediaExtensions::isAnimatedImageExtension(extension);
+        case MediaViewerKind::Video:
+            return MediaExtensions::isVideoExtension(extension);
+        case MediaViewerKind::Animation:
+            return MediaExtensions::isAnimatedImageExtension(extension);
+        }
+        return false;
+    }
+
     bool isCriteriaEmpty(const SearchCriteria& criteria)
     {
         return criteria.nameQuery.empty() && !criteria.minSizeBytes && !criteria.maxSizeBytes && criteria.tagIds.empty();
@@ -800,6 +817,7 @@ void TabViewModel::exitMediaViewer()
     m_mediaViewerCountedPaths.clear();
     m_mediaViewerImageSweepRequested = false;
     m_mediaViewerVideoSweepRequested = false;
+    m_mediaViewerAnimationSweepRequested = false;
 
     setSelectedEntries({});
     emit mediaViewerModeChanged(false);
@@ -1221,10 +1239,11 @@ void TabViewModel::onMediaViewerCandidatesReady(int generation, Result<std::vect
     }
 
     m_mediaViewerCandidates = std::move(result).value();
-    // Fresh candidate set -- neither kind has had its background sweep dispatched yet
-    // (Architecture.md §14.66).
+    // Fresh candidate set -- none of the three kinds has had its background sweep dispatched yet
+    // (Architecture.md §14.66/§14.80).
     m_mediaViewerImageSweepRequested = false;
     m_mediaViewerVideoSweepRequested = false;
+    m_mediaViewerAnimationSweepRequested = false;
 
     // Fresh candidate set from a new recursive/tag-first scan (possibly a different root than
     // whatever this tab's media viewer last showed) -- unlike a plain kind/name re-filter of
@@ -1255,9 +1274,7 @@ std::vector<FileNode> TabViewModel::filterMediaViewerCandidates() const
         }
 
         const std::string extension = MediaExtensions::lowercaseExtension(candidate.path());
-        const bool matchesKind = m_mediaViewerKind == MediaViewerKind::Image ? MediaExtensions::isImageExtension(extension)
-                                                                              : MediaExtensions::isVideoExtension(extension);
-        if (matchesKind)
+        if (mediaViewerKindMatches(extension, m_mediaViewerKind))
         {
             filtered.push_back(candidate);
         }
@@ -1458,12 +1475,20 @@ void TabViewModel::applyMediaViewerFilter(bool freshCandidates)
 
 void TabViewModel::requestKindSweep(int generation, MediaViewerKind kind)
 {
-    bool& sweepRequested = kind == MediaViewerKind::Image ? m_mediaViewerImageSweepRequested : m_mediaViewerVideoSweepRequested;
-    if (sweepRequested)
+    bool* sweepRequested = &m_mediaViewerImageSweepRequested;
+    if (kind == MediaViewerKind::Video)
+    {
+        sweepRequested = &m_mediaViewerVideoSweepRequested;
+    }
+    else if (kind == MediaViewerKind::Animation)
+    {
+        sweepRequested = &m_mediaViewerAnimationSweepRequested;
+    }
+    if (*sweepRequested)
     {
         return;
     }
-    sweepRequested = true;
+    *sweepRequested = true;
 
     // Ignores the name filter -- this is the whole-kind background sweep, so clearing the name
     // filter later never has to wait on a fresh decode pass.
@@ -1472,9 +1497,7 @@ void TabViewModel::requestKindSweep(int generation, MediaViewerKind kind)
     for (const FileNode& candidate : m_mediaViewerCandidates)
     {
         const std::string extension = MediaExtensions::lowercaseExtension(candidate.path());
-        const bool matchesKind =
-            kind == MediaViewerKind::Image ? MediaExtensions::isImageExtension(extension) : MediaExtensions::isVideoExtension(extension);
-        if (matchesKind)
+        if (mediaViewerKindMatches(extension, kind))
         {
             kindCandidates.push_back(candidate);
         }

@@ -24,7 +24,7 @@ namespace MediaExtensions
 
     inline bool isImageExtension(const std::string& extension)
     {
-        static const std::array<std::string, 6> kImageExtensions{ ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp" };
+        static const std::array<std::string, 7> kImageExtensions{ ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".svg" };
         return std::find(kImageExtensions.begin(), kImageExtensions.end(), extension) != kImageExtensions.end();
     }
 
@@ -32,5 +32,20 @@ namespace MediaExtensions
     {
         static const std::array<std::string, 6> kVideoExtensions{ ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".webm" };
         return std::find(kVideoExtensions.begin(), kVideoExtensions.end(), extension) != kVideoExtensions.end();
+    }
+
+    // True only for GIF (Architecture.md §14.79) -- the one image extension that always animates
+    // on hover and gets its own Media Viewer "Animations" bucket, carved out of isImageExtension's
+    // broader set below.
+    inline bool isAnimatedImageExtension(const std::string& extension)
+    {
+        return extension == ".gif";
+    }
+
+    // True only for SVG (Architecture.md §14.79) -- routes to the vector-rendering decoder branch
+    // instead of the raster one, while still counting as isImageExtension everywhere else.
+    inline bool isVectorImageExtension(const std::string& extension)
+    {
+        return extension == ".svg";
     }
 }

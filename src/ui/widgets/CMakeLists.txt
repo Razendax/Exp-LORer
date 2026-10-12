@@ -93,6 +93,8 @@ add_library(explorer_ui_widgets STATIC
     preview/FolderPreviewListModel.cpp
     preview/SyntaxHighlighter.h
     preview/SyntaxHighlighter.cpp
+    preview/GifPlayerWidget.h
+    preview/GifPlayerWidget.cpp
     video/VideoPlayerWidget.h
     video/VideoPlayerWidget.cpp
     diskusage/PieChartWidget.h

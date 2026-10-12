@@ -69,7 +69,9 @@ MediaPreviewWidget::MediaPreviewWidget(QWidget* parent)
 bool MediaPreviewWidget::setPreview(const FilePreview& preview)
 {
     const std::vector<std::byte>& bytes = preview.imageBytes();
-    m_currentImage.loadFromData(reinterpret_cast<const uchar*>(bytes.data()), static_cast<uint>(bytes.size()), "JPG");
+    // No format hint: auto-detect from the byte signature so this still works for PNG-encoded SVG
+    // thumbnails (Architecture.md §14.79) as well as the existing JPEG-encoded raster thumbnails.
+    m_currentImage.loadFromData(reinterpret_cast<const uchar*>(bytes.data()), static_cast<uint>(bytes.size()));
 
     if (m_currentImage.isNull())
     {

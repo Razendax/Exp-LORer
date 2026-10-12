@@ -5,6 +5,10 @@ add_library(explorer_adapters_media STATIC
     CachingMediaDecoder.cpp
     VipsImageDecoder.h
     VipsImageDecoder.cpp
+    QtSvgImageDecoder.h
+    QtSvgImageDecoder.cpp
+    QtGifImageDecoder.h
+    QtGifImageDecoder.cpp
     FFmpegMediaDecoder.h
     FFmpegMediaDecoder.cpp
     MediaDecoder.h
@@ -13,6 +17,9 @@ add_library(explorer_adapters_media STATIC
 
 target_include_directories(explorer_adapters_media PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(explorer_adapters_media PUBLIC explorer_application)
+
+find_package(Qt6 COMPONENTS Core Gui Svg REQUIRED)
+target_link_libraries(explorer_adapters_media PRIVATE Qt6::Core Qt6::Gui Qt6::Svg)
 
 find_package(xxHash CONFIG REQUIRED)
 target_link_libraries(explorer_adapters_media PRIVATE xxHash::xxhash)

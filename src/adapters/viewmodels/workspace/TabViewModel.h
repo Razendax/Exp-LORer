@@ -979,6 +979,7 @@ private:
     // swept yet) or is a cheap re-filter of already-decoded entries (already swept).
     bool m_mediaViewerImageSweepRequested = false;
     bool m_mediaViewerVideoSweepRequested = false;
+    bool m_mediaViewerAnimationSweepRequested = false;
 
     // True from startMonitoring() dispatching StandardFolderMonitor's async open until that open's
     // onStarted callback runs (successfully or not) -- opening the directory handle is I/O and now

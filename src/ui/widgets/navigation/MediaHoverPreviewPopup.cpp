@@ -1,6 +1,8 @@
 #include "MediaHoverPreviewPopup.h"
 
 #include <QGuiApplication>
+#include <QHideEvent>
+#include <QMovie>
 #include <QPainter>
 #include <QScreen>
 
@@ -23,9 +25,37 @@ MediaHoverPreviewPopup::MediaHoverPreviewPopup(QWidget* parent)
 
 void MediaHoverPreviewPopup::showPreview(const QPixmap& pixmap, const QPoint& globalAnchorPos)
 {
-    m_pixmap = pixmap.scaled(QSize(kMaxPreviewSize, kMaxPreviewSize), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    if (m_movie)
+    {
+        m_movie->stop();
+    }
 
-    const QSize popupSize = m_pixmap.size() + QSize(2 * kBorderWidth, 2 * kBorderWidth);
+    m_pixmap = pixmap.scaled(QSize(kMaxPreviewSize, kMaxPreviewSize), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    positionAndShow(m_pixmap.size(), globalAnchorPos);
+}
+
+void MediaHoverPreviewPopup::showAnimatedGif(const std::filesystem::path& path, const QPoint& globalAnchorPos)
+{
+    m_movieAnchorPos = globalAnchorPos;
+
+    if (!m_movie)
+    {
+        m_movie = new QMovie(this);
+        connect(m_movie, &QMovie::frameChanged, this, [this](int) {
+            m_pixmap = m_movie->currentPixmap().scaled(QSize(kMaxPreviewSize, kMaxPreviewSize), Qt::KeepAspectRatio,
+                                                         Qt::SmoothTransformation);
+            positionAndShow(m_pixmap.size(), m_movieAnchorPos);
+        });
+    }
+
+    m_movie->stop();
+    m_movie->setFileName(QString::fromStdWString(path.wstring()));
+    m_movie->start();
+}
+
+void MediaHoverPreviewPopup::positionAndShow(const QSize& contentSize, const QPoint& globalAnchorPos)
+{
+    const QSize popupSize = contentSize + QSize(2 * kBorderWidth, 2 * kBorderWidth);
     resize(popupSize);
 
     QRect screenGeometry = QGuiApplication::primaryScreen()->geometry();
@@ -58,4 +88,13 @@ void MediaHoverPreviewPopup::paintEvent(QPaintEvent* /*event*/)
     painter.setPen(palette().mid().color());
     painter.drawRect(rect().adjusted(0, 0, -1, -1));
     painter.drawPixmap(kBorderWidth, kBorderWidth, m_pixmap);
+}
+
+void MediaHoverPreviewPopup::hideEvent(QHideEvent* event)
+{
+    QWidget::hideEvent(event);
+    if (m_movie)
+    {
+        m_movie->stop();
+    }
 }

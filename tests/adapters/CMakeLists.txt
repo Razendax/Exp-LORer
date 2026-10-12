@@ -15,6 +15,9 @@ add_executable(explorer_adapters_tests
     ThumbnailCacheTest.cpp
     CachingMediaDecoderTest.cpp
     VipsImageDecoderTest.cpp
+    QtSvgImageDecoderTest.cpp
+    QtGifImageDecoderTest.cpp
+    MediaDecoderTest.cpp
     FFmpegMediaDecoderTest.cpp
     SyntaxHighlightEngineTest.cpp
     HighlightThemeTest.cpp
@@ -76,5 +79,19 @@ if(WIN32 AND TARGET Qt6::QSQLiteDriverPlugin)
                 "$<TARGET_FILE:Qt6::QSQLiteDriverPlugin>"
                 "$<TARGET_FILE_DIR:explorer_adapters_tests>/sqldrivers/"
         COMMENT "Deploying Qt SQLite driver plugin (qsqlite.dll)"
+    )
+endif()
+
+# Same applocal-DLL-copy gap as above, same fix src/app/CMakeLists.txt already applies for
+# Exp-LORer.exe itself: QtGifImageDecoderTest/MediaDecoderTest's GIF cases load QImageReader's
+# "gif" format from an "imageformats" subfolder next to the executable at runtime -- without it,
+# QImageReader::read() silently returns a null QImage for every GIF.
+if(WIN32 AND TARGET Qt6::QGifPlugin)
+    add_custom_command(TARGET explorer_adapters_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:explorer_adapters_tests>/imageformats"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<TARGET_FILE:Qt6::QGifPlugin>"
+                "$<TARGET_FILE_DIR:explorer_adapters_tests>/imageformats/"
+        COMMENT "Deploying Qt image format plugin (Qt6::QGifPlugin)"
     )
 endif()

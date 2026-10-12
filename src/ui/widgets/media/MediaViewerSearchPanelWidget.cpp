@@ -28,6 +28,7 @@ MediaViewerSearchPanelWidget::MediaViewerSearchPanelWidget(UiThemeChangeNotifier
     m_kindCombo->setObjectName(QStringLiteral("mediaViewerKindCombo"));
     m_kindCombo->addItem(tr("Images"));
     m_kindCombo->addItem(tr("Videos"));
+    m_kindCombo->addItem(tr("Animations"));
 
     m_exitButton = new QToolButton(this);
     m_exitButton->setObjectName(QStringLiteral("mediaViewerExitButton"));
@@ -152,8 +153,14 @@ MediaViewerSearchPanelWidget::MediaViewerSearchPanelWidget(UiThemeChangeNotifier
     // we can add a stretch at the bottom to push everything up to the top of the panel.
     layout->addStretch();
 
-    connect(m_kindCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
-            [this](int index) { emit kindChanged(index == 1 ? MediaViewerKind::Video : MediaViewerKind::Image); });
+    connect(m_kindCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+        MediaViewerKind kind = MediaViewerKind::Image;
+        if (index == 1)
+            kind = MediaViewerKind::Video;
+        else if (index == 2)
+            kind = MediaViewerKind::Animation;
+        emit kindChanged(kind);
+    });
     connect(m_tagBehaviourCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
         emit tagBehaviourChanged(index == 1 ? MediaViewerTagBehaviour::Apply : MediaViewerTagBehaviour::Filter);
     });
@@ -216,7 +223,12 @@ void MediaViewerSearchPanelWidget::applyThemeColors()
 void MediaViewerSearchPanelWidget::setKind(MediaViewerKind kind)
 {
     const QSignalBlocker blocker(m_kindCombo);
-    m_kindCombo->setCurrentIndex(kind == MediaViewerKind::Video ? 1 : 0);
+    int index = 0;
+    if (kind == MediaViewerKind::Video)
+        index = 1;
+    else if (kind == MediaViewerKind::Animation)
+        index = 2;
+    m_kindCombo->setCurrentIndex(index);
 }
 
 void MediaViewerSearchPanelWidget::setAppliedTagFilters(const std::vector<Tag>& tags)

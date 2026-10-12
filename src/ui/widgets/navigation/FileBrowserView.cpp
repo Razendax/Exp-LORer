@@ -272,10 +272,26 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     m_hoverPreviewTimer->setSingleShot(true);
     m_hoverPreviewTimer->setInterval(kHoverPreviewDebounceMs);
     connect(m_hoverPreviewTimer, &QTimer::timeout, this, [this]() {
-        if (m_hoverPreviewEntry)
+        if (!m_hoverPreviewEntry)
         {
-            emit mediaHoverPreviewRequested(*m_hoverPreviewEntry);
+            return;
         }
+
+        // GIF hover always animates (Architecture.md §14.79): bypasses the async
+        // decode-then-showPreview() pipeline entirely for this one extension, rather than going
+        // through mediaHoverPreviewRequested/showHoverPreviewResult like every other extension.
+        const std::string extension = MediaExtensions::lowercaseExtension(m_hoverPreviewEntry->path());
+        if (MediaExtensions::isAnimatedImageExtension(extension))
+        {
+            if (!m_hoverPreviewPopup)
+            {
+                m_hoverPreviewPopup = new MediaHoverPreviewPopup(this);
+            }
+            m_hoverPreviewPopup->showAnimatedGif(m_hoverPreviewEntry->path(), QCursor::pos());
+            return;
+        }
+
+        emit mediaHoverPreviewRequested(*m_hoverPreviewEntry);
     });
 
     m_listView->setContextMenuPolicy(Qt::CustomContextMenu);

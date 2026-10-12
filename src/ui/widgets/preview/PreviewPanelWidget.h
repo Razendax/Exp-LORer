@@ -8,6 +8,7 @@
 
 class FilePreviewViewModel;
 class FolderPreviewWidget;
+class GifPlayerWidget;
 class HighlightThemeViewModel;
 class MediaPreviewWidget;
 class SyntaxHighlightEngine;
@@ -19,14 +20,16 @@ class QLabel;
 class QShowEvent;
 class QStackedWidget;
 
-// The Preview tab's content in the right panel (Architecture.md §14.25/§14.58/§14.67,
+// The Preview tab's content in the right panel (Architecture.md §14.25/§14.58/§14.67/§14.79,
 // Specification.md "Preview Panel"): a QStackedWidget switching between a dedicated widget per
-// preview kind (MediaPreviewWidget for image/video poster frames, TextPreviewWidget,
-// FolderPreviewWidget, VideoPlayerWidget) plus loading/unsupported/error states, driven by
-// FilePreviewViewModel's signals. For Video previews, a combo above the stack lets the user pick
-// "Static image" (poster frame, MediaPreviewWidget) or "Video player" (VideoPlayerWidget); the
-// choice is a session-only member, not persisted. Calls setPanelActive(true/false) from
-// showEvent/hideEvent so no background generation happens while this tab isn't the visible one.
+// preview kind (MediaPreviewWidget for image/video poster frames and SVG, TextPreviewWidget,
+// FolderPreviewWidget, VideoPlayerWidget, GifPlayerWidget) plus loading/unsupported/error states,
+// driven by FilePreviewViewModel's signals. For Video previews, a combo above the stack lets the
+// user pick "Static image" (poster frame, MediaPreviewWidget) or "Video player"
+// (VideoPlayerWidget); a second, independent combo does the same for animated-GIF previews
+// ("Static image" / "Animation", GifPlayerWidget) -- both choices are session-only members, not
+// persisted. Calls setPanelActive(true/false) from showEvent/hideEvent so no background
+// generation happens while this tab isn't the visible one.
 class PreviewPanelWidget : public QWidget
 {
     Q_OBJECT
@@ -47,15 +50,20 @@ private:
     void onPreviewModeChanged(int index);
     void releaseVideoPlayerIfActive();
     void showVideoPage();
+    void onGifModeChanged(int index);
+    void releaseGifPlayerIfActive();
+    void showGifPage();
 
     FilePreviewViewModel* m_viewModel = nullptr;
 
     QComboBox* m_previewModeCombo = nullptr; // objectName "previewModeCombo"
+    QComboBox* m_gifModeCombo = nullptr;     // objectName "gifModeCombo"
     QStackedWidget* m_stack = nullptr;
     MediaPreviewWidget* m_mediaPreviewWidget = nullptr;
     TextPreviewWidget* m_textPreviewWidget = nullptr;
     FolderPreviewWidget* m_folderPreviewWidget = nullptr;
     VideoPlayerWidget* m_videoPlayerWidget = nullptr;
+    GifPlayerWidget* m_gifPlayerWidget = nullptr;
     QLabel* m_loadingLabel = nullptr;
     QLabel* m_unsupportedLabel = nullptr;
     QLabel* m_errorLabel = nullptr;
@@ -63,4 +71,7 @@ private:
     // Last-seen Video preview, kept so switching the mode combo re-renders without re-asking
     // FilePreviewViewModel.
     std::optional<FilePreview> m_currentVideoPreview;
+    // Same idea for an animated-GIF preview (Architecture.md §14.79) -- a GIF is still kind
+    // Image, so it's tracked independently from m_currentVideoPreview rather than reusing it.
+    std::optional<FilePreview> m_currentGifPreview;
 };

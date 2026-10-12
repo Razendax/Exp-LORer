@@ -5,13 +5,13 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67, §14.71, §14.76 — the right-panel file Preview tab, its
+Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81 — the right-panel file Preview tab, its
 text-preview syntax highlighting, archive browsing/preview/extraction, per-file/folder font &
 color decoration, the Preview panel's dedicated per-kind widgets and media-layout rework, the
 built-in Widgets video player (first used here, before Media Viewer mode reused it), real
-image/video previews in the main browser's Extra Large Icons view, and the mouse-hover preview
-popup. Section
-numbers are **not** contiguous with this file's neighbors — they were assigned chronologically as
+image/video previews in the main browser's Extra Large Icons view, the mouse-hover preview
+popup, GIF animation / SVG rendering support across both, and a GIF-thumbnail-decode bug fix.
+Section numbers are **not** contiguous with this file's neighbors — they were assigned chronologically as
 each feature was built and are kept stable since code comments cite them directly. See
 [Architecture.md](../Architecture.md) §14 for the full topic index across all nine files.
 
@@ -616,4 +616,102 @@ Domain/Application/Port or schema change.
   with the popup itself; any change to the Preview panel (§14.26) or Media Viewer's own hover-scrub
   (§14.64).
 * **Testing**: no new GTest coverage — same UI/ViewModel-glue carve-out as §14.71 above.
+
+---
+### 14.79 GIF Animation & SVG Rendering
+
+Supersedes §14.26's "Not built: ... animated-GIF playback beyond a static first frame" note: GIFs
+can now be played animated in both the Preview tab and the hover popup. Adds the first real SVG
+support anywhere in the app (previously unrecognized by `MediaExtensions` entirely). No Port,
+Domain, or Application interface change — `.svg` is handled by a new concrete `IMediaDecoder`
+implementation composed into the existing `MediaDecoder`, the same isolation pattern
+`VipsImageDecoder`/`FFmpegMediaDecoder` already established (§14.26's "neither backend calls into
+the other" posture).
+
+* **`MediaExtensions`** (`src/application/media`) gains `.svg` in `kImageExtensions` — SVG becomes
+  previewable, hover-previewable, and thumbnailable everywhere `isImageExtension` is already
+  checked, with no per-call-site change — plus two new predicates, `isAnimatedImageExtension`
+  (`.gif` only, for now) and `isVectorImageExtension` (`.svg` only), used by every surface below so
+  "what counts as animated/vector" can't drift between them.
+* **`QtSvgImageDecoder`** (new, `src/adapters/media`, implements `IMediaDecoder`) rasterizes via
+  `QSvgRenderer` entirely internally — reads the file through the same `WindowsLongPath`-safe
+  whole-file read `VipsImageDecoder` uses, renders into a target box that *fits inside* the
+  requested max size (vector art has no native pixel ceiling to cap at, unlike
+  `VipsImageDecoder`'s "never upsize" rule), and encodes to PNG (not JPEG) so alpha survives without
+  needing `VipsImageDecoder`'s checkerboard-compositing trick. `MediaMetadata` is populated from the
+  SVG's own intrinsic `defaultSize()`. `MediaDecoder::generateThumbnail()` checks `.svg` ahead of
+  the generic `isImageExtension` branch to dispatch here. Swapping to a different SVG backend later
+  means writing one more class with this same shape and changing one member declaration in
+  `MediaDecoder` — nothing outside `src/adapters/media` ever touches `QSvgRenderer`.
+* **Preview tab, GIF**: `PreviewPanelWidget` grows a second mode combo (`m_gifModeCombo`, "Static
+  image"/"Animation", shown only for `.gif`, independent of the existing Video static/player combo)
+  and a new `GifPlayerWidget` (`src/ui/widgets/preview`, new) stack page. `GifPlayerWidget` wraps a
+  `QLabel`+`QMovie` with the same `load(path)`/`release()` contract `VideoPlayerWidget` already
+  established, and — like `VideoPlayerWidget::load()` — feeds `QMovie::setFileName()` the real file
+  path directly rather than going through `IMediaDecoder`/Ports, since Qt's own streaming classes
+  manage their own incremental file I/O. Defaults to "Static image", matching the video combo's
+  existing default-to-static posture; the existing static-thumbnail path (and its JPEG re-encode)
+  is untouched and still what "Static image" shows.
+* **Preview tab, SVG**: no SVG-specific UI code — it rides the same `MediaPreviewWidget` static-
+  image path every other image format uses. The one shared fix needed:
+  `MediaPreviewWidget::setPreview()`'s `QPixmap::loadFromData()` call dropped its hardcoded `"JPG"`
+  format hint (now auto-detects from the byte signature) so the new PNG-encoded SVG bytes decode —
+  a no-op for existing JPEG thumbnails.
+* **Hover popup, GIF**: always animated, never static (unlike the Preview tab's opt-in dropdown) —
+  `FileBrowserView`'s hover debounce-timer handler checks `isAnimatedImageExtension` and calls a new
+  `MediaHoverPreviewPopup::showAnimatedGif(path, anchor)` directly instead of emitting
+  `mediaHoverPreviewRequested`, bypassing the async thumbnail pipeline entirely for this one case.
+  `MediaHoverPreviewPopup` gained a `QMovie` member (`frameChanged` rescales into the same
+  `kMaxPreviewSize`-bounded `m_pixmap` the static path already draws from) and a `hideEvent()`
+  override that stops it — covering every existing dismissal path (`clearHoverPreview()`'s row-
+  change/Leave/mouse-press calls) with no new call sites needing to know about the movie.
+* **Hover popup, SVG**: no new code — `.svg` joining `kImageExtensions` makes it satisfy
+  `updateHoverPreview()`'s existing `isImageExtension || isVideoExtension` candidate check, so it
+  flows through the existing decode-then-`showPreview()` path for free.
+* **Not built**: animated SVG (SMIL) rendering — a single static `QSvgRenderer::render()` call per
+  request, no re-render loop; GIF playback controls (play/pause/seek) — `GifPlayerWidget` just loops
+  per the file's own embedded loop-count metadata; any change to video's existing Static
+  image/Video player combo or pipeline.
+* **Testing**: new adapter-level coverage for `QtSvgImageDecoder` (malformed SVG, missing file, a
+  real small `.svg` fixture) mirroring `VipsImageDecoderTest`'s shape, and a `MediaDecoderTest` case
+  asserting `.svg` dispatches ahead of the generic image branch. No new coverage for the Preview-tab/
+  hover-popup widgets themselves — same UI-glue carve-out as §14.71/§14.76 above.
+
+---
+### 14.81 Bug Fix: GIF Thumbnails Never Decoded
+
+§14.79's "existing static-thumbnail path (and its JPEG re-encode) is untouched" claim for GIF was
+wrong in practice: this vcpkg build's `libvips` port (`vcpkg.json`'s `libvips` only requests the
+`jpeg`/`png`/`webp` features) never enables libvips' own built-in GIF loader, so
+`VipsImageDecoder::generateThumbnail()` silently failed for every `.gif` — no static thumbnail in
+the Preview tab, no grid/filmstrip/details tile in Media Viewer mode (§14.62/§14.69), just the
+generic placeholder icon everywhere a decoded thumbnail was expected. Adding a `gif` vcpkg feature
+isn't an option — libvips' port doesn't expose one (its GIF loader is an upstream Meson
+feature this port's `portfile.cmake` never requests). `GifPlayerWidget`/`MediaHoverPreviewPopup`'s
+animated playback (§14.79) was unaffected, since both go through `QMovie` directly rather than
+`IMediaDecoder`.
+
+* **`QtGifImageDecoder`** (new, `src/adapters/media`, implements `IMediaDecoder`) decodes a GIF's
+  first frame via `QImageReader` instead of libvips — the same Qt-native approach
+  `QtSvgImageDecoder` already uses for SVG, and the exact same `QGifPlugin` Qt already ships and
+  deploys next to `Exp-LORer.exe` (`src/app/CMakeLists.txt`'s existing `imageformats` deploy loop)
+  for `GifPlayerWidget`'s own `QMovie` use. Reads the file through the same
+  `WindowsLongPath`-safe whole-file read every other decoder uses, scales down to fit the
+  requested box only if the native frame exceeds it (same "never upsize" rule as
+  `VipsImageDecoder`'s `VIPS_SIZE_DOWN`), and encodes to PNG (preserving any real alpha) rather
+  than `VipsImageDecoder`'s checkerboard-composite-then-JPEG approach — see §14.82 for why a
+  consumer needed to change to tolerate that. `MediaDecoder::generateThumbnail()` checks
+  `isAnimatedImageExtension` ahead of the generic `isImageExtension` branch (alongside the
+  existing `isVectorImageExtension` check) to dispatch here instead of to `VipsImageDecoder`.
+* **`tests/adapters/CMakeLists.txt`** gained its own `imageformats/qgif.dll` POST_BUILD deploy
+  step for `explorer_adapters_tests.exe`, mirroring the existing `sqldrivers/qsqlite.dll` one
+  right above it — without it, `QtGifImageDecoderTest`'s real-GIF case failed in exactly the way
+  this bug fix exists to catch (`QImageReader::read()` silently returning a null `QImage`),
+  despite `Exp-LORer.exe` itself already deploying the same plugin.
+* **Not built**: fixing libvips' own GIF support (no feature exists to request); any change to
+  `GifPlayerWidget`/`MediaHoverPreviewPopup`'s animated-playback path (already correct).
+* **Testing**: new `QtGifImageDecoderTest` (missing file, garbage bytes, a real 1x1 GIF fixture —
+  dimensions, codec, and the PNG signature) mirroring `QtSvgImageDecoderTest`'s shape, and a
+  `MediaDecoderTest` case asserting `.gif` dispatches to `QtGifImageDecoder` ahead of the generic
+  image branch.
 

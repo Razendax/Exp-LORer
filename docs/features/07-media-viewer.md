@@ -5,12 +5,13 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.61–14.66, §14.68–14.69, §14.72–14.78 — the recursive tag/name-filtered image/video gallery mode and
+Covers §14.61–14.66, §14.68–14.69, §14.72–14.78, §14.80, §14.82 — the recursive tag/name-filtered image/video gallery mode and
 its follow-ups: thumbnail previews/metadata overlays, the `IMediaDecoder` thumbnail/metadata
 merge, video hover-scrub previews, loading-progress notification, kind-scoped loading,
 sort/view/filmstrip/details controls, the Filter/Apply tag-click behaviour toggle,
-folder-grouped browsing, inline rename support, and thumbnail-decode performance work (batched
-multi-frame video decode, a parallel decode pool). The built-in video player itself
+folder-grouped browsing, inline rename support, thumbnail-decode performance work (batched
+multi-frame video decode, a parallel decode pool), and a transparency-background bug fix shared
+by every thumbnail tile. The built-in video player itself
 (§14.67) lives in [05-preview-and-decoration.md](05-preview-and-decoration.md), since it was built
 for and first used by the Preview tab. Section numbers are **not** contiguous with this file's
 neighbors — they were assigned chronologically as each feature was built and are kept stable
@@ -919,4 +920,65 @@ Application change — entirely Adapters(ViewModel).
   carve-out, same precedent as every other entry in this file); manual smoke test only (hover/scrub
   several videos at once, and open a video-heavy folder in Media Viewer mode to confirm thumbnails
   now populate concurrently rather than strictly one at a time).
+
+---
+### 14.80 Media Viewer: Animations Kind
+
+`MediaViewerKind` gains a third value, `Animation`, giving GIFs their own dropdown bucket separate
+from static images (§14.79 added real GIF/SVG support app-wide; this is Media Viewer mode's own
+kind-filtering catching up to it). SVG simply joins the existing Images bucket for free, since it's
+now `isImageExtension() == true` like every other raster format (§14.79). No Port, Domain, or
+Application change — entirely Adapters(ViewModel)/UI, same posture as every other entry in this
+file.
+
+* **`MediaViewerKind`** (`src/adapters/viewmodels/media`) gains `Animation` alongside `Image`/
+  `Video`.
+* **`MediaViewerSearchPanelWidget`**'s kind combo gains a third item, "Animations" (index 2); its
+  `currentIndexChanged` lambda and `setKind()` both move from a binary ternary to a 3-way mapping
+  (`0 → Image, 1 → Video, 2 → Animation`).
+* **`TabViewModel`**'s kind-match logic (`filterMediaViewerCandidates()`,
+  `requestKindSweep()`) moves from the same binary `Image ? isImageExtension : isVideoExtension`
+  ternary (duplicated in both places) to a shared 3-way match: Image = `isImageExtension &&
+  !isAnimatedImageExtension` (carving GIF out, SVG stays in), Animation =
+  `isAnimatedImageExtension`, Video unchanged. `m_mediaViewerImageSweepRequested`/
+  `m_mediaViewerVideoSweepRequested` (§14.66) gain a third sibling,
+  `m_mediaViewerAnimationSweepRequested`, reset alongside the other two in
+  `onMediaViewerCandidatesReady()`/`exitMediaViewer()`.
+* **Not built**: no delegate change — `MediaGridTileDelegate`/`MediaFilmstripDelegate`/
+  `MediaDetailsDelegate` already derive image-vs-video purely from extension (not from
+  `MediaViewerKind`), so GIF tiles keep rendering exactly as before (static WxH thumbnail chip, no
+  per-tile animation) regardless of which dropdown bucket they're filtered into; no animated grid-
+  tile playback.
+* **Testing**: no new GTest coverage — same UI/ViewModel-glue carve-out as every other entry in this
+  file.
+
+---
+### 14.82 Bug Fix: Transparent Thumbnails Invisible Against Black Letterbox Fill
+
+`MediaThumbnailPainting::paintThumbnail()` (§14.69, shared by `MediaGridTileDelegate`/
+`MediaFilmstripDelegate`/`MediaDetailsDelegate`) always filled its whole target rect solid black
+before drawing the aspect-fit thumbnail on top — originally harmless, since every thumbnail
+reaching it came from `VipsImageDecoder`/`FFmpegMediaDecoder`, both of which flatten any source
+alpha away (the former composites real transparency onto its own checkerboard before JPEG-encoding
+specifically so a transparent-but-dark subject stays visible, §14.25; the latter's MJPEG frame grab
+has no alpha at all). `QtSvgImageDecoder` (§14.79) and `QtGifImageDecoder` (§14.81) broke that
+assumption: both keep a thumbnail's real alpha channel (PNG-encoded, no checkerboard compositing of
+their own), so any transparent SVG/GIF with dark content painted here vanished into the solid black
+fill — invisible dark-on-black, the exact failure mode `VipsImageDecoder`'s own checkerboard trick
+already exists to avoid.
+
+* **`MediaThumbnailPainting.cpp`** gains a small checkerboard brush (same 8px light-gray/white tile
+  pattern, same colour constants, as `VipsImageDecoder`'s `buildCheckerboardTilePixels`, built once
+  as a static `QPixmap` rather than composited per-pixel per paint) and `paintThumbnail()` now fills
+  with it instead of solid black whenever `image.hasAlphaChannel()` is true — an opaque thumbnail
+  (every existing image/video case) keeps the exact same black fill as before, so no visual change
+  for anything already working.
+* **Not built**: no parameter threading kind/extension info into `paintThumbnail()` itself — the
+  `hasAlphaChannel()` check is a precise, call-site-free signal (only a decoder that deliberately
+  preserves transparency ever produces one), so every one of the 3 call sites plus
+  `paintFolderPreviewCollage()`'s per-quadrant calls needed no change; no change to the Preview
+  tab's `MediaPreviewWidget` (unaffected — it draws straight onto the panel's own background, never
+  a forced black fill).
+* **Testing**: no new GTest coverage — `MediaThumbnailPainting` has none today either (pure Qt
+  painting code, same UI-glue carve-out as the rest of this file); manual smoke test only.
 

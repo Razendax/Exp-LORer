@@ -9,6 +9,8 @@
 
 #include "FilePreviewViewModel.h"
 #include "FolderPreviewWidget.h"
+#include "GifPlayerWidget.h"
+#include "MediaExtensions.h"
 #include "MediaPreviewWidget.h"
 #include "TextPreviewWidget.h"
 #include "VideoPlayerWidget.h"
@@ -28,6 +30,13 @@ PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHi
     m_previewModeCombo->hide();
     layout->addWidget(m_previewModeCombo);
 
+    m_gifModeCombo = new QComboBox(this);
+    m_gifModeCombo->setObjectName(QStringLiteral("gifModeCombo"));
+    m_gifModeCombo->addItem(tr("Static image"));
+    m_gifModeCombo->addItem(tr("Animation"));
+    m_gifModeCombo->hide();
+    layout->addWidget(m_gifModeCombo);
+
     m_stack = new QStackedWidget(this);
     layout->addWidget(m_stack);
 
@@ -42,6 +51,9 @@ PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHi
 
     m_videoPlayerWidget = new VideoPlayerWidget(m_stack);
     m_stack->addWidget(m_videoPlayerWidget);
+
+    m_gifPlayerWidget = new GifPlayerWidget(m_stack);
+    m_stack->addWidget(m_gifPlayerWidget);
 
     m_loadingLabel = new QLabel(tr("Loading..."), m_stack);
     m_loadingLabel->setObjectName(QStringLiteral("previewLoadingLabel"));
@@ -67,6 +79,7 @@ PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHi
     connect(m_viewModel, &FilePreviewViewModel::previewFailed, this, &PreviewPanelWidget::onPreviewFailed);
     connect(m_viewModel, &FilePreviewViewModel::previewCleared, this, &PreviewPanelWidget::onPreviewCleared);
     connect(m_previewModeCombo, &QComboBox::currentIndexChanged, this, &PreviewPanelWidget::onPreviewModeChanged);
+    connect(m_gifModeCombo, &QComboBox::currentIndexChanged, this, &PreviewPanelWidget::onGifModeChanged);
 }
 
 void PreviewPanelWidget::showEvent(QShowEvent* event)
@@ -80,6 +93,7 @@ void PreviewPanelWidget::hideEvent(QHideEvent* event)
     QWidget::hideEvent(event);
     m_viewModel->setPanelActive(false);
     m_videoPlayerWidget->release();
+    m_gifPlayerWidget->release();
 }
 
 void PreviewPanelWidget::onPreviewLoading()
@@ -87,6 +101,9 @@ void PreviewPanelWidget::onPreviewLoading()
     m_videoPlayerWidget->release();
     m_previewModeCombo->hide();
     m_currentVideoPreview.reset();
+    m_gifPlayerWidget->release();
+    m_gifModeCombo->hide();
+    m_currentGifPreview.reset();
     m_stack->setCurrentWidget(m_loadingLabel);
 }
 
@@ -97,6 +114,15 @@ void PreviewPanelWidget::onPreviewReady(const FilePreview& preview)
         m_videoPlayerWidget->release();
         m_previewModeCombo->hide();
         m_currentVideoPreview.reset();
+    }
+
+    const bool isAnimatedImage = preview.kind() == FilePreviewKind::Image
+        && MediaExtensions::isAnimatedImageExtension(MediaExtensions::lowercaseExtension(preview.path()));
+    if (!isAnimatedImage)
+    {
+        m_gifPlayerWidget->release();
+        m_gifModeCombo->hide();
+        m_currentGifPreview.reset();
     }
 
     switch (preview.kind())
@@ -110,7 +136,13 @@ void PreviewPanelWidget::onPreviewReady(const FilePreview& preview)
         m_stack->setCurrentWidget(m_textPreviewWidget);
         break;
     case FilePreviewKind::Image:
-        if (m_mediaPreviewWidget->setPreview(preview))
+        if (isAnimatedImage)
+        {
+            m_currentGifPreview = preview;
+            m_gifModeCombo->show();
+            showGifPage();
+        }
+        else if (m_mediaPreviewWidget->setPreview(preview))
             m_stack->setCurrentWidget(m_mediaPreviewWidget);
         else
             m_stack->setCurrentWidget(m_unsupportedLabel);
@@ -131,6 +163,9 @@ void PreviewPanelWidget::onPreviewFailed(const QString& message)
     m_videoPlayerWidget->release();
     m_previewModeCombo->hide();
     m_currentVideoPreview.reset();
+    m_gifPlayerWidget->release();
+    m_gifModeCombo->hide();
+    m_currentGifPreview.reset();
     m_errorLabel->setText(message);
     m_stack->setCurrentWidget(m_errorLabel);
 }
@@ -140,6 +175,9 @@ void PreviewPanelWidget::onPreviewCleared()
     m_videoPlayerWidget->release();
     m_previewModeCombo->hide();
     m_currentVideoPreview.reset();
+    m_gifPlayerWidget->release();
+    m_gifModeCombo->hide();
+    m_currentGifPreview.reset();
     m_stack->setCurrentWidget(m_unsupportedLabel);
 }
 
@@ -166,6 +204,38 @@ void PreviewPanelWidget::showVideoPage()
         m_stack->setCurrentWidget(m_videoPlayerWidget);
     }
     else if (m_mediaPreviewWidget->setPreview(*m_currentVideoPreview))
+    {
+        m_stack->setCurrentWidget(m_mediaPreviewWidget);
+    }
+    else
+    {
+        m_stack->setCurrentWidget(m_unsupportedLabel);
+    }
+}
+
+void PreviewPanelWidget::onGifModeChanged(int /*index*/)
+{
+    if (!m_currentGifPreview)
+        return;
+
+    releaseGifPlayerIfActive();
+    showGifPage();
+}
+
+void PreviewPanelWidget::releaseGifPlayerIfActive()
+{
+    if (m_stack->currentWidget() == m_gifPlayerWidget)
+        m_gifPlayerWidget->release();
+}
+
+void PreviewPanelWidget::showGifPage()
+{
+    if (m_gifModeCombo->currentIndex() == 1)
+    {
+        m_gifPlayerWidget->load(m_currentGifPreview->path());
+        m_stack->setCurrentWidget(m_gifPlayerWidget);
+    }
+    else if (m_mediaPreviewWidget->setPreview(*m_currentGifPreview))
     {
         m_stack->setCurrentWidget(m_mediaPreviewWidget);
     }

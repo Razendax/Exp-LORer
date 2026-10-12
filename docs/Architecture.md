@@ -520,7 +520,7 @@ walkthrough; see git history and the code's own comments (many cite these subsec
 directly) for the detail.
 
 The log grew too large for one document and is split across nine files under `docs/features/`,
-organized **by feature topic** rather than by when each was built. Section numbers (§14.1–§14.78)
+organized **by feature topic** rather than by when each was built. Section numbers (§14.1–§14.82)
 were assigned chronologically as each feature shipped and are kept stable within whichever file
 now holds them, since code comments cite them directly — so a file's own section numbers are not
 necessarily contiguous; each file's intro lists its exact set. **Keep each file at or under 1000

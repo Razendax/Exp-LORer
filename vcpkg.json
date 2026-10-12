@@ -9,6 +9,7 @@
     },
     "qtdeclarative",
     "qtmultimedia",
+    "qtsvg",
     "sqlite3",
     "ffmpeg",
     "spdlog",
