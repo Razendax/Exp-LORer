@@ -412,6 +412,10 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
 
     auto* advancedSearchPane = new SearchResultsPane(tab->advancedSearchResultsModel(), m_uiThemeChangeNotifier, stack);
     advancedSearchPane->setCriteria(tab->advancedSearchCriteria(), tab->resolveTagCriteria());
+    // Prepopulate with every tag (searchTagsForCriteria("") -> all tags, alphabetically) rather
+    // than leaving the matching-tags row empty until the user types something, same reasoning as
+    // MainWindow's equivalent prefill for the Media Viewer search panel.
+    advancedSearchPane->criteriaPanel()->setTagSearchResults(tab->searchTagsForCriteria(QString()));
     advancedSearchPane->browserView()->setColumnWidths(m_initialColumnWidths);
     advancedSearchPane->browserView()->setColumnOrder(m_initialColumnOrder);
     applyDefaultColumnVisibility(advancedSearchPane->browserView());

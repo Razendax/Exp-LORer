@@ -1,6 +1,5 @@
 #pragma once
 
-#include <optional>
 #include <vector>
 
 #include <QObject>
@@ -35,8 +34,10 @@ public:
     // query is empty.
     const std::vector<Tag>& searchResults() const noexcept { return m_searchResults; }
 
-    // Requirement 1.4: tags of only the resolved target (selected item, or the browsed folder
-    // itself when nothing is selected) — no ancestors.
+    // Requirement 1.4: tags of only the resolved target(s) (selected item(s), or the browsed
+    // folder itself when nothing is selected) — no ancestors. With multiple items selected, this
+    // is the intersection (tags common to every selected item), so every chip shown here is valid
+    // to remove from the whole selection at once.
     const std::vector<Tag>& selectedItemTags() const noexcept { return m_selectedItemTags; }
 
     // Whether the current search query has no existing exact (case-insensitive) name match, so
@@ -53,7 +54,10 @@ public slots:
 
     void setSearchQuery(const QString& query);
 
-    // Resolves the tagging target via resolveTarget() and assigns/unassigns tagId to/from it.
+    // Resolves the tagging target(s) via resolveTargets() and assigns/unassigns tagId to/from
+    // each of them. A per-target AlreadyExists (add) / NotFound (remove) is tolerated rather than
+    // treated as a failure, since it just means that target's state already matches the goal; the
+    // whole operation only fails when every target fails.
     void addTagToSelection(Tag::Id tagId);
     void removeTagFromSelection(Tag::Id tagId);
 
@@ -80,7 +84,12 @@ signals:
 
 private:
     void onActiveTabStateChanged();
-    std::optional<FileNode> resolveTarget() const;
+
+    // Resolves the tagging target(s): every selected entry (minus any dropped for being inside
+    // an archive, Architecture.md §14.28), or the browsed folder itself when nothing is selected.
+    // Empty when there is nothing taggable (e.g. "This PC", or a selection made entirely of
+    // archive-nested entries).
+    std::vector<FileNode> resolveTargets() const;
 
     // Resolves tagId's display name for the "Tag Applied"/"Tag Removed" notification: scans
     // m_searchResults/m_folderTags/m_selectedItemTags first (one of those almost always already

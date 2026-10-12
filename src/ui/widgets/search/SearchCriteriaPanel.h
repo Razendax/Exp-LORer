@@ -14,6 +14,8 @@ class QComboBox;
 class QPushButton;
 class QToolButton;
 class QTimer;
+class QHBoxLayout;
+class QLayout;
 class FlowLayout;
 class UiThemeChangeNotifier;
 
@@ -72,7 +74,7 @@ private:
     // keystroke/arrow-click, except an empty Name field, which bypasses the debounce so clearing it
     // reverts to the plain folder listing immediately (matches the Search button/Enter path).
     void scheduleCriteriaEdited(bool bypassDebounceIfTextEmpty = false);
-    static void clearLayout(FlowLayout* layout);
+    static void clearLayout(QLayout* layout);
 
     // Re-applies m_closeButton's UiColors::current()-based stylesheet (Architecture.md §14.50).
     void applyThemeColors();
@@ -111,7 +113,9 @@ private:
     // "game/action"). Grouped with the tag controls rather than matchOptionsRow's name-matching
     // toggles, since it's tag-specific.
     QToolButton* m_tagIncludeChildrenButton = nullptr;
-    FlowLayout* m_tagMatchesLayout = nullptr;
+    // Plain (non-wrapping) layout, unlike m_tagCriteriaLayout's FlowLayout -- matches stay on one
+    // line and setTagSearchResults() caps the count rather than letting them wrap to a second row.
+    QHBoxLayout* m_tagMatchesLayout = nullptr;
     FlowLayout* m_tagCriteriaLayout = nullptr;
 
     // tagIds from the last setCriteria() call — currentCriteria() carries these through so an

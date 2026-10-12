@@ -178,6 +178,12 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     {
         m_searchResultDelegate = new SearchResultDelegate(this);
         m_treeView->setItemDelegate(m_searchResultDelegate);
+
+        // Per-column override, same as the `else` branch below: takes precedence over the
+        // whole-view SearchResultDelegate above for TagsColumn only, painting colored tag pills
+        // instead of falling through to QStyledItemDelegate's plain-text paint (which has nothing
+        // to show, since TagsColumn has no DisplayRole -- only TagsRole) (Architecture.md §14.x).
+        m_treeView->setItemDelegateForColumn(FileListModel::TagsColumn, m_tagsCellDelegate);
     }
     else if (m_displayMode == DisplayMode::MediaViewerGrid)
     {

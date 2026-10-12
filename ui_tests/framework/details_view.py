@@ -108,7 +108,7 @@ def select_row(
 ) -> None:
     """Clicks a Details-view row's Name cell to select it -- QItemSelectionModel::ClearAndSelect,
     which drives TabViewModel::selectedEntries and therefore what the tag panel resolves as the
-    tagging target (TagListViewModel::resolveTarget) / shows under "Tags on selection".
+    tagging target(s) (TagListViewModel::resolveTargets) / shows under "Tags on selection".
 
     `additive=True` holds Ctrl during the click (like a real ctrl-click), adding this row to
     whatever's already selected instead of replacing it -- for building a multi-selection.

@@ -26,9 +26,10 @@ class TagPanel:
         return chip_names(self.folder_tags_section.raw)
 
     def selected_item_tags(self) -> list:
-        """Chip names under "Tags on selection" -- the resolved tagging target's own tags
-        (TagListViewModel::resolveTarget); empty when nothing resolves (multi-select, or This PC
-        root with nothing selected).
+        """Chip names under "Tags on selection" -- the resolved tagging target(s)' tags
+        (TagListViewModel::resolveTargets); with multiple items selected this is the intersection
+        (tags common to all of them), and it's empty when nothing resolves (This PC root with
+        nothing selected, or a selection made entirely of archive-nested entries).
         """
         return chip_names(self.selected_item_tags_section.raw)
 

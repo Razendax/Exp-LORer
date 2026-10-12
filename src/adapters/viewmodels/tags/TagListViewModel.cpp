@@ -5,6 +5,7 @@
 
 #include "ArchiveExtensions.h"
 #include "FileNavigationUseCase.h"
+#include "FileTagsByPath.h"
 #include "NotificationCenter.h"
 #include "NotificationType.h"
 #include "TabViewModel.h"
@@ -75,24 +76,49 @@ void TagListViewModel::setSearchQuery(const QString& query)
 
 void TagListViewModel::addTagToSelection(Tag::Id tagId)
 {
-    auto target = resolveTarget();
-    if (!target)
+    const std::vector<FileNode> targets = resolveTargets();
+    if (targets.empty())
     {
         emit operationFailed(tr("No folder or file to tag."));
         return;
     }
 
-    auto result = m_tagManagementUseCase.assignTag(*target, tagId);
-    if (!result)
+    const QString tagName = resolveTagName(tagId);
+
+    std::size_t successCount = 0;
+    QString lastErrorMessage;
+    for (const FileNode& target : targets)
     {
-        emit operationFailed(QString::fromStdString(result.error().message));
+        auto result = m_tagManagementUseCase.assignTag(target, tagId);
+        if (result || result.error().code == ErrorCode::AlreadyExists)
+        {
+            ++successCount;
+        }
+        else
+        {
+            lastErrorMessage = QString::fromStdString(result.error().message);
+        }
+    }
+
+    if (successCount == 0)
+    {
+        emit operationFailed(lastErrorMessage);
         return;
     }
 
-    const QString targetName = target->displayName() ? QString::fromStdString(*target->displayName())
-                                                       : QString::fromStdWString(target->name().wstring());
-    m_notificationCenter.showPopup(NotificationType::Info, tr("Tag Applied"),
-                                    tr("\"%1\" tagged with \"%2\".").arg(targetName, resolveTagName(tagId)));
+    if (targets.size() == 1)
+    {
+        const FileNode& target = targets.front();
+        const QString targetName = target.displayName() ? QString::fromStdString(*target.displayName())
+                                                          : QString::fromStdWString(target.name().wstring());
+        m_notificationCenter.showPopup(NotificationType::Info, tr("Tag Applied"),
+                                        tr("\"%1\" tagged with \"%2\".").arg(targetName, tagName));
+    }
+    else
+    {
+        m_notificationCenter.showPopup(NotificationType::Info, tr("Tag Applied"),
+                                        tr("%1 item(s) tagged with \"%2\".").arg(successCount).arg(tagName));
+    }
 
     refreshAll();
     emit m_tagChangeNotifier.tagsChanged();
@@ -100,8 +126,8 @@ void TagListViewModel::addTagToSelection(Tag::Id tagId)
 
 void TagListViewModel::removeTagFromSelection(Tag::Id tagId)
 {
-    auto target = resolveTarget();
-    if (!target)
+    const std::vector<FileNode> targets = resolveTargets();
+    if (targets.empty())
     {
         emit operationFailed(tr("No folder or file to untag."));
         return;
@@ -109,17 +135,40 @@ void TagListViewModel::removeTagFromSelection(Tag::Id tagId)
 
     const QString tagName = resolveTagName(tagId);
 
-    auto result = m_tagManagementUseCase.unassignTag(*target, tagId);
-    if (!result)
+    std::size_t successCount = 0;
+    QString lastErrorMessage;
+    for (const FileNode& target : targets)
     {
-        emit operationFailed(QString::fromStdString(result.error().message));
+        auto result = m_tagManagementUseCase.unassignTag(target, tagId);
+        if (result || result.error().code == ErrorCode::NotFound)
+        {
+            ++successCount;
+        }
+        else
+        {
+            lastErrorMessage = QString::fromStdString(result.error().message);
+        }
+    }
+
+    if (successCount == 0)
+    {
+        emit operationFailed(lastErrorMessage);
         return;
     }
 
-    const QString targetName = target->displayName() ? QString::fromStdString(*target->displayName())
-                                                       : QString::fromStdWString(target->name().wstring());
-    m_notificationCenter.showPopup(NotificationType::Info, tr("Tag Removed"),
-                                    tr("\"%1\" untagged from \"%2\".").arg(targetName, tagName));
+    if (targets.size() == 1)
+    {
+        const FileNode& target = targets.front();
+        const QString targetName = target.displayName() ? QString::fromStdString(*target.displayName())
+                                                          : QString::fromStdWString(target.name().wstring());
+        m_notificationCenter.showPopup(NotificationType::Info, tr("Tag Removed"),
+                                        tr("\"%1\" untagged from \"%2\".").arg(targetName, tagName));
+    }
+    else
+    {
+        m_notificationCenter.showPopup(NotificationType::Info, tr("Tag Removed"),
+                                        tr("\"%1\" removed from %2 item(s).").arg(tagName).arg(successCount));
+    }
 
     refreshAll();
     emit m_tagChangeNotifier.tagsChanged();
@@ -180,48 +229,50 @@ void TagListViewModel::onActiveTabStateChanged()
     refreshAll();
 }
 
-std::optional<FileNode> TagListViewModel::resolveTarget() const
+std::vector<FileNode> TagListViewModel::resolveTargets() const
 {
     if (!m_activeTab)
     {
-        return std::nullopt;
+        return {};
     }
 
-    std::optional<FileNode> target;
+    std::vector<FileNode> candidates;
 
     const std::vector<FileNode>& selected = m_activeTab->selectedEntries();
-    if (selected.size() == 1)
-    {
-        target = selected.front();
-    }
-    else if (selected.empty())
+    if (selected.empty())
     {
         if (m_activeTab->currentPath() == VirtualPaths::ThisPC)
         {
-            return std::nullopt;
+            return {};
         }
 
         auto stat = m_fileNavigationUseCase.stat(m_activeTab->currentPath());
         if (!stat)
         {
-            return std::nullopt;
+            return {};
         }
-        target = stat.value();
+        candidates.push_back(std::move(stat).value());
     }
     else
     {
-        return std::nullopt;
+        candidates = selected;
     }
 
     // Tagging inside an archive is disabled (Architecture.md §14.28): computeFileHash's
     // rename/move-relocation fallback can't be computed for a virtual entry without a full
-    // extraction, so add/remove/view here degrades to "no target" rather than half-working.
-    if (target && ArchiveExtensions::archiveAncestorInPath(target->path()))
+    // extraction. Each archive-nested entry is simply dropped from the target list, rather than
+    // blocking tagging of the rest of a multi-selection.
+    std::vector<FileNode> targets;
+    targets.reserve(candidates.size());
+    for (FileNode& candidate : candidates)
     {
-        return std::nullopt;
+        if (!ArchiveExtensions::archiveAncestorInPath(candidate.path()))
+        {
+            targets.push_back(std::move(candidate));
+        }
     }
 
-    return target;
+    return targets;
 }
 
 QString TagListViewModel::resolveTagName(Tag::Id tagId) const
@@ -275,13 +326,55 @@ void TagListViewModel::refreshSelectedItemTags()
 {
     m_selectedItemTags.clear();
 
-    auto target = resolveTarget();
-    if (target)
+    const std::vector<FileNode> targets = resolveTargets();
+    if (targets.size() == 1)
     {
-        auto result = m_tagManagementUseCase.tagsForFile(*target);
+        auto result = m_tagManagementUseCase.tagsForFile(targets.front());
         if (result)
         {
             m_selectedItemTags = std::move(result).value();
+        }
+        else
+        {
+            emit operationFailed(QString::fromStdString(result.error().message));
+        }
+    }
+    else if (targets.size() > 1)
+    {
+        // Requirement 1.4 extended to a multi-selection: the tags shown (and therefore removable
+        // in one action) are the intersection -- tags common to every selected item.
+        auto result = m_tagManagementUseCase.tagsForFiles(targets);
+        if (result)
+        {
+            const TagsByPathMap& tagsByPath = result.value();
+            bool first = true;
+            for (const FileNode& target : targets)
+            {
+                const auto it = tagsByPath.find(target.path());
+                const std::vector<Tag>& tagsForTarget = (it != tagsByPath.end()) ? it->second : std::vector<Tag>{};
+
+                if (first)
+                {
+                    m_selectedItemTags = tagsForTarget;
+                    first = false;
+                    continue;
+                }
+
+                std::vector<Tag> intersected;
+                for (const Tag& tag : m_selectedItemTags)
+                {
+                    if (containsTagId(tagsForTarget, tag.id()))
+                    {
+                        intersected.push_back(tag);
+                    }
+                }
+                m_selectedItemTags = std::move(intersected);
+
+                if (m_selectedItemTags.empty())
+                {
+                    break;
+                }
+            }
         }
         else
         {

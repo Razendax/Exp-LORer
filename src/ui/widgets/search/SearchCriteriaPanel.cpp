@@ -1,5 +1,7 @@
 #include "SearchCriteriaPanel.h"
 
+#include <algorithm>
+
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -24,6 +26,8 @@ namespace
     constexpr std::uintmax_t kSizeUnitMultipliers[] = { kBytesPerKb, kBytesPerKb * kBytesPerKb, kBytesPerKb * kBytesPerKb * kBytesPerKb };
     // Same debounce interval as SearchPanelWidget's quick-search box (kSearchDebounceMs).
     constexpr int kCriteriaDebounceMs = 500;
+    // Caps the live matching-tag chip row so it stays on one line (Architecture.md §14.56).
+    constexpr std::size_t kMaxTagSearchResults = 10;
 }
 
 SearchCriteriaPanel::SearchCriteriaPanel(UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent)
@@ -144,7 +148,7 @@ SearchCriteriaPanel::SearchCriteriaPanel(UiThemeChangeNotifier& uiThemeChangeNot
         tr("Include nested child tags\nE.g. selecting \"game\" also matches \"game/action\""));
     connect(m_tagIncludeChildrenButton, &QToolButton::toggled, this, &SearchCriteriaPanel::onAnyFieldEdited);
 
-    m_tagMatchesLayout = new FlowLayout();
+    m_tagMatchesLayout = new QHBoxLayout();
 
     auto* tagMatchesRow = new QHBoxLayout();
     tagMatchesRow->addWidget(m_tagSearchEdit);
@@ -247,8 +251,10 @@ void SearchCriteriaPanel::setCriteria(const SearchCriteria& criteria, const std:
     clearLayout(m_tagCriteriaLayout);
     for (const Tag& tag : criteriaTags)
     {
-        auto* chip = new TagChipWidget(tag, TagChipWidget::Kind::Removable);
-        connect(chip, &TagChipWidget::removeClicked, this, &SearchCriteriaPanel::tagCriterionRemoved);
+        // ReadOnly (no trailing "x" button) -- the whole chip is clickable to remove it, rather
+        // than requiring a precise click on a small button.
+        auto* chip = new TagChipWidget(tag, TagChipWidget::Kind::ReadOnly);
+        connect(chip, &TagChipWidget::clicked, this, &SearchCriteriaPanel::tagCriterionRemoved);
         m_tagCriteriaLayout->addWidget(chip);
     }
 }
@@ -256,12 +262,14 @@ void SearchCriteriaPanel::setCriteria(const SearchCriteria& criteria, const std:
 void SearchCriteriaPanel::setTagSearchResults(const std::vector<Tag>& tags)
 {
     clearLayout(m_tagMatchesLayout);
-    for (const Tag& tag : tags)
+    const std::size_t shown = std::min(tags.size(), kMaxTagSearchResults);
+    for (std::size_t i = 0; i < shown; ++i)
     {
-        auto* chip = new TagChipWidget(tag, TagChipWidget::Kind::ReadOnly);
+        auto* chip = new TagChipWidget(tags[i], TagChipWidget::Kind::ReadOnly);
         connect(chip, &TagChipWidget::clicked, this, &SearchCriteriaPanel::tagCriterionAdded);
         m_tagMatchesLayout->addWidget(chip);
     }
+    m_tagMatchesLayout->addStretch();
 }
 
 void SearchCriteriaPanel::setSearching(bool searching)
@@ -272,7 +280,7 @@ void SearchCriteriaPanel::setSearching(bool searching)
     m_searchButton->setText(searching ? tr("Searching…") : tr("Search"));
 }
 
-void SearchCriteriaPanel::clearLayout(FlowLayout* layout)
+void SearchCriteriaPanel::clearLayout(QLayout* layout)
 {
     while (layout->count() > 0)
     {
