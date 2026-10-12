@@ -63,7 +63,7 @@ void MediaThumbnailPainting::paintThumbnail(QPainter* painter, const QImage& ima
     // checkerboard instead, so transparent-but-dark content stays visible against it.
     if (image.hasAlphaChannel())
     {
-        painter->fillRect(rect, QBrush(checkerboardBrushTile()));
+        painter->fillRect(rect, MediaThumbnailPainting::checkerboardBrush());
     }
     else
     {
@@ -119,6 +119,11 @@ void MediaThumbnailPainting::paintFolderPreviewCollage(QPainter* painter, const 
             painter->fillRect(quadrants[i], QColor(128, 128, 128, 60));
         }
     }
+}
+
+QBrush MediaThumbnailPainting::checkerboardBrush()
+{
+    return QBrush(checkerboardBrushTile());
 }
 
 QString MediaThumbnailPainting::durationLabel(std::chrono::milliseconds duration)

@@ -5,12 +5,13 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81 — the right-panel file Preview tab, its
+Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81, §14.84 — the right-panel file Preview tab, its
 text-preview syntax highlighting, archive browsing/preview/extraction, per-file/folder font &
 color decoration, the Preview panel's dedicated per-kind widgets and media-layout rework, the
 built-in Widgets video player (first used here, before Media Viewer mode reused it), real
 image/video previews in the main browser's Extra Large Icons view, the mouse-hover preview
-popup, GIF animation / SVG rendering support across both, and a GIF-thumbnail-decode bug fix.
+popup, GIF animation / SVG rendering support across both, a GIF-thumbnail-decode bug fix, and a
+checkerboard background fix for transparent SVG/GIF previews in both of those surfaces.
 Section numbers are **not** contiguous with this file's neighbors — they were assigned chronologically as
 each feature was built and are kept stable since code comments cite them directly. See
 [Architecture.md](../Architecture.md) §14 for the full topic index across all nine files.
@@ -714,4 +715,35 @@ animated playback (§14.79) was unaffected, since both go through `QMovie` direc
   dimensions, codec, and the PNG signature) mirroring `QtSvgImageDecoderTest`'s shape, and a
   `MediaDecoderTest` case asserting `.gif` dispatches to `QtGifImageDecoder` ahead of the generic
   image branch.
+
+---
+### 14.84 Bug Fix: Transparent SVG/GIF Previews Invisible in the Hover Popup and Preview Tab
+
+The same failure §14.82 fixed for Media Viewer thumbnails also affected the two other surfaces
+that show a decoded `QtSvgImageDecoder`/`QtGifImageDecoder` image at full/near-full size with its
+real alpha channel preserved: `MediaHoverPreviewPopup` (the normal browser's hover-popup) painted
+its background with the popup's own `palette().window()` first, and the Preview tab's
+`MediaPreviewWidget` just handed the scaled `QPixmap` straight to a plain `QLabel::setPixmap()` —
+both let a transparent-but-dark SVG/GIF vanish into whatever colour sat behind it (most visibly a
+dark theme's window background). Pure UI fix, no Domain/Application/Port change.
+
+* **`MediaThumbnailPainting`** (`src/ui/widgets/media`) gains a public `checkerboardBrush()`,
+  exposing the same static 8px gray/white tile `paintThumbnail()` already built for itself
+  (§14.82) instead of duplicating the pattern a third time.
+* **`MediaHoverPreviewPopup::paintEvent()`** fills the whole popup rect with that checkerboard
+  instead of `palette().window()` whenever `m_pixmap.hasAlphaChannel()` — covers both
+  `showPreview()`'s static pixmap and `showAnimatedGif()`'s per-frame `QMovie` pixmap for free,
+  since both funnel through the same `m_pixmap` member and `paintEvent()`.
+* **`MediaPreviewWidget::rescaleImage()`** composites the already-scaled pixmap onto a same-size
+  checkerboard `QPixmap` (via a throwaway `QPainter`) before calling `QLabel::setPixmap()`,
+  whenever the scaled pixmap's `hasAlphaChannel()` is true — composited only behind the image
+  itself, not the whole label, since `m_imageLabel` aligns the pixmap top-centre within whatever
+  extra space the panel gives it.
+* **Not built**: `GifPlayerWidget` (the Preview tab's "Animation" mode for GIFs, a plain
+  `QLabel::setMovie()`) — left unchanged; the user's report was specifically about the static
+  SVG/GIF-frame surfaces, and `QLabel` has no easy per-frame paint hook to composite a checkerboard
+  behind a running `QMovie` the way the two fixed surfaces could.
+* **Testing**: no new GTest coverage — pure Qt painting code in the UI/ViewModel-glue layer, same
+  carve-out as §14.82; manual smoke test only (hover a transparent SVG/GIF and open one in the
+  Preview tab, in a dark theme, and confirm dark content is now visible against the checkerboard).
 

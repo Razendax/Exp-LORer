@@ -6,6 +6,7 @@
 #include <QGroupBox>
 #include <QLabel>
 #include <QLocale>
+#include <QPainter>
 #include <QResizeEvent>
 #include <QSizePolicy>
 #include <QTime>
@@ -13,6 +14,7 @@
 
 #include "FilePreview.h"
 #include "MediaMetadata.h"
+#include "MediaThumbnailPainting.h"
 
 MediaPreviewWidget::MediaPreviewWidget(QWidget* parent)
     : QWidget(parent)
@@ -125,7 +127,25 @@ void MediaPreviewWidget::rescaleImage()
     }
 
     const QPixmap scaled = m_currentImage.scaled(m_imageLabel->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
-    m_imageLabel->setPixmap(scaled);
+
+    // A transparent SVG/GIF preview keeps its real alpha channel (Architecture.md §14.79/§14.81),
+    // so this label's own background would otherwise show through it -- in a dark theme that
+    // swallows dark content the same way it did for Media Viewer thumbnails before §14.82's fix,
+    // which this mirrors for the Preview tab. Composited only behind `scaled` itself, not the
+    // whole label, since the label aligns the pixmap top-centre within whatever extra space it has.
+    if (scaled.hasAlphaChannel())
+    {
+        QPixmap withCheckerboard(scaled.size());
+        QPainter painter(&withCheckerboard);
+        painter.fillRect(withCheckerboard.rect(), MediaThumbnailPainting::checkerboardBrush());
+        painter.drawPixmap(0, 0, scaled);
+        painter.end();
+        m_imageLabel->setPixmap(withCheckerboard);
+    }
+    else
+    {
+        m_imageLabel->setPixmap(scaled);
+    }
 
     if (m_currentActualWidth > 0)
     {

@@ -3,6 +3,7 @@
 #include <chrono>
 #include <vector>
 
+#include <QBrush>
 #include <QString>
 
 class QPainter;
@@ -35,4 +36,12 @@ namespace MediaThumbnailPainting
 
     // Same mm:ss/hh:mm:ss formatting as MediaPreviewWidget::setPreview.
     QString durationLabel(std::chrono::milliseconds duration);
+
+    // The same 8px gray/white checkerboard used internally by paintThumbnail() for a
+    // transparent-alpha image/GIF/SVG thumbnail (Architecture.md §14.82), exposed so other
+    // surfaces showing a real decoded image with its alpha channel preserved -- the normal file
+    // browser's MediaHoverPreviewPopup and the Preview tab's MediaPreviewWidget (Architecture.md
+    // §14.84) -- can paint the same background behind a transparent image instead of whatever
+    // solid colour (e.g. a dark theme's window background) would otherwise swallow dark content.
+    QBrush checkerboardBrush();
 }

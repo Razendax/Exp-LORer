@@ -6,6 +6,8 @@
 #include <QPainter>
 #include <QScreen>
 
+#include "MediaThumbnailPainting.h"
+
 namespace
 {
     constexpr int kMaxPreviewSize = 360;
@@ -84,7 +86,18 @@ void MediaHoverPreviewPopup::positionAndShow(const QSize& contentSize, const QPo
 void MediaHoverPreviewPopup::paintEvent(QPaintEvent* /*event*/)
 {
     QPainter painter(this);
-    painter.fillRect(rect(), palette().window());
+    // A transparent SVG/GIF frame keeps its real alpha channel (Architecture.md §14.79/§14.81),
+    // so the popup's own background shows through it -- in a dark theme that swallows dark
+    // content the same way it did for Media Viewer thumbnails before §14.82's fix, which this
+    // mirrors for the hover popup.
+    if (m_pixmap.hasAlphaChannel())
+    {
+        painter.fillRect(rect(), MediaThumbnailPainting::checkerboardBrush());
+    }
+    else
+    {
+        painter.fillRect(rect(), palette().window());
+    }
     painter.setPen(palette().mid().color());
     painter.drawRect(rect().adjusted(0, 0, -1, -1));
     painter.drawPixmap(kBorderWidth, kBorderWidth, m_pixmap);
