@@ -6,6 +6,7 @@
 
 class QAudioOutput;
 class QLabel;
+class QMediaDevices;
 class QMediaPlayer;
 class QSlider;
 class QToolButton;
@@ -41,10 +42,12 @@ private:
     void onSeekSliderMoved(int value);
     void onSeekSliderReleased();
     void updateTimeLabel();
+    void followDefaultAudioOutputDevice();
 
     QMediaPlayer* m_player = nullptr;
     QAudioOutput* m_audioOutput = nullptr;
     QVideoWidget* m_videoWidget = nullptr;
+    QMediaDevices* m_mediaDevices = nullptr;
 
     QToolButton* m_playPauseButton = nullptr; // objectName "videoPlayPauseButton"
     QToolButton* m_stopButton = nullptr;      // objectName "videoStopButton"

@@ -1,8 +1,10 @@
 #include "VideoPlayerWidget.h"
 
+#include <QAudioDevice>
 #include <QAudioOutput>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QMediaDevices>
 #include <QMediaPlayer>
 #include <QMouseEvent>
 #include <QSlider>
@@ -64,6 +66,14 @@ VideoPlayerWidget::VideoPlayerWidget(QWidget* parent)
     m_player = new QMediaPlayer(this);
     m_audioOutput = new QAudioOutput(this);
     m_player->setAudioOutput(m_audioOutput);
+
+    // QAudioOutput only resolves the default output device once, at construction -- it does not
+    // follow later OS default-device changes (switching the system's default playback device, or
+    // Windows auto-switching on a headphone plug/unplug) on its own, which otherwise leaves
+    // playback stuck on whatever device was default when the widget was created.
+    m_mediaDevices = new QMediaDevices(this);
+    connect(m_mediaDevices, &QMediaDevices::audioOutputsChanged, this,
+            &VideoPlayerWidget::followDefaultAudioOutputDevice);
 
     m_videoWidget = new QVideoWidget(this);
     m_player->setVideoOutput(m_videoWidget);
@@ -212,4 +222,11 @@ void VideoPlayerWidget::onSeekSliderReleased()
 void VideoPlayerWidget::updateTimeLabel()
 {
     m_timeLabel->setText(QStringLiteral("%1 / %2").arg(formatTime(m_player->position()), formatTime(m_player->duration())));
+}
+
+void VideoPlayerWidget::followDefaultAudioOutputDevice()
+{
+    const QAudioDevice defaultDevice = QMediaDevices::defaultAudioOutput();
+    if (defaultDevice != m_audioOutput->device())
+        m_audioOutput->setDevice(defaultDevice);
 }
