@@ -267,6 +267,17 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
         m_treeView->header()->setSortIndicator(FileListModel::columnForCriterion(criterion),
                                                 ascending ? Qt::AscendingOrder : Qt::DescendingOrder);
     });
+    // FileListModel::setFolderSizes() re-sorts via layoutChanged (not a model reset) when sorted by
+    // Size/Percent and folder sizes arrive asynchronously, specifically so the current selection
+    // survives the reorder -- but the row's new position may have scrolled out of view, so bring it
+    // back into view rather than leaving the selected-but-invisible row stranded off-screen.
+    connect(m_model, &FileListModel::layoutChanged, this, [this]() {
+        const QModelIndex current = m_selectionModel->currentIndex();
+        if (current.isValid())
+        {
+            m_treeView->scrollTo(current);
+        }
+    });
 
     m_listView->installEventFilter(this);
     m_treeView->installEventFilter(this);

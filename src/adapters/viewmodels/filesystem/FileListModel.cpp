@@ -643,18 +643,44 @@ void FileListModel::setFolderSizes(const FolderSizesByPathMap& sizesByPath)
 {
     m_folderSizesByPath = sizesByPath;
 
-    // Folder sizes normally arrive asynchronously after the initial listing/sort (Architecture.md
-    // §14.39's DiskUsageService lookup runs on a worker thread) -- if rows are currently ordered by
-    // Size/Percent, that earlier sort had no known directory sizes to work with (every directory
-    // tied at 0), so it must be redone now that they're known, not just redisplayed.
+    // Folder sizes normally arrive asynchronously after the initial listing/sort/selection
+    // (Architecture.md §14.39's DiskUsageService lookup runs on a worker thread) -- if rows are
+    // currently ordered by Size/Percent, that earlier sort had no known directory sizes to work
+    // with (every directory tied at 0), so it must be redone now that they're known, not just
+    // redisplayed. Re-sort via layoutChanged + changePersistentIndexList rather than a full model
+    // reset: a reset unconditionally clears the view's selection/current index, which would
+    // silently wipe out e.g. the folder-just-navigated-up-from selection that goUp()/goBack()
+    // already made before this reply arrived.
     if (!m_entries.empty() && (m_sortCriterion == SortCriterion::Size || m_sortCriterion == SortCriterion::Percent))
     {
-        beginResetModel();
+        emit layoutAboutToBeChanged();
+
+        const QModelIndexList oldPersistent = persistentIndexList();
+        std::vector<QString> oldPersistentPaths;
+        oldPersistentPaths.reserve(static_cast<size_t>(oldPersistent.size()));
+        for (const QModelIndex& persistentIndex : oldPersistent)
+        {
+            const auto entry = entryAt(persistentIndex.row());
+            oldPersistentPaths.push_back(entry ? toQString(entry->path()) : QString());
+        }
+
         recomputeTotalSize();
         m_entries = FileNavigationUseCase::sortBy(std::move(m_entries), m_sortCriterion, m_sortAscending,
                                                     [this](const FileNode& entry) { return knownSizeOf(entry).value_or(0); });
         rebuildVisibleRows();
-        endResetModel();
+
+        QModelIndexList newPersistent;
+        newPersistent.reserve(oldPersistent.size());
+        for (int i = 0; i < oldPersistent.size(); ++i)
+        {
+            const QString& path = oldPersistentPaths[static_cast<size_t>(i)];
+            const auto rowIt = path.isEmpty() ? m_rowByPath.constEnd() : m_rowByPath.constFind(path);
+            newPersistent.push_back(rowIt == m_rowByPath.constEnd() ? QModelIndex()
+                                                                     : index(rowIt.value(), oldPersistent[i].column()));
+        }
+        changePersistentIndexList(oldPersistent, newPersistent);
+
+        emit layoutChanged();
         return;
     }
 
