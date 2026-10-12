@@ -321,12 +321,18 @@ void SearchPanelWidget::emitSearchOptionsChanged()
     emit searchOptionsChanged(options);
 }
 
-void SearchPanelWidget::setResults(const std::vector<FileNode>& entries, const std::filesystem::path& root)
+void SearchPanelWidget::setResults(const std::vector<FileNode>& entries, const std::filesystem::path& root, const QHash<QString, QIcon>& icons)
 {
     m_lastResults = entries;
     m_listModel->setEntries(root, entries);
+    m_listModel->setIcons(icons);
     m_treeModel->setRoot(root);
     m_treeModel->setResults(entries);
+}
+
+void SearchPanelWidget::applyIcons(const QHash<QString, QIcon>& icons)
+{
+    m_listModel->setIcons(icons);
 }
 
 void SearchPanelWidget::onTreeSelectionChanged()

@@ -3,6 +3,8 @@
 #include <filesystem>
 #include <vector>
 
+#include <QHash>
+#include <QIcon>
 #include <QString>
 #include <QWidget>
 
@@ -49,7 +51,18 @@ public:
     // setQuery() -- also re-applies the highlight query's case-sensitivity on both result views.
     void setOptions(const NameSearchOptions& options);
 
-    void setResults(const std::vector<FileNode>& entries, const std::filesystem::path& root);
+    // `icons` is whatever TabViewModel::searchResultIcons() already holds for this candidate list at
+    // call time (possibly empty, if none have resolved yet) -- applied to m_listModel right after
+    // setEntries() so already-resolved icons don't flash back to the placeholder on every query edit
+    // (setEntries() clears the model's own icon cache; see TabViewModel::m_searchSnapshotIcons).
+    void setResults(const std::vector<FileNode>& entries, const std::filesystem::path& root, const QHash<QString, QIcon>& icons = {});
+
+    // Merges newly-resolved icons into m_listModel without touching entries/selection -- the
+    // progressive-delivery counterpart to setResults()'s icons parameter, driven by
+    // TabViewModel::searchResultIconsChanged() since icon batches usually arrive well after the
+    // candidate list itself last changed.
+    void applyIcons(const QHash<QString, QIcon>& icons);
+
     void setLoading(bool loading);
 
     // Disabled/empty state for "no focused tab" (e.g. the last pane's last tab just closed).

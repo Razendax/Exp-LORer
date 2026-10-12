@@ -90,6 +90,14 @@ public:
 
     FileListModel* fileListModel() const noexcept { return m_fileListModel; }
     FileListModel* searchResultsModel() const noexcept { return m_searchResultsModel; }
+
+    // Icons resolved so far for the current Quick Search candidate list (Architecture.md §14.42).
+    // The Search tab's results render in the left panel's SearchPanelWidget via its own, independent
+    // FileListModel (not searchResultsModel() above, which nothing displays) -- SearchPanelWidget
+    // has no way to reach m_searchSnapshotIcons on its own, so this accessor plus
+    // searchResultIconsChanged() below is how MainWindow relays icon updates to it.
+    const QHash<QString, QIcon>& searchResultIcons() const noexcept { return m_searchSnapshotIcons; }
+
     bool searchActive() const noexcept { return m_searchActive; }
     QString searchQuery() const noexcept { return m_searchQuery; }
 
@@ -469,6 +477,12 @@ signals:
 
     void searchModeChanged(bool active);
     void searchResultsChanged(const std::vector<FileNode>& entries);
+    // Fired whenever m_searchSnapshotIcons gains newly-resolved icons (requestSearchResultIcons's
+    // batch callback) -- unlike searchResultsChanged, this does NOT mean the candidate list itself
+    // changed, just that searchResultIcons() has more to offer. MainWindow relays this to
+    // SearchPanelWidget so already-visible rows light up progressively instead of only updating on
+    // the next query edit.
+    void searchResultIconsChanged();
     void searchFailed(const QString& message);
 
     // Emitted right before dispatching a recursive-scan request for the Search tab's own quick
@@ -883,6 +897,13 @@ private:
     // changes and reapplied as-is by every applySearchFilter re-filter -- a filtered subset never
     // needs a fresh fetch since it's always a subset of the same candidate list.
     TagsByPathMap m_searchSnapshotTags;
+    // Icons resolved so far for the current candidate list, accumulated chunk-by-chunk by
+    // requestSearchResultIcons and reapplied as-is by every applySearchFilter re-filter -- mirrors
+    // m_searchSnapshotTags. Needed because FileListModel::setEntries() (which every re-filter goes
+    // through) clears the model's own per-path icon cache, so without this a query edit on an
+    // already-fully-scanned root would flash every row back to its placeholder icon instead of
+    // keeping the ones IconLoadingService already resolved.
+    QHash<QString, QIcon> m_searchSnapshotIcons;
     QString m_searchQuery;
     // Match Case/Whole Word/Exact Name/Match Regex toggle state (Architecture.md §14.44), applied
     // by applySearchFilter via FileNavigationUseCase::filterByName's options-aware overload. Reset
@@ -924,6 +945,11 @@ private:
     // was most recently fetched, fetched via requestAdvancedSearchResultTags whenever that candidate
     // list itself changes and reapplied as-is by every applyAdvancedSearchFilter re-filter.
     TagsByPathMap m_advancedSearchSnapshotTags;
+    // Icons resolved so far for the current candidate list, accumulated chunk-by-chunk by
+    // requestAdvancedSearchResultIcons and reapplied as-is by every applyAdvancedSearchFilter
+    // re-filter -- mirrors m_advancedSearchSnapshotTags; see m_searchSnapshotIcons for why this is
+    // needed.
+    QHash<QString, QIcon> m_advancedSearchSnapshotIcons;
     // The tagIds that m_advancedSearchSnapshot/m_advancedSearchFullScanDone/m_advancedSearchScanPending
     // currently pertain to when they were populated by the tag-first branch of runAdvancedSearch
     // (empty when they instead pertain to a plain recursive scan of m_advancedSearchRoot). Lets a

@@ -1257,7 +1257,13 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     connect(tab, &TabViewModel::advancedSearchFailed, this, &MainWindow::onStatusMessage);
 
     connect(tab, &TabViewModel::searchResultsChanged, m_searchPanelWidget, [this, tab](const std::vector<FileNode>& entries) {
-        m_searchPanelWidget->setResults(entries, tab->searchResultsModel()->currentDirectory());
+        m_searchPanelWidget->setResults(entries, tab->searchResultsModel()->currentDirectory(), tab->searchResultIcons());
+    });
+    // searchResultsChanged alone misses icons that resolve after the candidate list itself last
+    // changed (the common case -- IconLoadingService's batches arrive asynchronously, well after
+    // applySearchFilter already emitted) -- see TabViewModel::searchResultIconsChanged.
+    connect(tab, &TabViewModel::searchResultIconsChanged, m_searchPanelWidget, [this, tab]() {
+        m_searchPanelWidget->applyIcons(tab->searchResultIcons());
     });
     connect(tab, &TabViewModel::searchModeChanged, m_searchPanelWidget, [this](bool active) {
         if (!active)
@@ -1273,7 +1279,8 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     m_searchPanelWidget->setOptions(tab->searchOptions());
     if (tab->searchActive())
     {
-        m_searchPanelWidget->setResults(tab->searchResultsModel()->entries(), tab->searchResultsModel()->currentDirectory());
+        m_searchPanelWidget->setResults(tab->searchResultsModel()->entries(), tab->searchResultsModel()->currentDirectory(),
+                                         tab->searchResultIcons());
     }
     else
     {

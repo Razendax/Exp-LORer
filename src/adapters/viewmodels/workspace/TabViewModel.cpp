@@ -448,6 +448,7 @@ void TabViewModel::runSearch(bool forceRescan)
         m_searchRoot = currentPath();
         m_searchFullScanDone = false;
         m_searchPartialSnapshot.clear();
+        m_searchSnapshotIcons.clear();
         m_searchScanPending = true;
 
         const int generation = ++m_searchGeneration;
@@ -486,6 +487,10 @@ void TabViewModel::applySearchFilter(const std::vector<FileNode>& candidates)
     // changed), so re-applying it here needs no new DB round trip even though this runs on every
     // keystroke.
     m_searchResultsModel->setFileTags(m_searchSnapshotTags);
+    // setEntries() also clears the model's own icon cache -- same reapply, from
+    // m_searchSnapshotIcons, so rows whose icon IconLoadingService already resolved don't flash
+    // back to the placeholder on every keystroke (see m_searchSnapshotIcons's declaration).
+    m_searchResultsModel->setIcons(m_searchSnapshotIcons);
 
     if (!m_searchActive)
     {
@@ -576,6 +581,7 @@ void TabViewModel::exitSearch()
     m_searchSnapshot.clear();
     m_searchPartialSnapshot.clear();
     m_searchSnapshotTags.clear();
+    m_searchSnapshotIcons.clear();
     m_searchQuery.clear();
     m_searchMatchMode = NameMatchMode::Contains;
     m_searchCaseSensitive = false;
@@ -622,6 +628,7 @@ void TabViewModel::showCurrentFolderNonRecursive()
     m_advancedSearchSnapshot.clear();
     m_advancedSearchPartialSnapshot.clear();
     m_advancedSearchSnapshotTags.clear();
+    m_advancedSearchSnapshotIcons.clear();
     m_advancedSearchRoot.clear();
     m_advancedSearchCachedTagIds.clear();
     m_advancedSearchFullScanDone = false;
@@ -689,6 +696,7 @@ void TabViewModel::exitAdvancedSearch()
     m_advancedSearchSnapshot.clear();
     m_advancedSearchPartialSnapshot.clear();
     m_advancedSearchSnapshotTags.clear();
+    m_advancedSearchSnapshotIcons.clear();
     m_advancedSearchCriteria = SearchCriteria();
     m_advancedSearchRoot.clear();
     m_advancedSearchCachedTagIds.clear();
@@ -1633,6 +1641,7 @@ void TabViewModel::runAdvancedSearch(bool forceRescan)
         m_advancedSearchFullScanDone = false;
         m_advancedSearchScanPending = true;
         m_advancedSearchPartialSnapshot.clear();
+        m_advancedSearchSnapshotIcons.clear();
 
         const int generation = ++m_advancedSearchGeneration;
 
@@ -1664,6 +1673,7 @@ void TabViewModel::runAdvancedSearch(bool forceRescan)
         m_advancedSearchCachedTagIds.clear();
         m_advancedSearchFullScanDone = false;
         m_advancedSearchPartialSnapshot.clear();
+        m_advancedSearchSnapshotIcons.clear();
         m_advancedSearchScanPending = true;
 
         const int generation = ++m_advancedSearchGeneration;
@@ -1705,6 +1715,11 @@ void TabViewModel::applyAdvancedSearchFilter(const std::vector<FileNode>& candid
     // list itself last changed), so re-applying it here needs no new DB round trip even though this
     // runs on every criteria edit.
     m_advancedSearchResultsModel->setFileTags(m_advancedSearchSnapshotTags);
+    // setEntries() also clears the model's own icon cache -- same reapply, from
+    // m_advancedSearchSnapshotIcons, so rows whose icon IconLoadingService already resolved don't
+    // flash back to the placeholder on every criteria edit (see m_searchSnapshotIcons's
+    // declaration).
+    m_advancedSearchResultsModel->setIcons(m_advancedSearchSnapshotIcons);
 
     if (!m_advancedSearchActive)
     {
@@ -1960,7 +1975,19 @@ void TabViewModel::requestSearchResultIcons(int generation, const std::vector<Fi
                 return;
             }
 
+            // Accumulated into m_searchSnapshotIcons (not just applied to the model directly) so a
+            // later applySearchFilter re-filter -- which clears the model's own icon cache via
+            // setEntries() -- can restore every icon already resolved so far instead of flashing
+            // back to placeholders (see m_searchSnapshotIcons's declaration).
+            for (auto it = batch.constBegin(); it != batch.constEnd(); ++it)
+            {
+                m_searchSnapshotIcons.insert(it.key(), it.value());
+            }
             m_searchResultsModel->setIcons(batch);
+            // The Search tab's results actually render in the left panel's SearchPanelWidget, via
+            // its own separate FileListModel that m_searchResultsModel's setIcons() above never
+            // touches -- MainWindow relays this to it via searchResultIcons().
+            emit searchResultIconsChanged();
         });
 }
 
@@ -1976,6 +2003,12 @@ void TabViewModel::requestAdvancedSearchResultIcons(int generation, const std::v
                 return;
             }
 
+            // Accumulated into m_advancedSearchSnapshotIcons -- see requestSearchResultIcons/
+            // m_searchSnapshotIcons for why.
+            for (auto it = batch.constBegin(); it != batch.constEnd(); ++it)
+            {
+                m_advancedSearchSnapshotIcons.insert(it.key(), it.value());
+            }
             m_advancedSearchResultsModel->setIcons(batch);
         });
 }
