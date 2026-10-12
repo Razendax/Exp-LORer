@@ -35,12 +35,20 @@ MediaViewerSortViewBar::MediaViewerSortViewBar(QWidget* parent)
     m_groupModeCombo->addItem(tr("Folder"));
     m_groupModeCombo->setToolTip(tr("Group"));
 
+    m_previewModeCombo = new QComboBox(this);
+    m_previewModeCombo->setObjectName(QStringLiteral("mediaViewerPreviewModeCombo"));
+    m_previewModeCombo->addItem(tr("Static"));
+    m_previewModeCombo->addItem(tr("Animate"));
+    m_previewModeCombo->addItem(tr("Autoplay"));
+    m_previewModeCombo->setToolTip(tr("Preview"));
+
     auto* layout = new QHBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->addWidget(m_sortCriterionCombo);
     layout->addWidget(m_sortDirectionCombo);
     layout->addWidget(m_viewModeCombo);
     layout->addWidget(m_groupModeCombo);
+    layout->addWidget(m_previewModeCombo);
 
     connect(m_sortCriterionCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
         const auto criterion = index == 1 ? MediaViewerSortCriterion::Duration
@@ -58,6 +66,12 @@ MediaViewerSortViewBar::MediaViewerSortViewBar(QWidget* parent)
     });
     connect(m_groupModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
         emit groupModeChanged(index == 1 ? MediaViewerGroupMode::ByFolder : MediaViewerGroupMode::Recursive);
+    });
+    connect(m_previewModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+        const auto mode = index == 1 ? MediaViewerPreviewMode::AnimateOnHover
+                           : index == 2 ? MediaViewerPreviewMode::Autoplay
+                                        : MediaViewerPreviewMode::Static;
+        emit previewModeChanged(mode);
     });
 }
 
@@ -105,4 +119,21 @@ void MediaViewerSortViewBar::setGroupMode(MediaViewerGroupMode mode)
 {
     const QSignalBlocker blocker(m_groupModeCombo);
     m_groupModeCombo->setCurrentIndex(mode == MediaViewerGroupMode::ByFolder ? 1 : 0);
+}
+
+void MediaViewerSortViewBar::setPreviewMode(MediaViewerPreviewMode mode)
+{
+    const QSignalBlocker blocker(m_previewModeCombo);
+    switch (mode)
+    {
+    case MediaViewerPreviewMode::Static:
+        m_previewModeCombo->setCurrentIndex(0);
+        break;
+    case MediaViewerPreviewMode::AnimateOnHover:
+        m_previewModeCombo->setCurrentIndex(1);
+        break;
+    case MediaViewerPreviewMode::Autoplay:
+        m_previewModeCombo->setCurrentIndex(2);
+        break;
+    }
 }

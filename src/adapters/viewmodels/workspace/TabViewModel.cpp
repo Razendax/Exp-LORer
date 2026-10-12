@@ -965,6 +965,17 @@ void TabViewModel::setMediaViewerGroupMode(MediaViewerGroupMode mode)
     emit mediaViewerGroupModeChanged(mode);
 }
 
+void TabViewModel::setMediaViewerPreviewMode(MediaViewerPreviewMode mode)
+{
+    if (!m_mediaViewerActive || mode == m_mediaViewerPreviewMode)
+    {
+        return;
+    }
+
+    m_mediaViewerPreviewMode = mode;
+    emit mediaViewerPreviewModeChanged(mode);
+}
+
 std::filesystem::path TabViewModel::mediaViewerUpTarget() const
 {
     if (pathsEqualCaseInsensitive(m_mediaViewerCurrentFolder, m_mediaViewerRoot))

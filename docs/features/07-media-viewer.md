@@ -5,13 +5,14 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.61–14.66, §14.68–14.69, §14.72–14.78, §14.80, §14.82 — the recursive tag/name-filtered image/video gallery mode and
+Covers §14.61–14.66, §14.68–14.69, §14.72–14.78, §14.80, §14.82–§14.83 — the recursive tag/name-filtered image/video gallery mode and
 its follow-ups: thumbnail previews/metadata overlays, the `IMediaDecoder` thumbnail/metadata
 merge, video hover-scrub previews, loading-progress notification, kind-scoped loading,
 sort/view/filmstrip/details controls, the Filter/Apply tag-click behaviour toggle,
 folder-grouped browsing, inline rename support, thumbnail-decode performance work (batched
-multi-frame video decode, a parallel decode pool), and a transparency-background bug fix shared
-by every thumbnail tile. The built-in video player itself
+multi-frame video decode, a parallel decode pool), a transparency-background bug fix shared
+by every thumbnail tile, and a per-tile GIF animation preview mode (Static/Animate/Autoplay) for
+the Thumbnails and Details views. The built-in video player itself
 (§14.67) lives in [05-preview-and-decoration.md](05-preview-and-decoration.md), since it was built
 for and first used by the Preview tab. Section numbers are **not** contiguous with this file's
 neighbors — they were assigned chronologically as each feature was built and are kept stable
@@ -981,4 +982,54 @@ already exists to avoid.
   a forced black fill).
 * **Testing**: no new GTest coverage — `MediaThumbnailPainting` has none today either (pure Qt
   painting code, same UI-glue carve-out as the rest of this file); manual smoke test only.
+
+---
+### 14.83 Media Viewer: Static/Animate/Autoplay Preview Mode
+
+A fifth `MediaViewerSortViewBar` combo, "Preview" (next to the Recursive/Folder group combo),
+controlling whether a GIF tile in the **Thumbnails** and **Details** views (only) plays its real
+animation instead of the static first-frame thumbnail every tile already shows (§14.81):
+**Static** (unchanged default), **Animate** (plays only while the mouse hovers that tile/row), and
+**Autoplay** (plays continuously for every GIF currently scrolled into the viewport, stopping again
+once it scrolls out). Filmstrip is deliberately untouched — it already shows every
+`MediaPreviewFrames::kCount` frame side-by-side (§14.69), so there's no single-frame concept to
+animate. Entirely Adapters(ViewModel)/UI, same posture as every other entry in this file — no
+Domain/Application/Port change, and GIF remains the only animated extension
+(`MediaExtensions::isAnimatedImageExtension`); SVG has no second frame, and video already has its
+own separate hover-scrub mechanism (§14.64) untouched by this.
+
+* **`MediaViewerPreviewMode`** (new, `src/adapters/viewmodels/media`): plain
+  `{ Static, AnimateOnHover, Autoplay }` enum, same minimal shape as `MediaViewerGroupMode`.
+* **`MediaViewerSortViewBar`** gains `m_previewModeCombo` ("Static"/"Animate"/"Autoplay") and
+  `previewModeChanged`/`setPreviewMode`, mirroring the existing group-mode combo's wiring exactly.
+* **`TabViewModel`** gains `m_mediaViewerPreviewMode` (default `Static`, not persisted across
+  restarts — same posture as `mediaViewerGroupMode`/`mediaViewerViewMode`),
+  `setMediaViewerPreviewMode()`, `mediaViewerPreviewModeChanged`. `WorkspacePaneWidget` wires it
+  three ways, mirroring the group-mode wiring: toolbar → tab, tab → toolbar resync, and (new, since
+  the grid itself needs to know too) tab → `FileBrowserView::setMediaViewerPreviewMode`.
+* **`MediaViewerAnimationController`** (new, `src/ui/widgets/media`): a small `QObject` owned by
+  `FileBrowserView`, one per Media Viewer grid, holding the real `QMovie` instances (keyed by
+  `QPersistentModelIndex`, same non-ASCII-safe `QMovie::setFileName(path.wstring())` construction
+  `MediaHoverPreviewPopup::showAnimatedGif` already uses, §14.79) so animation state survives
+  switching between the Thumbnails/Details delegates. Its one paint-facing entry point,
+  `frameIfAnimating()`, returns a null `QImage` whenever a row shouldn't currently be animating
+  (mode is `Static`, or `AnimateOnHover` and this isn't the hovered row) and otherwise lazily starts
+  the movie and returns its current frame. "Only while visible" for Autoplay needs no explicit
+  visibility check to *start* — Qt's item views only call `paint()` for rows intersecting the
+  viewport in the first place — but does need an explicit `pruneOffscreen()` (hooked to the list
+  view's scrollbars) to *stop* movies for rows that scroll back out, since nothing else would
+  invalidate them once started.
+* **`MediaGridTileDelegate`/`MediaDetailsDelegate`** each take the controller as a new constructor
+  parameter and, for GIF rows only, substitute `frameIfAnimating()`'s result for the cached static
+  thumbnail when non-null. **`MediaFilmstripDelegate` is unchanged.**
+* **`FileBrowserView::updateMediaViewerHover()`** (already the Thumbnails/Details-only,
+  Filmstrip-excluded hover-tracking function driving video hover-scrub) gains one parallel branch
+  forwarding the hovered GIF row's index to the controller, reusing the same `indexAt()` lookup it
+  already does for video.
+* **Not built**: Filmstrip animation (redundant with its existing all-frames-at-once layout);
+  persisting the preview-mode choice across restarts (matches the sibling toggles); any resource cap
+  on how many GIFs can animate at once in Autoplay (bounded implicitly by how many fit in the
+  viewport at a given icon size).
+* **Testing**: no new GTest coverage — same UI/ViewModel-glue carve-out as every other entry in this
+  file; manual smoke test only.
 

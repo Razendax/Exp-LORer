@@ -6,6 +6,8 @@
 #include "FileNameEditDelegate.h"
 #include "Tag.h"
 
+class MediaViewerAnimationController;
+
 // Media Viewer mode's "Details" view (Architecture.md §14.69): one full-width row per item, a
 // hover-scrubbable preview thumbnail on the left (same interaction as the Thumbnails grid,
 // Architecture.md §14.64) and name/duration-or-size-or-resolution/tags on the right. Installed as
@@ -20,12 +22,16 @@
 //
 // Inherits inline-rename editing from FileNameEditDelegate (Architecture.md §14.75); only the
 // editor's on-screen geometry needs overriding here, to match the name rect paint() computes.
+//
+// `animationController` (Architecture.md §14.83) may be null (constructed for every
+// FileBrowserView instance regardless of DisplayMode, but only ever non-null in
+// MediaViewerGrid) -- paint() guards every use of it accordingly.
 class MediaDetailsDelegate : public FileNameEditDelegate
 {
     Q_OBJECT
 
 public:
-    explicit MediaDetailsDelegate(QObject* parent = nullptr);
+    explicit MediaDetailsDelegate(MediaViewerAnimationController* animationController, QObject* parent = nullptr);
 
     void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
     QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override;
@@ -70,4 +76,5 @@ private:
 
     QPersistentModelIndex m_hoveredIndex;
     int m_hoveredPreviewIndex = -1;
+    MediaViewerAnimationController* m_animationController = nullptr;
 };

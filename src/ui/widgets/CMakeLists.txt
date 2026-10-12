@@ -81,6 +81,8 @@ add_library(explorer_ui_widgets STATIC
     media/MediaFilmstripDelegate.cpp
     media/MediaDetailsDelegate.h
     media/MediaDetailsDelegate.cpp
+    media/MediaViewerAnimationController.h
+    media/MediaViewerAnimationController.cpp
     preview/PreviewPanelWidget.h
     preview/PreviewPanelWidget.cpp
     preview/MediaPreviewWidget.h

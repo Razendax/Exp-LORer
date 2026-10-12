@@ -313,6 +313,8 @@ QToolBar* WorkspacePaneWidget::createToolBar()
             [this](MediaViewerViewMode mode) { if (m_boundTab) m_boundTab->setMediaViewerViewMode(mode); });
     connect(m_mediaViewerSortViewBar, &MediaViewerSortViewBar::groupModeChanged, this,
             [this](MediaViewerGroupMode mode) { if (m_boundTab) m_boundTab->setMediaViewerGroupMode(mode); });
+    connect(m_mediaViewerSortViewBar, &MediaViewerSortViewBar::previewModeChanged, this,
+            [this](MediaViewerPreviewMode mode) { if (m_boundTab) m_boundTab->setMediaViewerPreviewMode(mode); });
 
     return toolBar;
 }
@@ -430,6 +432,11 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     // had no visible effect before this.
     connect(tab, &TabViewModel::mediaViewerViewModeChanged, mediaViewerBrowserView, &FileBrowserView::setMediaViewerViewMode);
     mediaViewerBrowserView->setMediaViewerViewMode(tab->mediaViewerViewMode());
+
+    // Keeps the grid's per-tile GIF animation in sync with the tab's preview-mode state
+    // (Architecture.md §14.83), same reasoning as the view-mode wiring just above.
+    connect(tab, &TabViewModel::mediaViewerPreviewModeChanged, mediaViewerBrowserView, &FileBrowserView::setMediaViewerPreviewMode);
+    mediaViewerBrowserView->setMediaViewerPreviewMode(tab->mediaViewerPreviewMode());
 
     // Keeps this tab's two FileBrowserView instances in sync (Architecture.md §14.x): toggling a
     // column in one (normally the visible one, but either works) hides/shows it in the other too,
@@ -709,6 +716,8 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
                    &MediaViewerSortViewBar::setViewMode);
         disconnect(m_boundTab, &TabViewModel::mediaViewerGroupModeChanged, m_mediaViewerSortViewBar,
                    &MediaViewerSortViewBar::setGroupMode);
+        disconnect(m_boundTab, &TabViewModel::mediaViewerPreviewModeChanged, m_mediaViewerSortViewBar,
+                   &MediaViewerSortViewBar::setPreviewMode);
         disconnect(m_boundTab, &TabViewModel::mediaViewerGroupModeChanged, this,
                    &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
         disconnect(m_boundTab, &TabViewModel::mediaViewerViewModeChanged, this,
@@ -763,6 +772,8 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
             &MediaViewerSortViewBar::setViewMode);
     connect(m_boundTab, &TabViewModel::mediaViewerGroupModeChanged, m_mediaViewerSortViewBar,
             &MediaViewerSortViewBar::setGroupMode);
+    connect(m_boundTab, &TabViewModel::mediaViewerPreviewModeChanged, m_mediaViewerSortViewBar,
+            &MediaViewerSortViewBar::setPreviewMode);
     // Folder-Grouped Browsing (Architecture.md §14.74): back/forward/up/address-bar enabled state
     // depends on mediaViewerGroupMode()/mediaViewerViewMode() (whether folder-nav is even active)
     // and on the folder-nav history's own availability, so every one of these needs to re-run
@@ -803,6 +814,7 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
     m_mediaViewerSortViewBar->setSortAscending(m_boundTab->mediaViewerSortAscending());
     m_mediaViewerSortViewBar->setViewMode(m_boundTab->mediaViewerViewMode());
     m_mediaViewerSortViewBar->setGroupMode(m_boundTab->mediaViewerGroupMode());
+    m_mediaViewerSortViewBar->setPreviewMode(m_boundTab->mediaViewerPreviewMode());
     refreshStatusCounts();
     updateGitStatusBar(m_boundTab->lastGitRepositorySummary());
 }

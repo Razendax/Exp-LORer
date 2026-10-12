@@ -26,6 +26,7 @@
 #include "MediaFolderPreviewData.h"
 #include "MediaThumbnailLoadingService.h"
 #include "MediaViewerGroupMode.h"
+#include "MediaViewerPreviewMode.h"
 #include "MediaViewerKind.h"
 #include "MediaViewerSortCriterion.h"
 #include "MediaViewerTagBehaviour.h"
@@ -129,6 +130,10 @@ public:
     // currently is, rather than snapping back out to the full original root.
     MediaViewerGroupMode mediaViewerGroupMode() const noexcept { return m_mediaViewerGroupMode; }
     std::filesystem::path mediaViewerCurrentFolder() const { return m_mediaViewerCurrentFolder; }
+
+    // Static/Animate/Autoplay GIF preview mode (Architecture.md §14.83): a toolbar preference like
+    // mediaViewerSortCriterion()/mediaViewerViewMode() above -- not reset by enter/exitMediaViewer().
+    MediaViewerPreviewMode mediaViewerPreviewMode() const noexcept { return m_mediaViewerPreviewMode; }
 
     // Pure queries, no history/state side effects -- mirror upTarget()/peekBack()/peekForward()
     // above, but scoped to m_mediaViewerFolderHistory/m_mediaViewerCurrentFolder.
@@ -418,6 +423,10 @@ public slots:
     // root. Re-applies the current filter so the grid reflects the new grouping immediately.
     void setMediaViewerGroupMode(MediaViewerGroupMode mode);
 
+    // Static/Animate/Autoplay GIF preview mode toggle (Architecture.md §14.83). No-op if unchanged
+    // or outside Media Viewer mode, same guard as setMediaViewerGroupMode.
+    void setMediaViewerPreviewMode(MediaViewerPreviewMode mode);
+
     // Folder-Grouped Browsing's sub-navigation (Architecture.md §14.74) -- exact mirror of
     // navigateTo()/goUp()/goBack()/goForward(), but confined to m_mediaViewerRoot's subtree and
     // never touching disk/Ports: these just rebuild the already-cached candidate list for the new
@@ -507,6 +516,8 @@ signals:
     void mediaViewerTagBehaviourChanged(MediaViewerTagBehaviour behaviour);
     // Folder-Grouped Browsing (Architecture.md §14.74).
     void mediaViewerGroupModeChanged(MediaViewerGroupMode mode);
+    // Static/Animate/Autoplay GIF preview mode (Architecture.md §14.83).
+    void mediaViewerPreviewModeChanged(MediaViewerPreviewMode mode);
     void mediaViewerCurrentFolderChanged(const std::filesystem::path& folder);
     void mediaViewerBackAvailableChanged(bool available);
     void mediaViewerForwardAvailableChanged(bool available);
@@ -940,6 +951,9 @@ private:
     // Tag-click behaviour toggle (Architecture.md §14.72). Not reset by enterMediaViewer/
     // exitMediaViewer, same posture as m_mediaViewerSortCriterion/m_mediaViewerViewMode above.
     MediaViewerTagBehaviour m_mediaViewerTagBehaviour = MediaViewerTagBehaviour::Filter;
+    // Static/Animate/Autoplay GIF preview mode toggle (Architecture.md §14.83). Not reset by
+    // enterMediaViewer/exitMediaViewer, same posture as m_mediaViewerTagBehaviour above.
+    MediaViewerPreviewMode m_mediaViewerPreviewMode = MediaViewerPreviewMode::Static;
     // Folder-Grouped Browsing (Architecture.md §14.74). m_mediaViewerGroupMode is a toolbar
     // preference like m_mediaViewerSortCriterion/m_mediaViewerViewMode above -- not reset by
     // enterMediaViewer/exitMediaViewer. m_mediaViewerCurrentFolder/m_mediaViewerFolderHistory are a

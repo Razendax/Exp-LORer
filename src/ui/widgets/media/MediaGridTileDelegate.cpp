@@ -20,6 +20,7 @@
 #include "MediaPreviewFrames.h"
 #include "MediaThumbnailData.h"
 #include "MediaThumbnailPainting.h"
+#include "MediaViewerAnimationController.h"
 
 namespace
 {
@@ -73,8 +74,9 @@ namespace
     }
 }
 
-MediaGridTileDelegate::MediaGridTileDelegate(QObject* parent)
+MediaGridTileDelegate::MediaGridTileDelegate(MediaViewerAnimationController* animationController, QObject* parent)
     : FileNameEditDelegate(parent)
+    , m_animationController(animationController)
 {
 }
 
@@ -139,6 +141,19 @@ void MediaGridTileDelegate::paint(QPainter* painter, const QStyleOptionViewItem&
             if (!hoveredFrame.isNull())
             {
                 imageToPaint = hoveredFrame;
+            }
+        }
+
+        if (m_animationController)
+        {
+            const auto path = std::filesystem::path(index.data(FileListModel::FilePathRole).toString().toStdWString());
+            if (MediaExtensions::isAnimatedImageExtension(MediaExtensions::lowercaseExtension(path)))
+            {
+                const QImage animatedFrame = m_animationController->frameIfAnimating(QPersistentModelIndex(index), path);
+                if (!animatedFrame.isNull())
+                {
+                    imageToPaint = animatedFrame;
+                }
             }
         }
 

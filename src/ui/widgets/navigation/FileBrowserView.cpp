@@ -34,6 +34,7 @@
 #include "MediaGridTileDelegate.h"
 #include "MediaHoverPreviewPopup.h"
 #include "MediaPreviewFrames.h"
+#include "MediaViewerAnimationController.h"
 #include "PercentCellDelegate.h"
 #include "SearchResultDelegate.h"
 #include "TagsCellDelegate.h"
@@ -142,12 +143,23 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayM
     // unrelated to icon size -- a wheel notch barely moves a 96px/256px icon. ScrollPerItem makes
     // each step one row of items, matching Explorer's own icon-view scrolling.
     m_listView->setVerticalScrollMode(QAbstractItemView::ScrollPerItem);
+
+    // Static/Animate/Autoplay GIF preview mode (Architecture.md §14.83): owns the real QMovie
+    // lifecycles for this grid's rows, shared across the Thumbnails/Details delegate swap. Only
+    // ever needed (and only ever installed as an active delegate's GIF path) in MediaViewerGrid
+    // mode -- stays null for the other two DisplayModes, same posture as the GIF-aware delegates
+    // below being constructed unconditionally but only ever painting for this DisplayMode.
+    if (displayMode == DisplayMode::MediaViewerGrid)
+    {
+        m_mediaViewerAnimationController = new MediaViewerAnimationController(m_listView, this);
+    }
+
     m_nameEditDelegate = new FileNameEditDelegate(this);
     m_tileDelegate = new FileTileDelegate(this);
     m_iconDelegate = new FileIconDelegate(this);
-    m_mediaGridDelegate = new MediaGridTileDelegate(this);
+    m_mediaGridDelegate = new MediaGridTileDelegate(m_mediaViewerAnimationController, this);
     m_mediaFilmstripDelegate = new MediaFilmstripDelegate(this);
-    m_mediaDetailsDelegate = new MediaDetailsDelegate(this);
+    m_mediaDetailsDelegate = new MediaDetailsDelegate(m_mediaViewerAnimationController, this);
     m_tagsCellDelegate = new TagsCellDelegate(this);
     m_percentCellDelegate = new PercentCellDelegate(this);
 
@@ -584,6 +596,26 @@ void FileBrowserView::setMediaViewerViewMode(MediaViewerViewMode mode)
     // for Details.
     m_listView->setIconSize(mode == MediaViewerViewMode::Details ? iconSizeFor(ViewMode::ExtraLargeIcons)
                                                                    : iconSizeFor(ViewMode::LargeIcons));
+
+    if (mode == MediaViewerViewMode::Filmstrip && m_mediaViewerAnimationController)
+    {
+        // Filmstrip shows every preview frame at once (Architecture.md §14.69) -- nothing there
+        // should keep decoding GIF frames in the background while it's the active delegate.
+        // m_mediaViewerPreviewMode itself is left untouched, so switching back to Thumbnails/
+        // Details resumes whatever preview mode was already selected.
+        m_mediaViewerAnimationController->stopAllForDelegateSwap();
+    }
+}
+
+void FileBrowserView::setMediaViewerPreviewMode(MediaViewerPreviewMode mode)
+{
+    if (m_displayMode != DisplayMode::MediaViewerGrid)
+    {
+        return;
+    }
+
+    m_mediaViewerPreviewMode = mode;
+    m_mediaViewerAnimationController->setMode(mode);
 }
 
 std::array<int, FileListModel::ColumnCount> FileBrowserView::columnWidths() const
@@ -874,6 +906,41 @@ void FileBrowserView::updateMediaViewerHover(const QPoint& pos, bool isLeave)
                     newHoveredIndex = index;
                     newHoveredPreviewIndex = band;
                 }
+            }
+        }
+    }
+
+    // Static/Animate/Autoplay GIF preview (Architecture.md §14.83): a parallel, independent check
+    // to the video hover-scrub band computed above -- a no-op whenever the current preview mode
+    // isn't AnimateOnHover (MediaViewerAnimationController::setHoveredIndex is only ever consulted
+    // in that mode).
+    if (m_mediaViewerAnimationController)
+    {
+        QModelIndex animatedHoverIndex;
+        if (!isLeave)
+        {
+            const QModelIndex index = m_listView->indexAt(pos);
+            if (index.isValid())
+            {
+                const auto path = std::filesystem::path(index.data(FileListModel::FilePathRole).toString().toStdWString());
+                if (MediaExtensions::isAnimatedImageExtension(MediaExtensions::lowercaseExtension(path)))
+                {
+                    animatedHoverIndex = index;
+                }
+            }
+        }
+
+        const QModelIndex previousAnimatedHoverIndex = m_mediaViewerAnimationController->hoveredIndex();
+        if (previousAnimatedHoverIndex != animatedHoverIndex)
+        {
+            m_mediaViewerAnimationController->setHoveredIndex(animatedHoverIndex);
+            if (previousAnimatedHoverIndex.isValid())
+            {
+                m_listView->update(previousAnimatedHoverIndex);
+            }
+            if (animatedHoverIndex.isValid())
+            {
+                m_listView->update(animatedHoverIndex);
             }
         }
     }

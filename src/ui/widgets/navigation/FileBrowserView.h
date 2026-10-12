@@ -13,6 +13,7 @@
 
 #include "FileListModel.h"
 #include "FileNode.h"
+#include "MediaViewerPreviewMode.h"
 #include "MediaViewerViewMode.h"
 #include "Tag.h"
 #include "ViewMode.h"
@@ -38,6 +39,7 @@ class SearchResultDelegate;
 class TagsCellDelegate;
 class PercentCellDelegate;
 class MediaHoverPreviewPopup;
+class MediaViewerAnimationController;
 
 // The tab's content widget: a QStackedWidget switching between a QListView (icon/list/tiles view
 // modes) and a QTreeView (details view mode), both bound to the same FileListModel
@@ -68,6 +70,10 @@ public:
     // delegate/flow/wrapping/gridSize/iconSize to render `mode`'s layout. No-op outside
     // DisplayMode::MediaViewerGrid.
     void setMediaViewerViewMode(MediaViewerViewMode mode);
+
+    // MediaViewerGrid mode only (Architecture.md §14.83): forwards to m_mediaViewerAnimationController.
+    // No-op outside DisplayMode::MediaViewerGrid.
+    void setMediaViewerPreviewMode(MediaViewerPreviewMode mode);
 
     // AdvancedSearchResults mode only: forwarded to the SearchResultDelegate. No-op in Normal mode.
     // caseSensitive (Architecture.md §14.44) defaults false, preserving the Advanced Search pane's
@@ -235,6 +241,7 @@ private:
     DisplayMode m_displayMode = DisplayMode::Normal;
     ViewMode m_viewMode = ViewMode::Details;
     MediaViewerViewMode m_mediaViewerViewMode = MediaViewerViewMode::Thumbnails;
+    MediaViewerPreviewMode m_mediaViewerPreviewMode = MediaViewerPreviewMode::Static;
     QStackedWidget* m_stack = nullptr;
     QListView* m_listView = nullptr;
     QTreeView* m_treeView = nullptr;
@@ -245,6 +252,7 @@ private:
     MediaGridTileDelegate* m_mediaGridDelegate = nullptr;
     MediaFilmstripDelegate* m_mediaFilmstripDelegate = nullptr;
     MediaDetailsDelegate* m_mediaDetailsDelegate = nullptr;
+    MediaViewerAnimationController* m_mediaViewerAnimationController = nullptr;
     TagsCellDelegate* m_tagsCellDelegate = nullptr;
     PercentCellDelegate* m_percentCellDelegate = nullptr;
     QItemSelectionModel* m_selectionModel = nullptr;

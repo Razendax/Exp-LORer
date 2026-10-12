@@ -5,6 +5,8 @@
 
 #include "FileNameEditDelegate.h"
 
+class MediaViewerAnimationController;
+
 // Paints a real decoded thumbnail (Architecture.md §14.62) + filename caption + two small corner
 // metadata chips (size bottom-left, resolution-or-duration bottom-right) for Media Viewer mode's
 // locked icon grid (FileBrowserView::DisplayMode::MediaViewerGrid) -- the only delegate installed
@@ -19,12 +21,16 @@
 // own viewport mouse tracking (this delegate has no mouse-event handling of its own -- painting
 // only). m_hoveredIndex/m_hoveredPreviewIndex are read back by FileBrowserView via the accessors
 // below to know what to repaint when hover moves off a cell.
+//
+// `animationController` (Architecture.md §14.83) may be null (constructed for every
+// FileBrowserView instance regardless of DisplayMode, but only ever non-null in
+// MediaViewerGrid) -- paint() guards every use of it accordingly.
 class MediaGridTileDelegate : public FileNameEditDelegate
 {
     Q_OBJECT
 
 public:
-    explicit MediaGridTileDelegate(QObject* parent = nullptr);
+    explicit MediaGridTileDelegate(MediaViewerAnimationController* animationController, QObject* parent = nullptr);
 
     void paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const override;
     QSize sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const override;
@@ -55,4 +61,5 @@ private:
 
     QPersistentModelIndex m_hoveredIndex;
     int m_hoveredPreviewIndex = -1;
+    MediaViewerAnimationController* m_animationController = nullptr;
 };

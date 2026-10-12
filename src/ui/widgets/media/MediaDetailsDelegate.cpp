@@ -21,6 +21,7 @@
 #include "MediaPreviewFrames.h"
 #include "MediaThumbnailData.h"
 #include "MediaThumbnailPainting.h"
+#include "MediaViewerAnimationController.h"
 #include "Tag.h"
 #include "TagPillRowPainter.h"
 
@@ -69,8 +70,9 @@ namespace
     }
 }
 
-MediaDetailsDelegate::MediaDetailsDelegate(QObject* parent)
+MediaDetailsDelegate::MediaDetailsDelegate(MediaViewerAnimationController* animationController, QObject* parent)
     : FileNameEditDelegate(parent)
+    , m_animationController(animationController)
 {
 }
 
@@ -163,6 +165,19 @@ void MediaDetailsDelegate::paint(QPainter* painter, const QStyleOptionViewItem& 
             if (!hoveredFrame.isNull())
             {
                 imageToPaint = hoveredFrame;
+            }
+        }
+
+        if (m_animationController)
+        {
+            const auto path = std::filesystem::path(index.data(FileListModel::FilePathRole).toString().toStdWString());
+            if (MediaExtensions::isAnimatedImageExtension(MediaExtensions::lowercaseExtension(path)))
+            {
+                const QImage animatedFrame = m_animationController->frameIfAnimating(QPersistentModelIndex(index), path);
+                if (!animatedFrame.isNull())
+                {
+                    imageToPaint = animatedFrame;
+                }
             }
         }
 
