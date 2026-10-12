@@ -121,3 +121,65 @@ TEST_F(SQLiteDiskUsageRepositoryTest, RescanOfSubsetDoesNotDeleteRowsOutsideScan
     ASSERT_EQ(bChildren.value().size(), 1u);
     EXPECT_EQ(bChildren.value()[0].name, "y.txt");
 }
+
+TEST_F(SQLiteDiskUsageRepositoryTest, RescanDoesNotAffectSiblingWithPrefixCollidingName)
+{
+    const fs::path repo = "C:/repo";
+    const fs::path repo2 = "C:/repo2";
+    const fs::path repository = "C:/repository";
+
+    ASSERT_TRUE(m_repository
+                    .saveScan(repo, { DiskUsageNode{ repo, "repo", 100, true },
+                                       DiskUsageNode{ repo / "a.txt", "a.txt", 100, false } })
+                    .hasValue());
+    ASSERT_TRUE(m_repository
+                    .saveScan(repo2, { DiskUsageNode{ repo2, "repo2", 100, true },
+                                        DiskUsageNode{ repo2 / "b.txt", "b.txt", 100, false } })
+                    .hasValue());
+    ASSERT_TRUE(m_repository
+                    .saveScan(repository, { DiskUsageNode{ repository, "repository", 100, true },
+                                             DiskUsageNode{ repository / "c.txt", "c.txt", 100, false } })
+                    .hasValue());
+
+    // Re-scanning "repo" alone must not delete/affect rows under "repo2" or "repository" even
+    // though they share the "repo" prefix textually -- this is the correctness case the range
+    // query's exclusive upper bound exists for.
+    ASSERT_TRUE(m_repository
+                    .saveScan(repo, { DiskUsageNode{ repo, "repo", 100, true },
+                                       DiskUsageNode{ repo / "a.txt", "a.txt", 100, false } })
+                    .hasValue());
+
+    auto repo2Children = m_repository.childrenOf(repo2);
+    ASSERT_TRUE(repo2Children.hasValue());
+    ASSERT_EQ(repo2Children.value().size(), 1u);
+    EXPECT_EQ(repo2Children.value()[0].name, "b.txt");
+
+    auto repositoryChildren = m_repository.childrenOf(repository);
+    ASSERT_TRUE(repositoryChildren.hasValue());
+    ASSERT_EQ(repositoryChildren.value().size(), 1u);
+    EXPECT_EQ(repositoryChildren.value()[0].name, "c.txt");
+}
+
+TEST_F(SQLiteDiskUsageRepositoryTest, SmallRescanAfterLargeScanOnlyRemovesStaleRows)
+{
+    const fs::path root = "C:/repo";
+    std::vector<DiskUsageNode> largeScan = { DiskUsageNode{ root, "repo", 0, true } };
+    for (int i = 0; i < 200; ++i)
+    {
+        const std::string name = "file" + std::to_string(i) + ".txt";
+        largeScan.push_back(DiskUsageNode{ root / name, name, 100, false });
+    }
+    ASSERT_TRUE(m_repository.saveScan(root, largeScan).hasValue());
+
+    // A later, much smaller scan of the same root should still only remove the rows genuinely
+    // absent from it, regardless of how large the table became from the earlier scan.
+    ASSERT_TRUE(m_repository
+                    .saveScan(root, { DiskUsageNode{ root, "repo", 100, true },
+                                       DiskUsageNode{ root / "file0.txt", "file0.txt", 100, false } })
+                    .hasValue());
+
+    auto children = m_repository.childrenOf(root);
+    ASSERT_TRUE(children.hasValue());
+    ASSERT_EQ(children.value().size(), 1u);
+    EXPECT_EQ(children.value()[0].name, "file0.txt");
+}

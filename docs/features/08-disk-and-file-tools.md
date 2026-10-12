@@ -6,9 +6,10 @@ that add their own small Domain/Application pieces (called out inline where rele
 recorded as a decision log per feature, not an implementation walkthrough; see git history and
 the code's own comments (many cite these subsection numbers directly) for the detail.
 
-Covers §14.39–14.40, §14.49, §14.51–14.53, §14.55 — customizable Details-view columns (and their
-per-tab persistence), disk usage/folder size, the duplicate file finder, the disk fragmentation
-viewer (and its Details-view fragments column), and bulk/batch rename. Section numbers are **not**
+Covers §14.39–14.40, §14.49, §14.51–14.53, §14.55, §14.86 — customizable Details-view columns (and
+their per-tab persistence), disk usage/folder size (and its stale-row-delete perf fix), the
+duplicate file finder, the disk fragmentation viewer (and its Details-view fragments column), and
+bulk/batch rename. Section numbers are **not**
 contiguous with this file's neighbors — they were assigned chronologically as each feature was
 built and are kept stable since code comments cite them directly. See
 [Architecture.md](../Architecture.md) §14 for the full topic index across all nine files.
@@ -384,11 +385,14 @@ context-menu convenience.
   `IFragmentationRepository` against the new `file_fragmentation` table (§7) over its **own**
   `QSqlDatabase` connection to the same `explorer.db` file, same `PRAGMA busy_timeout` rationale as
   `SQLiteDiskUsageRepository`. Its stale-row delete and its `filesUnder` lookup both match rows
-  strictly under a path via the same LIKE-prefix-with-escaped-`%`/`_` idiom
-  `SQLiteDiskUsageRepository::saveScan` already established and proved (reused verbatim, since the
-  escaping behavior is correctness-critical) — simplified from that precedent by dropping its
+  strictly under a path via the LIKE-prefix-with-escaped-`%`/`_` idiom
+  `SQLiteDiskUsageRepository::saveScan` originally established (reused verbatim at the time, since
+  the escaping behavior is correctness-critical) — simplified from that precedent by dropping its
   `path = scanRoot` exact-match branch, since this table never stores a row for the scanned
-  folder/drive root itself (files only).
+  folder/drive root itself (files only). Disk Usage's own query has since moved off this idiom onto
+  an indexed path range (§14.86) once the LIKE+`ESCAPE` combination was found to force a full table
+  scan on every save; this table's queries were not part of that fix and still pay the same cost on
+  a large table — a known follow-up, not yet done here.
 * **Threading:** `FragmentationService`/`FragmentationWorker` (`adapters/viewmodels`, new) — a
   synthesis of two existing patterns, since this feature needs both: the lazy own-thread SQLite
   connection `DiskUsageWorker`/`DiskUsageService` establish (`SQLiteFragmentationRepository` wraps a
@@ -581,4 +585,39 @@ current-folder listing.
   coverage — UI/ViewModel glue, the same §11 carve-out already applied to
   `FolderSizeViewModel`/`FolderSizeWidget` and `FragmentationViewModel`/`FragmentationWidget`;
   verified by manual smoke test instead.
+
+### 14.86 Disk Usage: Fix Full-Table-Scan on Every Save
+
+Bug fix, diagnosed from a user report: scanning a folder with only 8 files took ~15 seconds, with
+the filesystem walk itself (per log timestamps) finishing in 0ms — all the time was inside
+`SQLiteDiskUsageRepository::saveScan` persisting those 8 rows. Root cause: `saveScan` ran two
+queries on *every* save, regardless of node count, that could not use an index and therefore
+full-scanned the whole `filesystem_index` table — `SELECT MAX(scanned_at) ...` (no index existed
+on `scanned_at`), and the stale-row `DELETE ... WHERE scanned_at < ? AND (path = ? OR path LIKE ?
+ESCAPE '<')` (SQLite disables its index-assisted LIKE-prefix optimization whenever an `ESCAPE`
+clause is present, which this query always used). Harmless on a small table; with `filesystem_index`
+grown to millions of rows from an earlier full "Scan Drive", every subsequent save — even a tiny
+one — paid for two full scans of a multi-gigabyte table.
+
+* **`idx_filesystem_index_scanned_at`** (§7) added via `CREATE INDEX IF NOT EXISTS` in
+  `runMigrations`, same ungated-migration posture the rest of this table already has (§14.40) — makes
+  the `MAX(scanned_at)` lookup an index read.
+* **Stale-row delete switched from a LIKE pattern to an indexed `path` range.** Under SQLite's
+  default `BINARY` collation, "every path starting with `scanRoot<sep>`" is exactly the half-open
+  range `[scanRoot<sep>, scanRoot<sep-incremented>)` — the query became
+  `WHERE scanned_at < ? AND (path = ? OR (path >= ? AND path < ?))`, letting SQLite use the existing
+  `UNIQUE(path)` index for the subtree predicate instead of scanning every row. Safe to compute the
+  exclusive upper bound by incrementing one character because that trailing character is always the
+  path separator *we* append (`descendantRangeLowerBound`/`descendantRangeUpperBound`, replacing the
+  old `descendantPrefixPattern`/`escapeLikeWildcards` helpers), never a user-controlled character —
+  no Unicode-boundary edge case to reason about. Dropping LIKE here also removes the
+  `%`/`_`-escaping concern entirely for this query.
+* **Not applied to `SQLiteFragmentationRepository`** (§14.52), which has the identical shape
+  (unindexed `MAX(scanned_at)`, LIKE+`ESCAPE` stale-row delete and `filesUnder` lookup) and so still
+  pays the same cost on a large table — out of scope for this fix, left as a candidate follow-up.
+* **Testing**: `tests/adapters/SQLiteDiskUsageRepositoryTest.cpp` gained coverage for the range
+  query's correctness at the exact boundary case it exists to handle — a rescan of `C:/repo` must
+  not touch rows under a prefix-colliding sibling like `C:/repo2` or `C:/repository` — plus a
+  regression check that stale-row cleanup still removes genuinely-disappeared rows after the
+  `scanned_at` index and range-query change.
 

@@ -273,6 +273,7 @@ CREATE TABLE filesystem_index (
     scanned_at    INTEGER NOT NULL
 );
 CREATE INDEX idx_filesystem_index_parent ON filesystem_index(parent_id);
+CREATE INDEX idx_filesystem_index_scanned_at ON filesystem_index(scanned_at);
 
 CREATE TABLE file_fragmentation (
     path            TEXT PRIMARY KEY,
@@ -287,7 +288,12 @@ CREATE TABLE file_fragmentation (
   over its own connection, separate from `SQLiteTagRepository`'s. **Not** gated by the
   `PRAGMA user_version` check above — that counter belongs to the Tags/Files/FileTags schema, owned
   by a different repository class/connection; this table's migration is a standalone
-  `CREATE TABLE IF NOT EXISTS`, sufficient since it has no evolving schema yet (§14.40).
+  `CREATE TABLE IF NOT EXISTS`, sufficient since it has no evolving schema yet (§14.40). Its
+  stale-row cleanup matches a scanned subtree's descendants by an indexed `path` *range*
+  (`path >= lowerBound AND path < upperBound`, §14.86), not a LIKE pattern — `idx_filesystem_index_scanned_at`
+  backs the other half of that same query's `scanned_at < ?` predicate, and the no-index/
+  LIKE-with-ESCAPE combination it replaced forced a full table scan on every save regardless of
+  how many nodes were being saved (§14.86).
 
 * **`file_fragmentation`** backs the Fragmentation bottom-panel tab (§14.52) — one row per scanned
   file, `fragment_count` the number of NTFS extents the file is split into. Written/read by
@@ -295,8 +301,10 @@ CREATE TABLE file_fragmentation (
   `SQLiteDiskUsageRepository`'s. Like `filesystem_index`, **not** gated by `PRAGMA user_version`; a
   standalone `CREATE TABLE IF NOT EXISTS`. Unlike `filesystem_index`, stores files only — never a row
   for a scanned folder/drive root itself — so a "files under this folder" lookup matches rows strictly
-  *under* a path via a LIKE-prefix-with-escaped-wildcards query, the same idiom
-  `SQLiteDiskUsageRepository::saveScan`'s own stale-row cleanup already established (§14.39).
+  *under* a path via a LIKE-prefix-with-escaped-wildcards query — the idiom
+  `SQLiteDiskUsageRepository::saveScan`'s own stale-row cleanup originally established (§14.39) but
+  has since moved off of (§14.86); fragmentation's own query is unchanged and still pays the same
+  full-table-scan cost on a large table, a known follow-up candidate, not yet fixed.
 
 * **Path resolution:** `TagManagementUseCase` looks up by `path` first; if missing/changed, falls
   back to `file_hash` (+ `size`) to relocate the row and update `path`.

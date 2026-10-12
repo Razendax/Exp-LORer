@@ -32,29 +32,32 @@ namespace
         return Error(fallback, sqlError.text().toStdString());
     }
 
-    // '<' can never appear anywhere in a real Windows path (fully reserved, unlike '%'/'_' which
-    // are valid filename characters), so it's safe as this LIKE pattern's escape character without
-    // ambiguity -- see prefixPattern()'s use below. Avoids substr()-with-a-computed-length
-    // entirely, which would need to count in whatever unit SQLite's `substr` uses internally and
-    // could silently misalign for names containing characters outside the BMP (emoji).
-    QString escapeLikeWildcards(const QString& text)
-    {
-        QString escaped = text;
-        escaped.replace(QLatin1Char('%'), QStringLiteral("<%"));
-        escaped.replace(QLatin1Char('_'), QStringLiteral("<_"));
-        return escaped;
-    }
-
-    // scanRoot's path text with a trailing path separator, for LIKE-prefix matching its
-    // descendants (never scanRoot's own row -- callers match that separately by exact path).
-    QString descendantPrefixPattern(const fs::path& scanRoot)
+    // scanRoot's path text with a trailing path separator -- inclusive lower bound of the
+    // half-open range `[lower, upper)` that matches exactly every descendant path under
+    // BINARY collation (SQLite's default, never overridden here). Never scanRoot's own row --
+    // callers match that separately by exact path.
+    QString descendantRangeLowerBound(const fs::path& scanRoot)
     {
         std::wstring native = scanRoot.wstring();
         if (native.empty() || native.back() != fs::path::preferred_separator)
         {
             native.push_back(fs::path::preferred_separator);
         }
-        return escapeLikeWildcards(QString::fromStdWString(native)) + QStringLiteral("%");
+        return QString::fromStdWString(native);
+    }
+
+    // Same text with its trailing separator incremented by one code point -- exclusive upper
+    // bound of the range above. Safe and well-defined because that trailing character is always
+    // the separator appended by descendantRangeLowerBound() itself, never user-controlled text.
+    QString descendantRangeUpperBound(const fs::path& scanRoot)
+    {
+        std::wstring native = scanRoot.wstring();
+        if (native.empty() || native.back() != fs::path::preferred_separator)
+        {
+            native.push_back(fs::path::preferred_separator);
+        }
+        native.back() = static_cast<wchar_t>(native.back() + 1);
+        return QString::fromStdWString(native);
     }
 }
 
@@ -104,6 +107,7 @@ void SQLiteDiskUsageRepository::runMigrations()
         )
     )"));
     migration.exec(QStringLiteral("CREATE INDEX IF NOT EXISTS idx_filesystem_index_parent ON filesystem_index(parent_id)"));
+    migration.exec(QStringLiteral("CREATE INDEX IF NOT EXISTS idx_filesystem_index_scanned_at ON filesystem_index(scanned_at)"));
 
     Logging::info("SQLiteDiskUsageRepository: migration applied");
 }
@@ -230,11 +234,12 @@ Result<void> SQLiteDiskUsageRepository::saveScan(const std::filesystem::path& sc
     deleteStale.prepare(QStringLiteral(R"(
         DELETE FROM filesystem_index
         WHERE scanned_at < ?
-        AND (path = ? OR path LIKE ? ESCAPE '<')
+        AND (path = ? OR (path >= ? AND path < ?))
     )"));
     deleteStale.addBindValue(sessionTimestamp);
     deleteStale.addBindValue(toQString(scanRoot));
-    deleteStale.addBindValue(descendantPrefixPattern(scanRoot));
+    deleteStale.addBindValue(descendantRangeLowerBound(scanRoot));
+    deleteStale.addBindValue(descendantRangeUpperBound(scanRoot));
     if (!deleteStale.exec())
     {
         Error error = toError(deleteStale.lastError());
