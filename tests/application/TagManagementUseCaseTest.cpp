@@ -155,6 +155,101 @@ TEST(TagManagementUseCase, AssignTagPropagatesHashComputationFailure)
     EXPECT_EQ(result.error().code, ErrorCode::IoError);
 }
 
+TEST(TagManagementUseCase, FindFilesWithTagsIncludingChildrenGroupsFlatTagAsSingleton)
+{
+    MockTagRepository tagRepository;
+    MockFileSystemRepository fileSystemRepository;
+    Tag work = Tag::create(1, "Work", "#FF8800").value();
+    Tag personal = Tag::create(2, "Personal", "#00FF00").value();
+    EXPECT_CALL(tagRepository, allTags()).WillOnce(Return(Result<std::vector<Tag>>::success({ work, personal })));
+    EXPECT_CALL(tagRepository, findFilesWithAnyOfTagGroups(std::vector<std::vector<Tag::Id>>{ { 1 } }))
+        .WillOnce(Return(Result<std::vector<FileTagAssociation>>::success({})));
+
+    TagManagementUseCase useCase(tagRepository, fileSystemRepository);
+    auto result = useCase.findFilesWithTagsIncludingChildren({ 1 });
+
+    EXPECT_TRUE(result.hasValue());
+}
+
+TEST(TagManagementUseCase, FindFilesWithTagsIncludingChildrenBuildsGroupWithNestedChildren)
+{
+    MockTagRepository tagRepository;
+    MockFileSystemRepository fileSystemRepository;
+    Tag game = Tag::create(1, "game", "#FF8800").value();
+    Tag action = Tag::create(2, "game/action", "#00FF00").value();
+    Tag rpg = Tag::create(3, "game/action/rpg", "#0000FF").value();
+    Tag unrelated = Tag::create(4, "work", "#123456").value();
+    EXPECT_CALL(tagRepository, allTags())
+        .WillOnce(Return(Result<std::vector<Tag>>::success({ game, action, rpg, unrelated })));
+    EXPECT_CALL(tagRepository, findFilesWithAnyOfTagGroups(std::vector<std::vector<Tag::Id>>{ { 1, 2, 3 } }))
+        .WillOnce(Return(Result<std::vector<FileTagAssociation>>::success({})));
+
+    TagManagementUseCase useCase(tagRepository, fileSystemRepository);
+    auto result = useCase.findFilesWithTagsIncludingChildren({ 1 });
+
+    EXPECT_TRUE(result.hasValue());
+}
+
+TEST(TagManagementUseCase, FindFilesWithTagsIncludingChildrenPassesThroughEmptyTagIds)
+{
+    MockTagRepository tagRepository;
+    MockFileSystemRepository fileSystemRepository;
+    EXPECT_CALL(tagRepository, allTags()).WillOnce(Return(Result<std::vector<Tag>>::success({})));
+    EXPECT_CALL(tagRepository, findFilesWithAnyOfTagGroups(std::vector<std::vector<Tag::Id>>{}))
+        .WillOnce(Return(Result<std::vector<FileTagAssociation>>::success({})));
+
+    TagManagementUseCase useCase(tagRepository, fileSystemRepository);
+    auto result = useCase.findFilesWithTagsIncludingChildren({});
+
+    EXPECT_TRUE(result.hasValue());
+}
+
+TEST(TagManagementUseCase, FindFilesWithTagsIncludingChildrenProducesEmptyGroupForStaleId)
+{
+    MockTagRepository tagRepository;
+    MockFileSystemRepository fileSystemRepository;
+    Tag work = Tag::create(1, "Work", "#FF8800").value();
+    EXPECT_CALL(tagRepository, allTags()).WillOnce(Return(Result<std::vector<Tag>>::success({ work })));
+    EXPECT_CALL(tagRepository, findFilesWithAnyOfTagGroups(std::vector<std::vector<Tag::Id>>{ {} }))
+        .WillOnce(Return(Result<std::vector<FileTagAssociation>>::success({})));
+
+    TagManagementUseCase useCase(tagRepository, fileSystemRepository);
+    auto result = useCase.findFilesWithTagsIncludingChildren({ 99 });
+
+    EXPECT_TRUE(result.hasValue());
+}
+
+TEST(TagManagementUseCase, FindFilesWithTagsIncludingChildrenPropagatesAllTagsFailure)
+{
+    MockTagRepository tagRepository;
+    MockFileSystemRepository fileSystemRepository;
+    EXPECT_CALL(tagRepository, allTags())
+        .WillOnce(Return(Result<std::vector<Tag>>::failure(Error(ErrorCode::IoError, "boom"))));
+    EXPECT_CALL(tagRepository, findFilesWithAnyOfTagGroups(_)).Times(0);
+
+    TagManagementUseCase useCase(tagRepository, fileSystemRepository);
+    auto result = useCase.findFilesWithTagsIncludingChildren({ 1 });
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::IoError);
+}
+
+TEST(TagManagementUseCase, FindFilesWithTagsIncludingChildrenPropagatesRepositoryFailure)
+{
+    MockTagRepository tagRepository;
+    MockFileSystemRepository fileSystemRepository;
+    Tag work = Tag::create(1, "Work", "#FF8800").value();
+    EXPECT_CALL(tagRepository, allTags()).WillOnce(Return(Result<std::vector<Tag>>::success({ work })));
+    EXPECT_CALL(tagRepository, findFilesWithAnyOfTagGroups(_))
+        .WillOnce(Return(Result<std::vector<FileTagAssociation>>::failure(Error(ErrorCode::IoError, "boom"))));
+
+    TagManagementUseCase useCase(tagRepository, fileSystemRepository);
+    auto result = useCase.findFilesWithTagsIncludingChildren({ 1 });
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::IoError);
+}
+
 TEST(TagManagementUseCase, TagsForFilesSkipsSyntheticRowsAndDelegatesRemainingPaths)
 {
     MockTagRepository tagRepository;

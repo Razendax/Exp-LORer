@@ -33,6 +33,8 @@ public:
     Result<TagsByPathMap> tagsForFiles(const std::vector<std::filesystem::path>& filePaths) const override;
 
     Result<std::vector<FileTagAssociation>> findFilesWithAllTags(const std::vector<Tag::Id>& tagIds) const override;
+    Result<std::vector<FileTagAssociation>> findFilesWithAnyOfTagGroups(
+        const std::vector<std::vector<Tag::Id>>& tagIdGroups) const override;
 
 private:
     void runMigrations();

@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cctype>
 
+#include "TagHierarchy.h"
+
 namespace
 {
     std::string toLower(std::string text)
@@ -152,6 +154,42 @@ Result<TagsByPathMap> TagManagementUseCase::tagsForFiles(const std::vector<FileN
 Result<std::vector<FileTagAssociation>> TagManagementUseCase::findFilesWithAllTags(const std::vector<Tag::Id>& tagIds) const
 {
     return m_tagRepository.findFilesWithAllTags(tagIds);
+}
+
+Result<std::vector<FileTagAssociation>> TagManagementUseCase::findFilesWithTagsIncludingChildren(
+    const std::vector<Tag::Id>& tagIds) const
+{
+    auto all = m_tagRepository.allTags();
+    if (!all)
+    {
+        return Result<std::vector<FileTagAssociation>>::failure(std::move(all).error());
+    }
+    const std::vector<Tag>& tags = all.value();
+
+    std::vector<std::vector<Tag::Id>> groups;
+    groups.reserve(tagIds.size());
+    for (Tag::Id selectedId : tagIds)
+    {
+        const auto selectedIt = std::find_if(tags.begin(), tags.end(),
+                                              [selectedId](const Tag& tag) { return tag.id() == selectedId; });
+        if (selectedIt == tags.end())
+        {
+            groups.emplace_back(); // stale id -> unsatisfiable group, same fate as findFilesWithAllTags
+            continue;
+        }
+
+        std::vector<Tag::Id> group;
+        for (const auto& candidate : tags)
+        {
+            if (TagHierarchy::isSelfOrDescendant(candidate.name(), selectedIt->name()))
+            {
+                group.push_back(candidate.id());
+            }
+        }
+        groups.push_back(std::move(group));
+    }
+
+    return m_tagRepository.findFilesWithAnyOfTagGroups(groups);
 }
 
 Result<std::vector<Tag>> TagManagementUseCase::tagsForPathWithAncestors(const std::filesystem::path& path) const

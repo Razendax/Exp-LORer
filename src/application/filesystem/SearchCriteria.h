@@ -19,6 +19,11 @@ struct SearchCriteria
     // AND semantics, mirrors ITagRepository::findFilesWithAllTags; empty = no tag filter.
     std::vector<Tag::Id> tagIds;
 
+    // When false (default), tagIds match exactly, preserving today's behavior. When true, each
+    // selected tag also matches its "/"-nested children (Architecture.md §14.87), e.g. selecting
+    // "game" also matches "game/action".
+    bool tagIncludeChildTags = false;
+
     // Match Case/Whole Word/Exact Name/Match Regex/Skip Git-Ignored toggles for nameQuery
     // (Architecture.md §14.56), same type the Search tab's NameSearchOptions already uses.
     // Default-constructed keeps the pre-existing Contains/case-insensitive behavior.

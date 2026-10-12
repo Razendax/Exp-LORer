@@ -48,6 +48,13 @@ public:
     void requestTagFirstCandidates(QObject* context, const std::filesystem::path& root, const std::vector<Tag::Id>& tagIds,
                                     std::function<void(Result<std::vector<FileNode>>)> callback);
 
+    // Like requestTagFirstCandidates, but dispatches to
+    // AdvancedSearchWorker::fetchTagFirstCandidatesIncludingChildren (Architecture.md §14.87) --
+    // the Advanced Search pane's Exact/Include-Children toggle, set to "include children".
+    void requestTagFirstCandidatesIncludingChildren(QObject* context, const std::filesystem::path& root,
+                                                      const std::vector<Tag::Id>& tagIds,
+                                                      std::function<void(Result<std::vector<FileNode>>)> callback);
+
 private:
     QThread m_workerThread;
     AdvancedSearchWorker* m_worker = nullptr;

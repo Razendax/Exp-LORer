@@ -8,6 +8,7 @@
 #include <QObject>
 
 #include "FileNode.h"
+#include "FileTagAssociation.h"
 #include "Result.h"
 #include "Tag.h"
 
@@ -55,8 +56,20 @@ public:
     // cheap, no I/O -- no reason to move them here).
     Result<std::vector<FileNode>> fetchTagFirstCandidates(const std::filesystem::path& root, const std::vector<Tag::Id>& tagIds);
 
+    // Like fetchTagFirstCandidates, but widens each requested tag to itself plus its "/"-nested
+    // children before querying (Architecture.md §14.87) -- the Advanced Search pane's
+    // Exact/Include-Children toggle, set to "include children".
+    Result<std::vector<FileNode>> fetchTagFirstCandidatesIncludingChildren(const std::filesystem::path& root,
+                                                                            const std::vector<Tag::Id>& tagIds);
+
 private:
     void ensureTagRepository();
+
+    // Shared post-processing for both fetchTagFirstCandidates* methods: filters associations to
+    // those within `root`, then stats each surviving path, silently dropping files moved/deleted
+    // since tagging (Architecture.md §14.22).
+    Result<std::vector<FileNode>> buildCandidatesFromAssociations(
+        const std::filesystem::path& root, Result<std::vector<FileTagAssociation>> tagResult);
 
     // Lazily constructs m_gitStatusProvider/m_gitStatusUseCase on this worker's own thread, the
     // first time skipGitIgnored is actually used -- libgit2's git_repository* handles are

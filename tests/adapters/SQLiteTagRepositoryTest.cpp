@@ -227,3 +227,73 @@ TEST_F(SQLiteTagRepositoryTest, FindFilesWithAllTagsReturnsOnlyFilesHavingEveryT
         EXPECT_EQ(association.filePath(), std::filesystem::path("C:/data/both.pdf"));
     }
 }
+
+TEST_F(SQLiteTagRepositoryTest, FindFilesWithAnyOfTagGroupsAndsAcrossGroupsOrsWithinAGroup)
+{
+    Tag game = m_repository.createTag("game", "#FF8800").value();
+    Tag action = m_repository.createTag("game/action", "#00FF00").value();
+    Tag urgent = m_repository.createTag("Urgent", "#FF0000").value();
+
+    // Matches group {game, action} via "action", and group {urgent} via "urgent".
+    auto matching = FileTagAssociation::create("C:/data/matching.pdf", 0x1111u, action.id()).value();
+    ASSERT_TRUE(m_repository.assignTag(matching).hasValue());
+    ASSERT_TRUE(
+        m_repository.assignTag(FileTagAssociation::create("C:/data/matching.pdf", 0x1111u, urgent.id()).value())
+            .hasValue());
+
+    // Satisfies only the first group, not the second.
+    auto onlyGame = FileTagAssociation::create("C:/data/onlyGame.pdf", 0x2222u, game.id()).value();
+    ASSERT_TRUE(m_repository.assignTag(onlyGame).hasValue());
+
+    auto result = m_repository.findFilesWithAnyOfTagGroups({ { game.id(), action.id() }, { urgent.id() } });
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().size(), 2u); // one association per group for the single matching file
+    for (const auto& association : result.value())
+    {
+        EXPECT_EQ(association.filePath(), std::filesystem::path("C:/data/matching.pdf"));
+    }
+}
+
+TEST_F(SQLiteTagRepositoryTest, FindFilesWithAnyOfTagGroupsWithSingleIdGroupsMatchesExactAndSemantics)
+{
+    Tag work = m_repository.createTag("Work", "#FF8800").value();
+    Tag urgent = m_repository.createTag("Urgent", "#FF0000").value();
+
+    ASSERT_TRUE(m_repository.assignTag(FileTagAssociation::create("C:/data/both.pdf", 0x1111u, work.id()).value())
+                    .hasValue());
+    ASSERT_TRUE(m_repository.assignTag(FileTagAssociation::create("C:/data/both.pdf", 0x1111u, urgent.id()).value())
+                    .hasValue());
+    ASSERT_TRUE(
+        m_repository.assignTag(FileTagAssociation::create("C:/data/onlyWork.pdf", 0x2222u, work.id()).value())
+            .hasValue());
+
+    auto result = m_repository.findFilesWithAnyOfTagGroups({ { work.id() }, { urgent.id() } });
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().size(), 2u);
+    for (const auto& association : result.value())
+    {
+        EXPECT_EQ(association.filePath(), std::filesystem::path("C:/data/both.pdf"));
+    }
+}
+
+TEST_F(SQLiteTagRepositoryTest, FindFilesWithAnyOfTagGroupsWithEmptyGroupYieldsZeroRows)
+{
+    Tag work = m_repository.createTag("Work", "#FF8800").value();
+    ASSERT_TRUE(m_repository.assignTag(FileTagAssociation::create("C:/data/tagged.pdf", 0x1111u, work.id()).value())
+                    .hasValue());
+
+    auto result = m_repository.findFilesWithAnyOfTagGroups({ { work.id() }, {} });
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(result.value().empty());
+}
+
+TEST_F(SQLiteTagRepositoryTest, FindFilesWithAnyOfTagGroupsWithEmptyOuterVectorYieldsEmptySuccess)
+{
+    auto result = m_repository.findFilesWithAnyOfTagGroups({});
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(result.value().empty());
+}

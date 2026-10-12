@@ -310,6 +310,13 @@ CREATE TABLE file_fragmentation (
   back to `file_hash` (+ `size`) to relocate the row and update `path`.
 * **Bulk tagging:** wrapped in a single `BEGIN IMMEDIATE ... COMMIT` transaction.
 * **Multi-tag AND filtering:** `GROUP BY file_id HAVING COUNT(DISTINCT tag_id) = <N>`.
+* **Nested tag names (§14.87):** `Tags.name` may contain `/` levels (e.g. `"game/action"`); a
+  parent/child relationship is a pure name-prefix convention, not a stored column — `"game"` need
+  not exist as its own row for `"game/action"` to be its child. Advanced Search's
+  Exact/Include-Children toggle resolves a selected tag's descendant ids in-memory (over
+  `allTags()`) and queries `findFilesWithAnyOfTagGroups`: one `EXISTS (... ft.tag_id IN (...))` per
+  selected tag's group (itself + descendants), ANDed across groups — an AND-of-OR generalization of
+  the plain AND filtering above.
 
 ## 8. File Identity, Hashing & Thumbnail Caching
 

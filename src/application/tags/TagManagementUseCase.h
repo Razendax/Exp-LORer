@@ -38,6 +38,12 @@ public:
 
     Result<std::vector<FileTagAssociation>> findFilesWithAllTags(const std::vector<Tag::Id>& tagIds) const;
 
+    // Like findFilesWithAllTags, but each requested id is widened to itself plus every tag that is
+    // its descendant per the "/"-nested naming convention (TagHierarchy, Architecture.md §14.87)
+    // before the AND-of-OR filter is applied. An id no longer present in allTags() becomes an empty
+    // group (unsatisfiable), the same "zero rows" fate a stale id already gets in findFilesWithAllTags.
+    Result<std::vector<FileTagAssociation>> findFilesWithTagsIncludingChildren(const std::vector<Tag::Id>& tagIds) const;
+
     // Tags of every ancestor directory of `path` (outermost ancestor first, down to the
     // immediate parent) followed by path's own tags last. A root-level path has no ancestors.
     Result<std::vector<Tag>> tagsForPathWithAncestors(const std::filesystem::path& path) const;

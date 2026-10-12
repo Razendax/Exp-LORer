@@ -18,6 +18,8 @@ add_library(explorer_domain STATIC
     FileNode.cpp
     Tag.h
     Tag.cpp
+    TagHierarchy.h
+    TagHierarchy.cpp
     MediaMetadata.h
     MediaMetadata.cpp
     MediaThumbnail.h

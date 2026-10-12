@@ -956,6 +956,11 @@ private:
     // Name/size-only criteria edit with the same tag selection reuse the cached/in-flight tag-first
     // candidates instead of re-dispatching a redundant DB query + per-file stat loop.
     std::vector<Tag::Id> m_advancedSearchCachedTagIds;
+    // Whether m_advancedSearchCachedTagIds' candidates were fetched with the Exact/Include-Children
+    // toggle (Architecture.md §14.87) set to "include children". Part of the same cache key as
+    // m_advancedSearchCachedTagIds -- toggling it must invalidate the cache even when the tag
+    // selection itself hasn't changed, since it changes which DB answer applies to that selection.
+    bool m_advancedSearchCachedTagIncludeChildren = false;
     // Bumped every time a recursive-scan or tag-first-candidate request is dispatched, and on
     // exitAdvancedSearch(); onAdvancedSearchCandidatesReady/onAdvancedSearchProgress discard any
     // reply whose generation no longer matches, so a stale result from a superseded/abandoned

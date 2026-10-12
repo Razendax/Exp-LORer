@@ -106,6 +106,11 @@ private:
     QToolButton* m_skipGitIgnoredButton = nullptr;
 
     QLineEdit* m_tagSearchEdit = nullptr;
+    // Exact/Include-Children toggle for the tag criteria below (Architecture.md §14.87) -- when
+    // checked, a selected tag also matches its "/"-nested children (e.g. "game" matches
+    // "game/action"). Grouped with the tag controls rather than matchOptionsRow's name-matching
+    // toggles, since it's tag-specific.
+    QToolButton* m_tagIncludeChildrenButton = nullptr;
     FlowLayout* m_tagMatchesLayout = nullptr;
     FlowLayout* m_tagCriteriaLayout = nullptr;
 

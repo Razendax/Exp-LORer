@@ -32,4 +32,10 @@ public:
 
     // Files tagged with every id in tagIds (AND filtering, Architecture.md §7).
     virtual Result<std::vector<FileTagAssociation>> findFilesWithAllTags(const std::vector<Tag::Id>& tagIds) const = 0;
+
+    // Files tagged with at least one id from every group in tagIdGroups (AND-of-OR; each group is
+    // one originally-selected tag's own id plus its descendant ids — Architecture.md §14.87). Empty
+    // outer vector = no filter, mirrors findFilesWithAllTags.
+    virtual Result<std::vector<FileTagAssociation>> findFilesWithAnyOfTagGroups(
+        const std::vector<std::vector<Tag::Id>>& tagIdGroups) const = 0;
 };

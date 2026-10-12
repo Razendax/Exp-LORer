@@ -1,16 +1,17 @@
 # Architecture Document — Feature Decision Log: Search
 
 Continues [Architecture.md](../Architecture.md) §14. Everything here extends the UI/Adapters
-layers only — **no Domain or Application layer redesign** — and is recorded as a decision log
-per feature, not an implementation walkthrough; see git history and the code's own comments
-(many cite these subsection numbers directly) for the detail.
+layers only — **no Domain or Application layer redesign**, aside from a couple of features below
+— and is recorded as a decision log per feature, not an implementation walkthrough; see git
+history and the code's own comments (many cite these subsection numbers directly) for the detail.
 
-Covers §14.18–14.20, §14.38, §14.42–14.46, §14.56 — per-tab filename/advanced/tag-integrated
+Covers §14.18–14.20, §14.38, §14.42–14.46, §14.56, §14.87 — per-tab filename/advanced/tag-integrated
 search, the unified left-panel Search tab, async advanced search, quick-search match-mode/
-skip-git-ignored toggles, debounced quick search, and advanced-search match-mode toggles. Section
-numbers are **not** contiguous with this file's neighbors — they were assigned chronologically as
-each feature was built and are kept stable since code comments cite them directly. See
-[Architecture.md](../Architecture.md) §14 for the full topic index across all nine files.
+skip-git-ignored toggles, debounced quick search, advanced-search match-mode toggles, and
+hierarchical-tag search matching. Section numbers are **not** contiguous with this file's
+neighbors — they were assigned chronologically as each feature was built and are kept stable since
+code comments cite them directly. See [Architecture.md](../Architecture.md) §14 for the full topic
+index across all nine files.
 
 ---
 ### 14.18 Filename Search (Per-Tab, Recursive)
@@ -609,4 +610,67 @@ Two related fixes to §14.19/§14.20's Advanced Search pane, bringing it in line
   `nameOptions` (e.g. `WholeWord`/`ExactName`) combines correctly with a size bound, mirroring the
   existing options-aware `filterByName` coverage. The `TabViewModel`/`SearchCriteriaPanel` changes
   stay under the existing §11 UI/ViewModel-glue carve-out — verified by manual smoke test.
+
+### 14.87 Advanced Search: Hierarchical ("/"-Nested) Tags, Exact/Include-Children Toggle
+
+Tags gain a parent/child naming convention — `"game/action"`'s parent is `"game"` — and §14.20's
+tag criteria gain a toggle choosing whether a selected tag matches only itself or itself plus every
+nested child. Unlike this file's other entries, this one **does** touch Domain and Application
+(the hierarchy is a name convention, so something has to understand `/` as a separator), not just
+UI/Adapters.
+
+* **No schema change.** `Tags.name` already stores an arbitrary string; `"game"` need not exist as
+  its own row for `"game/action"` to be treated as its child — the relationship is derived from
+  the name at query time, never persisted separately.
+* **`Tag::create` (`src/domain/Tag.cpp`)** rejects a name with a leading `/`, trailing `/`, or `//`
+  (an empty segment) alongside its existing empty-name check, since such a name could never be a
+  meaningful hierarchy level. Covers both create and rename, since rename always goes through
+  `Tag::create` first (e.g. `TagManagerViewModel::renameTag`).
+* **`TagHierarchy::isSelfOrDescendant(name, ancestorName)`** (new `src/domain/TagHierarchy.h`/
+  `.cpp`, pure, no Qt/SQLite) — true when `name == ancestorName` or `name` starts with
+  `ancestorName + "/"`. Case-insensitive via the existing `UnicodeCaseFold::foldUtf8`, the same
+  Unicode-safe fold `GlobMatch`/`PathContainment` already use, rather than a new ASCII-only one.
+* **`ITagRepository::findFilesWithAnyOfTagGroups(tagIdGroups)`** (new port method) — AND-of-OR:
+  a file matches when it has at least one id from every group in `tagIdGroups`. `SQLiteTagRepository`
+  implements it as one `EXISTS (SELECT 1 FROM FileTags ft WHERE ft.file_id = f.id AND ft.tag_id IN
+  (...))` per group, ANDed in the `WHERE` clause — the AND-of-OR generalization of §7's plain
+  `IN (...) / HAVING COUNT(DISTINCT tag_id) = N` AND-of-exact filtering. Empty `tagIdGroups`
+  short-circuits to an empty success, same as `findFilesWithAllTags`'s empty-`tagIds` guard. Each
+  matched row yields one `FileTagAssociation` per group, tagged with that group's first
+  (originally-selected) id — callers only ever read `association.filePath()`, matching
+  `findFilesWithAllTags`'s existing contract.
+* **`TagManagementUseCase::findFilesWithTagsIncludingChildren(tagIds)`** (new) builds each
+  requested id's group — itself plus every tag `TagHierarchy::isSelfOrDescendant` of it, found via
+  a single `allTags()` call — then delegates to `findFilesWithAnyOfTagGroups`. A stale id (deleted
+  since selected) becomes an **empty** group rather than being dropped, so that criterion is simply
+  unsatisfiable — the same "zero rows" fate a stale id already gets today in `findFilesWithAllTags`.
+  `findFilesWithAllTags` itself is untouched and still backs both Advanced Search's exact mode and
+  the Media Viewer's tag filter (§14.72/14.73) unchanged.
+* **`SearchCriteria.tagIncludeChildTags`** (new `bool`, default `false` — preserves today's
+  exact-match behavior). `SearchCriteriaPanel` gets a new checkable `QToolButton`
+  (`advancedSearchTagIncludeChildrenButton`) next to `m_tagSearchEdit` in the tag-search row (not
+  the Name-matching `matchOptionsRow`, since this only affects tag matching), wired to
+  `onAnyFieldEdited` exactly like the other toggle buttons; `currentCriteria()`/`setCriteria()`
+  read/write it the same way they already handle `nameOptions.skipGitIgnored`.
+* **`AdvancedSearchWorker`/`AdvancedSearchService`** gain
+  `fetchTagFirstCandidatesIncludingChildren`/`requestTagFirstCandidatesIncludingChildren`, copies of
+  the existing `fetchTagFirstCandidates`/`requestTagFirstCandidates` that call
+  `findFilesWithTagsIncludingChildren` instead of `findFilesWithAllTags`.
+* **`TabViewModel::runAdvancedSearch`'s tag-first branch** picks between the two
+  request methods based on `m_advancedSearchCriteria.tagIncludeChildTags`; its cache-reuse check
+  gains a parallel `m_advancedSearchCachedTagIncludeChildren` comparison alongside
+  `m_advancedSearchCachedTagIds`, so switching the toggle never silently reuses the other mode's
+  cached candidates. `updateAdvancedSearchCriteria` forces a rescan when the toggle changes, the
+  same way it already does for `nameOptions.skipGitIgnored` (§14.56) — toggling changes which DB
+  query answers the same tag-id set, so a cached result can never serve the other mode.
+* **Not built:** the toggle does not reach the Media Viewer's own tag filter (§14.72/14.73), the
+  Tag Panel, or the Tag Manager dialog — all three keep exact-name matching only, unchanged. No
+  auto-creation of a parent tag when a nested one is created, and no tree/indentation UI anywhere
+  tags are rendered — `TagChipWidget` still renders the full literal name.
+* **Testing**: `tests/domain/TagTest.cpp` (segment validation) and new
+  `tests/domain/TagHierarchyTest.cpp`; `tests/application/TagManagementUseCaseTest.cpp` (new
+  `findFilesWithTagsIncludingChildren` cases, `MockTagRepository` gains the new port method);
+  `tests/adapters/SQLiteTagRepositoryTest.cpp` (new `findFilesWithAnyOfTagGroups` cases). The
+  `TabViewModel`/`SearchCriteriaPanel` toggle wiring stays under the existing §11 UI/ViewModel-glue
+  carve-out — manual verification only.
 

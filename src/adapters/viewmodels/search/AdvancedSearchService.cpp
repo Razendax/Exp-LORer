@@ -117,3 +117,39 @@ void AdvancedSearchService::requestTagFirstCandidates(QObject* context, const st
         },
         Qt::QueuedConnection);
 }
+
+void AdvancedSearchService::requestTagFirstCandidatesIncludingChildren(
+    QObject* context, const std::filesystem::path& root, const std::vector<Tag::Id>& tagIds,
+    std::function<void(Result<std::vector<FileNode>>)> callback)
+{
+    QPointer<QObject> guard(context);
+
+    QMetaObject::invokeMethod(
+        m_worker,
+        [this, guard, root, tagIds, callback = std::move(callback)]() {
+            Result<std::vector<FileNode>> result = m_worker->fetchTagFirstCandidatesIncludingChildren(root, tagIds);
+
+            if (result.hasError())
+            {
+                Logging::warn("AdvancedSearchService: tag-first candidates (including children) failed: " +
+                               std::string(toLogString(result.error().code)));
+            }
+            else
+            {
+                Logging::debug("AdvancedSearchService: tag-first candidates (including children) finished (" +
+                                std::to_string(result.value().size()) + " result(s))");
+            }
+
+            QMetaObject::invokeMethod(
+                this,
+                [guard, callback, result = std::move(result)]() mutable {
+                    if (!guard)
+                    {
+                        return;
+                    }
+                    callback(std::move(result));
+                },
+                Qt::QueuedConnection);
+        },
+        Qt::QueuedConnection);
+}

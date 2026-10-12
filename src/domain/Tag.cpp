@@ -25,6 +25,12 @@ Result<Tag> Tag::create(Id id, std::string name, std::string hexColor)
         return Result<Tag>::failure(Error(ErrorCode::InvalidArgument, "Tag name must not be empty"));
     }
 
+    if (name.front() == '/' || name.back() == '/' || name.find("//") != std::string::npos)
+    {
+        return Result<Tag>::failure(
+            Error(ErrorCode::InvalidArgument, "Tag name must not have empty \"/\"-separated segments"));
+    }
+
     if (!isValidHexColor(hexColor))
     {
         return Result<Tag>::failure(

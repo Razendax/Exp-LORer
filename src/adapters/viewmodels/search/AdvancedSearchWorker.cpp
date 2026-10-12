@@ -78,7 +78,20 @@ Result<std::vector<FileNode>> AdvancedSearchWorker::fetchTagFirstCandidates(cons
 {
     ensureTagRepository();
 
-    auto tagResult = m_tagManagementUseCase->findFilesWithAllTags(tagIds);
+    return buildCandidatesFromAssociations(root, m_tagManagementUseCase->findFilesWithAllTags(tagIds));
+}
+
+Result<std::vector<FileNode>> AdvancedSearchWorker::fetchTagFirstCandidatesIncludingChildren(
+    const std::filesystem::path& root, const std::vector<Tag::Id>& tagIds)
+{
+    ensureTagRepository();
+
+    return buildCandidatesFromAssociations(root, m_tagManagementUseCase->findFilesWithTagsIncludingChildren(tagIds));
+}
+
+Result<std::vector<FileNode>> AdvancedSearchWorker::buildCandidatesFromAssociations(
+    const std::filesystem::path& root, Result<std::vector<FileTagAssociation>> tagResult)
+{
     if (tagResult.hasError())
     {
         return Result<std::vector<FileNode>>::failure(std::move(tagResult).error());

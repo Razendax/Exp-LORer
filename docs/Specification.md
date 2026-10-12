@@ -304,7 +304,10 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   size/Max size: a "search tags" box lists matching tags (same lookup as the Tag Panel's search,
   but clicking a tag adds it straight to the criteria instead of showing a "+"), and a separate,
   removable chip list shows the tags currently applied to the search. A result must satisfy both
-  the file-property criteria and every applied tag to appear.
+  the file-property criteria and every applied tag to appear. An **Exact/Include-Children toggle**
+  (Architecture.md §14.87) controls how each applied tag is matched against nested tags (§2.2):
+  exact (default) matches only that literal tag, while include-children also matches any tag
+  nested under it.
 
 ### 2.2 Database-Backed File Tagging System
 
@@ -329,6 +332,10 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 **Tag-Based Filtering & Search:**
 * Dedicated view/panel to filter files by one or multiple tags (e.g., show all files tagged with "Work" *AND* "ProjectA").
 * Robust handling of file path changes (handling renames/moves gracefully by tracking file hashes or updating paths in the database).
+* **Nested tags**: a tag name may be split into levels with `/` (e.g. `"game/action"`), making
+  `"game"` the parent of `"game/action"`. This is a naming convention only — no separate parent
+  tag needs to exist, and nothing elsewhere in the tagging UI changes because of it (Architecture.md
+  §14.87). Advanced Search's tag criteria (§2.1) can optionally match a tag's nested children too.
 
 **Tag Panel:**
 * Housed in a collapsible, tabbed side panel (Architecture.md §14.25) on the right edge of the

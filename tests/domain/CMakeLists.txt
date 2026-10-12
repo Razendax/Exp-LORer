@@ -7,6 +7,7 @@ add_executable(explorer_domain_tests
     RegexMatchTest.cpp
     FileNodeTest.cpp
     TagTest.cpp
+    TagHierarchyTest.cpp
     MediaMetadataTest.cpp
     FileTagAssociationTest.cpp
     FilePreviewTest.cpp

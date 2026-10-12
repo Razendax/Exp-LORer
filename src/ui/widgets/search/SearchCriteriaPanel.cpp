@@ -134,10 +134,21 @@ SearchCriteriaPanel::SearchCriteriaPanel(UiThemeChangeNotifier& uiThemeChangeNot
     m_tagSearchEdit = new QLineEdit(this);
     m_tagSearchEdit->setObjectName(QStringLiteral("searchTagEdit"));
     m_tagSearchEdit->setPlaceholderText(tr("Search tags..."));
+
+    m_tagIncludeChildrenButton = new QToolButton(this);
+    m_tagIncludeChildrenButton->setObjectName(QStringLiteral("advancedSearchTagIncludeChildrenButton"));
+    m_tagIncludeChildrenButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
+    m_tagIncludeChildrenButton->setText(tr("+ch"));
+    m_tagIncludeChildrenButton->setCheckable(true);
+    m_tagIncludeChildrenButton->setToolTip(
+        tr("Include nested child tags\nE.g. selecting \"game\" also matches \"game/action\""));
+    connect(m_tagIncludeChildrenButton, &QToolButton::toggled, this, &SearchCriteriaPanel::onAnyFieldEdited);
+
     m_tagMatchesLayout = new FlowLayout();
 
     auto* tagMatchesRow = new QHBoxLayout();
     tagMatchesRow->addWidget(m_tagSearchEdit);
+    tagMatchesRow->addWidget(m_tagIncludeChildrenButton);
     tagMatchesRow->addLayout(m_tagMatchesLayout, 1);
 
     m_tagCriteriaLayout = new FlowLayout();
@@ -202,6 +213,7 @@ void SearchCriteriaPanel::setCriteria(const SearchCriteria& criteria, const std:
     const QSignalBlocker exactNameBlocker(m_exactNameButton);
     const QSignalBlocker regexBlocker(m_regexButton);
     const QSignalBlocker skipGitIgnoredBlocker(m_skipGitIgnoredButton);
+    const QSignalBlocker tagIncludeChildrenBlocker(m_tagIncludeChildrenButton);
 
     // Skip a field that currently has focus: this call is also reached via the round trip of the
     // user's own edit (onAnyFieldEdited -> criteriaEdited -> TabViewModel::updateAdvancedSearchCriteria
@@ -229,6 +241,7 @@ void SearchCriteriaPanel::setCriteria(const SearchCriteria& criteria, const std:
     m_exactNameButton->setChecked(criteria.nameOptions.mode == NameMatchMode::ExactName);
     m_regexButton->setChecked(criteria.nameOptions.mode == NameMatchMode::Regex);
     m_skipGitIgnoredButton->setChecked(criteria.nameOptions.skipGitIgnored);
+    m_tagIncludeChildrenButton->setChecked(criteria.tagIncludeChildTags);
     m_lastKnownTagIds = criteria.tagIds;
 
     clearLayout(m_tagCriteriaLayout);
@@ -285,6 +298,7 @@ SearchCriteria SearchCriteriaPanel::currentCriteria() const
         criteria.maxSizeBytes = static_cast<std::uintmax_t>(m_maxSizeSpin->value()) * kSizeUnitMultipliers[m_maxSizeUnitCombo->currentIndex()];
     }
     criteria.tagIds = m_lastKnownTagIds;
+    criteria.tagIncludeChildTags = m_tagIncludeChildrenButton->isChecked();
 
     criteria.nameOptions.caseSensitive = m_matchCaseButton->isChecked();
     if (m_wholeWordButton->isChecked())

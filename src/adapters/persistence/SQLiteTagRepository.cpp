@@ -486,3 +486,63 @@ Result<std::vector<FileTagAssociation>> SQLiteTagRepository::findFilesWithAllTag
 
     return Result<std::vector<FileTagAssociation>>::success(std::move(associations));
 }
+
+Result<std::vector<FileTagAssociation>> SQLiteTagRepository::findFilesWithAnyOfTagGroups(
+    const std::vector<std::vector<Tag::Id>>& tagIdGroups) const
+{
+    if (tagIdGroups.empty()
+        || std::any_of(tagIdGroups.begin(), tagIdGroups.end(), [](const auto& group) { return group.empty(); }))
+    {
+        return Result<std::vector<FileTagAssociation>>::success({});
+    }
+
+    QStringList existsClauses;
+    for (const auto& group : tagIdGroups)
+    {
+        QStringList placeholders;
+        for (std::size_t i = 0; i < group.size(); ++i)
+        {
+            placeholders << QStringLiteral("?");
+        }
+        existsClauses << QStringLiteral("EXISTS (SELECT 1 FROM FileTags ft WHERE ft.file_id = f.id AND ft.tag_id IN (%1))")
+                             .arg(placeholders.join(QStringLiteral(",")));
+    }
+
+    QSqlQuery query(m_db);
+    query.prepare(QStringLiteral(R"(
+        SELECT f.path, f.file_hash
+        FROM Files f
+        WHERE %1
+    )")
+                       .arg(existsClauses.join(QStringLiteral(" AND "))));
+    for (const auto& group : tagIdGroups)
+    {
+        for (Tag::Id id : group)
+        {
+            query.addBindValue(static_cast<qint64>(id));
+        }
+    }
+
+    if (!query.exec())
+    {
+        return Result<std::vector<FileTagAssociation>>::failure(toError(query.lastError()));
+    }
+
+    std::vector<FileTagAssociation> associations;
+    while (query.next())
+    {
+        const std::filesystem::path path = toPath(query.value(0).toString());
+        const std::uint64_t hash = query.value(1).toString().toULongLong();
+
+        for (const auto& group : tagIdGroups)
+        {
+            auto association = FileTagAssociation::create(path, hash, group.front());
+            if (association)
+            {
+                associations.push_back(std::move(association).value());
+            }
+        }
+    }
+
+    return Result<std::vector<FileTagAssociation>>::success(std::move(associations));
+}

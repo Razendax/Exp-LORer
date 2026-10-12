@@ -20,6 +20,38 @@ TEST(Tag, CreateFailsWithEmptyName)
     EXPECT_EQ(result.error().code, ErrorCode::InvalidArgument);
 }
 
+TEST(Tag, CreateFailsWithLeadingSlash)
+{
+    auto result = Tag::create(1, "/game", "#FF8800");
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::InvalidArgument);
+}
+
+TEST(Tag, CreateFailsWithTrailingSlash)
+{
+    auto result = Tag::create(1, "game/", "#FF8800");
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::InvalidArgument);
+}
+
+TEST(Tag, CreateFailsWithEmptySegment)
+{
+    auto result = Tag::create(1, "game//action", "#FF8800");
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::InvalidArgument);
+}
+
+TEST(Tag, CreateSucceedsWithNestedName)
+{
+    auto result = Tag::create(1, "game/action", "#FF8800");
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().name(), "game/action");
+}
+
 TEST(Tag, CreateFailsWithMissingHash)
 {
     auto result = Tag::create(1, "Work", "FF8800");

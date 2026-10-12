@@ -631,6 +631,7 @@ void TabViewModel::showCurrentFolderNonRecursive()
     m_advancedSearchSnapshotIcons.clear();
     m_advancedSearchRoot.clear();
     m_advancedSearchCachedTagIds.clear();
+    m_advancedSearchCachedTagIncludeChildren = false;
     m_advancedSearchFullScanDone = false;
     m_advancedSearchScanPending = false;
     ++m_advancedSearchGeneration;
@@ -673,6 +674,7 @@ void TabViewModel::updateAdvancedSearchCriteria(const SearchCriteria& criteria)
     }
 
     const bool skipGitIgnoredChanged = criteria.nameOptions.skipGitIgnored != m_advancedSearchCriteria.nameOptions.skipGitIgnored;
+    const bool tagIncludeChildTagsChanged = criteria.tagIncludeChildTags != m_advancedSearchCriteria.tagIncludeChildTags;
 
     m_advancedSearchCriteria = criteria;
 
@@ -682,7 +684,7 @@ void TabViewModel::updateAdvancedSearchCriteria(const SearchCriteria& criteria)
         return;
     }
 
-    runAdvancedSearch(/*forceRescan=*/skipGitIgnoredChanged);
+    runAdvancedSearch(/*forceRescan=*/skipGitIgnoredChanged || tagIncludeChildTagsChanged);
 }
 
 void TabViewModel::exitAdvancedSearch()
@@ -700,6 +702,7 @@ void TabViewModel::exitAdvancedSearch()
     m_advancedSearchCriteria = SearchCriteria();
     m_advancedSearchRoot.clear();
     m_advancedSearchCachedTagIds.clear();
+    m_advancedSearchCachedTagIncludeChildren = false;
     m_advancedSearchFullScanDone = false;
     m_advancedSearchScanPending = false;
     // Invalidates any scan/stat-loop still in flight -- its (now-stale) result is discarded by
@@ -1624,8 +1627,11 @@ void TabViewModel::runAdvancedSearch(bool forceRescan)
         // this tag" -- no recursive folder scan needed. m_advancedSearchRoot is still set (for
         // scoping + setEntries's root arg).
         const std::vector<Tag::Id>& tagIds = m_advancedSearchCriteria.tagIds;
+        const bool includeChildren = m_advancedSearchCriteria.tagIncludeChildTags;
 
-        if (!forceRescan && m_advancedSearchCachedTagIds == tagIds && (m_advancedSearchFullScanDone || m_advancedSearchScanPending))
+        if (!forceRescan && m_advancedSearchCachedTagIds == tagIds &&
+            m_advancedSearchCachedTagIncludeChildren == includeChildren &&
+            (m_advancedSearchFullScanDone || m_advancedSearchScanPending))
         {
             // Same tag set already fetched, or a fetch for it is already in flight (the user kept
             // typing/adjusting the name/size fields while it runs) -- don't re-dispatch a redundant
@@ -1638,6 +1644,7 @@ void TabViewModel::runAdvancedSearch(bool forceRescan)
 
         m_advancedSearchRoot = currentPath();
         m_advancedSearchCachedTagIds = tagIds;
+        m_advancedSearchCachedTagIncludeChildren = includeChildren;
         m_advancedSearchFullScanDone = false;
         m_advancedSearchScanPending = true;
         m_advancedSearchPartialSnapshot.clear();
@@ -1646,10 +1653,19 @@ void TabViewModel::runAdvancedSearch(bool forceRescan)
         const int generation = ++m_advancedSearchGeneration;
 
         emit advancedSearchLoading();
-        m_advancedSearchService.requestTagFirstCandidates(
-            this, m_advancedSearchRoot, tagIds, [this, generation](Result<std::vector<FileNode>> result) {
-                onAdvancedSearchCandidatesReady(generation, std::move(result), /*isNewSnapshot=*/true);
-            });
+        auto onCandidatesReady = [this, generation](Result<std::vector<FileNode>> result) {
+            onAdvancedSearchCandidatesReady(generation, std::move(result), /*isNewSnapshot=*/true);
+        };
+        if (includeChildren)
+        {
+            m_advancedSearchService.requestTagFirstCandidatesIncludingChildren(this, m_advancedSearchRoot, tagIds,
+                                                                                 std::move(onCandidatesReady));
+        }
+        else
+        {
+            m_advancedSearchService.requestTagFirstCandidates(this, m_advancedSearchRoot, tagIds,
+                                                                std::move(onCandidatesReady));
+        }
         return;
     }
 
@@ -1671,6 +1687,7 @@ void TabViewModel::runAdvancedSearch(bool forceRescan)
         // about to be overwritten with this recursive scan's own results -- invalidate the tag-first
         // cache-key above so it can't later be mistaken for a still-valid tag-first candidate cache.
         m_advancedSearchCachedTagIds.clear();
+        m_advancedSearchCachedTagIncludeChildren = false;
         m_advancedSearchFullScanDone = false;
         m_advancedSearchPartialSnapshot.clear();
         m_advancedSearchSnapshotIcons.clear();
