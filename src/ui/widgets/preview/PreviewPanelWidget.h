@@ -8,28 +8,28 @@
 
 class FilePreviewViewModel;
 class FolderPreviewWidget;
-class GifPlayerWidget;
 class HighlightThemeViewModel;
 class MediaPreviewWidget;
 class SyntaxHighlightEngine;
 class TextPreviewWidget;
-class VideoPlayerWidget;
 class QComboBox;
 class QHideEvent;
 class QLabel;
 class QShowEvent;
 class QStackedWidget;
 
-// The Preview tab's content in the right panel (Architecture.md §14.25/§14.58/§14.67/§14.79,
-// Specification.md "Preview Panel"): a QStackedWidget switching between a dedicated widget per
-// preview kind (MediaPreviewWidget for image/video poster frames and SVG, TextPreviewWidget,
-// FolderPreviewWidget, VideoPlayerWidget, GifPlayerWidget) plus loading/unsupported/error states,
-// driven by FilePreviewViewModel's signals. For Video previews, a combo above the stack lets the
-// user pick "Static image" (poster frame, MediaPreviewWidget) or "Video player"
-// (VideoPlayerWidget); a second, independent combo does the same for animated-GIF previews
-// ("Static image" / "Animation", GifPlayerWidget) -- both choices are session-only members, not
-// persisted. Calls setPanelActive(true/false) from showEvent/hideEvent so no background
-// generation happens while this tab isn't the visible one.
+// The Preview tab's content in the right panel (Architecture.md §14.25/§14.58/§14.67/§14.79/
+// §14.85, Specification.md "Preview Panel"): a QStackedWidget switching between a dedicated
+// widget per preview kind (MediaPreviewWidget for image/video poster frames, SVG, the inline
+// video player, and the inline GIF player; TextPreviewWidget; FolderPreviewWidget) plus
+// loading/unsupported/error states, driven by FilePreviewViewModel's signals. For Video previews,
+// a combo above the stack lets the user pick "Static image" or "Video player"; a second,
+// independent combo does the same for animated-GIF previews ("Static image" / "Animation") --
+// both choices are session-only members, not persisted. Both the video and GIF players are owned
+// by MediaPreviewWidget (not this widget) so that flipping either combo only swaps the content
+// inside MediaPreviewWidget's own inner stack, keeping the filename/Properties/zoom chrome
+// mounted the whole time -- see §14.85. Calls setPanelActive(true/false) from showEvent/hideEvent
+// so no background generation happens while this tab isn't the visible one.
 class PreviewPanelWidget : public QWidget
 {
     Q_OBJECT
@@ -62,8 +62,6 @@ private:
     MediaPreviewWidget* m_mediaPreviewWidget = nullptr;
     TextPreviewWidget* m_textPreviewWidget = nullptr;
     FolderPreviewWidget* m_folderPreviewWidget = nullptr;
-    VideoPlayerWidget* m_videoPlayerWidget = nullptr;
-    GifPlayerWidget* m_gifPlayerWidget = nullptr;
     QLabel* m_loadingLabel = nullptr;
     QLabel* m_unsupportedLabel = nullptr;
     QLabel* m_errorLabel = nullptr;

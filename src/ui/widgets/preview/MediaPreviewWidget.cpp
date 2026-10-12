@@ -1,5 +1,6 @@
 #include "MediaPreviewWidget.h"
 
+#include <algorithm>
 #include <chrono>
 
 #include <QFont>
@@ -9,12 +10,15 @@
 #include <QPainter>
 #include <QResizeEvent>
 #include <QSizePolicy>
+#include <QStackedWidget>
 #include <QTime>
 #include <QVBoxLayout>
 
 #include "FilePreview.h"
+#include "GifPlayerWidget.h"
 #include "MediaMetadata.h"
 #include "MediaThumbnailPainting.h"
+#include "VideoPlayerWidget.h"
 
 MediaPreviewWidget::MediaPreviewWidget(QWidget* parent)
     : QWidget(parent)
@@ -37,7 +41,10 @@ MediaPreviewWidget::MediaPreviewWidget(QWidget* parent)
     m_nameLabel->setFont(nameFont);
     layout->addWidget(m_nameLabel);
 
-    m_imageLabel = new QLabel(this);
+    m_contentStack = new QStackedWidget(this);
+    m_contentStack->setObjectName(QStringLiteral("previewContentStack"));
+
+    m_imageLabel = new QLabel(m_contentStack);
     m_imageLabel->setObjectName(QStringLiteral("previewImageLabel"));
     m_imageLabel->setAlignment(Qt::AlignHCenter | Qt::AlignTop);
     // Without this, QLabel's sizeHint()/minimumSizeHint() track whatever pixmap was last set
@@ -47,10 +54,22 @@ MediaPreviewWidget::MediaPreviewWidget(QWidget* parent)
     // called from resizeEvent() below) track the splitter continuously in both directions.
     m_imageLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     m_imageLabel->setMinimumSize(1, 1);
-    layout->addWidget(m_imageLabel, 1);
+    m_contentStack->addWidget(m_imageLabel);
+
+    m_videoPlayerWidget = new VideoPlayerWidget(m_contentStack);
+    m_contentStack->addWidget(m_videoPlayerWidget);
+
+    m_gifPlayerWidget = new GifPlayerWidget(m_contentStack);
+    m_contentStack->addWidget(m_gifPlayerWidget);
+
+    layout->addWidget(m_contentStack, 1);
 
     m_propertiesGroupBox = new QGroupBox(tr("Properties"), this);
     m_propertiesGroupBox->setObjectName(QStringLiteral("previewImagePropertiesGroupBox"));
+    // Checkable turns the title into a collapse/expand toggle (Architecture.md §14.85); default
+    // checked so it starts expanded, matching the box's always-shown behavior before this change.
+    m_propertiesGroupBox->setCheckable(true);
+    m_propertiesGroupBox->setChecked(true);
     auto* propertiesLayout = new QVBoxLayout(m_propertiesGroupBox);
 
     m_propertiesLabel = new QLabel(m_propertiesGroupBox);
@@ -61,6 +80,8 @@ MediaPreviewWidget::MediaPreviewWidget(QWidget* parent)
     m_propertiesLabel->setSizePolicy(QSizePolicy::Ignored, m_propertiesLabel->sizePolicy().verticalPolicy());
     propertiesLayout->addWidget(m_propertiesLabel);
 
+    connect(m_propertiesGroupBox, &QGroupBox::toggled, m_propertiesLabel, &QLabel::setVisible);
+
     layout->addWidget(m_propertiesGroupBox);
 
     m_zoomLabel = new QLabel(this);
@@ -68,18 +89,8 @@ MediaPreviewWidget::MediaPreviewWidget(QWidget* parent)
     layout->addWidget(m_zoomLabel);
 }
 
-bool MediaPreviewWidget::setPreview(const FilePreview& preview)
+void MediaPreviewWidget::setMetadata(const FilePreview& preview)
 {
-    const std::vector<std::byte>& bytes = preview.imageBytes();
-    // No format hint: auto-detect from the byte signature so this still works for PNG-encoded SVG
-    // thumbnails (Architecture.md §14.79) as well as the existing JPEG-encoded raster thumbnails.
-    m_currentImage.loadFromData(reinterpret_cast<const uchar*>(bytes.data()), static_cast<uint>(bytes.size()));
-
-    if (m_currentImage.isNull())
-    {
-        return false;
-    }
-
     m_nameLabel->setText(QString::fromStdWString(preview.path().filename().native()));
 
     const MediaMetadata& metadata = preview.metadata();
@@ -109,19 +120,70 @@ bool MediaPreviewWidget::setPreview(const FilePreview& preview)
     m_propertiesLabel->setText(properties.join(QStringLiteral("\n")));
     m_propertiesGroupBox->setVisible(!properties.isEmpty());
 
+    updateZoomLabel();
+}
+
+bool MediaPreviewWidget::showStaticImage(const FilePreview& preview)
+{
+    const std::vector<std::byte>& bytes = preview.imageBytes();
+    // No format hint: auto-detect from the byte signature so this still works for PNG-encoded SVG
+    // thumbnails (Architecture.md §14.79) as well as the existing JPEG-encoded raster thumbnails.
+    m_currentImage.loadFromData(reinterpret_cast<const uchar*>(bytes.data()), static_cast<uint>(bytes.size()));
+
+    if (m_currentImage.isNull())
+    {
+        return false;
+    }
+
+    m_contentStack->setCurrentWidget(m_imageLabel);
     rescaleImage();
     return true;
+}
+
+void MediaPreviewWidget::showVideo(const std::filesystem::path& path)
+{
+    m_videoPlayerWidget->load(path);
+    m_contentStack->setCurrentWidget(m_videoPlayerWidget);
+}
+
+void MediaPreviewWidget::showGifAnimation(const std::filesystem::path& path)
+{
+    m_gifPlayerWidget->load(path);
+    m_contentStack->setCurrentWidget(m_gifPlayerWidget);
+}
+
+void MediaPreviewWidget::releaseVideoPlayer()
+{
+    m_videoPlayerWidget->release();
+}
+
+void MediaPreviewWidget::releaseGifPlayer()
+{
+    m_gifPlayerWidget->release();
+}
+
+void MediaPreviewWidget::releaseVideoPlayerIfActive()
+{
+    if (m_contentStack->currentWidget() == m_videoPlayerWidget)
+        m_videoPlayerWidget->release();
+}
+
+void MediaPreviewWidget::releaseGifPlayerIfActive()
+{
+    if (m_contentStack->currentWidget() == m_gifPlayerWidget)
+        m_gifPlayerWidget->release();
 }
 
 void MediaPreviewWidget::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
     rescaleImage();
+    updateZoomLabel();
 }
 
 void MediaPreviewWidget::rescaleImage()
 {
-    if (m_currentImage.isNull())
+    if (m_currentImage.isNull() || m_contentStack->currentWidget() != m_imageLabel)
     {
         return;
     }
@@ -146,18 +208,28 @@ void MediaPreviewWidget::rescaleImage()
     {
         m_imageLabel->setPixmap(scaled);
     }
+}
 
-    if (m_currentActualWidth > 0)
-    {
-        const double ratio = scaled.width() / static_cast<double>(m_currentActualWidth);
-        m_zoomLabel->setText(tr("Zoom: %1% (actual %2x%3)")
-                                  .arg(qRound(ratio * 100))
-                                  .arg(m_currentActualWidth)
-                                  .arg(m_currentActualHeight));
-        m_zoomLabel->setVisible(true);
-    }
-    else
+void MediaPreviewWidget::updateZoomLabel()
+{
+    if (m_currentActualWidth <= 0 || m_currentActualHeight <= 0)
     {
         m_zoomLabel->setVisible(false);
+        return;
     }
+
+    // Driven by the content stack's own size rather than the static image label's rendered
+    // pixmap, so the percentage stays live (and the label stays visible) across all three content
+    // modes instead of only existing on the static-image page -- matching how both the image
+    // label and GifPlayerWidget actually letterbox (Qt::KeepAspectRatio against their full area);
+    // for the video player it's a slight overestimate since VideoPlayerWidget's own controls bar
+    // eats into its available height, but that's preferable to the zoom label vanishing entirely.
+    const QSize containerSize = m_contentStack->size();
+    const double ratio = std::min(containerSize.width() / static_cast<double>(m_currentActualWidth),
+                                   containerSize.height() / static_cast<double>(m_currentActualHeight));
+    m_zoomLabel->setText(tr("Zoom: %1% (actual %2x%3)")
+                              .arg(qRound(ratio * 100))
+                              .arg(m_currentActualWidth)
+                              .arg(m_currentActualHeight));
+    m_zoomLabel->setVisible(true);
 }

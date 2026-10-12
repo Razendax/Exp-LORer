@@ -5,13 +5,14 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81, §14.84 — the right-panel file Preview tab, its
+Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81, §14.84–14.85 — the right-panel file Preview tab, its
 text-preview syntax highlighting, archive browsing/preview/extraction, per-file/folder font &
 color decoration, the Preview panel's dedicated per-kind widgets and media-layout rework, the
 built-in Widgets video player (first used here, before Media Viewer mode reused it), real
 image/video previews in the main browser's Extra Large Icons view, the mouse-hover preview
-popup, GIF animation / SVG rendering support across both, a GIF-thumbnail-decode bug fix, and a
-checkerboard background fix for transparent SVG/GIF previews in both of those surfaces.
+popup, GIF animation / SVG rendering support across both, a GIF-thumbnail-decode bug fix, a
+checkerboard background fix for transparent SVG/GIF previews in both of those surfaces, and a
+content-only mode-switch/collapsible-properties rework of the Preview tab's media chrome.
 Section numbers are **not** contiguous with this file's neighbors — they were assigned chronologically as
 each feature was built and are kept stable since code comments cite them directly. See
 [Architecture.md](../Architecture.md) §14 for the full topic index across all nine files.
@@ -726,6 +727,58 @@ its background with the popup's own `palette().window()` first, and the Preview 
 `MediaPreviewWidget` just handed the scaled `QPixmap` straight to a plain `QLabel::setPixmap()` —
 both let a transparent-but-dark SVG/GIF vanish into whatever colour sat behind it (most visibly a
 dark theme's window background). Pure UI fix, no Domain/Application/Port change.
+
+---
+### 14.85 Preview Panel: Content-Only Mode Switching + Collapsible Properties
+
+§14.67/§14.79's "Static image" ↔ "Video player"/"Animation" combos worked by swapping
+`PreviewPanelWidget`'s *outer* `QStackedWidget` between `MediaPreviewWidget` (which privately
+owned the name label, Properties `QGroupBox`, and zoom label alongside the static-image
+`QLabel`) and a bare `VideoPlayerWidget`/`GifPlayerWidget` with none of that chrome — so flipping
+either combo tore down and rebuilt the filename/Properties/zoom each time, since they only
+existed on the static-image page. Separately, the Properties box was a plain, always-expanded
+`QGroupBox`.
+
+* **`MediaPreviewWidget`** gained an inner `m_contentStack` (`QStackedWidget`) holding the
+  static-image `QLabel` plus `VideoPlayerWidget` and `GifPlayerWidget`, which moved in from being
+  `PreviewPanelWidget`'s outer-stack siblings. The name label, Properties box, and zoom label
+  stay outside `m_contentStack`, as permanent siblings in `MediaPreviewWidget`'s own layout — so
+  `PreviewPanelWidget`'s outer stack now stays parked on `MediaPreviewWidget` for the whole
+  Image/Video/GIF session, and only `m_contentStack` swaps on a mode-combo change.
+  `setPreview()` was split into `setMetadata()` (name + Properties text, always called regardless
+  of the active content sub-page — fixing a latent gap where selecting a new video/GIF while the
+  combo was already on "Video player"/"Animation" never updated them, harmless only because they
+  were invisible on that page before this change) and `showStaticImage()` /
+  `showVideo()` / `showGifAnimation()` (each switches `m_contentStack` and returns/loads
+  accordingly). The zoom label was initially hidden whenever `m_contentStack`'s current page
+  wasn't the image label, since zoom had no equivalent for a native video/GIF player -- but
+  switching the mode combo made it visibly vanish, which read as a glitch rather than intentional,
+  so it was reworked to stay visible across all three content modes: `updateZoomLabel()` computes
+  the percentage from `m_contentStack`'s own size against the actual resolution (rather than the
+  static image label's rendered pixmap), matching how both the image label and `GifPlayerWidget`
+  actually letterbox (`Qt::KeepAspectRatio` against their full area); for the video player it's a
+  slight overestimate since `VideoPlayerWidget`'s own controls bar eats into its available height,
+  accepted as preferable to the label vanishing. `rescaleImage()` keeps doing only the image
+  pixmap's own rescale/checkerboard-compositing; `updateZoomLabel()` is called from `setMetadata()`
+  (so switching files refreshes it immediately regardless of which mode is active) and from
+  `resizeEvent()` (unconditionally, not gated on the image page). The label is hidden only when
+  there is no resolution metadata at all.
+  `PreviewPanelWidget`'s release call sites (`hideEvent`, `onPreviewLoading/Failed/Cleared`, the
+  mode-change handlers) now forward through four small `MediaPreviewWidget` methods
+  (`releaseVideoPlayer()`/`releaseGifPlayer()`, and the guarded `...IfActive()` pair) instead of
+  touching the two player widgets directly.
+* **Collapsible Properties**: no generic collapsible-section widget exists in this codebase
+  (`SidePanelWidget`/`BottomPanelWidget`'s collapse pattern is panel/column-level, driven by an
+  owning `QSplitter` — not a fit here), so `m_propertiesGroupBox` was made checkable instead
+  (`setCheckable(true)`, default checked/expanded) with its native `toggled(bool)` wired straight
+  to `m_propertiesLabel->setVisible(bool)` — a standard Qt checkbox-in-title-bar affordance, no
+  new widget class. Collapsed/expanded state is session-only (not persisted via
+  `AppConfig`/`QSettings`), the same posture §14.67/§14.79 already took for the two mode combos
+  in this same widget.
+* **Not built**: no change to the combos' own show/hide logic, their session-only persistence, or
+  the "hide the whole Properties box when there are no properties" behavior (independent of, and
+  composes fine with, the new collapse toggle).
+* **Testing**: no new GTest coverage — same UI-glue carve-out as §14.71/§14.76/§14.84 above.
 
 * **`MediaThumbnailPainting`** (`src/ui/widgets/media`) gains a public `checkerboardBrush()`,
   exposing the same static 8px gray/white tile `paintThumbnail()` already built for itself
