@@ -5,8 +5,9 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.9, §14.17, §14.70 — the tag panel and selection tracking, the standalone Tag Manager
-dialog, and the tag panel's keyboard-driven autocomplete. Tag-*integrated search* (clicking a tag
+Covers §14.9, §14.17, §14.70, §14.88 — the tag panel and selection tracking, the standalone Tag
+Manager dialog, the tag panel's keyboard-driven autocomplete, and the selection tags AND/OR
+combine mode. Tag-*integrated search* (clicking a tag
 to search by it, and Advanced Search's own tag box) lives in
 [03-search.md](03-search.md) §14.20 instead, since that section is primarily about Advanced
 Search's result-building mechanics. Section numbers are **not** contiguous with this file's
@@ -22,8 +23,9 @@ every focus/tab change, refreshing three sections: the focused tab's folder-plus
 live tag search results, and the selected item's tags. Selection is per-tab state
 (`TabViewModel::selectedEntries()`, a `std::vector<FileNode>` since §14.16), cleared on every
 navigation. The tagging target resolves to: the single selected entry; the current folder itself
-(via `IFileSystemRepository::stat`) if nothing is selected; or no target if more than one item is
-selected (multi-item tagging isn't built). `SQLiteTagRepository` is the first concrete
+(via `IFileSystemRepository::stat`) if nothing is selected; or, for a multi-selection, every
+selected entry at once (§14.88 covers how their tags are combined for display).
+`SQLiteTagRepository` is the first concrete
 `ITagRepository` implementation, introduced for this feature. Kept synchronous on the UI thread
 (§5). Tag chips render via a `FlowLayout` (wrapping row layout) and `TagChipWidget`
 (read-only/addable/removable/selectable pill styles).
@@ -86,3 +88,32 @@ posture as §14.46/§14.69.
 * **Testing**: no new GTest coverage — `TagListViewModel` is untested per Architecture.md §11's
   existing convention (same as `WorkspaceController`), and `TagSearchEdit`/`TagPanelWidget` are UI
   widgets outside CTest's v1 scope; manual smoke test only.
+
+### 14.88 Tags-on-Selection Combine Mode (AND/OR)
+
+`TagListViewModel::refreshSelectedItemTags()` (§14.9) resolves a multi-selection's tagging target
+to every selected entry at once and must collapse their individual tag lists into the single list
+shown/removable in the "Tags on selection" chip row. The resolve-to-multiple-targets behavior
+itself shipped with no combine-mode choice (AND/intersection only, tags common to every selected
+item, so every chip shown stays valid to remove from the whole selection in one action); this adds
+a user-facing toggle alongside it, keeping AND as the default so existing behavior doesn't change
+underneath anyone.
+
+* **`TagListViewModel::CombineMode`** (new public nested `enum class { And, Or }`, defaults to
+  `And`) plus `setSelectedItemTagsCombineMode()` (new public slot) and
+  `selectedItemTagsCombineMode()` accessor. `refreshSelectedItemTags()`'s multi-target branch now
+  switches on the mode: `And` keeps the existing intersection loop; `Or` unions each target's tags
+  instead, deduplicating by id (first-seen order) so the union, like the intersection, never shows
+  the same tag twice. `addTagToSelection`/`removeTagFromSelection` needed no change — both already
+  iterate every resolved target and tolerate per-target `AlreadyExists`/`NotFound`, so removing an
+  OR-mode chip that's only present on some targets already unassigns it from whichever targets
+  have it and no-ops on the rest.
+* **`TagPanelWidget`** adds a `QComboBox` ("AND"/"OR") next to the "Tags on selection" label
+  (`addChipSection`'s header row, extended to optionally take a trailing widget), wired straight to
+  `setSelectedItemTagsCombineMode()`. Left always visible/enabled rather than hidden for a
+  single-item selection — both modes trivially agree when there's only one target, so hiding it
+  would just be extra state to keep in sync for no behavioral benefit.
+* **Not built**: the chosen mode doesn't persist across selection changes beyond the ViewModel's
+  own lifetime (no settings/DB-backed preference) and isn't retargeted per tab — one shared choice
+  for the whole panel, same posture as the rest of `TagListViewModel`'s shared, retargeted state.
+* **Testing**: no new GTest coverage, same carve-out as §14.9/§14.70 above.

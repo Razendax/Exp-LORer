@@ -1,5 +1,7 @@
 #include "TagPanelWidget.h"
 
+#include <QComboBox>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QScrollArea>
@@ -34,12 +36,20 @@ TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, UiThemeChangeNotifie
     m_createTagButton->hide();
     mainLayout->addWidget(m_createTagButton);
 
+    m_selectedItemTagsCombineModeCombo = new QComboBox(this);
+    m_selectedItemTagsCombineModeCombo->setObjectName(QStringLiteral("tagPanelSelectedItemTagsCombineModeCombo"));
+    m_selectedItemTagsCombineModeCombo->addItem(tr("AND"));
+    m_selectedItemTagsCombineModeCombo->addItem(tr("OR"));
+
     m_selectedItemTagsLayout = addChipSection(mainLayout, tr("Tags on selection"), &UiColors::UiColorSet::selectedItemTagsBackground,
-                                               QStringLiteral("tagPanelSelectedItemTagsSection"));
+                                               QStringLiteral("tagPanelSelectedItemTagsSection"), m_selectedItemTagsCombineModeCombo);
 
     connect(m_searchEdit, &QLineEdit::textChanged, m_viewModel, &TagListViewModel::setSearchQuery);
     connect(m_searchEdit, &QLineEdit::returnPressed, this, &TagPanelWidget::onSearchEditReturnPressed);
     connect(m_createTagButton, &QPushButton::clicked, m_viewModel, &TagListViewModel::createAndAddTagFromQuery);
+    connect(m_selectedItemTagsCombineModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int index) {
+        m_viewModel->setSelectedItemTagsCombineMode(static_cast<TagListViewModel::CombineMode>(index));
+    });
 
     connect(m_viewModel, &TagListViewModel::folderTagsChanged, this, &TagPanelWidget::rebuildFolderTags);
     connect(m_viewModel, &TagListViewModel::searchResultsChanged, this, &TagPanelWidget::rebuildSearchResults);
@@ -58,9 +68,19 @@ TagPanelWidget::TagPanelWidget(TagListViewModel* viewModel, UiThemeChangeNotifie
 }
 
 FlowLayout* TagPanelWidget::addChipSection(QVBoxLayout* mainLayout, const QString& title, ColorRole colorRole,
-                                            const QString& sectionObjectName)
+                                            const QString& sectionObjectName, QWidget* headerExtraWidget)
 {
-    mainLayout->addWidget(new QLabel(title, this));
+    if (headerExtraWidget)
+    {
+        auto* headerLayout = new QHBoxLayout;
+        headerLayout->addWidget(new QLabel(title, this), 1);
+        headerLayout->addWidget(headerExtraWidget);
+        mainLayout->addLayout(headerLayout);
+    }
+    else
+    {
+        mainLayout->addWidget(new QLabel(title, this));
+    }
 
     auto* content = new QWidget;
     content->setObjectName(sectionObjectName);

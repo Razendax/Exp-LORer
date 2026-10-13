@@ -22,6 +22,11 @@ class TagListViewModel : public QObject
     Q_OBJECT
 
 public:
+    // How selectedItemTags() combines tags across multiple selected items (Architecture.md
+    // §14.88). Underlying values match TagPanelWidget's combo box item order, so the combo's
+    // index can be cast directly to this type.
+    enum class CombineMode { And, Or };
+
     TagListViewModel(TagManagementUseCase& tagManagementUseCase, FileNavigationUseCase& fileNavigationUseCase,
                       NotificationCenter& notificationCenter, TagChangeNotifier& tagChangeNotifier, QObject* parent = nullptr);
 
@@ -35,10 +40,13 @@ public:
     const std::vector<Tag>& searchResults() const noexcept { return m_searchResults; }
 
     // Requirement 1.4: tags of only the resolved target(s) (selected item(s), or the browsed
-    // folder itself when nothing is selected) — no ancestors. With multiple items selected, this
-    // is the intersection (tags common to every selected item), so every chip shown here is valid
-    // to remove from the whole selection at once.
+    // folder itself when nothing is selected) — no ancestors. With multiple items selected, these
+    // are combined per selectedItemTagsCombineMode(): CombineMode::And (default) intersects them
+    // (tags common to every selected item, so every chip shown is valid to remove from the whole
+    // selection at once); CombineMode::Or unions them (every tag present on at least one target).
     const std::vector<Tag>& selectedItemTags() const noexcept { return m_selectedItemTags; }
+
+    CombineMode selectedItemTagsCombineMode() const noexcept { return m_selectedItemTagsCombineMode; }
 
     // Whether the current search query has no existing exact (case-insensitive) name match, so
     // the panel's inline "Create tag "<query>"" affordance should be shown.
@@ -60,6 +68,11 @@ public slots:
     // whole operation only fails when every target fails.
     void addTagToSelection(Tag::Id tagId);
     void removeTagFromSelection(Tag::Id tagId);
+
+    // Switches how selectedItemTags() combines tags across a multi-item selection. No-op if
+    // unchanged; otherwise re-resolves selectedItemTags() (and re-filters the search section
+    // against it) under the new mode.
+    void setSelectedItemTagsCombineMode(CombineMode mode);
 
     // Creates a new tag named by the trimmed current search query (color auto-picked from
     // TagColorPalette) and immediately assigns it to the resolved target.
@@ -112,4 +125,5 @@ private:
     std::vector<Tag> m_searchResults;
     std::vector<Tag> m_selectedItemTags;
     bool m_canCreateTagFromQuery = false;
+    CombineMode m_selectedItemTagsCombineMode = CombineMode::And;
 };

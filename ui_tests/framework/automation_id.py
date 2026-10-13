@@ -162,6 +162,7 @@ class AutomationID:
     TAG_PANEL_FOLDER_TAGS_SECTION = "tagPanelFolderTagsSection"
     TAG_PANEL_SEARCH_MATCHES_SECTION = "tagPanelSearchMatchesSection"
     TAG_PANEL_SELECTED_ITEM_TAGS_SECTION = "tagPanelSelectedItemTagsSection"
+    TAG_PANEL_SELECTED_ITEM_TAGS_COMBINE_MODE_COMBO = "tagPanelSelectedItemTagsCombineModeCombo"
 
     # --- Monitoring Panel (MonitoringPanelWidget.cpp, singleton) ---
     MONITORING_START_STOP_BUTTON = "monitoringStartStopButton"

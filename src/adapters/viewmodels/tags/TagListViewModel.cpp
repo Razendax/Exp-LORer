@@ -174,6 +174,18 @@ void TagListViewModel::removeTagFromSelection(Tag::Id tagId)
     emit m_tagChangeNotifier.tagsChanged();
 }
 
+void TagListViewModel::setSelectedItemTagsCombineMode(CombineMode mode)
+{
+    if (m_selectedItemTagsCombineMode == mode)
+    {
+        return;
+    }
+
+    m_selectedItemTagsCombineMode = mode;
+    refreshSelectedItemTags();
+    refreshSearchSection();
+}
+
 void TagListViewModel::createAndAddTagFromQuery()
 {
     const QString trimmed = m_searchQuery.trimmed();
@@ -341,38 +353,60 @@ void TagListViewModel::refreshSelectedItemTags()
     }
     else if (targets.size() > 1)
     {
-        // Requirement 1.4 extended to a multi-selection: the tags shown (and therefore removable
-        // in one action) are the intersection -- tags common to every selected item.
+        // Requirement 1.4 extended to a multi-selection: the tags shown (and therefore
+        // actionable in one action) are combined per m_selectedItemTagsCombineMode --
+        // CombineMode::And intersects (tags common to every selected item), CombineMode::Or
+        // unions (every tag present on at least one target).
         auto result = m_tagManagementUseCase.tagsForFiles(targets);
         if (result)
         {
             const TagsByPathMap& tagsByPath = result.value();
-            bool first = true;
-            for (const FileNode& target : targets)
+
+            if (m_selectedItemTagsCombineMode == CombineMode::And)
             {
-                const auto it = tagsByPath.find(target.path());
-                const std::vector<Tag>& tagsForTarget = (it != tagsByPath.end()) ? it->second : std::vector<Tag>{};
-
-                if (first)
+                bool first = true;
+                for (const FileNode& target : targets)
                 {
-                    m_selectedItemTags = tagsForTarget;
-                    first = false;
-                    continue;
-                }
+                    const auto it = tagsByPath.find(target.path());
+                    const std::vector<Tag>& tagsForTarget = (it != tagsByPath.end()) ? it->second : std::vector<Tag>{};
 
-                std::vector<Tag> intersected;
-                for (const Tag& tag : m_selectedItemTags)
-                {
-                    if (containsTagId(tagsForTarget, tag.id()))
+                    if (first)
                     {
-                        intersected.push_back(tag);
+                        m_selectedItemTags = tagsForTarget;
+                        first = false;
+                        continue;
+                    }
+
+                    std::vector<Tag> intersected;
+                    for (const Tag& tag : m_selectedItemTags)
+                    {
+                        if (containsTagId(tagsForTarget, tag.id()))
+                        {
+                            intersected.push_back(tag);
+                        }
+                    }
+                    m_selectedItemTags = std::move(intersected);
+
+                    if (m_selectedItemTags.empty())
+                    {
+                        break;
                     }
                 }
-                m_selectedItemTags = std::move(intersected);
-
-                if (m_selectedItemTags.empty())
+            }
+            else
+            {
+                for (const FileNode& target : targets)
                 {
-                    break;
+                    const auto it = tagsByPath.find(target.path());
+                    const std::vector<Tag>& tagsForTarget = (it != tagsByPath.end()) ? it->second : std::vector<Tag>{};
+
+                    for (const Tag& tag : tagsForTarget)
+                    {
+                        if (!containsTagId(m_selectedItemTags, tag.id()))
+                        {
+                            m_selectedItemTags.push_back(tag);
+                        }
+                    }
                 }
             }
         }

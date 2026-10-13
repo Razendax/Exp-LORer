@@ -116,8 +116,9 @@ multi-selection — rubber-band drag, Ctrl/Shift-click — built entirely on Qt'
 `TabViewModel::selectedEntries()` becomes a `std::vector<FileNode>`; clipboard, delete, and the
 context menu's Cut/Copy/Delete-equivalent entries act on the whole selection. Single-target actions
 (Rename, Properties, Open) stay single-target and are disabled for a multi-selection, since their
-backing APIs are single-path. The tag panel still requires exactly one selected item (or none,
-meaning the folder) — multi-item tagging isn't built. No automated coverage (§11, UI layer).
+backing APIs are single-path. The tag panel tags/untags the whole selection at once, combining
+their tags for display per an AND/OR toggle (04-tagging.md §14.9/§14.88). No automated coverage
+(§11, UI layer).
 
 ### 14.21 Address Bar Folder Autocomplete
 

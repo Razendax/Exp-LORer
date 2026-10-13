@@ -8,6 +8,7 @@
 #include "UiColors.h"
 
 class FlowLayout;
+class QComboBox;
 class QPushButton;
 class QVBoxLayout;
 class TagListViewModel;
@@ -37,7 +38,10 @@ private:
     // the three sections read as visually distinct (UiColors.h); the section is recorded in
     // m_themedSections so applyThemeColors() can re-tint it later. sectionObjectName is the UI
     // Automation id for the section's container widget (Architecture.md §11).
-    FlowLayout* addChipSection(QVBoxLayout* mainLayout, const QString& title, ColorRole colorRole, const QString& sectionObjectName);
+    // headerExtraWidget, when non-null, is placed alongside the title label in a header row
+    // (e.g. the AND/OR combo on "Tags on selection") instead of the label getting the row alone.
+    FlowLayout* addChipSection(QVBoxLayout* mainLayout, const QString& title, ColorRole colorRole, const QString& sectionObjectName,
+                                QWidget* headerExtraWidget = nullptr);
 
     void rebuildFolderTags(const std::vector<Tag>& tags);
     void rebuildSearchResults(const std::vector<Tag>& tags);
@@ -59,6 +63,7 @@ private:
     FlowLayout* m_searchResultsLayout = nullptr;
     QPushButton* m_createTagButton = nullptr;
     FlowLayout* m_selectedItemTagsLayout = nullptr;
+    QComboBox* m_selectedItemTagsCombineModeCombo = nullptr;
 
     struct ThemedSection
     {
