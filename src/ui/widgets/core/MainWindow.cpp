@@ -35,6 +35,7 @@
 #include <QVBoxLayout>
 #include <QWidgetAction>
 
+#include "AdvancedSearchService.h"
 #include "AppConfigStore.h"
 #include "BulkRenameDialog.h"
 #include "BulkRenameUseCase.h"
@@ -246,7 +247,9 @@ namespace
 
 MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore,
                          TagManagementUseCase& tagManagementUseCase, TagChangeNotifier& tagChangeNotifier,
-                         UiThemeChangeNotifier& uiThemeChangeNotifier, SyntaxHighlightEngine& syntaxHighlightEngine,
+                         AdvancedSearchService& advancedSearchService, IconLoadingService& iconLoadingService,
+                         FileTagsService& fileTagsService, UiThemeChangeNotifier& uiThemeChangeNotifier,
+                         SyntaxHighlightEngine& syntaxHighlightEngine,
                          HighlightThemeViewModel& highlightThemeViewModel, FileDecorationsViewModel& fileDecorationsViewModel,
                          FavoritesViewModel& favoritesViewModel, NotificationCenter& notificationCenter,
                          NotificationSettingsViewModel& notificationSettingsViewModel,
@@ -260,6 +263,9 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_configStore(configStore)
     , m_tagManagementUseCase(tagManagementUseCase)
     , m_tagChangeNotifier(tagChangeNotifier)
+    , m_advancedSearchService(advancedSearchService)
+    , m_iconLoadingService(iconLoadingService)
+    , m_fileTagsService(fileTagsService)
     , m_uiThemeChangeNotifier(uiThemeChangeNotifier)
     , m_syntaxHighlightEngine(syntaxHighlightEngine)
     , m_highlightThemeViewModel(highlightThemeViewModel)
@@ -870,8 +876,9 @@ void MainWindow::createMainStatusBar()
 
 void MainWindow::showTagManagerDialog()
 {
-    TagManagerViewModel viewModel(m_tagManagementUseCase, m_tagChangeNotifier);
-    TagManagerDialog dialog(&viewModel, this);
+    TagManagerViewModel viewModel(m_tagManagementUseCase, m_tagChangeNotifier, m_advancedSearchService,
+                                  m_iconLoadingService, m_fileTagsService);
+    TagManagerDialog dialog(&viewModel, m_fileDecorationsViewModel.decorationRules(), m_fileDecorationsViewModel, this);
     dialog.exec();
 }
 

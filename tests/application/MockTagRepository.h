@@ -11,6 +11,8 @@ public:
     MOCK_METHOD(Result<void>, updateTag, (const Tag& tag), (override));
     MOCK_METHOD(Result<void>, deleteTag, (Tag::Id id), (override));
     MOCK_METHOD(Result<std::vector<Tag>>, allTags, (), (const, override));
+    MOCK_METHOD((Result<std::unordered_map<Tag::Id, int>>), tagFileCounts, (), (const, override));
+    MOCK_METHOD(Result<void>, mergeTags, (Tag::Id sourceId, Tag::Id targetId), (override));
     MOCK_METHOD(Result<void>, assignTag, (const FileTagAssociation& association), (override));
     MOCK_METHOD(Result<void>, unassignTag, (const std::filesystem::path& filePath, Tag::Id tagId), (override));
     MOCK_METHOD(Result<std::vector<Tag>>, tagsForFile, (const std::filesystem::path& filePath), (const, override));

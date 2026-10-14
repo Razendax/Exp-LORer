@@ -1,3 +1,5 @@
+#include <algorithm>
+
 #include <gtest/gtest.h>
 
 #include "SQLiteTagRepository.h"
@@ -288,6 +290,78 @@ TEST_F(SQLiteTagRepositoryTest, FindFilesWithAnyOfTagGroupsWithEmptyGroupYieldsZ
 
     ASSERT_TRUE(result.hasValue());
     EXPECT_TRUE(result.value().empty());
+}
+
+TEST_F(SQLiteTagRepositoryTest, TagFileCountsCountsOnlyTaggedFilesPerTag)
+{
+    Tag work = m_repository.createTag("Work", "#FF8800").value();
+    Tag urgent = m_repository.createTag("Urgent", "#FF0000").value();
+
+    ASSERT_TRUE(m_repository.assignTag(FileTagAssociation::create("C:/data/a.pdf", 0x1111u, work.id()).value())
+                    .hasValue());
+    ASSERT_TRUE(m_repository.assignTag(FileTagAssociation::create("C:/data/b.pdf", 0x2222u, work.id()).value())
+                    .hasValue());
+    ASSERT_TRUE(m_repository.assignTag(FileTagAssociation::create("C:/data/b.pdf", 0x2222u, urgent.id()).value())
+                    .hasValue());
+
+    auto result = m_repository.tagFileCounts();
+
+    ASSERT_TRUE(result.hasValue());
+    const auto& counts = result.value();
+    EXPECT_EQ(counts.at(work.id()), 2);
+    EXPECT_EQ(counts.at(urgent.id()), 1);
+}
+
+TEST_F(SQLiteTagRepositoryTest, TagFileCountsOmitsTagsWithNoFiles)
+{
+    Tag unused = m_repository.createTag("Unused", "#00FF00").value();
+
+    auto result = m_repository.tagFileCounts();
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().find(unused.id()), result.value().end());
+}
+
+TEST_F(SQLiteTagRepositoryTest, MergeTagsReassignsFilesAndDeletesSourceTag)
+{
+    Tag source = m_repository.createTag("Old", "#FF8800").value();
+    Tag target = m_repository.createTag("New", "#00FF00").value();
+
+    ASSERT_TRUE(m_repository.assignTag(FileTagAssociation::create("C:/data/a.pdf", 0x1111u, source.id()).value())
+                    .hasValue());
+
+    auto result = m_repository.mergeTags(source.id(), target.id());
+
+    ASSERT_TRUE(result.hasValue());
+
+    auto tags = m_repository.tagsForFile("C:/data/a.pdf");
+    ASSERT_TRUE(tags.hasValue());
+    ASSERT_EQ(tags.value().size(), 1u);
+    EXPECT_EQ(tags.value()[0].id(), target.id());
+
+    auto allTags = m_repository.allTags();
+    ASSERT_TRUE(allTags.hasValue());
+    EXPECT_TRUE(std::none_of(allTags.value().begin(), allTags.value().end(),
+                             [&](const Tag& tag) { return tag.id() == source.id(); }));
+}
+
+TEST_F(SQLiteTagRepositoryTest, MergeTagsIgnoresFilesAlreadyCarryingBothTags)
+{
+    Tag source = m_repository.createTag("Old", "#FF8800").value();
+    Tag target = m_repository.createTag("New", "#00FF00").value();
+
+    ASSERT_TRUE(m_repository.assignTag(FileTagAssociation::create("C:/data/a.pdf", 0x1111u, source.id()).value())
+                    .hasValue());
+    ASSERT_TRUE(m_repository.assignTag(FileTagAssociation::create("C:/data/a.pdf", 0x1111u, target.id()).value())
+                    .hasValue());
+
+    auto result = m_repository.mergeTags(source.id(), target.id());
+
+    ASSERT_TRUE(result.hasValue());
+    auto tags = m_repository.tagsForFile("C:/data/a.pdf");
+    ASSERT_TRUE(tags.hasValue());
+    ASSERT_EQ(tags.value().size(), 1u);
+    EXPECT_EQ(tags.value()[0].id(), target.id());
 }
 
 TEST_F(SQLiteTagRepositoryTest, FindFilesWithAnyOfTagGroupsWithEmptyOuterVectorYieldsEmptySuccess)

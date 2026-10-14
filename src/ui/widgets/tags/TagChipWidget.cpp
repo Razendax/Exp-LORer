@@ -8,7 +8,7 @@
 
 #include "TagChipColor.h"
 
-TagChipWidget::TagChipWidget(Tag tag, Kind kind, QWidget* parent)
+TagChipWidget::TagChipWidget(Tag tag, Kind kind, std::optional<int> count, std::optional<int> totalCount, QWidget* parent)
     : QWidget(parent)
     , m_tag(std::move(tag))
     , m_kind(kind)
@@ -26,6 +26,21 @@ TagChipWidget::TagChipWidget(Tag tag, Kind kind, QWidget* parent)
     layout->setContentsMargins(10, 3, hasTrailingButton ? 4 : 10, 3);
     layout->setSpacing(2);
     layout->addWidget(m_label);
+
+    if (count.has_value())
+    {
+        const QString countText = (totalCount.has_value() && *totalCount != *count)
+                                       ? QStringLiteral("%1/%2").arg(*count).arg(*totalCount)
+                                       : QString::number(*count);
+        m_countLabel = new QLabel(countText, this);
+        m_countLabel->setObjectName(QStringLiteral("tagChipCountLabel"));
+        m_countLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+        auto font = m_countLabel->font();
+        font.setPointSizeF(font.pointSizeF() * 0.85);
+        font.setBold(true);
+        m_countLabel->setFont(font);
+        layout->addWidget(m_countLabel);
+    }
 
     if (kind == Kind::Addable)
     {
@@ -81,6 +96,13 @@ void TagChipWidget::updateChipStyle()
     const QString borderColor = m_selected ? QStringLiteral("#1A73E8") : QStringLiteral("rgba(0, 0, 0, 60)");
     const QString borderWidth = m_selected ? QStringLiteral("2px") : QStringLiteral("1px");
 
+    // Blended halfway toward the chip's own background (rather than a QSS "opacity", which QLabel
+    // text color doesn't reliably honor) so the count reads as secondary/muted against whatever
+    // per-tag color the chip happens to have.
+    const QColor mutedCount(QColor::fromRgb((QColor(textColor).red() + background.red()) / 2,
+                                             (QColor(textColor).green() + background.green()) / 2,
+                                             (QColor(textColor).blue() + background.blue()) / 2));
+
     // The pill background/border lives on the chip widget itself (not the label) so the +/x
     // button, which shares this widget's layout, renders inside the same rounded pill instead of
     // as a separate square control next to it. QLabel/QToolButton children are styled transparent
@@ -88,8 +110,9 @@ void TagChipWidget::updateChipStyle()
     setStyleSheet(QStringLiteral(
                       "TagChipWidget { background-color: %1; border: %2 solid %3; border-radius: 11px; }"
                       "TagChipWidget QLabel { background: transparent; border: none; color: %4; }"
+                      "TagChipWidget QLabel#tagChipCountLabel { color: %5; }"
                       "TagChipWidget QToolButton { background: transparent; border: none; color: %4; "
                       "font-weight: bold; padding: 0px 2px; }"
                       "TagChipWidget QToolButton:hover { background-color: rgba(0, 0, 0, 40); border-radius: 8px; }")
-                      .arg(background.name(), borderWidth, borderColor, textColor));
+                      .arg(background.name(), borderWidth, borderColor, textColor, mutedCount.name()));
 }

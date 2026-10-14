@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <QObject>
@@ -62,14 +63,20 @@ public:
     Result<std::vector<FileNode>> fetchTagFirstCandidatesIncludingChildren(const std::filesystem::path& root,
                                                                             const std::vector<Tag::Id>& tagIds);
 
+    // Every file/folder tagged with exactly tagId, with no folder-root scoping and no "including
+    // children" widening (Architecture.md §14.89) -- the Tag Manager dialog's per-tag results list,
+    // which has no folder context since it's a global, tab-independent dialog.
+    Result<std::vector<FileNode>> fetchFilesForTag(Tag::Id tagId);
+
 private:
     void ensureTagRepository();
 
-    // Shared post-processing for both fetchTagFirstCandidates* methods: filters associations to
-    // those within `root`, then stats each surviving path, silently dropping files moved/deleted
-    // since tagging (Architecture.md §14.22).
+    // Shared post-processing for fetchTagFirstCandidates*/fetchFilesForTag: when `root` is set,
+    // filters associations to those within it; std::nullopt skips the containment filter entirely
+    // (Architecture.md §14.89 -- fetchFilesForTag has no folder root to scope to). Then stats each
+    // surviving path, silently dropping files moved/deleted since tagging (Architecture.md §14.22).
     Result<std::vector<FileNode>> buildCandidatesFromAssociations(
-        const std::filesystem::path& root, Result<std::vector<FileTagAssociation>> tagResult);
+        const std::optional<std::filesystem::path>& root, Result<std::vector<FileTagAssociation>> tagResult);
 
     // Lazily constructs m_gitStatusProvider/m_gitStatusUseCase on this worker's own thread, the
     // first time skipGitIgnored is actually used -- libgit2's git_repository* handles are

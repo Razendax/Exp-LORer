@@ -33,6 +33,9 @@ class ColumnVisibilitySettingsViewModel;
 class SyntaxHighlightEngine;
 class TagManagementUseCase;
 class TagChangeNotifier;
+class AdvancedSearchService;
+class IconLoadingService;
+class FileTagsService;
 class UiThemeChangeNotifier;
 class WorkspaceStore;
 class WorkspaceController;
@@ -64,7 +67,9 @@ class MainWindow : public QMainWindow
 
 public:
     MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore, TagManagementUseCase& tagManagementUseCase,
-               TagChangeNotifier& tagChangeNotifier, UiThemeChangeNotifier& uiThemeChangeNotifier,
+               TagChangeNotifier& tagChangeNotifier, AdvancedSearchService& advancedSearchService,
+               IconLoadingService& iconLoadingService, FileTagsService& fileTagsService,
+               UiThemeChangeNotifier& uiThemeChangeNotifier,
                SyntaxHighlightEngine& syntaxHighlightEngine,
                HighlightThemeViewModel& highlightThemeViewModel, FileDecorationsViewModel& fileDecorationsViewModel,
                FavoritesViewModel& favoritesViewModel, NotificationCenter& notificationCenter,
@@ -175,6 +180,9 @@ private:
     AppConfigStore& m_configStore;
     TagManagementUseCase& m_tagManagementUseCase;
     TagChangeNotifier& m_tagChangeNotifier;
+    AdvancedSearchService& m_advancedSearchService;
+    IconLoadingService& m_iconLoadingService;
+    FileTagsService& m_fileTagsService;
     UiThemeChangeNotifier& m_uiThemeChangeNotifier;
     SyntaxHighlightEngine& m_syntaxHighlightEngine;
     HighlightThemeViewModel& m_highlightThemeViewModel;

@@ -217,6 +217,75 @@ Result<std::vector<Tag>> SQLiteTagRepository::allTags() const
     return Result<std::vector<Tag>>::success(std::move(tags));
 }
 
+Result<std::unordered_map<Tag::Id, int>> SQLiteTagRepository::tagFileCounts() const
+{
+    QSqlQuery query(m_db);
+    query.prepare(QStringLiteral("SELECT tag_id, COUNT(*) FROM FileTags GROUP BY tag_id"));
+
+    if (!query.exec())
+    {
+        return Result<std::unordered_map<Tag::Id, int>>::failure(toError(query.lastError()));
+    }
+
+    std::unordered_map<Tag::Id, int> counts;
+    while (query.next())
+    {
+        counts[query.value(0).toLongLong()] = query.value(1).toInt();
+    }
+
+    return Result<std::unordered_map<Tag::Id, int>>::success(std::move(counts));
+}
+
+Result<void> SQLiteTagRepository::mergeTags(Tag::Id sourceId, Tag::Id targetId)
+{
+    if (!m_db.transaction())
+    {
+        return Result<void>::failure(toError(m_db.lastError()));
+    }
+
+    QSqlQuery reassign(m_db);
+    reassign.prepare(
+        QStringLiteral("INSERT OR IGNORE INTO FileTags(file_id, tag_id) SELECT file_id, ? FROM FileTags WHERE tag_id = ?"));
+    reassign.addBindValue(static_cast<qint64>(targetId));
+    reassign.addBindValue(static_cast<qint64>(sourceId));
+    if (!reassign.exec())
+    {
+        Error error = toError(reassign.lastError());
+        m_db.rollback();
+        return Result<void>::failure(std::move(error));
+    }
+
+    QSqlQuery deleteAssociations(m_db);
+    deleteAssociations.prepare(QStringLiteral("DELETE FROM FileTags WHERE tag_id = ?"));
+    deleteAssociations.addBindValue(static_cast<qint64>(sourceId));
+    if (!deleteAssociations.exec())
+    {
+        Error error = toError(deleteAssociations.lastError());
+        m_db.rollback();
+        return Result<void>::failure(std::move(error));
+    }
+
+    QSqlQuery deleteTagQuery(m_db);
+    deleteTagQuery.prepare(QStringLiteral("DELETE FROM Tags WHERE id = ?"));
+    deleteTagQuery.addBindValue(static_cast<qint64>(sourceId));
+    if (!deleteTagQuery.exec())
+    {
+        Error error = toError(deleteTagQuery.lastError());
+        m_db.rollback();
+        return Result<void>::failure(std::move(error));
+    }
+
+    if (!m_db.commit())
+    {
+        Error error = toError(m_db.lastError());
+        m_db.rollback();
+        return Result<void>::failure(std::move(error));
+    }
+
+    Logging::debug("SQLiteTagRepository: tags merged");
+    return Result<void>::success();
+}
+
 Result<std::int64_t> SQLiteTagRepository::findOrCreateFileRow(const std::filesystem::path& path, std::optional<std::uint64_t> hash)
 {
     const QString qPath = toQString(path);

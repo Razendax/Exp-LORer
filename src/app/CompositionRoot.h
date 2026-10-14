@@ -107,6 +107,8 @@ public:
     MediaThumbnailLoadingService& mediaThumbnailLoadingService() noexcept { return m_mediaThumbnailLoadingService; }
     FileNavigationUseCase& fileNavigationUseCase() noexcept { return m_fileNavigationUseCase; }
     BulkRenameUseCase& bulkRenameUseCase() noexcept { return m_bulkRenameUseCase; }
+    AdvancedSearchService& advancedSearchService() noexcept { return m_advancedSearchService; }
+    FileTagsService& fileTagsService() noexcept { return m_fileTagsService; }
 
 private:
     StandardFileSystemRepository m_fileSystemRepository;

@@ -55,6 +55,10 @@ public:
                                                       const std::vector<Tag::Id>& tagIds,
                                                       std::function<void(Result<std::vector<FileNode>>)> callback);
 
+    // Dispatches to AdvancedSearchWorker::fetchFilesForTag (Architecture.md §14.89) -- the Tag
+    // Manager dialog's per-tag results list, with no folder root to scope to.
+    void requestFilesForTag(QObject* context, Tag::Id tagId, std::function<void(Result<std::vector<FileNode>>)> callback);
+
 private:
     QThread m_workerThread;
     AdvancedSearchWorker* m_worker = nullptr;

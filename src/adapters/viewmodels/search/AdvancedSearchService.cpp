@@ -153,3 +153,37 @@ void AdvancedSearchService::requestTagFirstCandidatesIncludingChildren(
         },
         Qt::QueuedConnection);
 }
+
+void AdvancedSearchService::requestFilesForTag(QObject* context, Tag::Id tagId,
+                                                 std::function<void(Result<std::vector<FileNode>>)> callback)
+{
+    QPointer<QObject> guard(context);
+
+    QMetaObject::invokeMethod(
+        m_worker,
+        [this, guard, tagId, callback = std::move(callback)]() {
+            Result<std::vector<FileNode>> result = m_worker->fetchFilesForTag(tagId);
+
+            if (result.hasError())
+            {
+                Logging::warn("AdvancedSearchService: files-for-tag failed: " + std::string(toLogString(result.error().code)));
+            }
+            else
+            {
+                Logging::debug("AdvancedSearchService: files-for-tag finished (" + std::to_string(result.value().size()) +
+                                " result(s))");
+            }
+
+            QMetaObject::invokeMethod(
+                this,
+                [guard, callback, result = std::move(result)]() mutable {
+                    if (!guard)
+                    {
+                        return;
+                    }
+                    callback(std::move(result));
+                },
+                Qt::QueuedConnection);
+        },
+        Qt::QueuedConnection);
+}

@@ -342,6 +342,57 @@ TEST(TagManagementUseCase, TagsForPathWithAncestorsPropagatesRepositoryFailure)
     EXPECT_EQ(result.error().code, ErrorCode::IoError);
 }
 
+TEST(TagManagementUseCase, TagFileCountsDelegatesToRepository)
+{
+    MockTagRepository tagRepository;
+    MockFileSystemRepository fileSystemRepository;
+    std::unordered_map<Tag::Id, int> counts{ { 1, 3 }, { 2, 1 } };
+    EXPECT_CALL(tagRepository, tagFileCounts()).WillOnce(Return(Result<std::unordered_map<Tag::Id, int>>::success(counts)));
+
+    TagManagementUseCase useCase(tagRepository, fileSystemRepository);
+    auto result = useCase.tagFileCounts();
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value(), counts);
+}
+
+TEST(TagManagementUseCase, MergeTagsRejectsMergingTagIntoItself)
+{
+    MockTagRepository tagRepository;
+    MockFileSystemRepository fileSystemRepository;
+    EXPECT_CALL(tagRepository, mergeTags(_, _)).Times(0);
+
+    TagManagementUseCase useCase(tagRepository, fileSystemRepository);
+    auto result = useCase.mergeTags(1, 1);
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::InvalidArgument);
+}
+
+TEST(TagManagementUseCase, MergeTagsRejectsUnassignedIds)
+{
+    MockTagRepository tagRepository;
+    MockFileSystemRepository fileSystemRepository;
+    EXPECT_CALL(tagRepository, mergeTags(_, _)).Times(0);
+
+    TagManagementUseCase useCase(tagRepository, fileSystemRepository);
+
+    EXPECT_TRUE(useCase.mergeTags(Tag::kUnassignedId, 2).hasError());
+    EXPECT_TRUE(useCase.mergeTags(1, Tag::kUnassignedId).hasError());
+}
+
+TEST(TagManagementUseCase, MergeTagsDelegatesToRepositoryWhenValid)
+{
+    MockTagRepository tagRepository;
+    MockFileSystemRepository fileSystemRepository;
+    EXPECT_CALL(tagRepository, mergeTags(1, 2)).WillOnce(Return(Result<void>::success()));
+
+    TagManagementUseCase useCase(tagRepository, fileSystemRepository);
+    auto result = useCase.mergeTags(1, 2);
+
+    EXPECT_TRUE(result.hasValue());
+}
+
 TEST(TagManagementUseCase, SearchTagsWithEmptyQueryReturnsAllAlphabetical)
 {
     MockTagRepository tagRepository;

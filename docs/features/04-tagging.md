@@ -5,9 +5,12 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.9, §14.17, §14.70, §14.88 — the tag panel and selection tracking, the standalone Tag
-Manager dialog, the tag panel's keyboard-driven autocomplete, and the selection tags AND/OR
-combine mode. Tag-*integrated search* (clicking a tag
+Covers §14.9, §14.17, §14.70, §14.88, §14.89, §14.90, §14.91 — the tag panel and selection tracking, the
+standalone Tag Manager dialog, the tag panel's keyboard-driven autocomplete, the selection tags
+AND/OR combine mode, the Tag Manager's file-count toggle/results list/rename-merge additions, the
+Tag Manager's icon/Tags-column wiring plus window/column persistence, and the tree view's nested-tag
+subtree totals.
+Tag-*integrated search* (clicking a tag
 to search by it, and Advanced Search's own tag box) lives in
 [03-search.md](03-search.md) §14.20 instead, since that section is primarily about Advanced
 Search's result-building mechanics. Section numbers are **not** contiguous with this file's
@@ -117,3 +120,108 @@ underneath anyone.
   own lifetime (no settings/DB-backed preference) and isn't retargeted per tab — one shared choice
   for the whole panel, same posture as the rest of `TagListViewModel`'s shared, retargeted state.
 * **Testing**: no new GTest coverage, same carve-out as §14.9/§14.70 above.
+
+### 14.89 Tag Manager: File-Count Toggle, Files-for-Tag Results List, Rename-Merge
+
+Three additions to the Tag Manager dialog (§14.17), none of which change its basic CRUD-on-the-global-
+tag-list posture:
+
+* **File-count toggle**: a checkable button next to the search box calls
+  `TagManagerViewModel::setShowCounts(bool)`, which fetches a `Tag::Id → int` map via a new
+  `ITagRepository::tagFileCounts()`/`TagManagementUseCase::tagFileCounts()` (one grouped
+  `SELECT tag_id, COUNT(*) FROM FileTags GROUP BY tag_id` query — kept synchronous like every other
+  `TagManagerViewModel` operation, §5). `TagChipWidget` gained a trailing, default-`nullopt`
+  `std::optional<int> count` constructor parameter rendering a small secondary label when present;
+  all pre-existing call sites (tag panel, search criteria panel, media viewer search panel) are
+  unaffected since they never pass a count. Counts refresh after every add/rename/delete/merge.
+* **Files-for-tag results list**: selecting a chip now also calls
+  `TagManagerViewModel::setSelectedTag`, which requests the tag's files asynchronously via a new
+  `AdvancedSearchService::requestFilesForTag`/`AdvancedSearchWorker::fetchFilesForTag` (reusing
+  `findFilesWithAllTags` + the existing `buildCandidatesFromAssociations` path→`FileNode` stat
+  pipeline from §14.20, whose `root` filter became `std::optional<std::filesystem::path>` so a
+  global, non-folder-scoped query can skip it). Results render in a `FileBrowserView`
+  (`DisplayMode::AdvancedSearchResults`) placed in a `QSplitter` below the chip row — the same
+  widget/model/delegate combination Advanced Search's results pane already uses, reused as-is. Scope
+  is the exact selected tag only (no nested/child-tag inclusion, consistent with §14.9/§14.88's
+  string-prefix `TagHierarchy` being a display convention, not a persisted relationship); no
+  double-click/open action is wired up yet. This is the first feature needing `AdvancedSearchService`
+  outside a tab's `WorkspaceController`/`TabViewModel` chain, so `MainWindow` now also takes it as a
+  constructor dependency, passed through from `CompositionRoot`.
+* **Rename → merge prompt**: renaming to a name that collides with another existing tag no longer just
+  surfaces the DB's `UNIQUE` constraint violation as a bare error. `TagManagerDialog::onRenameClicked`
+  pre-checks the trimmed new name against `TagManagerViewModel::allTags()` (new thin wrapper, so the
+  check isn't limited to whatever the search box currently filters to) for a case-insensitive exact
+  match; if found, a confirmation dialog offers to merge instead, calling a new
+  `TagManagerViewModel::mergeTags`/`TagManagementUseCase::mergeTags`/`ITagRepository::mergeTags`. The
+  repository implementation is a transaction — `INSERT OR IGNORE` the source tag's `FileTags` rows
+  under the target tag id (the composite `PRIMARY KEY (file_id, tag_id)` would otherwise reject rows
+  for files already carrying both tags), delete the rest, then delete the source `Tags` row. The
+  pre-existing DB-level `UNIQUE` violation path remains as a safety net for the rare race between the
+  check and the update. Since tag "children" are a `TagHierarchy` string-prefix convention with no DB
+  edge, merging a tag away never touches any other tag's row.
+* **Testing**: `tagFileCounts`/`mergeTags` get real coverage — `tests/adapters` (in-memory SQLite, per
+  §11) for the repository methods, `tests/application` (mocked `ITagRepository`) for the use-case
+  passthrough/guards. UI pieces keep the same no-GTest carve-out as the rest of this dialog.
+
+### 14.90 Tag Manager: Real Icons/Tags Column for Results List, Window/Column Persistence
+
+The §14.89 results list never got real per-row icons or Tags-column data — `TagManagerDialog::
+onFilesForTagChanged` only ever called `FileListModel::setEntries()`, never `setIcons()`/
+`setFileTags()`, so every row showed the generic placeholder icon and a permanently blank Tags
+cell. This is the same bug *class* §14.38/the "[search] Fix bug: not correct icons for files were
+shown" fix addressed for Advanced Search — a `FileListModel` row only lights up once something
+calls those two setters — just never wired up here at all, rather than wiped by a re-filter.
+
+* **Icons/Tags wiring**: `TagManagerViewModel` gained two new constructor dependencies —
+  `IconLoadingService&`/`FileTagsService&`, both already owned long-lived by `CompositionRoot`
+  and already used by `TabViewModel::requestAdvancedSearchResultIcons`/
+  `requestAdvancedSearchResultTags` for Advanced Search's own results. `setSelectedTag` now
+  requests both, in addition to the existing `AdvancedSearchService::requestFilesForTag` call,
+  emitting two new signals (`filesForTagIconsChanged`/`filesForTagTagsChanged`) that
+  `TagManagerDialog` applies straight onto its results model via `setIcons()`/`setFileTags()`.
+  Unlike Advanced Search, no snapshot-accumulator cache was needed — this results list never
+  re-filters while open (`setEntries()` runs exactly once per chip click), so there's no
+  icon-cache-wipe to guard against. A new `int` generation counter guards all three async
+  replies (the pre-existing `requestFilesForTag` callback included, which had no staleness guard
+  before this) against a rapid chip-switch resolving out of order — the same discard-by-
+  generation idiom `TabViewModel` already uses throughout. `MainWindow`/`main.cpp` now thread
+  `IconLoadingService&`/`FileTagsService&` through to `TagManagerViewModel`'s construction, the
+  same way `AdvancedSearchService&` was threaded through for §14.89.
+* **Window/column persistence**: the dialog's size (previously a hardcoded 800×600 every open)
+  and the results list's column widths, left-to-right order, and per-column visibility are now
+  saved/restored via `QSettings` (`"TagManager/WindowGeometry"`/`"TagManager/ColumnWidths"`/
+  `"TagManager/ColumnOrder"`/`"TagManager/ColumnVisibility"`), read in the constructor — via the
+  existing `FileBrowserView::setColumnWidths`/`setColumnOrder`/`setColumnVisible`, the same trio
+  the header's right-click column menu already drives — and written from a `done(int)` override
+  (not `closeEvent`, since the dialog's own "Close" button calls `QDialog::accept()` directly
+  rather than closing the window) — a self-contained choice over extending `AppConfig`'s JSON,
+  since this dialog is a fresh, stack-local `QDialog` with no existing `CompositionRoot`/
+  `AppConfig` plumbing of its own.
+* **Count label**: the per-chip file-count badge (§14.89) is now bold, to read as a count rather
+  than a continuation of the tag name next to it.
+* **Testing**: no new GTest coverage, same carve-out as §14.17/§14.89's UI pieces.
+
+### 14.91 Tag Manager Tree/List: Nested-Tag Subtree Totals
+
+Both of the Tag Manager's view modes' per-tag count (§14.89's toggle) previously showed only a
+tag's own file count, with no indication of how many files sat under its nested children (still
+the §14.9/§14.88/§14.89 string-prefix `TagHierarchy` display convention, never a DB relation).
+
+* **Tree view**: `TagManagerDialog::rebuildTagTree` now does a post-order pass over the
+  already-built tree (after counts are known) computing each node's subtree total — its own count
+  (if it's a real tag, not just a path-grouping node like "Project" when only "Project/Foo" is an
+  actual tag) plus the recursive sum of every descendant tag's own count. A leaf real tag keeps the
+  pre-existing `"Name  (N)"` format; a real tag with children shows both, `"Name  (N, M total)"`;
+  a path-grouping node (always has children, by construction) shows only the total, `"Name  (M
+  total)"`.
+* **List view (chips)**: the flat chip list has no tree structure to walk, so
+  `TagManagerDialog::rebuildTagChips` recomputes "children" the same way — for each tag, every
+  *other* currently-matching tag whose name is prefixed `"<tag name>/"` — and sums their counts.
+  `TagChipWidget` gained a fourth constructor parameter, `std::optional<int> totalCount` (ahead of
+  the pre-existing trailing `parent`; no other call site passes it), rendering `"count/totalCount"`
+  in the count label instead of a bare count when a tag has children; a childless tag's chip is
+  unchanged.
+
+Purely a `TagManagerDialog`/`TagChipWidget` rendering change over data
+`TagManagerViewModel::countForTag` already provides — no new Port/use-case/repository method. Same
+no-GTest carve-out as the rest of this dialog.

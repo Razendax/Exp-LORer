@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <unordered_map>
 
 #include <QSqlDatabase>
 #include <QString>
@@ -26,6 +27,8 @@ public:
     Result<void> updateTag(const Tag& tag) override;
     Result<void> deleteTag(Tag::Id id) override;
     Result<std::vector<Tag>> allTags() const override;
+    Result<std::unordered_map<Tag::Id, int>> tagFileCounts() const override;
+    Result<void> mergeTags(Tag::Id sourceId, Tag::Id targetId) override;
 
     Result<void> assignTag(const FileTagAssociation& association) override;
     Result<void> unassignTag(const std::filesystem::path& filePath, Tag::Id tagId) override;

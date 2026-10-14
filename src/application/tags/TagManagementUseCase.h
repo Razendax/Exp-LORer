@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "FileNode.h"
@@ -24,6 +25,11 @@ public:
     Result<void> updateTag(const Tag& tag);
     Result<void> deleteTag(Tag::Id id);
     Result<std::vector<Tag>> allTags() const;
+    Result<std::unordered_map<Tag::Id, int>> tagFileCounts() const;
+
+    // Guards sourceId != targetId and neither is Tag::kUnassignedId, then delegates to
+    // ITagRepository::mergeTags (Architecture.md §14.89).
+    Result<void> mergeTags(Tag::Id sourceId, Tag::Id targetId);
 
     // Fails with ErrorCode::AlreadyExists if the file already carries tagId.
     Result<void> assignTag(const FileNode& file, Tag::Id tagId);

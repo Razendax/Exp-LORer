@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include <QWidget>
 
 #include "Tag.h"
@@ -23,7 +25,13 @@ public:
         Selectable, // §14.17 Tag Manager — no +/x, whole chip is clickable/selectable.
     };
 
-    TagChipWidget(Tag tag, Kind kind, QWidget* parent = nullptr);
+    // `count`, when set, adds a small secondary label showing it (Architecture.md §14.89's Tag
+    // Manager file-count toggle) -- every other call site leaves it at std::nullopt and gets no
+    // label, unchanged from before. `totalCount`, when also set (Architecture.md §14.91), is the
+    // subtree total for a nested tag with children -- rendered as "count/totalCount" instead of a
+    // bare count -- and is otherwise ignored.
+    TagChipWidget(Tag tag, Kind kind, std::optional<int> count = std::nullopt, std::optional<int> totalCount = std::nullopt,
+                  QWidget* parent = nullptr);
 
     const Tag& tag() const noexcept { return m_tag; }
 
@@ -44,5 +52,6 @@ private:
     Tag m_tag;
     Kind m_kind;
     QLabel* m_label = nullptr;
+    QLabel* m_countLabel = nullptr;
     bool m_selected = false;
 };

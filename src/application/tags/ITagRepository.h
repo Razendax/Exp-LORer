@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <unordered_map>
 #include <vector>
 
 #include "FileTagAssociation.h"
@@ -20,6 +21,15 @@ public:
     virtual Result<void> updateTag(const Tag& tag) = 0;
     virtual Result<void> deleteTag(Tag::Id id) = 0;
     virtual Result<std::vector<Tag>> allTags() const = 0;
+
+    // Number of files/folders each tag is attached to (Architecture.md §14.89), keyed by tag id.
+    // A tag with zero files simply has no entry -- callers treat a missing key as 0.
+    virtual Result<std::unordered_map<Tag::Id, int>> tagFileCounts() const = 0;
+
+    // Folds sourceId into targetId: every file tagged with sourceId becomes tagged with targetId
+    // (duplicates silently merged), then sourceId itself is deleted (Architecture.md §14.89) --
+    // backs the Tag Manager's rename-into-an-existing-name "merge?" prompt.
+    virtual Result<void> mergeTags(Tag::Id sourceId, Tag::Id targetId) = 0;
 
     virtual Result<void> assignTag(const FileTagAssociation& association) = 0;
     virtual Result<void> unassignTag(const std::filesystem::path& filePath, Tag::Id tagId) = 0;

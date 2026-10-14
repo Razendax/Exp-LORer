@@ -170,7 +170,9 @@ int main(int argc, char* argv[])
         const bool restored = workspaceController->restoreFromConfig(initialConfig.workspace);
 
         MainWindow mainWindow(workspaceController.get(), compositionRoot.appConfigStore(), compositionRoot.tagManagementUseCase(),
-                              compositionRoot.tagChangeNotifier(), compositionRoot.uiThemeChangeNotifier(),
+                              compositionRoot.tagChangeNotifier(), compositionRoot.advancedSearchService(),
+                              compositionRoot.iconLoadingService(), compositionRoot.fileTagsService(),
+                              compositionRoot.uiThemeChangeNotifier(),
                               compositionRoot.syntaxHighlightEngine(),
                               compositionRoot.highlightThemeViewModel(), compositionRoot.fileDecorationsViewModel(),
                               compositionRoot.favoritesViewModel(), compositionRoot.notificationCenter(),

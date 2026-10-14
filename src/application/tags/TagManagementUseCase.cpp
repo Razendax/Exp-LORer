@@ -87,6 +87,25 @@ Result<std::vector<Tag>> TagManagementUseCase::allTags() const
     return m_tagRepository.allTags();
 }
 
+Result<std::unordered_map<Tag::Id, int>> TagManagementUseCase::tagFileCounts() const
+{
+    return m_tagRepository.tagFileCounts();
+}
+
+Result<void> TagManagementUseCase::mergeTags(Tag::Id sourceId, Tag::Id targetId)
+{
+    if (sourceId == targetId)
+    {
+        return Result<void>::failure(Error(ErrorCode::InvalidArgument, "Cannot merge a tag into itself"));
+    }
+    if (sourceId == Tag::kUnassignedId || targetId == Tag::kUnassignedId)
+    {
+        return Result<void>::failure(Error(ErrorCode::InvalidArgument, "Cannot merge a tag without a persisted id"));
+    }
+
+    return m_tagRepository.mergeTags(sourceId, targetId);
+}
+
 Result<void> TagManagementUseCase::assignTag(const FileNode& file, Tag::Id tagId)
 {
     auto existingTags = m_tagRepository.tagsForFile(file.path());

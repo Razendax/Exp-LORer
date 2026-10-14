@@ -89,8 +89,15 @@ Result<std::vector<FileNode>> AdvancedSearchWorker::fetchTagFirstCandidatesInclu
     return buildCandidatesFromAssociations(root, m_tagManagementUseCase->findFilesWithTagsIncludingChildren(tagIds));
 }
 
+Result<std::vector<FileNode>> AdvancedSearchWorker::fetchFilesForTag(Tag::Id tagId)
+{
+    ensureTagRepository();
+
+    return buildCandidatesFromAssociations(std::nullopt, m_tagManagementUseCase->findFilesWithAllTags({ tagId }));
+}
+
 Result<std::vector<FileNode>> AdvancedSearchWorker::buildCandidatesFromAssociations(
-    const std::filesystem::path& root, Result<std::vector<FileTagAssociation>> tagResult)
+    const std::optional<std::filesystem::path>& root, Result<std::vector<FileTagAssociation>> tagResult)
 {
     if (tagResult.hasError())
     {
@@ -101,7 +108,7 @@ Result<std::vector<FileNode>> AdvancedSearchWorker::buildCandidatesFromAssociati
     candidates.reserve(tagResult.value().size());
     for (const FileTagAssociation& association : tagResult.value())
     {
-        if (!isPathWithinOrEqual(association.filePath(), root))
+        if (root.has_value() && !isPathWithinOrEqual(association.filePath(), *root))
         {
             continue;
         }
