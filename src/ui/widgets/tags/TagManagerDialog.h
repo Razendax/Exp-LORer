@@ -58,6 +58,7 @@ private:
     void onTreeSelectionChanged(QTreeWidgetItem* current);
     void applySelectedTag(std::optional<Tag::Id> id);
     void onViewModeChanged(int index);
+    void onSortSettingsChanged();
     void onAddClicked();
     void onRenameClicked();
     void onDeleteClicked();
@@ -72,11 +73,15 @@ private:
     static constexpr const char* kColumnVisibilitySettingsKey = "TagManager/ColumnVisibility";
     static constexpr const char* kShowCountsSettingsKey = "TagManager/ShowCounts";
     static constexpr const char* kViewModeSettingsKey = "TagManager/ViewMode";
+    static constexpr const char* kSortKeySettingsKey = "TagManager/SortKey";
+    static constexpr const char* kSortOrderSettingsKey = "TagManager/SortOrder";
 
     TagManagerViewModel* m_viewModel = nullptr;
 
     QLineEdit* m_searchEdit = nullptr;
     QToolButton* m_showCountsButton = nullptr;
+    QComboBox* m_sortKeyCombo = nullptr;
+    QComboBox* m_sortOrderCombo = nullptr;
     QComboBox* m_viewModeCombo = nullptr;
     FlowLayout* m_chipLayout = nullptr;
     QScrollArea* m_chipScrollArea = nullptr;

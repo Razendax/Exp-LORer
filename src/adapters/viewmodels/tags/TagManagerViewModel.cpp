@@ -72,7 +72,7 @@ void TagManagerViewModel::renameTag(Tag::Id id, const QString& newName)
     }
 
     refreshSearch();
-    if (m_showCounts)
+    if (countsNeeded())
     {
         refreshCounts();
     }
@@ -96,7 +96,7 @@ void TagManagerViewModel::addTag(const QString& name)
     }
 
     refreshSearch();
-    if (m_showCounts)
+    if (countsNeeded())
     {
         refreshCounts();
     }
@@ -113,7 +113,7 @@ void TagManagerViewModel::deleteTag(Tag::Id id)
     }
 
     refreshSearch();
-    if (m_showCounts)
+    if (countsNeeded())
     {
         refreshCounts();
     }
@@ -130,7 +130,7 @@ void TagManagerViewModel::mergeTags(Tag::Id sourceId, Tag::Id targetId)
     }
 
     refreshSearch();
-    if (m_showCounts)
+    if (countsNeeded())
     {
         refreshCounts();
     }
@@ -140,7 +140,39 @@ void TagManagerViewModel::mergeTags(Tag::Id sourceId, Tag::Id targetId)
 void TagManagerViewModel::setShowCounts(bool show)
 {
     m_showCounts = show;
-    if (show)
+    if (countsNeeded())
+    {
+        refreshCounts();
+    }
+
+    emit matchingTagsChanged(m_matchingTags);
+}
+
+void TagManagerViewModel::setSortKey(SortKey key)
+{
+    if (m_sortKey == key)
+    {
+        return;
+    }
+
+    m_sortKey = key;
+    if (countsNeeded())
+    {
+        refreshCounts();
+    }
+
+    emit matchingTagsChanged(m_matchingTags);
+}
+
+void TagManagerViewModel::setSortOrder(SortOrder order)
+{
+    if (m_sortOrder == order)
+    {
+        return;
+    }
+
+    m_sortOrder = order;
+    if (countsNeeded())
     {
         refreshCounts();
     }

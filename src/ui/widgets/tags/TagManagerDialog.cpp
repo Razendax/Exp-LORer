@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <functional>
+#include <memory>
 
 #include <QAbstractItemView>
 #include <QComboBox>
@@ -57,6 +58,18 @@ TagManagerDialog::TagManagerDialog(TagManagerViewModel* viewModel, const FileDec
     m_showCountsButton->setCheckable(true);
     searchRow->addWidget(m_showCountsButton);
 
+    m_sortKeyCombo = new QComboBox(this);
+    m_sortKeyCombo->setObjectName(QStringLiteral("tagManagerSortKeyCombo"));
+    m_sortKeyCombo->addItem(tr("Alphabetical"));
+    m_sortKeyCombo->addItem(tr("Count"));
+    searchRow->addWidget(m_sortKeyCombo);
+
+    m_sortOrderCombo = new QComboBox(this);
+    m_sortOrderCombo->setObjectName(QStringLiteral("tagManagerSortOrderCombo"));
+    m_sortOrderCombo->addItem(tr("Ascending"));
+    m_sortOrderCombo->addItem(tr("Descending"));
+    searchRow->addWidget(m_sortOrderCombo);
+
     m_viewModeCombo = new QComboBox(this);
     m_viewModeCombo->setObjectName(QStringLiteral("tagManagerViewModeCombo"));
     m_viewModeCombo->addItem(tr("List"));
@@ -76,8 +89,6 @@ TagManagerDialog::TagManagerDialog(TagManagerViewModel* viewModel, const FileDec
     m_tagTree->setObjectName(QStringLiteral("tagManagerTagTree"));
     m_tagTree->setHeaderHidden(true);
     m_tagTree->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_tagTree->setSortingEnabled(true);
-    m_tagTree->sortByColumn(0, Qt::AscendingOrder);
 
     m_tagAreaStack = new QStackedWidget;
     m_tagAreaStack->addWidget(m_chipScrollArea);
@@ -89,6 +100,8 @@ TagManagerDialog::TagManagerDialog(TagManagerViewModel* viewModel, const FileDec
 
     bool storedShowCounts = false;
     int storedViewMode = 0;
+    int storedSortKey = 0;
+    int storedSortOrder = 0;
 
     {
         QSettings settings;
@@ -100,6 +113,8 @@ TagManagerDialog::TagManagerDialog(TagManagerViewModel* viewModel, const FileDec
 
         storedShowCounts = settings.value(QLatin1String(kShowCountsSettingsKey), false).toBool();
         storedViewMode = settings.value(QLatin1String(kViewModeSettingsKey), 0).toInt();
+        storedSortKey = settings.value(QLatin1String(kSortKeySettingsKey), 0).toInt();
+        storedSortOrder = settings.value(QLatin1String(kSortOrderSettingsKey), 0).toInt();
 
         // Tolerant of a missing/short/empty list (e.g. first-ever open, or FileListModel::ColumnCount
         // having changed since) -- any column left unread keeps its default-constructed 0 ("unset"),
@@ -162,6 +177,10 @@ TagManagerDialog::TagManagerDialog(TagManagerViewModel* viewModel, const FileDec
 
     connect(m_searchEdit, &QLineEdit::textChanged, m_viewModel, &TagManagerViewModel::setSearchQuery);
     connect(m_showCountsButton, &QToolButton::toggled, m_viewModel, &TagManagerViewModel::setShowCounts);
+    connect(m_sortKeyCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &TagManagerDialog::onSortSettingsChanged);
+    connect(m_sortOrderCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+            &TagManagerDialog::onSortSettingsChanged);
     connect(m_viewModeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             &TagManagerDialog::onViewModeChanged);
     connect(m_addButton, &QPushButton::clicked, this, &TagManagerDialog::onAddClicked);
@@ -178,6 +197,8 @@ TagManagerDialog::TagManagerDialog(TagManagerViewModel* viewModel, const FileDec
     connect(m_viewModel, &TagManagerViewModel::filesForTagTagsChanged, this, &TagManagerDialog::onFilesForTagTagsChanged);
 
     m_showCountsButton->setChecked(storedShowCounts);
+    m_sortKeyCombo->setCurrentIndex(storedSortKey);
+    m_sortOrderCombo->setCurrentIndex(storedSortOrder);
     m_viewModeCombo->setCurrentIndex(storedViewMode);
 
     onMatchingTagsChanged(m_viewModel->matchingTags());
@@ -195,107 +216,236 @@ void TagManagerDialog::rebuildTagChips(const std::vector<Tag>& tags)
         delete item;
     }
 
+    // Architecture.md §14.92: own/total counts are computed once per tag up front -- gated on
+    // countsNeeded() rather than just showCounts() -- so they can double as the Count sort key
+    // even when the count display toggle is off.
+    struct ChipInfo
+    {
+        Tag tag;
+        int ownCount = 0;
+        bool hasChildren = false;
+        int totalCount = 0;
+    };
+
+    std::vector<ChipInfo> chipInfos;
+    chipInfos.reserve(tags.size());
+    const bool needCounts = m_viewModel->countsNeeded();
     for (const Tag& tag : tags)
     {
-        std::optional<int> count;
-        std::optional<int> totalCount;
-        if (m_viewModel->showCounts())
+        ChipInfo info{tag};
+        if (needCounts)
         {
-            count = m_viewModel->countForTag(tag.id());
+            info.ownCount = m_viewModel->countForTag(tag.id());
 
             // Flat list has no tree structure to walk, so "children" is recomputed here the same
             // way the tree builder derives it: any other currently-matching tag whose name is
             // nested under this one via the §14.9/§14.88 string-prefix `TagHierarchy` convention.
             const QString prefix = QString::fromStdString(tag.name()) + QLatin1Char('/');
             int childrenSum = 0;
-            bool hasChildren = false;
             for (const Tag& other : tags)
             {
                 if (other.id() != tag.id() && QString::fromStdString(other.name()).startsWith(prefix))
                 {
-                    hasChildren = true;
+                    info.hasChildren = true;
                     childrenSum += m_viewModel->countForTag(other.id());
                 }
             }
 
-            if (hasChildren)
+            info.totalCount = info.ownCount + childrenSum;
+        }
+        chipInfos.push_back(std::move(info));
+    }
+
+    const TagManagerViewModel::SortKey sortKey = m_viewModel->sortKey();
+    const TagManagerViewModel::SortOrder sortOrder = m_viewModel->sortOrder();
+    auto nameLess = [](const ChipInfo& a, const ChipInfo& b) {
+        return QString::compare(QString::fromStdString(a.tag.name()), QString::fromStdString(b.tag.name()),
+                                 Qt::CaseInsensitive) < 0;
+    };
+    auto sortValue = [](const ChipInfo& info) { return info.hasChildren ? info.totalCount : info.ownCount; };
+
+    std::sort(chipInfos.begin(), chipInfos.end(), [&](const ChipInfo& a, const ChipInfo& b) {
+        if (sortKey == TagManagerViewModel::SortKey::Alphabetical)
+        {
+            return sortOrder == TagManagerViewModel::SortOrder::Ascending ? nameLess(a, b) : nameLess(b, a);
+        }
+
+        const int va = sortValue(a);
+        const int vb = sortValue(b);
+        if (va != vb)
+        {
+            return sortOrder == TagManagerViewModel::SortOrder::Ascending ? va < vb : va > vb;
+        }
+        return nameLess(a, b);
+    });
+
+    for (const ChipInfo& info : chipInfos)
+    {
+        std::optional<int> count;
+        std::optional<int> totalCount;
+        if (m_viewModel->showCounts())
+        {
+            count = info.ownCount;
+            if (info.hasChildren)
             {
-                totalCount = *count + childrenSum;
+                totalCount = info.totalCount;
             }
         }
 
-        auto* chip = new TagChipWidget(tag, TagChipWidget::Kind::Selectable, count, totalCount);
+        auto* chip = new TagChipWidget(info.tag, TagChipWidget::Kind::Selectable, count, totalCount);
         connect(chip, &TagChipWidget::clicked, this, &TagManagerDialog::onChipClicked);
         m_chipLayout->addWidget(chip);
     }
 }
 
+namespace
+{
+// Plain local tree used by rebuildTagTree to compute counts/sort order before any
+// QTreeWidgetItem exists (Architecture.md §14.92) -- children are held by unique_ptr so pointers
+// into the tree stay valid across sibling insertion/vector growth.
+struct TagTreeNode
+{
+    QString segment;
+    std::optional<Tag::Id> tagId;
+    int ownCount = 0;
+    int totalCount = 0;
+    std::vector<std::unique_ptr<TagTreeNode>> children;
+};
+} // namespace
+
 void TagManagerDialog::rebuildTagTree(const std::vector<Tag>& tags)
 {
     m_tagTree->clear();
 
-    QHash<QString, QTreeWidgetItem*> pathToItem;
-    std::function<QTreeWidgetItem*(const QString&)> ensurePath = [&](const QString& fullPath) -> QTreeWidgetItem* {
-        if (auto it = pathToItem.find(fullPath); it != pathToItem.end())
+    std::vector<std::unique_ptr<TagTreeNode>> roots;
+    QHash<QString, TagTreeNode*> pathToNode;
+
+    std::function<TagTreeNode*(const QString&)> ensurePath = [&](const QString& fullPath) -> TagTreeNode* {
+        if (auto it = pathToNode.find(fullPath); it != pathToNode.end())
         {
             return it.value();
         }
         const int lastSlash = fullPath.lastIndexOf(QLatin1Char('/'));
-        QTreeWidgetItem* parent = lastSlash < 0 ? nullptr : ensurePath(fullPath.left(lastSlash));
-        auto* item = parent ? new QTreeWidgetItem(parent) : new QTreeWidgetItem(m_tagTree);
-        item->setText(0, fullPath.mid(lastSlash + 1));
-        item->setData(0, kIsVirtualRole, true);
-        pathToItem.insert(fullPath, item);
-        return item;
+        TagTreeNode* parent = lastSlash < 0 ? nullptr : ensurePath(fullPath.left(lastSlash));
+
+        auto node = std::make_unique<TagTreeNode>();
+        node->segment = fullPath.mid(lastSlash + 1);
+        TagTreeNode* raw = node.get();
+        if (parent)
+        {
+            parent->children.push_back(std::move(node));
+        }
+        else
+        {
+            roots.push_back(std::move(node));
+        }
+        pathToNode.insert(fullPath, raw);
+        return raw;
     };
 
     for (const Tag& tag : tags)
     {
-        QTreeWidgetItem* item = ensurePath(QString::fromStdString(tag.name()));
-        item->setData(0, kTagIdRole, static_cast<qlonglong>(tag.id()));
-        item->setData(0, kIsVirtualRole, false);
+        TagTreeNode* node = ensurePath(QString::fromStdString(tag.name()));
+        node->tagId = tag.id();
     }
 
-    if (m_viewModel->showCounts())
+    const bool needCounts = m_viewModel->countsNeeded();
+    if (needCounts)
     {
         // Post-order: nested tags are a string-prefix display convention (Architecture.md
         // §14.9/§14.89), not a DB relation, so a parent's "total" is just the sum of its own count
         // (if it's a real tag, not just a path-grouping node) plus every descendant tag's own count.
-        // A path-grouping node (e.g. "Project" when only "Project/Foo" is an actual tag) always has
-        // at least one child, so it only ever shows a total, never an "own" count.
-        std::function<int(QTreeWidgetItem*)> applyCounts = [&](QTreeWidgetItem* item) -> int {
+        std::function<int(TagTreeNode&)> computeCounts = [&](TagTreeNode& node) -> int {
             int childrenTotal = 0;
-            for (int i = 0; i < item->childCount(); ++i)
+            for (auto& child : node.children)
             {
-                childrenTotal += applyCounts(item->child(i));
+                childrenTotal += computeCounts(*child);
             }
+            node.ownCount = node.tagId.has_value() ? m_viewModel->countForTag(*node.tagId) : 0;
+            node.totalCount = node.ownCount + childrenTotal;
+            return node.totalCount;
+        };
 
-            const bool isVirtual = item->data(0, kIsVirtualRole).toBool();
-            const int ownCount =
-                isVirtual ? 0 : m_viewModel->countForTag(static_cast<Tag::Id>(item->data(0, kTagIdRole).toLongLong()));
-            const int subtreeTotal = ownCount + childrenTotal;
+        for (auto& root : roots)
+        {
+            computeCounts(*root);
+        }
+    }
 
-            const QString name = item->text(0);
-            if (item->childCount() == 0)
+    const TagManagerViewModel::SortKey sortKey = m_viewModel->sortKey();
+    const TagManagerViewModel::SortOrder sortOrder = m_viewModel->sortOrder();
+    auto segmentLess = [](const TagTreeNode& a, const TagTreeNode& b) {
+        return QString::compare(a.segment, b.segment, Qt::CaseInsensitive) < 0;
+    };
+    // A path-grouping node (e.g. "Project" when only "Project/Foo" is an actual tag) always has
+    // at least one child, so a leaf's own count and an internal node's total are the right
+    // like-for-like comparison per §14.92's sort rule.
+    auto sortValue = [](const TagTreeNode& node) { return node.children.empty() ? node.ownCount : node.totalCount; };
+    auto less = [&](const std::unique_ptr<TagTreeNode>& a, const std::unique_ptr<TagTreeNode>& b) {
+        if (sortKey == TagManagerViewModel::SortKey::Alphabetical)
+        {
+            return sortOrder == TagManagerViewModel::SortOrder::Ascending ? segmentLess(*a, *b) : segmentLess(*b, *a);
+        }
+
+        const int va = sortValue(*a);
+        const int vb = sortValue(*b);
+        if (va != vb)
+        {
+            return sortOrder == TagManagerViewModel::SortOrder::Ascending ? va < vb : va > vb;
+        }
+        return segmentLess(*a, *b);
+    };
+
+    std::function<void(TagTreeNode&)> sortChildren = [&](TagTreeNode& node) {
+        for (auto& child : node.children)
+        {
+            sortChildren(*child);
+        }
+        std::sort(node.children.begin(), node.children.end(), less);
+    };
+    for (auto& root : roots)
+    {
+        sortChildren(*root);
+    }
+    std::sort(roots.begin(), roots.end(), less);
+
+    const bool showCounts = m_viewModel->showCounts();
+    std::function<void(const TagTreeNode&, QTreeWidgetItem*)> buildItems = [&](const TagTreeNode& node,
+                                                                                 QTreeWidgetItem* parent) {
+        auto* item = parent ? new QTreeWidgetItem(parent) : new QTreeWidgetItem(m_tagTree);
+
+        QString text = node.segment;
+        if (showCounts)
+        {
+            if (node.children.empty())
             {
-                item->setText(0, name + QStringLiteral("  (%1)").arg(ownCount));
+                text += QStringLiteral("  (%1)").arg(node.ownCount);
             }
-            else if (isVirtual)
+            else if (!node.tagId.has_value())
             {
-                item->setText(0, name + tr("  (%1 total)").arg(subtreeTotal));
+                text += tr("  (%1 total)").arg(node.totalCount);
             }
             else
             {
-                item->setText(0, name + tr("  (%1, %2 total)").arg(ownCount).arg(subtreeTotal));
+                text += tr("  (%1, %2 total)").arg(node.ownCount).arg(node.totalCount);
             }
-
-            return subtreeTotal;
-        };
-
-        for (int i = 0; i < m_tagTree->topLevelItemCount(); ++i)
-        {
-            applyCounts(m_tagTree->topLevelItem(i));
         }
+        item->setText(0, text);
+        item->setData(0, kIsVirtualRole, !node.tagId.has_value());
+        if (node.tagId.has_value())
+        {
+            item->setData(0, kTagIdRole, static_cast<qlonglong>(*node.tagId));
+        }
+
+        for (const auto& child : node.children)
+        {
+            buildItems(*child, item);
+        }
+    };
+
+    for (const auto& root : roots)
+    {
+        buildItems(*root, nullptr);
     }
 
     m_tagTree->expandAll();
@@ -351,6 +501,14 @@ void TagManagerDialog::onViewModeChanged(int index)
     {
         m_splitter->setSizes({250, 550});
     }
+}
+
+void TagManagerDialog::onSortSettingsChanged()
+{
+    m_viewModel->setSortKey(m_sortKeyCombo->currentIndex() == 1 ? TagManagerViewModel::SortKey::Count
+                                                                 : TagManagerViewModel::SortKey::Alphabetical);
+    m_viewModel->setSortOrder(m_sortOrderCombo->currentIndex() == 1 ? TagManagerViewModel::SortOrder::Descending
+                                                                     : TagManagerViewModel::SortOrder::Ascending);
 }
 
 void TagManagerDialog::onAddClicked()
@@ -477,6 +635,8 @@ void TagManagerDialog::done(int result)
     settings.setValue(QLatin1String(kWindowGeometrySettingsKey), saveGeometry());
     settings.setValue(QLatin1String(kShowCountsSettingsKey), m_showCountsButton->isChecked());
     settings.setValue(QLatin1String(kViewModeSettingsKey), m_viewModeCombo->currentIndex());
+    settings.setValue(QLatin1String(kSortKeySettingsKey), m_sortKeyCombo->currentIndex());
+    settings.setValue(QLatin1String(kSortOrderSettingsKey), m_sortOrderCombo->currentIndex());
 
     QVariantList columnWidths;
     for (int width : m_resultsView->columnWidths())

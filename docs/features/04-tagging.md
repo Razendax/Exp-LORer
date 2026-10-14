@@ -5,11 +5,11 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.9, §14.17, §14.70, §14.88, §14.89, §14.90, §14.91 — the tag panel and selection tracking, the
-standalone Tag Manager dialog, the tag panel's keyboard-driven autocomplete, the selection tags
-AND/OR combine mode, the Tag Manager's file-count toggle/results list/rename-merge additions, the
-Tag Manager's icon/Tags-column wiring plus window/column persistence, and the tree view's nested-tag
-subtree totals.
+Covers §14.9, §14.17, §14.70, §14.88, §14.89, §14.90, §14.91, §14.92 — the tag panel and selection
+tracking, the standalone Tag Manager dialog, the tag panel's keyboard-driven autocomplete, the
+selection tags AND/OR combine mode, the Tag Manager's file-count toggle/results list/rename-merge
+additions, the Tag Manager's icon/Tags-column wiring plus window/column persistence, the tree
+view's nested-tag subtree totals, and the Tag Manager's sort controls.
 Tag-*integrated search* (clicking a tag
 to search by it, and Advanced Search's own tag box) lives in
 [03-search.md](03-search.md) §14.20 instead, since that section is primarily about Advanced
@@ -224,4 +224,34 @@ the §14.9/§14.88/§14.89 string-prefix `TagHierarchy` display convention, neve
 
 Purely a `TagManagerDialog`/`TagChipWidget` rendering change over data
 `TagManagerViewModel::countForTag` already provides — no new Port/use-case/repository method. Same
+no-GTest carve-out as the rest of this dialog.
+
+### 14.92 Tag Manager: Sort Controls (Alphabetical/Count, Ascending/Descending)
+
+Two dropdowns next to §14.89's "Show file count per tag" toggle: sort key (Alphabetical/Count)
+and sort order (Ascending/Descending), applied to both the chip list and the tree view.
+
+* **Count sort key, nested tags**: a tag with nested children (the §14.9 string-prefix convention)
+  sorts by its §14.91 *total* (own + all descendants), not its own count — a leaf tag sorts by its
+  own count. Ties break alphabetically ascending regardless of the chosen order.
+* **`TagManagerViewModel`**: gained `SortKey`/`SortOrder` enums, `sortKey()`/`sortOrder()`
+  accessors, and `setSortKey`/`setSortOrder` slots (default Alphabetical/Ascending), each
+  re-emitting `matchingTagsChanged` on change so the dialog re-renders — the ordering itself is
+  still computed in `TagManagerDialog`, same split as the rest of this file. The existing
+  `if (m_showCounts) refreshCounts();` call sites (in `setShowCounts`/`renameTag`/`addTag`/
+  `deleteTag`/`mergeTags`) became `if (countsNeeded())`, where `countsNeeded() == m_showCounts ||
+  m_sortKey == SortKey::Count` — this is what makes Count-sort work with the count display toggle
+  off, without making `setSearchQuery` refresh counts on every keystroke (it still doesn't).
+* **`TagManagerDialog::rebuildTagChips`**: the §14.91 nested-prefix scan (own count/has-children/
+  total) is now computed once per tag up front — gated on `showCounts() || sortKey() == Count`
+  rather than only `showCounts()` — then the tag list is sorted per the rule above before chips
+  are built; the per-chip `TagChipWidget` count/total display logic is unchanged.
+* **`TagManagerDialog::rebuildTagTree`**: rewritten from incremental `QTreeWidgetItem` insertion
+  with Qt's automatic alphabetical `sortingEnabled` sort to a two-pass build over a plain local
+  tree struct: build the raw hierarchy from `/`-split tag names, post-order compute own/total
+  counts and sort each node's children in place per the same rule as the chip list, then build the
+  `QTreeWidgetItem`s already in that order. `setSortingEnabled(true)`/`sortByColumn(...)` were
+  removed from the constructor since ordering is now fully manual.
+
+No Domain/Application changes, no new Port/use-case/repository method — purely UI/Adapters, same
 no-GTest carve-out as the rest of this dialog.
