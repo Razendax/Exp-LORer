@@ -216,6 +216,12 @@ class AutomationID:
     # --- Tag Manager Dialog (TagManagerDialog.cpp, modal, single instance at a time) ---
     TAG_MANAGER_DIALOG = "tagManagerDialog"
     TAG_MANAGER_SEARCH_EDIT = "tagManagerSearchEdit"
+    TAG_MANAGER_SHOW_COUNTS_BUTTON = "tagManagerShowCountsButton"
+    TAG_MANAGER_SORT_KEY_COMBO = "tagManagerSortKeyCombo"
+    TAG_MANAGER_SORT_ORDER_COMBO = "tagManagerSortOrderCombo"
+    TAG_MANAGER_VIEW_MODE_COMBO = "tagManagerViewModeCombo"
+    TAG_MANAGER_TAG_TREE = "tagManagerTagTree"
+    TAG_MANAGER_RESULTS_VIEW = "tagManagerResultsView"
     TAG_MANAGER_RENAME_BUTTON = "tagManagerRenameButton"
     TAG_MANAGER_ADD_BUTTON = "tagManagerAddButton"
     TAG_MANAGER_DELETE_BUTTON = "tagManagerDeleteButton"

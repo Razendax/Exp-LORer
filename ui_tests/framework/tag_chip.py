@@ -71,6 +71,22 @@ def find_chip(container: Any, tag_name: str, timeout: float = 5) -> TagChip:
     return TagChip(find_chip_label(container, tag_name, timeout=timeout))
 
 
+def chip_count_text(container: Any, tag_name: str, timeout: float = 5) -> Optional[str]:
+    """The count label text next to the `tag_name` chip (e.g. "3" or "3/7" for a nested tag with
+    children -- see `TagChipWidget`'s `count`/`totalCount` constructor args), or `None` if that
+    chip currently has no count label at all (Tag Manager's "#" show-counts toggle is off).
+    """
+    from .automation_id import find
+
+    label = find_chip_label(container, tag_name, timeout=timeout)
+    chip_widget = label.parent()
+    try:
+        count_label = find(chip_widget, "tagChipCountLabel", timeout=0.5)
+    except LookupError:
+        return None
+    return count_label.window_text()
+
+
 def chip_names(container: Any) -> list:
     """All tag chip names currently shown directly under `container` (a chip section's `.raw`),
     in display order -- e.g. to assert a section's exact chip set rather than probing one at a
