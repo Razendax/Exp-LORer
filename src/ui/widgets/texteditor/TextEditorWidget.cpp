@@ -120,14 +120,18 @@ void TextEditorWidget::insertAtAllCursors(const QString& text)
     updateSecondarySelectionHighlight();
 }
 
-void TextEditorWidget::deleteAtAllCursors(bool forward)
+void TextEditorWidget::deleteAtAllCursors(bool forward, bool wholeWord)
 {
     QTextCursor primary = textCursor();
     primary.beginEditBlock();
 
     if (primary.hasSelection())
         primary.removeSelectedText();
-    else if (forward)
+    else if (wholeWord) {
+        primary.movePosition(forward ? QTextCursor::NextWord : QTextCursor::PreviousWord,
+                              QTextCursor::KeepAnchor);
+        primary.removeSelectedText();
+    } else if (forward)
         primary.deleteChar();
     else
         primary.deletePreviousChar();
@@ -135,7 +139,11 @@ void TextEditorWidget::deleteAtAllCursors(bool forward)
     for (QTextCursor& cursor : m_secondaryCursors) {
         if (cursor.hasSelection())
             cursor.removeSelectedText();
-        else if (forward)
+        else if (wholeWord) {
+            cursor.movePosition(forward ? QTextCursor::NextWord : QTextCursor::PreviousWord,
+                                 QTextCursor::KeepAnchor);
+            cursor.removeSelectedText();
+        } else if (forward)
             cursor.deleteChar();
         else
             cursor.deletePreviousChar();
@@ -168,11 +176,19 @@ bool TextEditorWidget::handleMultiCursorKeyPress(QKeyEvent* event)
     const bool isPrintable = !text.isEmpty() && text.at(0).isPrint();
 
     switch (event->key()) {
+    case Qt::Key_Control:
+    case Qt::Key_Shift:
+    case Qt::Key_Alt:
+    case Qt::Key_Meta:
+        // A bare modifier key-press (no accompanying key yet) carries no text and matches no
+        // other case below; it must not fall through to the "clear secondaries" default, or
+        // secondaries vanish the instant the user presses Ctrl before Ctrl+Left/Right lands.
+        return false;
     case Qt::Key_Backspace:
-        deleteAtAllCursors(false);
+        deleteAtAllCursors(false, event->modifiers() & Qt::ControlModifier);
         return true;
     case Qt::Key_Delete:
-        deleteAtAllCursors(true);
+        deleteAtAllCursors(true, event->modifiers() & Qt::ControlModifier);
         return true;
     case Qt::Key_Return:
     case Qt::Key_Enter:
@@ -182,16 +198,24 @@ bool TextEditorWidget::handleMultiCursorKeyPress(QKeyEvent* event)
         insertAtAllCursors(QStringLiteral("\t"));
         return true;
     case Qt::Key_Left:
-        moveAllCursors(QTextCursor::Left);
+        moveAllCursors((event->modifiers() & Qt::ControlModifier) ? QTextCursor::PreviousWord
+                                                                    : QTextCursor::Left);
         return true;
     case Qt::Key_Right:
-        moveAllCursors(QTextCursor::Right);
+        moveAllCursors((event->modifiers() & Qt::ControlModifier) ? QTextCursor::NextWord
+                                                                    : QTextCursor::Right);
         return true;
     case Qt::Key_Up:
         moveAllCursors(QTextCursor::Up);
         return true;
     case Qt::Key_Down:
         moveAllCursors(QTextCursor::Down);
+        return true;
+    case Qt::Key_Home:
+        moveAllCursors(QTextCursor::StartOfLine);
+        return true;
+    case Qt::Key_End:
+        moveAllCursors(QTextCursor::EndOfLine);
         return true;
     default:
         break;
@@ -202,8 +226,8 @@ bool TextEditorWidget::handleMultiCursorKeyPress(QKeyEvent* event)
         return true;
     }
 
-    // Anything else (Home/End/PageUp/Down, Ctrl+Z, ...) collapses secondaries and falls through
-    // to normal single-cursor handling.
+    // Anything else (Ctrl+Home/End, PageUp/Down, Ctrl+Z, ...) collapses secondaries and falls
+    // through to normal single-cursor handling.
     clearSecondaryCursors();
     return false;
 }

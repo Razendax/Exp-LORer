@@ -39,7 +39,7 @@ private:
 
     bool handleMultiCursorKeyPress(QKeyEvent* event);
     void insertAtAllCursors(const QString& text);
-    void deleteAtAllCursors(bool forward);
+    void deleteAtAllCursors(bool forward, bool wholeWord = false);
     void moveAllCursors(QTextCursor::MoveOperation operation);
 
     QVector<QTextCursor> m_secondaryCursors;
