@@ -59,6 +59,7 @@
 #include "TabViewModel.h"
 #include "TagManagerDialog.h"
 #include "TagManagerViewModel.h"
+#include "TextEditorDialog.h"
 #include "PreviewPanelWidget.h"
 #include "PathContainment.h"
 #include "SearchPanelWidget.h"
@@ -513,6 +514,7 @@ void MainWindow::createMenuBar()
     toolsMenu->addAction(tr("Find &Duplicate Files..."), this, &MainWindow::showDuplicateFinderDialog);
     toolsMenu->addAction(tr("&Bulk Rename..."), this, &MainWindow::showBulkRenameDialogFromMenu);
     toolsMenu->addAction(tr("&Environment Variables..."), this, &MainWindow::showEnvironmentVariablesDialog);
+    toolsMenu->addAction(tr("&Text Editor..."), this, &MainWindow::showTextEditorDialog);
     menuBar()->addMenu(tr("&Help"));
 }
 
@@ -977,6 +979,12 @@ QString MainWindow::currentWorkspaceName() const
 void MainWindow::showEnvironmentVariablesDialog()
 {
     EnvironmentVariablesDialog dialog(&m_environmentVariablesViewModel, this);
+    dialog.exec();
+}
+
+void MainWindow::showTextEditorDialog()
+{
+    TextEditorDialog dialog(this);
     dialog.exec();
 }
 

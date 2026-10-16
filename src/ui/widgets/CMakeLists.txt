@@ -107,6 +107,10 @@ add_library(explorer_ui_widgets STATIC
     fragmentation/FragmentationWidget.cpp
     duplicates/DuplicateFinderDialog.h
     duplicates/DuplicateFinderDialog.cpp
+    texteditor/TextEditorWidget.h
+    texteditor/TextEditorWidget.cpp
+    texteditor/TextEditorDialog.h
+    texteditor/TextEditorDialog.cpp
     monitoring/MonitoringLogModel.h
     monitoring/MonitoringLogModel.cpp
     monitoring/MonitoringPanelWidget.h
@@ -149,6 +153,7 @@ target_include_directories(explorer_ui_widgets PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/decoration
     ${CMAKE_CURRENT_SOURCE_DIR}/config
     ${CMAKE_CURRENT_SOURCE_DIR}/notifications
+    ${CMAKE_CURRENT_SOURCE_DIR}/texteditor
 )
 # explorer_adapters_config already links explorer_adapters_notifications transitively (for
 # NotificationSettingsViewModel's NotificationSettings&), which is what brings in NotificationType/

@@ -110,6 +110,7 @@ private:
     void showManageFavoritesDialog();
     void showDuplicateFinderDialog();
     void showEnvironmentVariablesDialog();
+    void showTextEditorDialog();
 
     // Workspaces (File menu, Architecture.md §14.60).
     void rebuildWorkspacesMenuItems();
