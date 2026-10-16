@@ -40,7 +40,8 @@ private:
     bool handleMultiCursorKeyPress(QKeyEvent* event);
     void insertAtAllCursors(const QString& text);
     void deleteAtAllCursors(bool forward, bool wholeWord = false);
-    void moveAllCursors(QTextCursor::MoveOperation operation);
+    void moveAllCursors(QTextCursor::MoveOperation operation,
+                         QTextCursor::MoveMode mode = QTextCursor::MoveAnchor);
 
     QVector<QTextCursor> m_secondaryCursors;
     QTimer* m_secondaryCaretBlinkTimer = nullptr;

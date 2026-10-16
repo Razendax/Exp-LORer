@@ -156,14 +156,14 @@ void TextEditorWidget::deleteAtAllCursors(bool forward, bool wholeWord)
     updateSecondarySelectionHighlight();
 }
 
-void TextEditorWidget::moveAllCursors(QTextCursor::MoveOperation operation)
+void TextEditorWidget::moveAllCursors(QTextCursor::MoveOperation operation, QTextCursor::MoveMode mode)
 {
     QTextCursor primary = textCursor();
-    primary.movePosition(operation, QTextCursor::MoveAnchor);
+    primary.movePosition(operation, mode);
     setTextCursor(primary);
 
     for (QTextCursor& cursor : m_secondaryCursors)
-        cursor.movePosition(operation, QTextCursor::MoveAnchor);
+        cursor.movePosition(operation, mode);
 
     mergeCollidingCursors();
     updateSecondarySelectionHighlight();
@@ -174,6 +174,9 @@ bool TextEditorWidget::handleMultiCursorKeyPress(QKeyEvent* event)
 {
     const QString text = event->text();
     const bool isPrintable = !text.isEmpty() && text.at(0).isPrint();
+    const QTextCursor::MoveMode moveMode = (event->modifiers() & Qt::ShiftModifier)
+        ? QTextCursor::KeepAnchor
+        : QTextCursor::MoveAnchor;
 
     switch (event->key()) {
     case Qt::Key_Control:
@@ -199,23 +202,25 @@ bool TextEditorWidget::handleMultiCursorKeyPress(QKeyEvent* event)
         return true;
     case Qt::Key_Left:
         moveAllCursors((event->modifiers() & Qt::ControlModifier) ? QTextCursor::PreviousWord
-                                                                    : QTextCursor::Left);
+                                                                    : QTextCursor::Left,
+                        moveMode);
         return true;
     case Qt::Key_Right:
         moveAllCursors((event->modifiers() & Qt::ControlModifier) ? QTextCursor::NextWord
-                                                                    : QTextCursor::Right);
+                                                                    : QTextCursor::Right,
+                        moveMode);
         return true;
     case Qt::Key_Up:
-        moveAllCursors(QTextCursor::Up);
+        moveAllCursors(QTextCursor::Up, moveMode);
         return true;
     case Qt::Key_Down:
-        moveAllCursors(QTextCursor::Down);
+        moveAllCursors(QTextCursor::Down, moveMode);
         return true;
     case Qt::Key_Home:
-        moveAllCursors(QTextCursor::StartOfLine);
+        moveAllCursors(QTextCursor::StartOfLine, moveMode);
         return true;
     case Qt::Key_End:
-        moveAllCursors(QTextCursor::EndOfLine);
+        moveAllCursors(QTextCursor::EndOfLine, moveMode);
         return true;
     default:
         break;
