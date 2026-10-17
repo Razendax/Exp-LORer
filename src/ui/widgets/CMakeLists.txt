@@ -109,6 +109,8 @@ add_library(explorer_ui_widgets STATIC
     duplicates/DuplicateFinderDialog.cpp
     texteditor/TextEditorWidget.h
     texteditor/TextEditorWidget.cpp
+    texteditor/TextEditorLineNumberArea.h
+    texteditor/TextEditorLineNumberArea.cpp
     texteditor/TextEditorFindBar.h
     texteditor/TextEditorFindBar.cpp
     texteditor/TextEditorDialog.h

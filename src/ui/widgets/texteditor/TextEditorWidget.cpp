@@ -1,5 +1,7 @@
 #include "TextEditorWidget.h"
 
+#include "TextEditorLineNumberArea.h"
+
 #include <QApplication>
 #include <QClipboard>
 #include <QFocusEvent>
@@ -7,7 +9,9 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QResizeEvent>
 #include <QStringList>
+#include <QTextBlock>
 #include <QTimer>
 
 #include <algorithm>
@@ -20,6 +24,70 @@ TextEditorWidget::TextEditorWidget(QWidget* parent)
         m_secondaryCaretVisible = !m_secondaryCaretVisible;
         viewport()->update();
     });
+
+    m_lineNumberArea = new TextEditorLineNumberArea(this);
+    connect(this, &QPlainTextEdit::blockCountChanged, this, [this](int) {
+        setViewportMargins(lineNumberAreaWidth(), 0, 0, 0);
+    });
+    connect(this, &QPlainTextEdit::updateRequest, this, [this](const QRect& rect, int dy) {
+        if (dy)
+            m_lineNumberArea->scroll(0, dy);
+        else
+            m_lineNumberArea->update(0, rect.y(), m_lineNumberArea->width(), rect.height());
+
+        if (rect.contains(viewport()->rect()))
+            setViewportMargins(lineNumberAreaWidth(), 0, 0, 0);
+    });
+    connect(this, &QPlainTextEdit::cursorPositionChanged, this, &TextEditorWidget::updateCurrentLineHighlight);
+    setViewportMargins(lineNumberAreaWidth(), 0, 0, 0);
+    updateCurrentLineHighlight();
+}
+
+int TextEditorWidget::lineNumberAreaWidth() const
+{
+    int digits = 1;
+    for (int count = qMax(1, blockCount()); count >= 10; count /= 10)
+        ++digits;
+
+    return 3 + fontMetrics().horizontalAdvance(QLatin1Char('9')) * digits;
+}
+
+void TextEditorWidget::lineNumberAreaPaintEvent(QPaintEvent* event)
+{
+    QPainter painter(m_lineNumberArea);
+    painter.fillRect(event->rect(), palette().color(QPalette::Window));
+
+    QTextBlock block = firstVisibleBlock();
+    int blockNumber = block.blockNumber();
+    int top = static_cast<int>(blockBoundingGeometry(block).translated(contentOffset()).top());
+    int bottom = top + static_cast<int>(blockBoundingRect(block).height());
+
+    const int currentBlockNumber = textCursor().blockNumber();
+    QFont normalFont = painter.font();
+    QFont boldFont = normalFont;
+    boldFont.setBold(true);
+
+    painter.setPen(palette().color(QPalette::WindowText));
+    while (block.isValid() && top <= event->rect().bottom()) {
+        if (block.isVisible() && bottom >= event->rect().top()) {
+            painter.setFont(blockNumber == currentBlockNumber ? boldFont : normalFont);
+            painter.drawText(0, top, m_lineNumberArea->width() - 2, fontMetrics().height(),
+                              Qt::AlignRight, QString::number(blockNumber + 1));
+        }
+
+        block = block.next();
+        top = bottom;
+        bottom = top + static_cast<int>(blockBoundingRect(block).height());
+        ++blockNumber;
+    }
+}
+
+void TextEditorWidget::resizeEvent(QResizeEvent* event)
+{
+    QPlainTextEdit::resizeEvent(event);
+
+    const QRect area = contentsRect();
+    m_lineNumberArea->setGeometry(QRect(area.left(), area.top(), lineNumberAreaWidth(), area.height()));
 }
 
 bool TextEditorWidget::hasSecondaryCursors() const
@@ -109,6 +177,20 @@ void TextEditorWidget::updateSecondarySelectionHighlight()
     applyExtraSelections();
 }
 
+void TextEditorWidget::updateCurrentLineHighlight()
+{
+    QTextEdit::ExtraSelection selection;
+    selection.format.setBackground(palette().color(QPalette::AlternateBase));
+    selection.format.setProperty(QTextFormat::FullWidthSelection, true);
+    selection.cursor = textCursor();
+    selection.cursor.clearSelection();
+
+    m_currentLineSelections = {selection};
+    applyExtraSelections();
+
+    m_lineNumberArea->update();
+}
+
 void TextEditorWidget::setExtraFindSelections(const QList<QTextEdit::ExtraSelection>& selections)
 {
     m_findSelections = selections;
@@ -117,7 +199,7 @@ void TextEditorWidget::setExtraFindSelections(const QList<QTextEdit::ExtraSelect
 
 void TextEditorWidget::applyExtraSelections()
 {
-    setExtraSelections(m_findSelections + m_secondarySelections);
+    setExtraSelections(m_currentLineSelections + m_findSelections + m_secondarySelections);
 }
 
 void TextEditorWidget::insertAtAllCursors(const QString& text)
