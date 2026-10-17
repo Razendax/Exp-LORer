@@ -74,6 +74,11 @@ private:
     // Replaces every entry in m_matches in one undo step. No-op if m_matches is empty.
     void onReplaceAll();
 
+    // Turns every entry in m_matches into a cursor on m_editor (see
+    // TextEditorWidget::selectAllOccurrences), then closes the find bar. No-op if m_matches is
+    // empty.
+    void onSelectAllOccurrences();
+
     // Returns the text to substitute for match: m_replaceEdit's text verbatim when Match Regex is
     // off, otherwise match's selected text with the regex re-applied using a translated
     // replacement (see translateDollarCaptureRefs in the .cpp).
@@ -87,6 +92,7 @@ private:
     QLabel* m_statusLabel = nullptr;
     QToolButton* m_previousButton = nullptr;
     QToolButton* m_nextButton = nullptr;
+    QToolButton* m_selectAllOccurrencesButton = nullptr;
     QToolButton* m_caseSensitiveButton = nullptr;
     QToolButton* m_wholeWordButton = nullptr;
     QToolButton* m_regexButton = nullptr;

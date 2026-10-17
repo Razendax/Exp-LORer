@@ -37,6 +37,11 @@ public:
     // secondary cursors, and moves the primary cursor to that line's start, centered in view.
     void goToLine(int oneBasedLine);
 
+    // Called by TextEditorFindBar (Select All Occurrences). No-op if matches is empty; otherwise
+    // the first match becomes the primary selection and the rest become secondary cursors, so
+    // subsequent typing replaces every occurrence at once.
+    void selectAllOccurrences(const QVector<QTextCursor>& matches);
+
 protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;

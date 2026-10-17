@@ -5,7 +5,7 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.93 — the built-in text editor dialog (`src/ui/widgets/texteditor/`). The editor widget
+Covers §14.93–14.94 — the built-in text editor dialog (`src/ui/widgets/texteditor/`). The editor widget
 itself (multi-cursor editing, line-number gutter, the Find bar's search/highlight mechanics, Go to
 Line) predates this file and shipped undocumented; this file starts from the Find bar's Replace
 addition and is where later text-editor features should be logged going forward.
@@ -41,3 +41,27 @@ those cursors are live and tied to the document, Qt's own cursor-position tracki
 length changes from earlier replacements in the same pass — no manual offset bookkeeping needed,
 the same reasoning that already lets `copyOrCutAtAllCursors`/`pasteAtAllCursors` process multiple
 live cursors safely.
+
+---
+### 14.94 Find Bar Select All Occurrences
+
+Alt+Enter in the search field (or a new "All" button in the find row, between Next and Close)
+turns every current match into a cursor in the editor — `TextEditorFindBar::m_matches`'s first
+entry becomes the primary cursor/selection, the rest become secondary cursors via a new
+`TextEditorWidget::selectAllOccurrences` — mirroring VS Code's own Find-widget shortcut for the
+same action. This reuses the multi-cursor typing path (`insertAtAllCursors`/`deleteAtAllCursors`)
+that already exists for Ctrl+click/drag secondary cursors, rather than introducing a parallel
+"replace at N cursors" mechanism: once the matches become cursors, typing to replace every
+occurrence falls out of machinery that was already there.
+
+Alt+Enter was free to claim: Ctrl+Alt+Enter already triggers Replace All from the replace field,
+so Alt+Enter alone (without Ctrl) on the *search* field doesn't collide with it, and nothing at
+the `TextEditorDialog` level claims it either. The find highlights and current-match color are
+cleared via the existing `hideAndClear()` path immediately afterward, same as closing the bar any
+other way — the secondary cursors it just created are untouched by that call, since
+`hideAndClear` only ever clears `m_findSelections`, never `m_secondaryCursors`.
+
+A plain text "All" button label was chosen over a Unicode glyph: no single character reliably
+reads as "multi-cursor" at toolbutton size (VS Code itself uses a bespoke icon here, not a font
+glyph), and this matches the bar's own existing convention of short text labels (`Aa`, `ab`,
+`.*`) over icons for ambiguous concepts.

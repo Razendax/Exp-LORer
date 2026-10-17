@@ -92,6 +92,22 @@ void TextEditorWidget::goToLine(int oneBasedLine)
     centerCursor();
 }
 
+void TextEditorWidget::selectAllOccurrences(const QVector<QTextCursor>& matches)
+{
+    if (matches.isEmpty())
+        return;
+
+    clearSecondaryCursors();
+    setTextCursor(matches.first());
+
+    for (int i = 1; i < matches.size(); ++i)
+        m_secondaryCursors.append(matches.at(i));
+
+    updateSecondarySelectionHighlight();
+    ensureCursorVisible();
+    viewport()->update();
+}
+
 void TextEditorWidget::resizeEvent(QResizeEvent* event)
 {
     QPlainTextEdit::resizeEvent(event);

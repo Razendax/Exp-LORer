@@ -102,6 +102,10 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
     m_nextButton->setText(tr("↓"));
     m_nextButton->setToolTip(tr("Next match (Enter)"));
 
+    m_selectAllOccurrencesButton = new QToolButton(this);
+    m_selectAllOccurrencesButton->setText(tr("All"));
+    m_selectAllOccurrencesButton->setToolTip(tr("Select All Occurrences (Alt+Enter)"));
+
     // These three live inside m_searchEdit itself (see positionSearchEditOverlayButtons), floating
     // over its right edge VS Code-style, rather than taking their own layout column next to it.
     m_caseSensitiveButton = new QToolButton(m_searchEdit);
@@ -175,6 +179,7 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
     findExtrasLayout->addWidget(m_statusLabel);
     findExtrasLayout->addWidget(m_previousButton);
     findExtrasLayout->addWidget(m_nextButton);
+    findExtrasLayout->addWidget(m_selectAllOccurrencesButton);
     findExtrasLayout->addWidget(m_closeButton);
     grid->addLayout(findExtrasLayout, 0, 2);
 
@@ -195,6 +200,8 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
             [this](bool checked) { onMatchModeButtonToggled(m_regexButton, checked); });
     connect(m_nextButton, &QToolButton::clicked, this, [this] { runSearch(false, false); });
     connect(m_previousButton, &QToolButton::clicked, this, [this] { runSearch(true, false); });
+    connect(m_selectAllOccurrencesButton, &QToolButton::clicked, this,
+            &TextEditorFindBar::onSelectAllOccurrences);
     connect(m_closeButton, &QToolButton::clicked, this, &TextEditorFindBar::hideAndClear);
     connect(m_toggleReplaceButton, &QToolButton::toggled, this, &TextEditorFindBar::onToggleReplaceRow);
     connect(m_replaceButton, &QToolButton::clicked, this, &TextEditorFindBar::onReplace);
@@ -227,6 +234,10 @@ bool TextEditorFindBar::eventFilter(QObject* watched, QEvent* event)
         // m_replaceEdit below: that signal lets Return bubble up afterward and land on the
         // editor as a newline.
         if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+            if (keyEvent->modifiers() & Qt::AltModifier) {
+                onSelectAllOccurrences();
+                return true;
+            }
             const bool shiftHeld = keyEvent->modifiers() & Qt::ShiftModifier;
             runSearch(shiftHeld, false);
             return true;
@@ -387,6 +398,15 @@ void TextEditorFindBar::onReplaceAll()
     primary.endEditBlock();
 
     runSearch(false, true);
+}
+
+void TextEditorFindBar::onSelectAllOccurrences()
+{
+    if (m_matches.isEmpty())
+        return;
+
+    m_editor->selectAllOccurrences(m_matches);
+    hideAndClear();
 }
 
 void TextEditorFindBar::runSearch(bool backward, bool fromScratch)
