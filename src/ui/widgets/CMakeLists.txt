@@ -113,6 +113,8 @@ add_library(explorer_ui_widgets STATIC
     texteditor/TextEditorLineNumberArea.cpp
     texteditor/TextEditorFindBar.h
     texteditor/TextEditorFindBar.cpp
+    texteditor/TextEditorGotoLineBar.h
+    texteditor/TextEditorGotoLineBar.cpp
     texteditor/TextEditorDialog.h
     texteditor/TextEditorDialog.cpp
     monitoring/MonitoringLogModel.h

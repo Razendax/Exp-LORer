@@ -82,6 +82,16 @@ void TextEditorWidget::lineNumberAreaPaintEvent(QPaintEvent* event)
     }
 }
 
+void TextEditorWidget::goToLine(int oneBasedLine)
+{
+    const int clampedLine = qBound(1, oneBasedLine, qMax(1, blockCount()));
+    clearSecondaryCursors();
+
+    QTextCursor cursor(document()->findBlockByNumber(clampedLine - 1));
+    setTextCursor(cursor);
+    centerCursor();
+}
+
 void TextEditorWidget::resizeEvent(QResizeEvent* event)
 {
     QPlainTextEdit::resizeEvent(event);

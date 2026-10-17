@@ -4,6 +4,7 @@
 
 class TextEditorWidget;
 class TextEditorFindBar;
+class TextEditorGotoLineBar;
 
 // Tools > Text Editor... (ToDo.md "Core editing" section): a standalone, non-file-backed dialog
 // wrapping TextEditorWidget. Deliberately bare for now -- no open/save/encoding handling yet, just
@@ -18,4 +19,5 @@ public:
 private:
     TextEditorWidget* m_editor = nullptr;
     TextEditorFindBar* m_findBar = nullptr;
+    TextEditorGotoLineBar* m_gotoLineBar = nullptr;
 };

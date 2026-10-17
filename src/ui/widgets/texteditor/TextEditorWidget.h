@@ -33,6 +33,10 @@ public:
     int lineNumberAreaWidth() const;
     void lineNumberAreaPaintEvent(QPaintEvent* event);
 
+    // Called by TextEditorGotoLineBar. Clamps oneBasedLine into [1, blockCount()], clears any
+    // secondary cursors, and moves the primary cursor to that line's start, centered in view.
+    void goToLine(int oneBasedLine);
+
 protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
