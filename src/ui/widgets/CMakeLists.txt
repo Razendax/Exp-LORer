@@ -115,6 +115,8 @@ add_library(explorer_ui_widgets STATIC
     texteditor/TextEditorFindBar.cpp
     texteditor/TextEditorGotoLineBar.h
     texteditor/TextEditorGotoLineBar.cpp
+    texteditor/TextEditorPanel.h
+    texteditor/TextEditorPanel.cpp
     texteditor/TextEditorDialog.h
     texteditor/TextEditorDialog.cpp
     monitoring/MonitoringLogModel.h
