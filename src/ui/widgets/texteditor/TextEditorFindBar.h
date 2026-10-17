@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QVector>
+#include <QTextCursor>
 #include <QWidget>
 
 class QLineEdit;
@@ -8,13 +10,13 @@ class QToolButton;
 class QEvent;
 class TextEditorWidget;
 
-// Find bar for TextEditorWidget (ToDo.md "Core editing" -- find/replace), shown/hidden by
+// Find/replace bar for TextEditorWidget (ToDo.md "Core editing" -- find/replace), shown/hidden by
 // TextEditorDialog via Ctrl+F. Floats as a small overlay anchored to the editor's top-right
 // corner (VS Code-style) rather than taking a row in the dialog's layout, so it doesn't push the
 // editor down or stretch across the full width. Owns the search algorithm and "what to search
 // for and where the matches are"; TextEditorWidget itself only renders whatever extra selections
-// it's handed (see TextEditorWidget::setExtraFindSelections). Replace and find-in-selection are
-// deliberately out of scope for this increment.
+// it's handed (see TextEditorWidget::setExtraFindSelections). Find-in-selection is deliberately
+// out of scope for this increment.
 class TextEditorFindBar : public QWidget
 {
     Q_OBJECT
@@ -54,6 +56,24 @@ private:
     // other (via QSignalBlocker, to avoid re-entrant runSearch calls) before re-running the search.
     void onMatchModeButtonToggled(QToolButton* button, bool checked);
 
+    // Shows/hides the replace row's widgets in step with m_toggleReplaceButton's checked state,
+    // updates the button's glyph, repositions the (now taller/shorter) overlay, and focuses
+    // m_replaceEdit when expanding.
+    void onToggleReplaceRow(bool checked);
+
+    // Replaces m_currentMatch (computed via computeReplacement) and advances to the next match.
+    // No-op if the find term is empty or there's no current match -- behaves like Next in that
+    // case (see class-level Replace semantics).
+    void onReplace();
+
+    // Replaces every entry in m_matches in one undo step. No-op if m_matches is empty.
+    void onReplaceAll();
+
+    // Returns the text to substitute for match: m_replaceEdit's text verbatim when Match Regex is
+    // off, otherwise match's selected text with the regex re-applied using a translated
+    // replacement (see translateDollarCaptureRefs in the .cpp).
+    QString computeReplacement(const QTextCursor& match) const;
+
     TextEditorWidget* m_editor = nullptr;
     QLineEdit* m_searchEdit = nullptr;
     QLabel* m_statusLabel = nullptr;
@@ -63,4 +83,14 @@ private:
     QToolButton* m_wholeWordButton = nullptr;
     QToolButton* m_regexButton = nullptr;
     QToolButton* m_closeButton = nullptr;
+    QToolButton* m_toggleReplaceButton = nullptr;
+    QLineEdit* m_replaceEdit = nullptr;
+    QToolButton* m_replaceButton = nullptr;
+    QToolButton* m_replaceAllButton = nullptr;
+
+    // Populated by runSearch on every return path (empty/null on the empty-term, invalid-regex,
+    // and no-results early returns), so Replace/Replace All reuse the same match data instead of
+    // re-deriving it.
+    QVector<QTextCursor> m_matches;
+    QTextCursor m_currentMatch;
 };

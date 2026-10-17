@@ -6,6 +6,7 @@
 #include <QApplication>
 #include <QColor>
 #include <QEvent>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
@@ -18,6 +19,49 @@
 #include <QTextDocument>
 #include <QToolButton>
 #include <QVector>
+
+namespace {
+
+// Translates VS Code/JS-style "$1", "$2", ... capture-group references (and "$$" as a literal
+// "$") into Qt's own "\1", "\2", ... backreference syntax expected by
+// QString::replace(QRegularExpression, QString). Done as a manual character scan rather than a
+// nested regex substitution to avoid double-escaping bugs. Any literal backslash the user typed
+// is doubled first so it survives as a literal backslash rather than being misread as a Qt
+// backreference once translated.
+QString translateDollarCaptureRefs(const QString& replacement)
+{
+    QString result;
+    result.reserve(replacement.size());
+
+    for (int i = 0; i < replacement.size(); ++i) {
+        const QChar ch = replacement.at(i);
+        if (ch == QLatin1Char('\\')) {
+            result += QStringLiteral("\\\\");
+        } else if (ch == QLatin1Char('$')) {
+            if (i + 1 < replacement.size() && replacement.at(i + 1) == QLatin1Char('$')) {
+                result += QLatin1Char('$');
+                ++i;
+            } else {
+                int digitsEnd = i + 1;
+                while (digitsEnd < replacement.size() && replacement.at(digitsEnd).isDigit())
+                    ++digitsEnd;
+                if (digitsEnd > i + 1) {
+                    result += QLatin1Char('\\');
+                    result += replacement.mid(i + 1, digitsEnd - i - 1);
+                    i = digitsEnd - 1;
+                } else {
+                    result += ch;
+                }
+            }
+        } else {
+            result += ch;
+        }
+    }
+
+    return result;
+}
+
+} // namespace
 
 TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
     : QWidget(editor)
@@ -70,17 +114,61 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
     m_closeButton->setText(tr("✕"));
     m_closeButton->setToolTip(tr("Close"));
 
-    auto* layout = new QHBoxLayout(this);
-    layout->setContentsMargins(4, 2, 4, 2);
-    layout->setSpacing(2);
-    layout->addWidget(m_searchEdit);
-    layout->addWidget(m_caseSensitiveButton);
-    layout->addWidget(m_wholeWordButton);
-    layout->addWidget(m_regexButton);
-    layout->addWidget(m_statusLabel);
-    layout->addWidget(m_previousButton);
-    layout->addWidget(m_nextButton);
-    layout->addWidget(m_closeButton);
+    m_toggleReplaceButton = new QToolButton(this);
+    m_toggleReplaceButton->setText(tr("▸"));
+    m_toggleReplaceButton->setCheckable(true);
+    m_toggleReplaceButton->setToolTip(tr("Show Replace"));
+
+    m_replaceEdit = new QLineEdit(this);
+    m_replaceEdit->setPlaceholderText(tr("Replace"));
+    m_replaceEdit->setFixedWidth(160);
+    m_replaceEdit->installEventFilter(this);
+    m_replaceEdit->setVisible(false);
+
+    m_replaceButton = new QToolButton(this);
+    m_replaceButton->setText(tr("Replace"));
+    m_replaceButton->setToolTip(tr("Replace (Enter)"));
+    m_replaceButton->setVisible(false);
+
+    m_replaceAllButton = new QToolButton(this);
+    m_replaceAllButton->setText(tr("Replace All"));
+    m_replaceAllButton->setToolTip(tr("Replace All (Ctrl+Alt+Enter)"));
+    m_replaceAllButton->setVisible(false);
+
+    // A single QGridLayout (rather than two independent per-row QHBoxLayouts) so column 0 (the
+    // toggle button) and column 1 (the search/replace edits) are always sized and positioned
+    // identically between the two rows by the layout engine itself -- no manual width-mirroring
+    // needed, and it keeps working even if m_toggleReplaceButton's glyph (and so its sizeHint)
+    // changes. The remaining per-row buttons live in their own small QHBoxLayout per row (column
+    // 2) so they don't force unrelated columns (e.g. Aa/ab) to widen to fit "Replace All".
+    auto* grid = new QGridLayout(this);
+    grid->setContentsMargins(4, 2, 4, 2);
+    grid->setHorizontalSpacing(2);
+    grid->setVerticalSpacing(2);
+
+    grid->addWidget(m_toggleReplaceButton, 0, 0);
+    grid->addWidget(m_searchEdit, 0, 1);
+
+    auto* findExtrasLayout = new QHBoxLayout();
+    findExtrasLayout->setContentsMargins(0, 0, 0, 0);
+    findExtrasLayout->setSpacing(2);
+    findExtrasLayout->addWidget(m_caseSensitiveButton);
+    findExtrasLayout->addWidget(m_wholeWordButton);
+    findExtrasLayout->addWidget(m_regexButton);
+    findExtrasLayout->addWidget(m_statusLabel);
+    findExtrasLayout->addWidget(m_previousButton);
+    findExtrasLayout->addWidget(m_nextButton);
+    findExtrasLayout->addWidget(m_closeButton);
+    grid->addLayout(findExtrasLayout, 0, 2);
+
+    grid->addWidget(m_replaceEdit, 1, 1);
+
+    auto* replaceExtrasLayout = new QHBoxLayout();
+    replaceExtrasLayout->setContentsMargins(0, 0, 0, 0);
+    replaceExtrasLayout->setSpacing(2);
+    replaceExtrasLayout->addWidget(m_replaceButton);
+    replaceExtrasLayout->addWidget(m_replaceAllButton);
+    grid->addLayout(replaceExtrasLayout, 1, 2);
 
     connect(m_searchEdit, &QLineEdit::textChanged, this, [this](const QString&) { runSearch(false, true); });
     connect(m_caseSensitiveButton, &QToolButton::toggled, this, [this](bool) { runSearch(false, true); });
@@ -95,6 +183,9 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
         runSearch(shiftHeld, false);
     });
     connect(m_closeButton, &QToolButton::clicked, this, &TextEditorFindBar::hideAndClear);
+    connect(m_toggleReplaceButton, &QToolButton::toggled, this, &TextEditorFindBar::onToggleReplaceRow);
+    connect(m_replaceButton, &QToolButton::clicked, this, &TextEditorFindBar::onReplace);
+    connect(m_replaceAllButton, &QToolButton::clicked, this, &TextEditorFindBar::onReplaceAll);
 
     // Reposition whenever the editor (this widget's parent) is resized, so the overlay stays
     // anchored to its top-right corner.
@@ -112,6 +203,25 @@ bool TextEditorFindBar::eventFilter(QObject* watched, QEvent* event)
         auto* keyEvent = static_cast<QKeyEvent*>(event);
         if (keyEvent->key() == Qt::Key_Escape) {
             hideAndClear();
+            return true;
+        }
+    }
+    if (watched == m_replaceEdit && event->type() == QEvent::KeyPress) {
+        auto* keyEvent = static_cast<QKeyEvent*>(event);
+        if (keyEvent->key() == Qt::Key_Escape) {
+            hideAndClear();
+            return true;
+        }
+        // Intercepted here rather than via QLineEdit::returnPressed, same reasoning as
+        // TextEditorGotoLineBar::eventFilter: that signal lets Return bubble up afterward and
+        // land on the editor as a newline.
+        if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+            const bool ctrlAltHeld = (keyEvent->modifiers() & Qt::ControlModifier)
+                && (keyEvent->modifiers() & Qt::AltModifier);
+            if (ctrlAltHeld)
+                onReplaceAll();
+            else
+                onReplace();
             return true;
         }
     }
@@ -167,12 +277,72 @@ void TextEditorFindBar::onMatchModeButtonToggled(QToolButton* button, bool check
     runSearch(false, true);
 }
 
+void TextEditorFindBar::onToggleReplaceRow(bool checked)
+{
+    m_toggleReplaceButton->setText(checked ? tr("▾") : tr("▸"));
+    m_toggleReplaceButton->setToolTip(checked ? tr("Hide Replace") : tr("Show Replace"));
+    m_replaceEdit->setVisible(checked);
+    m_replaceButton->setVisible(checked);
+    m_replaceAllButton->setVisible(checked);
+    repositionOverEditor();
+    if (checked) {
+        m_replaceEdit->setFocus();
+        m_replaceEdit->selectAll();
+    }
+}
+
+QString TextEditorFindBar::computeReplacement(const QTextCursor& match) const
+{
+    if (!m_regexButton->isChecked())
+        return m_replaceEdit->text();
+
+    QString matchedText = match.selectedText();
+    const QRegularExpression regex(m_searchEdit->text());
+    matchedText.replace(regex, translateDollarCaptureRefs(m_replaceEdit->text()));
+    return matchedText;
+}
+
+void TextEditorFindBar::onReplace()
+{
+    if (m_searchEdit->text().isEmpty())
+        return;
+
+    if (m_currentMatch.isNull()) {
+        runSearch(false, false);
+        return;
+    }
+
+    QTextCursor match = m_currentMatch;
+    const QString replacement = computeReplacement(match);
+    match.insertText(replacement);
+    m_editor->setTextCursor(match);
+    runSearch(false, true);
+}
+
+void TextEditorFindBar::onReplaceAll()
+{
+    if (m_matches.isEmpty())
+        return;
+
+    QTextCursor primary = m_editor->textCursor();
+    primary.beginEditBlock();
+    for (QTextCursor& match : m_matches) {
+        const QString replacement = computeReplacement(match);
+        match.insertText(replacement);
+    }
+    primary.endEditBlock();
+
+    runSearch(false, true);
+}
+
 void TextEditorFindBar::runSearch(bool backward, bool fromScratch)
 {
     const QString term = m_searchEdit->text();
     if (term.isEmpty()) {
         m_editor->setExtraFindSelections({});
         m_statusLabel->clear();
+        m_matches.clear();
+        m_currentMatch = QTextCursor();
         return;
     }
 
@@ -183,6 +353,8 @@ void TextEditorFindBar::runSearch(bool backward, bool fromScratch)
         if (!regex.isValid()) {
             m_editor->setExtraFindSelections({});
             m_statusLabel->setText(tr("Invalid regex"));
+            m_matches.clear();
+            m_currentMatch = QTextCursor();
             return;
         }
     }
@@ -211,6 +383,8 @@ void TextEditorFindBar::runSearch(bool backward, bool fromScratch)
     if (matches.isEmpty()) {
         m_editor->setExtraFindSelections({});
         m_statusLabel->setText(tr("No results"));
+        m_matches.clear();
+        m_currentMatch = QTextCursor();
         return;
     }
 
@@ -264,6 +438,9 @@ void TextEditorFindBar::runSearch(bool backward, bool fromScratch)
         selections.append(current);
     }
     m_editor->setExtraFindSelections(selections);
+
+    m_matches = matches;
+    m_currentMatch = currentIndex >= 0 ? matches.at(currentIndex) : QTextCursor();
 
     if (currentIndex >= 0)
         m_statusLabel->setText(tr("%1/%2").arg(currentIndex + 1).arg(matches.size()));

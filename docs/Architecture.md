@@ -534,8 +534,8 @@ layer redesign** — and is recorded as a decision log per feature, not an imple
 walkthrough; see git history and the code's own comments (many cite these subsection numbers
 directly) for the detail.
 
-The log grew too large for one document and is split across nine files under `docs/features/`,
-organized **by feature topic** rather than by when each was built. Section numbers (§14.1–§14.82)
+The log grew too large for one document and is split across ten files under `docs/features/`,
+organized **by feature topic** rather than by when each was built. Section numbers (§14.1–§14.93)
 were assigned chronologically as each feature shipped and are kept stable within whichever file
 now holds them, since code comments cite them directly — so a file's own section numbers are not
 necessarily contiguous; each file's intro lists its exact set. **Keep each file at or under 1000
@@ -573,4 +573,7 @@ growing, and update both that file's intro and this index to match.
 * **[features/09-app-infrastructure.md](features/09-app-infrastructure.md)** — startup/exit
   logging & fatal exception handling, favorites, notification system, Light/Dark theme, per-process
   environment variables.
+* **[features/10-text-editor.md](features/10-text-editor.md)** — the built-in text editor dialog
+  (Tools > Text Editor): multi-cursor editing, the Find bar, Go to Line, and the Find bar's
+  Replace addition.
 
