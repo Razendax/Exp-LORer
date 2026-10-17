@@ -63,9 +63,10 @@ QString expandCaptureRefs(const QString& replacement, const QRegularExpressionMa
 
 } // namespace
 
-TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
+TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor, bool multicursorEnabled)
     : QWidget(editor)
     , m_editor(editor)
+    , m_multicursorEnabled(multicursorEnabled)
 {
     // Keep the bar's own sizeHint compact -- it floats over the editor rather than being
     // stretched by an enclosing layout (see repositionOverEditor).
@@ -105,6 +106,7 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
     m_selectAllOccurrencesButton = new QToolButton(this);
     m_selectAllOccurrencesButton->setText(tr("All"));
     m_selectAllOccurrencesButton->setToolTip(tr("Select All Occurrences (Alt+Enter)"));
+    m_selectAllOccurrencesButton->setVisible(m_multicursorEnabled);
 
     // These three live inside m_searchEdit itself (see positionSearchEditOverlayButtons), floating
     // over its right edge VS Code-style, rather than taking their own layout column next to it.
@@ -242,7 +244,7 @@ bool TextEditorFindBar::eventFilter(QObject* watched, QEvent* event)
         // m_replaceEdit below: that signal lets Return bubble up afterward and land on the
         // editor as a newline.
         if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
-            if (keyEvent->modifiers() & Qt::AltModifier) {
+            if (m_multicursorEnabled && (keyEvent->modifiers() & Qt::AltModifier)) {
                 onSelectAllOccurrences();
                 return true;
             }

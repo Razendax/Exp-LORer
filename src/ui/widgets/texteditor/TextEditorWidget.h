@@ -1,5 +1,7 @@
 #pragma once
 
+#include "TextEditorOptions.h"
+
 #include <QPlainTextEdit>
 #include <QTextCursor>
 #include <QVector>
@@ -22,7 +24,7 @@ class TextEditorWidget : public QPlainTextEdit
     Q_OBJECT
 
 public:
-    explicit TextEditorWidget(QWidget* parent = nullptr);
+    explicit TextEditorWidget(const TextEditorOptions& options, QWidget* parent = nullptr);
 
     // Set by TextEditorFindBar; merged with the secondary-cursor highlight list so neither
     // highlight source clobbers the other (see applyExtraSelections).
@@ -78,4 +80,6 @@ private:
     QList<QTextEdit::ExtraSelection> m_secondarySelections;
     QList<QTextEdit::ExtraSelection> m_currentLineSelections;
     TextEditorLineNumberArea* m_lineNumberArea = nullptr;
+    bool m_lineNumbersEnabled = true;
+    bool m_multicursorEnabled = true;
 };

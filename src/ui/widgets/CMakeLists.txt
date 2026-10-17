@@ -107,6 +107,7 @@ add_library(explorer_ui_widgets STATIC
     fragmentation/FragmentationWidget.cpp
     duplicates/DuplicateFinderDialog.h
     duplicates/DuplicateFinderDialog.cpp
+    texteditor/TextEditorOptions.h
     texteditor/TextEditorWidget.h
     texteditor/TextEditorWidget.cpp
     texteditor/TextEditorLineNumberArea.h
@@ -119,6 +120,8 @@ add_library(explorer_ui_widgets STATIC
     texteditor/TextEditorPanel.cpp
     texteditor/TextEditorDialog.h
     texteditor/TextEditorDialog.cpp
+    texteditor/TextEditorOptionsDialog.h
+    texteditor/TextEditorOptionsDialog.cpp
     monitoring/MonitoringLogModel.h
     monitoring/MonitoringLogModel.cpp
     monitoring/MonitoringPanelWidget.h

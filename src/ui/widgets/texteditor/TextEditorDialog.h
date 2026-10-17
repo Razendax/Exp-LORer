@@ -1,5 +1,7 @@
 #pragma once
 
+#include "TextEditorOptions.h"
+
 #include <QDialog>
 
 class TextEditorPanel;
@@ -12,7 +14,7 @@ class TextEditorDialog : public QDialog
     Q_OBJECT
 
 public:
-    explicit TextEditorDialog(QWidget* parent = nullptr);
+    explicit TextEditorDialog(const TextEditorOptions& options = TextEditorOptions{}, QWidget* parent = nullptr);
 
 private:
     TextEditorPanel* m_panel = nullptr;

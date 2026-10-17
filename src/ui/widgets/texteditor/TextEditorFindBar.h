@@ -25,8 +25,10 @@ class TextEditorFindBar : public QWidget
 
 public:
     // editor also becomes this widget's parent, so the find bar is a floating child drawn on top
-    // of the editor's viewport instead of a widget in some enclosing layout.
-    explicit TextEditorFindBar(TextEditorWidget* editor);
+    // of the editor's viewport instead of a widget in some enclosing layout. multicursorEnabled
+    // hides the "Select All Occurrences" control (button + Alt+Enter) when the editor it's
+    // attached to was built without multicursor support.
+    explicit TextEditorFindBar(TextEditorWidget* editor, bool multicursorEnabled);
 
     // Shows the bar if hidden, repositions it over the editor, focuses the line edit and selects
     // its current text, then re-runs the search (so reopening with stale text immediately
@@ -123,4 +125,6 @@ private:
     // trigger a full-document regex scan on every keystroke. Explicit actions (Enter, Next/
     // Previous, option toggles) still call runSearch synchronously.
     QTimer* m_searchDebounceTimer = nullptr;
+
+    bool m_multicursorEnabled = true;
 };

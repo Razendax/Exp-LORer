@@ -5,7 +5,7 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.93–14.94 — the built-in text editor dialog (`src/ui/widgets/texteditor/`). The editor widget
+Covers §14.93–14.95 — the built-in text editor dialog (`src/ui/widgets/texteditor/`). The editor widget
 itself (multi-cursor editing, line-number gutter, the Find bar's search/highlight mechanics, Go to
 Line) predates this file and shipped undocumented; this file starts from the Find bar's Replace
 addition and is where later text-editor features should be logged going forward.
@@ -65,3 +65,41 @@ A plain text "All" button label was chosen over a Unicode glyph: no single chara
 reads as "multi-cursor" at toolbutton size (VS Code itself uses a bespoke icon here, not a font
 glyph), and this matches the bar's own existing convention of short text labels (`Aa`, `ab`,
 `.*`) over icons for ambiguous concepts.
+
+---
+### 14.95 Configurable Editor Features + Options Dialog
+
+The editor widget stack was built for exactly one call site (`Tools > Text Editor...`) with every
+feature always on. Since the editor is going to be embedded elsewhere in the app for different
+purposes going forward, each of its four features — Find, Go to Line, line numbers, multicursor —
+needed to be independently switchable off, and a way to exercise every combination from the UI
+before any other embedding site exists to prove it out.
+
+A single plain struct, `TextEditorOptions` (`src/ui/widgets/texteditor/TextEditorOptions.h`), holds
+the four `bool` flags (all defaulting to `true`, so a default-constructed instance reproduces the
+pre-existing fully-featured editor) and threads through the stack as a constructor parameter —
+`TextEditorWidget`, `TextEditorFindBar`, `TextEditorPanel`, `TextEditorDialog` — rather than as a
+persisted `AppConfig` entry, mirroring `TextEditorDialog`'s own already-transient, non-persisted
+nature. Each flag gates the specific pre-existing code path for that feature instead of
+introducing a parallel disabled-state mechanism:
+
+- `lineNumbersEnabled` gates whether `TextEditorWidget` ever constructs its
+  `TextEditorLineNumberArea` companion; `lineNumberAreaWidth()` returns `0` up front when it
+  wasn't, which collapses the gutter to zero width through the pre-existing
+  `setViewportMargins`/`resizeEvent` plumbing rather than a separate "hidden" path.
+- `multicursorEnabled` gates `TextEditorWidget`'s two secondary-cursor creation entry points
+  (Ctrl+Click in `mousePressEvent`, Ctrl+Alt+Up/Down in `keyPressEvent`), and separately gates
+  `TextEditorFindBar`'s "All" button visibility and its Alt+Enter shortcut
+  (`selectAllOccurrences`'s only other caller) — with both call sites gated, no change was needed
+  inside `TextEditorWidget::selectAllOccurrences` itself.
+- `findEnabled`/`goToLineEnabled` each gate whether `TextEditorPanel` constructs that bar and its
+  `QShortcut` at all; the panel's existing "opening one bar closes the other" handlers (for
+  Ctrl+F/Ctrl+G) each null-check the other bar before calling `hideAndClear()` on it, since it may
+  simply not exist.
+
+`Tools > Text Editor...` now opens a new `TextEditorOptionsDialog` first — four checkboxes (all
+checked by default) plus an Ok button relabeled "Open Editor" — before `MainWindow` constructs
+`TextEditorDialog` with the resulting `TextEditorOptions`. The options dialog deliberately has no
+knowledge of `TextEditorDialog`; it only collects and returns a `TextEditorOptions` via a getter,
+keeping the two dialogs as decoupled as `TextEditorFindBar`/`TextEditorGotoLineBar` already are
+from each other.

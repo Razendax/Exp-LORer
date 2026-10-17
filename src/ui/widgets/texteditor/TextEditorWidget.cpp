@@ -16,8 +16,10 @@
 
 #include <algorithm>
 
-TextEditorWidget::TextEditorWidget(QWidget* parent)
+TextEditorWidget::TextEditorWidget(const TextEditorOptions& options, QWidget* parent)
     : QPlainTextEdit(parent)
+    , m_lineNumbersEnabled(options.lineNumbersEnabled)
+    , m_multicursorEnabled(options.multicursorEnabled)
 {
     m_secondaryCaretBlinkTimer = new QTimer(this);
     connect(m_secondaryCaretBlinkTimer, &QTimer::timeout, this, [this] {
@@ -25,15 +27,18 @@ TextEditorWidget::TextEditorWidget(QWidget* parent)
         viewport()->update();
     });
 
-    m_lineNumberArea = new TextEditorLineNumberArea(this);
+    if (m_lineNumbersEnabled)
+        m_lineNumberArea = new TextEditorLineNumberArea(this);
     connect(this, &QPlainTextEdit::blockCountChanged, this, [this](int) {
         setViewportMargins(lineNumberAreaWidth(), 0, 0, 0);
     });
     connect(this, &QPlainTextEdit::updateRequest, this, [this](const QRect& rect, int dy) {
-        if (dy)
-            m_lineNumberArea->scroll(0, dy);
-        else
-            m_lineNumberArea->update(0, rect.y(), m_lineNumberArea->width(), rect.height());
+        if (m_lineNumberArea) {
+            if (dy)
+                m_lineNumberArea->scroll(0, dy);
+            else
+                m_lineNumberArea->update(0, rect.y(), m_lineNumberArea->width(), rect.height());
+        }
 
         if (rect.contains(viewport()->rect()))
             setViewportMargins(lineNumberAreaWidth(), 0, 0, 0);
@@ -45,6 +50,9 @@ TextEditorWidget::TextEditorWidget(QWidget* parent)
 
 int TextEditorWidget::lineNumberAreaWidth() const
 {
+    if (!m_lineNumbersEnabled)
+        return 0;
+
     int digits = 1;
     for (int count = qMax(1, blockCount()); count >= 10; count /= 10)
         ++digits;
@@ -112,8 +120,10 @@ void TextEditorWidget::resizeEvent(QResizeEvent* event)
 {
     QPlainTextEdit::resizeEvent(event);
 
-    const QRect area = contentsRect();
-    m_lineNumberArea->setGeometry(QRect(area.left(), area.top(), lineNumberAreaWidth(), area.height()));
+    if (m_lineNumberArea) {
+        const QRect area = contentsRect();
+        m_lineNumberArea->setGeometry(QRect(area.left(), area.top(), lineNumberAreaWidth(), area.height()));
+    }
 }
 
 bool TextEditorWidget::hasSecondaryCursors() const
@@ -214,7 +224,8 @@ void TextEditorWidget::updateCurrentLineHighlight()
     m_currentLineSelections = {selection};
     applyExtraSelections();
 
-    m_lineNumberArea->update();
+    if (m_lineNumberArea)
+        m_lineNumberArea->update();
 }
 
 void TextEditorWidget::setExtraFindSelections(const QList<QTextEdit::ExtraSelection>& selections)
@@ -461,7 +472,7 @@ void TextEditorWidget::keyPressEvent(QKeyEvent* event)
         return;
     }
 
-    if (event->key() == Qt::Key_Up || event->key() == Qt::Key_Down) {
+    if (m_multicursorEnabled && (event->key() == Qt::Key_Up || event->key() == Qt::Key_Down)) {
         if ((event->modifiers() & Qt::ControlModifier) && (event->modifiers() & Qt::AltModifier)) {
             addCursorOnAdjacentLine(event->key() == Qt::Key_Down);
             return;
@@ -476,7 +487,7 @@ void TextEditorWidget::keyPressEvent(QKeyEvent* event)
 
 void TextEditorWidget::mousePressEvent(QMouseEvent* event)
 {
-    if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
+    if (m_multicursorEnabled && event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
         const QTextCursor cursor = cursorForPosition(event->pos());
         const int countBefore = m_secondaryCursors.size();
         addSecondaryCursorAt(cursor);

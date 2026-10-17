@@ -60,6 +60,7 @@
 #include "TagManagerDialog.h"
 #include "TagManagerViewModel.h"
 #include "TextEditorDialog.h"
+#include "TextEditorOptionsDialog.h"
 #include "PreviewPanelWidget.h"
 #include "PathContainment.h"
 #include "SearchPanelWidget.h"
@@ -984,7 +985,11 @@ void MainWindow::showEnvironmentVariablesDialog()
 
 void MainWindow::showTextEditorDialog()
 {
-    TextEditorDialog dialog(this);
+    TextEditorOptionsDialog optionsDialog(this);
+    if (optionsDialog.exec() != QDialog::Accepted)
+        return;
+
+    TextEditorDialog dialog(optionsDialog.options(), this);
     dialog.exec();
 }
 
