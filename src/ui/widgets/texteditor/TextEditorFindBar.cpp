@@ -17,27 +17,27 @@
 #include <QSignalBlocker>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTimer>
 #include <QToolButton>
 #include <QVector>
 
 namespace {
 
-// Translates VS Code/JS-style "$1", "$2", ... capture-group references (and "$$" as a literal
-// "$") into Qt's own "\1", "\2", ... backreference syntax expected by
-// QString::replace(QRegularExpression, QString). Done as a manual character scan rather than a
-// nested regex substitution to avoid double-escaping bugs. Any literal backslash the user typed
-// is doubled first so it survives as a literal backslash rather than being misread as a Qt
-// backreference once translated.
-QString translateDollarCaptureRefs(const QString& replacement)
+// Expands VS Code/JS-style "$1", "$2", ... capture-group references (and "$$" as a literal "$")
+// in replacement directly against match's captured groups. Substituting against the match object
+// itself -- rather than translating to Qt's "\1" backreference syntax and re-running the regex
+// through QString::replace(QRegularExpression, QString) against just the matched substring --
+// is what lets this work for patterns whose captures depend on context outside the match itself
+// (lookaround, anchors) and for multi-line matches: match is already captured against the full
+// document text (see runSearch), not an isolated, context-free copy of it.
+QString expandCaptureRefs(const QString& replacement, const QRegularExpressionMatch& match)
 {
     QString result;
     result.reserve(replacement.size());
 
     for (int i = 0; i < replacement.size(); ++i) {
         const QChar ch = replacement.at(i);
-        if (ch == QLatin1Char('\\')) {
-            result += QStringLiteral("\\\\");
-        } else if (ch == QLatin1Char('$')) {
+        if (ch == QLatin1Char('$')) {
             if (i + 1 < replacement.size() && replacement.at(i + 1) == QLatin1Char('$')) {
                 result += QLatin1Char('$');
                 ++i;
@@ -46,8 +46,8 @@ QString translateDollarCaptureRefs(const QString& replacement)
                 while (digitsEnd < replacement.size() && replacement.at(digitsEnd).isDigit())
                     ++digitsEnd;
                 if (digitsEnd > i + 1) {
-                    result += QLatin1Char('\\');
-                    result += replacement.mid(i + 1, digitsEnd - i - 1);
+                    const int groupNumber = replacement.mid(i + 1, digitsEnd - i - 1).toInt();
+                    result += match.captured(groupNumber);
                     i = digitsEnd - 1;
                 } else {
                     result += ch;
@@ -192,7 +192,15 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
     replaceExtrasLayout->addWidget(m_replaceAllButton);
     grid->addLayout(replaceExtrasLayout, 1, 2);
 
-    connect(m_searchEdit, &QLineEdit::textChanged, this, [this](const QString&) { runSearch(false, true); });
+    // Debounced rather than searching synchronously on every keystroke: a full-document scan
+    // (regex or not) on each typed character can momentarily freeze the UI for a large document
+    // or an expensive pattern. Explicit actions below (Enter, Next/Previous, option toggles) still
+    // call runSearch directly for immediate feedback.
+    m_searchDebounceTimer = new QTimer(this);
+    m_searchDebounceTimer->setSingleShot(true);
+    m_searchDebounceTimer->setInterval(150);
+    connect(m_searchDebounceTimer, &QTimer::timeout, this, [this] { runSearch(false, true); });
+    connect(m_searchEdit, &QLineEdit::textChanged, this, [this](const QString&) { m_searchDebounceTimer->start(); });
     connect(m_caseSensitiveButton, &QToolButton::toggled, this, [this](bool) { runSearch(false, true); });
     connect(m_wholeWordButton, &QToolButton::toggled, this,
             [this](bool checked) { onMatchModeButtonToggled(m_wholeWordButton, checked); });
@@ -280,6 +288,10 @@ void TextEditorFindBar::showAndFocus()
 
     m_searchEdit->setFocus();
     m_searchEdit->selectAll();
+
+    // setText above (if a selection was prefilled) started the debounce timer via textChanged;
+    // stop it so the immediate search below isn't redundantly repeated 150ms later.
+    m_searchDebounceTimer->stop();
     runSearch(false, true);
 }
 
@@ -356,15 +368,15 @@ void TextEditorFindBar::onToggleReplaceRow(bool checked)
     }
 }
 
-QString TextEditorFindBar::computeReplacement(const QTextCursor& match) const
+QString TextEditorFindBar::computeReplacement(int matchIndex) const
 {
     if (!m_regexButton->isChecked())
         return m_replaceEdit->text();
 
-    QString matchedText = match.selectedText();
-    const QRegularExpression regex(m_searchEdit->text());
-    matchedText.replace(regex, translateDollarCaptureRefs(m_replaceEdit->text()));
-    return matchedText;
+    if (matchIndex < 0 || matchIndex >= m_regexMatches.size())
+        return m_replaceEdit->text();
+
+    return expandCaptureRefs(m_replaceEdit->text(), m_regexMatches.at(matchIndex));
 }
 
 void TextEditorFindBar::onReplace()
@@ -378,7 +390,7 @@ void TextEditorFindBar::onReplace()
     }
 
     QTextCursor match = m_currentMatch;
-    const QString replacement = computeReplacement(match);
+    const QString replacement = computeReplacement(m_currentMatchIndex);
     match.insertText(replacement);
     m_editor->setTextCursor(match);
     runSearch(false, true);
@@ -391,9 +403,9 @@ void TextEditorFindBar::onReplaceAll()
 
     QTextCursor primary = m_editor->textCursor();
     primary.beginEditBlock();
-    for (QTextCursor& match : m_matches) {
-        const QString replacement = computeReplacement(match);
-        match.insertText(replacement);
+    for (int i = 0; i < m_matches.size(); ++i) {
+        const QString replacement = computeReplacement(i);
+        m_matches[i].insertText(replacement);
     }
     primary.endEditBlock();
 
@@ -417,7 +429,9 @@ void TextEditorFindBar::runSearch(bool backward, bool fromScratch)
         m_statusLabel->clear();
         m_searchEdit->setStyleSheet(QString());
         m_matches.clear();
+        m_regexMatches.clear();
         m_currentMatch = QTextCursor();
+        m_currentMatchIndex = -1;
         return;
     }
 
@@ -432,7 +446,9 @@ void TextEditorFindBar::runSearch(bool backward, bool fromScratch)
             // red border doesn't cascade onto the Aa/ab/.* QToolButtons living inside it.
             m_searchEdit->setStyleSheet(QStringLiteral("QLineEdit { border: 1px solid red; }"));
             m_matches.clear();
+            m_regexMatches.clear();
             m_currentMatch = QTextCursor();
+            m_currentMatchIndex = -1;
             return;
         }
     }
@@ -446,7 +462,21 @@ void TextEditorFindBar::runSearch(bool backward, bool fromScratch)
 
     QTextDocument* document = m_editor->document();
 
+    // When using regex, mirror QTextDocument::find's own case-sensitivity handling (it adds
+    // CaseInsensitiveOption internally unless FindCaseSensitively is set) on a *copy* of the
+    // pattern, used below to recover each match's QRegularExpressionMatch against the full
+    // document text -- not just the matched substring -- so capture-group replacement keeps
+    // working for lookaround/anchored and multi-line patterns (see expandCaptureRefs).
+    QRegularExpression captureRegex = regex;
+    QString plainText;
+    if (useRegex) {
+        if (!m_caseSensitiveButton->isChecked())
+            captureRegex.setPatternOptions(captureRegex.patternOptions() | QRegularExpression::CaseInsensitiveOption);
+        plainText = document->toPlainText();
+    }
+
     QVector<QTextCursor> matches;
+    QVector<QRegularExpressionMatch> regexMatches;
     int from = 0;
     while (true) {
         QTextCursor cursor = useRegex ? document->find(regex, from, flags)
@@ -454,6 +484,8 @@ void TextEditorFindBar::runSearch(bool backward, bool fromScratch)
         if (cursor.isNull())
             break;
         matches.append(cursor);
+        if (useRegex)
+            regexMatches.append(captureRegex.match(plainText, cursor.selectionStart()));
         from = cursor.selectionEnd();
         if (cursor.selectionStart() == cursor.selectionEnd())
             ++from; // zero-width match (e.g. "a*") -- force progress past it
@@ -463,7 +495,9 @@ void TextEditorFindBar::runSearch(bool backward, bool fromScratch)
         m_editor->setExtraFindSelections({});
         m_statusLabel->setText(tr("No results"));
         m_matches.clear();
+        m_regexMatches.clear();
         m_currentMatch = QTextCursor();
+        m_currentMatchIndex = -1;
         return;
     }
 
@@ -519,7 +553,9 @@ void TextEditorFindBar::runSearch(bool backward, bool fromScratch)
     m_editor->setExtraFindSelections(selections);
 
     m_matches = matches;
+    m_regexMatches = regexMatches;
     m_currentMatch = currentIndex >= 0 ? matches.at(currentIndex) : QTextCursor();
+    m_currentMatchIndex = currentIndex;
 
     if (currentIndex >= 0)
         m_statusLabel->setText(tr("%1/%2").arg(currentIndex + 1).arg(matches.size()));

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QRegularExpression>
 #include <QVector>
 #include <QTextCursor>
 #include <QWidget>
@@ -8,6 +9,7 @@ class QLineEdit;
 class QLabel;
 class QToolButton;
 class QEvent;
+class QTimer;
 class TextEditorWidget;
 
 // Find/replace bar for TextEditorWidget (ToDo.md "Core editing" -- find/replace), shown/hidden by
@@ -79,10 +81,12 @@ private:
     // empty.
     void onSelectAllOccurrences();
 
-    // Returns the text to substitute for match: m_replaceEdit's text verbatim when Match Regex is
-    // off, otherwise match's selected text with the regex re-applied using a translated
-    // replacement (see translateDollarCaptureRefs in the .cpp).
-    QString computeReplacement(const QTextCursor& match) const;
+    // Returns the text to substitute for m_matches[matchIndex]: m_replaceEdit's text verbatim
+    // when Match Regex is off, otherwise that text with $1.. capture references expanded against
+    // m_regexMatches[matchIndex] (see expandCaptureRefs in the .cpp). Using the match already
+    // captured against the full document text -- rather than re-running the regex against just
+    // the matched substring -- is what keeps lookaround/anchored and multi-line patterns correct.
+    QString computeReplacement(int matchIndex) const;
 
     TextEditorWidget* m_editor = nullptr;
     QLineEdit* m_searchEdit = nullptr;
@@ -107,4 +111,16 @@ private:
     // re-deriving it.
     QVector<QTextCursor> m_matches;
     QTextCursor m_currentMatch;
+    int m_currentMatchIndex = -1;
+
+    // Parallel to m_matches when Match Regex is on (empty otherwise): each entry is that match's
+    // QRegularExpressionMatch against the *whole* document text, so computeReplacement can expand
+    // capture references with full surrounding context instead of re-matching an isolated
+    // substring (which breaks lookaround and multi-line patterns -- see expandCaptureRefs).
+    QVector<QRegularExpressionMatch> m_regexMatches;
+
+    // Debounces live re-search while the user is typing in m_searchEdit, so a fast typist doesn't
+    // trigger a full-document regex scan on every keystroke. Explicit actions (Enter, Next/
+    // Previous, option toggles) still call runSearch synchronously.
+    QTimer* m_searchDebounceTimer = nullptr;
 };

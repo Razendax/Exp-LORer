@@ -127,7 +127,7 @@ void TextEditorWidget::addSecondaryCursorAt(const QTextCursor& cursor)
         return;
 
     for (const QTextCursor& existing : m_secondaryCursors) {
-        if (existing.position() == cursor.position())
+        if (existing.position() == cursor.position() && existing.anchor() == cursor.anchor())
             return;
     }
 
@@ -478,8 +478,12 @@ void TextEditorWidget::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton && (event->modifiers() & Qt::ControlModifier)) {
         const QTextCursor cursor = cursorForPosition(event->pos());
+        const int countBefore = m_secondaryCursors.size();
         addSecondaryCursorAt(cursor);
-        m_extendingSecondarySelection = true;
+        // Only start extending if this click actually added a new cursor -- otherwise (click
+        // landed on the primary's or an existing secondary's position, a no-op) dragging must
+        // not reach into m_secondaryCursors.last(), which could be an unrelated, earlier cursor.
+        m_extendingSecondarySelection = m_secondaryCursors.size() > countBefore;
         return;
     }
 
