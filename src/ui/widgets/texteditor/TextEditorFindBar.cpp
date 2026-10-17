@@ -3,7 +3,6 @@
 #include "TextEditorWidget.h"
 
 #include <QAbstractScrollArea>
-#include <QApplication>
 #include <QColor>
 #include <QEvent>
 #include <QFontMetrics>
@@ -196,10 +195,6 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
             [this](bool checked) { onMatchModeButtonToggled(m_regexButton, checked); });
     connect(m_nextButton, &QToolButton::clicked, this, [this] { runSearch(false, false); });
     connect(m_previousButton, &QToolButton::clicked, this, [this] { runSearch(true, false); });
-    connect(m_searchEdit, &QLineEdit::returnPressed, this, [this] {
-        const bool shiftHeld = QApplication::keyboardModifiers() & Qt::ShiftModifier;
-        runSearch(shiftHeld, false);
-    });
     connect(m_closeButton, &QToolButton::clicked, this, &TextEditorFindBar::hideAndClear);
     connect(m_toggleReplaceButton, &QToolButton::toggled, this, &TextEditorFindBar::onToggleReplaceRow);
     connect(m_replaceButton, &QToolButton::clicked, this, &TextEditorFindBar::onReplace);
@@ -226,6 +221,14 @@ bool TextEditorFindBar::eventFilter(QObject* watched, QEvent* event)
         auto* keyEvent = static_cast<QKeyEvent*>(event);
         if (keyEvent->key() == Qt::Key_Escape) {
             hideAndClear();
+            return true;
+        }
+        // Intercepted here rather than via QLineEdit::returnPressed, same reasoning as
+        // m_replaceEdit below: that signal lets Return bubble up afterward and land on the
+        // editor as a newline.
+        if (keyEvent->key() == Qt::Key_Return || keyEvent->key() == Qt::Key_Enter) {
+            const bool shiftHeld = keyEvent->modifiers() & Qt::ShiftModifier;
+            runSearch(shiftHeld, false);
             return true;
         }
     }
