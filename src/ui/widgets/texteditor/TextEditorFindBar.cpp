@@ -415,6 +415,7 @@ void TextEditorFindBar::runSearch(bool backward, bool fromScratch)
     if (term.isEmpty()) {
         m_editor->setExtraFindSelections({});
         m_statusLabel->clear();
+        m_searchEdit->setStyleSheet(QString());
         m_matches.clear();
         m_currentMatch = QTextCursor();
         return;
@@ -427,11 +428,15 @@ void TextEditorFindBar::runSearch(bool backward, bool fromScratch)
         if (!regex.isValid()) {
             m_editor->setExtraFindSelections({});
             m_statusLabel->setText(tr("Invalid regex"));
+            // Scoped to the QLineEdit type selector (rather than a bare declaration block) so the
+            // red border doesn't cascade onto the Aa/ab/.* QToolButtons living inside it.
+            m_searchEdit->setStyleSheet(QStringLiteral("QLineEdit { border: 1px solid red; }"));
             m_matches.clear();
             m_currentMatch = QTextCursor();
             return;
         }
     }
+    m_searchEdit->setStyleSheet(QString());
 
     QTextDocument::FindFlags flags;
     if (m_caseSensitiveButton->isChecked())
