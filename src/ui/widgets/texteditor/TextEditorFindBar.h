@@ -45,6 +45,11 @@ private:
     // scrollbar. Called on construction, on showAndFocus, and whenever the editor resizes.
     void repositionOverEditor();
 
+    // Moves the Aa/ab/.* mode buttons to float inside m_searchEdit's right edge (VS Code-style,
+    // rather than taking their own layout column) and pushes m_searchEdit's right text margin out
+    // past them so typed text/cursor never run underneath. Called once m_searchEdit's geometry is
+    // final (end of construction) and again whenever it's resized.
+    void positionSearchEditOverlayButtons();
 
     // The one search routine, used by every trigger (text changed, option toggled, Next/
     // Previous, re-opened via Ctrl+F). backward selects search direction; fromScratch re-anchors
@@ -76,6 +81,9 @@ private:
 
     TextEditorWidget* m_editor = nullptr;
     QLineEdit* m_searchEdit = nullptr;
+
+    // Fixed-width (set once in the constructor from the widest expected text, e.g. "No results")
+    // so the bar's layout doesn't jiggle horizontally as the match count/text changes.
     QLabel* m_statusLabel = nullptr;
     QToolButton* m_previousButton = nullptr;
     QToolButton* m_nextButton = nullptr;

@@ -6,6 +6,7 @@
 #include <QApplication>
 #include <QColor>
 #include <QEvent>
+#include <QFontMetrics>
 #include <QGridLayout>
 #include <QHBoxLayout>
 #include <QKeyEvent>
@@ -79,10 +80,20 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
 
     m_searchEdit = new QLineEdit(this);
     m_searchEdit->setPlaceholderText(tr("Find"));
-    m_searchEdit->setFixedWidth(160);
+    m_searchEdit->setFixedWidth(200);
     m_searchEdit->installEventFilter(this);
 
+    // Fixed width sized from the widest expected text (translated "No results", or a plausible
+    // match count) so the bar's overall width -- and so the position of the Previous/Next/Close
+    // buttons to its right -- never shifts as the count/text changes.
     m_statusLabel = new QLabel(this);
+    m_statusLabel->setAlignment(Qt::AlignCenter);
+    {
+        const QFontMetrics fm(m_statusLabel->font());
+        const int width = qMax(fm.horizontalAdvance(tr("No results")),
+                                fm.horizontalAdvance(QStringLiteral("9999/9999")));
+        m_statusLabel->setFixedWidth(width + 6);
+    }
 
     m_previousButton = new QToolButton(this);
     m_previousButton->setText(tr("↑"));
@@ -92,19 +103,27 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
     m_nextButton->setText(tr("↓"));
     m_nextButton->setToolTip(tr("Next match (Enter)"));
 
-    m_caseSensitiveButton = new QToolButton(this);
+    // These three live inside m_searchEdit itself (see positionSearchEditOverlayButtons), floating
+    // over its right edge VS Code-style, rather than taking their own layout column next to it.
+    m_caseSensitiveButton = new QToolButton(m_searchEdit);
+    m_caseSensitiveButton->setAutoRaise(true);
+    m_caseSensitiveButton->setFocusPolicy(Qt::NoFocus);
     m_caseSensitiveButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
     m_caseSensitiveButton->setText(tr("Aa"));
     m_caseSensitiveButton->setCheckable(true);
     m_caseSensitiveButton->setToolTip(tr("Match Case"));
 
-    m_wholeWordButton = new QToolButton(this);
+    m_wholeWordButton = new QToolButton(m_searchEdit);
+    m_wholeWordButton->setAutoRaise(true);
+    m_wholeWordButton->setFocusPolicy(Qt::NoFocus);
     m_wholeWordButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
     m_wholeWordButton->setText(tr("ab"));
     m_wholeWordButton->setCheckable(true);
     m_wholeWordButton->setToolTip(tr("Match Whole Word"));
 
-    m_regexButton = new QToolButton(this);
+    m_regexButton = new QToolButton(m_searchEdit);
+    m_regexButton->setAutoRaise(true);
+    m_regexButton->setFocusPolicy(Qt::NoFocus);
     m_regexButton->setToolButtonStyle(Qt::ToolButtonTextOnly);
     m_regexButton->setText(tr(".*"));
     m_regexButton->setCheckable(true);
@@ -121,7 +140,7 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
 
     m_replaceEdit = new QLineEdit(this);
     m_replaceEdit->setPlaceholderText(tr("Replace"));
-    m_replaceEdit->setFixedWidth(160);
+    m_replaceEdit->setFixedWidth(200);
     m_replaceEdit->installEventFilter(this);
     m_replaceEdit->setVisible(false);
 
@@ -140,7 +159,9 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
     // identically between the two rows by the layout engine itself -- no manual width-mirroring
     // needed, and it keeps working even if m_toggleReplaceButton's glyph (and so its sizeHint)
     // changes. The remaining per-row buttons live in their own small QHBoxLayout per row (column
-    // 2) so they don't force unrelated columns (e.g. Aa/ab) to widen to fit "Replace All".
+    // 2) so they don't force unrelated columns to widen to fit "Replace All". The Aa/ab/.* mode
+    // buttons aren't in here at all -- they float inside m_searchEdit itself, positioned by
+    // positionSearchEditOverlayButtons.
     auto* grid = new QGridLayout(this);
     grid->setContentsMargins(4, 2, 4, 2);
     grid->setHorizontalSpacing(2);
@@ -152,9 +173,6 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
     auto* findExtrasLayout = new QHBoxLayout();
     findExtrasLayout->setContentsMargins(0, 0, 0, 0);
     findExtrasLayout->setSpacing(2);
-    findExtrasLayout->addWidget(m_caseSensitiveButton);
-    findExtrasLayout->addWidget(m_wholeWordButton);
-    findExtrasLayout->addWidget(m_regexButton);
     findExtrasLayout->addWidget(m_statusLabel);
     findExtrasLayout->addWidget(m_previousButton);
     findExtrasLayout->addWidget(m_nextButton);
@@ -191,12 +209,17 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor)
     // anchored to its top-right corner.
     m_editor->installEventFilter(this);
     repositionOverEditor();
+    positionSearchEditOverlayButtons();
 }
 
 bool TextEditorFindBar::eventFilter(QObject* watched, QEvent* event)
 {
     if (watched == m_editor && event->type() == QEvent::Resize) {
         repositionOverEditor();
+        return QWidget::eventFilter(watched, event);
+    }
+    if (watched == m_searchEdit && event->type() == QEvent::Resize) {
+        positionSearchEditOverlayButtons();
         return QWidget::eventFilter(watched, event);
     }
     if (watched == m_searchEdit && event->type() == QEvent::KeyPress) {
@@ -255,6 +278,34 @@ void TextEditorFindBar::repositionOverEditor()
     const int x = qMax(viewportRect.left(), viewportRect.right() - width() - margin);
     const int y = viewportRect.top() + margin;
     move(x, y);
+}
+
+void TextEditorFindBar::positionSearchEditOverlayButtons()
+{
+    constexpr int rightPadding = 4;
+    constexpr int buttonSpacing = 2;
+    constexpr int buttonVerticalMargin = 3;
+
+    const int buttonHeight = qMax(16, m_searchEdit->height() - 2 * buttonVerticalMargin);
+    const int y = (m_searchEdit->height() - buttonHeight) / 2;
+
+    // Rightmost-first: regex closest to the field's edge, then whole word, then match case --
+    // matching the left-to-right "Aa ab .*" reading order in the field.
+    QToolButton* buttons[] = { m_regexButton, m_wholeWordButton, m_caseSensitiveButton };
+    int x = m_searchEdit->width() - rightPadding;
+    int leftmostButtonX = x;
+    for (QToolButton* button : buttons) {
+        const int buttonWidth = qMax(buttonHeight, button->sizeHint().width());
+        x -= buttonWidth;
+        button->setGeometry(x, y, buttonWidth, buttonHeight);
+        leftmostButtonX = x;
+        x -= buttonSpacing;
+    }
+
+    // Push typed text/cursor out from under the overlaid buttons: the gap from the field's right
+    // edge back to the leftmost button, plus a little breathing room before the text.
+    const int reservedWidth = m_searchEdit->width() - leftmostButtonX + buttonSpacing;
+    m_searchEdit->setTextMargins(0, 0, reservedWidth, 0);
 }
 
 void TextEditorFindBar::hideAndClear()
