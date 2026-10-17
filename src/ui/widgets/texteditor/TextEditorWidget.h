@@ -20,6 +20,10 @@ class TextEditorWidget : public QPlainTextEdit
 public:
     explicit TextEditorWidget(QWidget* parent = nullptr);
 
+    // Set by TextEditorFindBar; merged with the secondary-cursor highlight list so neither
+    // highlight source clobbers the other (see applyExtraSelections).
+    void setExtraFindSelections(const QList<QTextEdit::ExtraSelection>& selections);
+
 protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
@@ -36,6 +40,7 @@ private:
     bool hasSecondaryCursors() const;
     void mergeCollidingCursors();
     void updateSecondarySelectionHighlight();
+    void applyExtraSelections();
 
     bool handleMultiCursorKeyPress(QKeyEvent* event);
     void insertAtAllCursors(const QString& text);
@@ -49,4 +54,6 @@ private:
     QTimer* m_secondaryCaretBlinkTimer = nullptr;
     bool m_secondaryCaretVisible = true;
     bool m_extendingSecondarySelection = false;
+    QList<QTextEdit::ExtraSelection> m_findSelections;
+    QList<QTextEdit::ExtraSelection> m_secondarySelections;
 };

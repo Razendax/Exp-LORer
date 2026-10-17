@@ -105,7 +105,19 @@ void TextEditorWidget::updateSecondarySelectionHighlight()
         selection.format.setBackground(palette().color(QPalette::Highlight));
         selections.append(selection);
     }
-    setExtraSelections(selections);
+    m_secondarySelections = selections;
+    applyExtraSelections();
+}
+
+void TextEditorWidget::setExtraFindSelections(const QList<QTextEdit::ExtraSelection>& selections)
+{
+    m_findSelections = selections;
+    applyExtraSelections();
+}
+
+void TextEditorWidget::applyExtraSelections()
+{
+    setExtraSelections(m_findSelections + m_secondarySelections);
 }
 
 void TextEditorWidget::insertAtAllCursors(const QString& text)

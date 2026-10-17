@@ -3,6 +3,7 @@
 #include <QDialog>
 
 class TextEditorWidget;
+class TextEditorFindBar;
 
 // Tools > Text Editor... (ToDo.md "Core editing" section): a standalone, non-file-backed dialog
 // wrapping TextEditorWidget. Deliberately bare for now -- no open/save/encoding handling yet, just
@@ -16,4 +17,5 @@ public:
 
 private:
     TextEditorWidget* m_editor = nullptr;
+    TextEditorFindBar* m_findBar = nullptr;
 };
