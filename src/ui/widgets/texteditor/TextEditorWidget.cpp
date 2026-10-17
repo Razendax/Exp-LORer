@@ -1,12 +1,16 @@
 #include "TextEditorWidget.h"
 
 #include <QApplication>
+#include <QClipboard>
 #include <QFocusEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QStringList>
 #include <QTimer>
+
+#include <algorithm>
 
 TextEditorWidget::TextEditorWidget(QWidget* parent)
     : QPlainTextEdit(parent)
@@ -156,6 +160,81 @@ void TextEditorWidget::deleteAtAllCursors(bool forward, bool wholeWord)
     updateSecondarySelectionHighlight();
 }
 
+void TextEditorWidget::copyOrCutAtAllCursors(bool cut)
+{
+    QVector<QTextCursor*> cursors;
+    QTextCursor primary = textCursor();
+    cursors.append(&primary);
+    for (QTextCursor& cursor : m_secondaryCursors)
+        cursors.append(&cursor);
+
+    std::sort(cursors.begin(), cursors.end(), [](QTextCursor* a, QTextCursor* b) {
+        return a->selectionStart() < b->selectionStart();
+    });
+
+    bool anySelection = false;
+    QStringList segments;
+    for (QTextCursor* cursor : cursors) {
+        if (cursor->hasSelection())
+            anySelection = true;
+        QString segment = cursor->selectedText();
+        segment.replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
+        segments.append(segment);
+    }
+
+    if (!anySelection)
+        return;
+
+    QApplication::clipboard()->setText(segments.join(QStringLiteral("\n")));
+
+    if (!cut)
+        return;
+
+    primary.beginEditBlock();
+    for (QTextCursor* cursor : cursors) {
+        if (cursor->hasSelection())
+            cursor->removeSelectedText();
+    }
+    primary.endEditBlock();
+    setTextCursor(primary);
+
+    mergeCollidingCursors();
+    updateSecondarySelectionHighlight();
+}
+
+void TextEditorWidget::pasteAtAllCursors()
+{
+    const QString clipboardText = QApplication::clipboard()->text();
+    if (clipboardText.isEmpty())
+        return;
+
+    QVector<QTextCursor*> cursors;
+    QTextCursor primary = textCursor();
+    cursors.append(&primary);
+    for (QTextCursor& cursor : m_secondaryCursors)
+        cursors.append(&cursor);
+
+    std::sort(cursors.begin(), cursors.end(), [](QTextCursor* a, QTextCursor* b) {
+        return a->position() < b->position();
+    });
+
+    const QStringList lines = clipboardText.split(QLatin1Char('\n'));
+
+    primary.beginEditBlock();
+    if (cursors.size() > 1 && lines.size() == cursors.size()) {
+        for (int i = 0; i < cursors.size(); ++i)
+            cursors[i]->insertText(lines.at(i));
+    } else {
+        for (QTextCursor* cursor : cursors)
+            cursor->insertText(clipboardText);
+    }
+    primary.endEditBlock();
+    setTextCursor(primary);
+
+    mergeCollidingCursors();
+    updateSecondarySelectionHighlight();
+}
+
 void TextEditorWidget::moveAllCursors(QTextCursor::MoveOperation operation, QTextCursor::MoveMode mode)
 {
     QTextCursor primary = textCursor();
@@ -222,6 +301,24 @@ bool TextEditorWidget::handleMultiCursorKeyPress(QKeyEvent* event)
     case Qt::Key_End:
         moveAllCursors(QTextCursor::EndOfLine, moveMode);
         return true;
+    case Qt::Key_C:
+        if (event->modifiers() & Qt::ControlModifier) {
+            copyOrCutAtAllCursors(false);
+            return true;
+        }
+        break;
+    case Qt::Key_X:
+        if (event->modifiers() & Qt::ControlModifier) {
+            copyOrCutAtAllCursors(true);
+            return true;
+        }
+        break;
+    case Qt::Key_V:
+        if (event->modifiers() & Qt::ControlModifier) {
+            pasteAtAllCursors();
+            return true;
+        }
+        break;
     default:
         break;
     }

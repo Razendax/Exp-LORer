@@ -42,6 +42,8 @@ private:
     void deleteAtAllCursors(bool forward, bool wholeWord = false);
     void moveAllCursors(QTextCursor::MoveOperation operation,
                          QTextCursor::MoveMode mode = QTextCursor::MoveAnchor);
+    void copyOrCutAtAllCursors(bool cut);
+    void pasteAtAllCursors();
 
     QVector<QTextCursor> m_secondaryCursors;
     QTimer* m_secondaryCaretBlinkTimer = nullptr;
