@@ -436,6 +436,19 @@ namespace
         RegCloseKey(shellKey);
     }
 
+    // Shared by buildItemMenu/buildBackgroundMenu: static (registry-verb) entries are collected
+    // the same way regardless of which HKCR roots apply to the selection.
+    void collectStaticVerbsForRoots(const std::vector<std::wstring>& rootBases, const std::vector<fs::path>& targetPaths,
+                                     std::vector<ContextMenuEntry>& outEntries,
+                                     std::map<std::uint32_t, ShellContextMenuProvider::StaticCommand>& outCommands,
+                                     std::uint32_t& nextId)
+    {
+        for (const std::wstring& base : rootBases)
+        {
+            collectStaticVerbsForRoot(base, targetPaths, outEntries, outCommands, nextId);
+        }
+    }
+
     // ---- "Open with" submenu -----------------------------------------------------------------
 
     void appendOpenWithAppEntry(const std::wstring& exeName, const std::vector<fs::path>& targetPaths,
@@ -836,6 +849,45 @@ namespace
         RegCloseKey(shellexKey);
     }
 
+    // Shared by buildItemMenu/buildBackgroundMenu: queries every applicable HKCR root's COM
+    // shell-extension handlers into one flat entry list, in the same per-handler id-subrange
+    // scheme collectHandlersFromRoot documents. `dataObject`/`isBackground` still vary by caller
+    // (an item selection carries an IDataObject describing it; a folder background has none).
+    void collectHandlersFromRoots(const std::vector<std::wstring>& rootBases, PCIDLIST_ABSOLUTE pidlFolder, IDataObject* dataObject,
+                                   std::vector<ContextMenuEntry>& outEntries,
+                                   std::map<std::uint32_t, ShellContextMenuProvider::DynamicCommand>& outCommands,
+                                   std::uint32_t& nextId, std::vector<IContextMenu*>& pendingHandlers, bool isBackground)
+    {
+        int handlerIndex = 0;
+        std::set<std::wstring> seenClsid;
+        for (const std::wstring& base : rootBases)
+        {
+            collectHandlersFromRoot(base, pidlFolder, dataObject, outEntries, handlerIndex, seenClsid, outCommands, nextId,
+                                     pendingHandlers, isBackground);
+        }
+    }
+
+    // Shared tail of buildItemMenu/buildBackgroundMenu's shell-extension block: a leading
+    // separator ahead of whatever dynamic entries were found, so they're visually set off from
+    // the static verbs above them.
+    void appendDynamicEntries(std::vector<ContextMenuEntry>& entries, std::vector<ContextMenuEntry>&& dynamicEntries)
+    {
+        if (dynamicEntries.empty())
+        {
+            return;
+        }
+        entries.push_back(makeSeparator());
+        entries.insert(entries.end(), std::make_move_iterator(dynamicEntries.begin()), std::make_move_iterator(dynamicEntries.end()));
+    }
+
+    // Shared logging tail of buildItemMenu/buildBackgroundMenu.
+    void logMenuBuilt(const char* kind, std::size_t staticVerbCount, std::size_t dynamicCommandCount)
+    {
+        Logging::debug(std::string("ShellContextMenuProvider: ") + kind + " context menu built (" +
+                        std::to_string(staticVerbCount) + " static verb(s), " + std::to_string(dynamicCommandCount) +
+                        " dynamic shell extension entr" + (dynamicCommandCount == 1 ? "y" : "ies") + ")");
+    }
+
     // ---- Command-line expansion / launch (invoke-time only) ------------------------------------
 
     std::wstring expandCommandArguments(const std::wstring& commandTemplate, const std::vector<fs::path>& targetPaths)
@@ -975,10 +1027,7 @@ Result<std::vector<ContextMenuEntry>> ShellContextMenuProvider::buildItemMenu(co
     }
 
     std::vector<ContextMenuEntry> entries;
-    for (const std::wstring& base : rootBases)
-    {
-        collectStaticVerbsForRoot(base, paths, entries, m_staticCommands, m_nextEntryId);
-    }
+    collectStaticVerbsForRoots(rootBases, paths, entries, m_staticCommands, m_nextEntryId);
 
     if (!isDirectorySelection && !extLower.empty())
     {
@@ -1019,24 +1068,14 @@ Result<std::vector<ContextMenuEntry>> ShellContextMenuProvider::buildItemMenu(co
                                                      IID_IDataObject, nullptr, reinterpret_cast<void**>(&dataObject));
 
                         std::vector<ContextMenuEntry> dynamicEntries;
-                        int handlerIndex = 0;
-                        std::set<std::wstring> seenClsid;
-                        for (const std::wstring& base : rootBases)
-                        {
-                            collectHandlersFromRoot(base, parentPidl, dataObject, dynamicEntries, handlerIndex, seenClsid,
-                                                     m_dynamicCommands, m_nextEntryId, m_pendingHandlers, false);
-                        }
+                        collectHandlersFromRoots(rootBases, parentPidl, dataObject, dynamicEntries, m_dynamicCommands,
+                                                  m_nextEntryId, m_pendingHandlers, false);
 
                         if (dataObject)
                         {
                             dataObject->Release();
                         }
-                        if (!dynamicEntries.empty())
-                        {
-                            entries.push_back(makeSeparator());
-                            entries.insert(entries.end(), std::make_move_iterator(dynamicEntries.begin()),
-                                            std::make_move_iterator(dynamicEntries.end()));
-                        }
+                        appendDynamicEntries(entries, std::move(dynamicEntries));
                     }
 
                     for (auto* pidl : childPidls)
@@ -1051,9 +1090,7 @@ Result<std::vector<ContextMenuEntry>> ShellContextMenuProvider::buildItemMenu(co
         }
     }
 
-    Logging::debug("ShellContextMenuProvider: item context menu built (" + std::to_string(staticVerbCount) +
-                    " static verb(s), " + std::to_string(m_dynamicCommands.size()) + " dynamic shell extension entr" +
-                    (m_dynamicCommands.size() == 1 ? "y" : "ies") + ")");
+    logMenuBuilt("item", staticVerbCount, m_dynamicCommands.size());
     return Result<std::vector<ContextMenuEntry>>::success(std::move(entries));
 }
 
@@ -1064,10 +1101,7 @@ Result<std::vector<ContextMenuEntry>> ShellContextMenuProvider::buildBackgroundM
     const std::vector<std::wstring> rootBases = { L"Directory\\Background" };
 
     std::vector<ContextMenuEntry> entries;
-    for (const std::wstring& base : rootBases)
-    {
-        collectStaticVerbsForRoot(base, {}, entries, m_staticCommands, m_nextEntryId);
-    }
+    collectStaticVerbsForRoots(rootBases, {}, entries, m_staticCommands, m_nextEntryId);
 
     collectShellNewSubmenu(folder, entries, m_shellNewCommands, m_nextEntryId);
 
@@ -1079,27 +1113,15 @@ Result<std::vector<ContextMenuEntry>> ShellContextMenuProvider::buildBackgroundM
         if (SUCCEEDED(SHParseDisplayName(folder.c_str(), nullptr, &folderPidl, 0, nullptr)) && folderPidl)
         {
             std::vector<ContextMenuEntry> dynamicEntries;
-            int handlerIndex = 0;
-            std::set<std::wstring> seenClsid;
-            for (const std::wstring& base : rootBases)
-            {
-                collectHandlersFromRoot(base, folderPidl, nullptr, dynamicEntries, handlerIndex, seenClsid, m_dynamicCommands,
-                                         m_nextEntryId, m_pendingHandlers, true);
-            }
-
-            if (!dynamicEntries.empty())
-            {
-                entries.push_back(makeSeparator());
-                entries.insert(entries.end(), std::make_move_iterator(dynamicEntries.begin()), std::make_move_iterator(dynamicEntries.end()));
-            }
+            collectHandlersFromRoots(rootBases, folderPidl, nullptr, dynamicEntries, m_dynamicCommands, m_nextEntryId,
+                                      m_pendingHandlers, true);
+            appendDynamicEntries(entries, std::move(dynamicEntries));
 
             CoTaskMemFree(folderPidl);
         }
     }
 
-    Logging::debug("ShellContextMenuProvider: background context menu built (" + std::to_string(staticVerbCount) +
-                    " static verb(s), " + std::to_string(m_dynamicCommands.size()) + " dynamic shell extension entr" +
-                    (m_dynamicCommands.size() == 1 ? "y" : "ies") + ")");
+    logMenuBuilt("background", staticVerbCount, m_dynamicCommands.size());
     return Result<std::vector<ContextMenuEntry>>::success(std::move(entries));
 }
 
