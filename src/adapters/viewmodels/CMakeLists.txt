@@ -59,6 +59,8 @@ add_library(explorer_adapters_viewmodels STATIC
     media/MediaThumbnailLoadingWorker.cpp
     media/MediaThumbnailLoadingService.h
     media/MediaThumbnailLoadingService.cpp
+    media/TabMediaViewerViewModel.h
+    media/TabMediaViewerViewModel.cpp
     git/GitStatusWorker.h
     git/GitStatusWorker.cpp
     git/GitStatusService.h

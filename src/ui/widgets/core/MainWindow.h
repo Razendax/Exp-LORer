@@ -140,7 +140,7 @@ private:
 
     // Media Viewer mode (Architecture.md §14.61): shows/hides the left panel and the right panel's
     // Tags/Preview/Monitoring/Searcher tab buttons, and switches the right panel to the Searcher
-    // tab, in response to the focused tab's own mediaViewerModeChanged.
+    // tab, in response to the focused tab's own TabMediaViewerViewModel::modeChanged.
     void onMediaViewerModeChanged(bool active);
 
     // Resolves which tab Media-Viewer-related actions (the toggle action, the Searcher panel's
@@ -214,7 +214,7 @@ private:
     TabViewModel* m_searchTrackedTab = nullptr;
     TabViewModel* m_mediaViewerTrackedTab = nullptr;
     // The tab actually in Media Viewer mode, independent of which tab/pane currently has focus --
-    // set when its mediaViewerModeChanged(true) fires, cleared on its mediaViewerModeChanged(false).
+    // set when its TabMediaViewerViewModel::modeChanged(true) fires, cleared on modeChanged(false).
     // In a split workspace, focus can move to a different tab while this one still shows Media
     // Viewer mode (forced single-pane); mediaViewerTargetTab() is what every Media-Viewer action
     // (toggle, exit, kind/filter changes from the Searcher panel) should resolve its target tab
@@ -270,8 +270,8 @@ private:
     // affects an already-populated model rather than something read fresh at next use.
     QAction* m_showHiddenFilesAction = nullptr;
 
-    // Media Viewer mode toggle (Architecture.md §14.61), wired to the focused tab's enter/
-    // exitMediaViewer() the same way the sort actions target focusedTab(). Not persisted (same
+    // Media Viewer mode toggle (Architecture.md §14.61), wired to the focused tab's enterMediaViewer()/
+    // mediaViewer()->exit() the same way the sort actions target focusedTab(). Not persisted (same
     // posture as m_showHiddenFilesAction is NOT -- this one specifically mirrors
     // m_searchTrackedTab's per-tab, not-restored-on-restart posture).
     QAction* m_mediaViewerModeAction = nullptr;

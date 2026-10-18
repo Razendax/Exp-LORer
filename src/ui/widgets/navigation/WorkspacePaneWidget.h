@@ -143,7 +143,8 @@ private:
     // Media Viewer mode's navigation lock (Architecture.md §14.61): disables back/forward/up/
     // refresh/address bar/view-mode button while active, restoring them (back/forward/up to
     // m_boundTab's own availability, not unconditionally true) when it isn't. Invoked both by the
-    // bound tab's live mediaViewerModeChanged signal and by bindToolBarToTab on every tab switch.
+    // bound tab's live TabMediaViewerViewModel::modeChanged signal and by bindToolBarToTab on every
+    // tab switch.
     void updateToolBarEnabledForMediaViewer(bool active);
 
     // Folder-Grouped Browsing (Architecture.md §14.74): true exactly when m_boundTab is in Media
@@ -152,10 +153,10 @@ private:
     bool mediaViewerFolderNavActive() const;
 
     // Folder-Grouped Browsing (Architecture.md §14.74): re-runs updateToolBarEnabledForMediaViewer()
-    // against the bound tab's current mediaViewerActive() state. Connected to
-    // mediaViewerGroupModeChanged/mediaViewerViewModeChanged/mediaViewerBack|Forward|UpAvailableChanged
-    // -- any of those can change whether folder-nav is active or what it's enabled against, even
-    // while mediaViewerModeChanged itself (Media Viewer on/off) hasn't fired.
+    // against the bound tab's current TabMediaViewerViewModel::isActive() state. Connected to
+    // groupModeChanged/viewModeChanged/back|forward|upAvailableChanged -- any of those can change
+    // whether folder-nav is active or what it's enabled against, even while modeChanged itself
+    // (Media Viewer on/off) hasn't fired.
     void onMediaViewerFolderNavChanged();
 
     // Resolves the FileBrowserView backing whichever page (normal browsing, search results, or

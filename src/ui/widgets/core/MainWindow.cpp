@@ -57,6 +57,7 @@
 #include "NotificationOverlayWidget.h"
 #include "SettingsDialog.h"
 #include "TabAdvancedSearchViewModel.h"
+#include "TabMediaViewerViewModel.h"
 #include "TabMonitoringViewModel.h"
 #include "TabQuickSearchViewModel.h"
 #include "TabViewModel.h"
@@ -459,10 +460,10 @@ void MainWindow::createMediaViewerModeAction()
 
         // Exiting targets the tab actually in Media Viewer mode, not focusedTab() -- in a split
         // workspace, focus may have moved to a different tab since Media Viewer mode was entered
-        // (Architecture.md §14.61), and exitMediaViewer() on an unrelated tab is a silent no-op.
+        // (Architecture.md §14.61), and exit() on an unrelated tab is a silent no-op.
         if (TabViewModel* tab = mediaViewerTargetTab())
         {
-            tab->exitMediaViewer();
+            tab->mediaViewer()->exit();
         }
     });
 }
@@ -614,13 +615,13 @@ void MainWindow::createWorkspace()
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::kindChanged, this, [this](MediaViewerKind kind) {
         if (TabViewModel* tab = mediaViewerTargetTab())
         {
-            tab->setMediaViewerKind(kind);
+            tab->mediaViewer()->setKind(kind);
         }
     });
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::exitRequested, this, [this]() {
         if (TabViewModel* tab = mediaViewerTargetTab())
         {
-            tab->exitMediaViewer();
+            tab->mediaViewer()->exit();
         }
     });
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagSearchChipActivated, this,
@@ -634,13 +635,13 @@ void MainWindow::createWorkspace()
             [this](MediaViewerTagBehaviour behaviour) {
                 if (TabViewModel* tab = mediaViewerTargetTab())
                 {
-                    tab->setMediaViewerTagBehaviour(behaviour);
+                    tab->mediaViewer()->setTagBehaviour(behaviour);
                 }
             });
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagFilterRemoved, this, [this](Tag::Id tagId) {
         if (TabViewModel* tab = mediaViewerTargetTab())
         {
-            tab->removeMediaViewerTagFilter(tagId);
+            tab->mediaViewer()->removeTagFilter(tagId);
         }
     });
     connect(m_mediaViewerSearchPanelWidget, &MediaViewerSearchPanelWidget::tagSearchQueryRequested, this, [this](const QString& query) {
@@ -667,7 +668,7 @@ void MainWindow::createWorkspace()
             [this](const QString& query, const NameSearchOptions& options) {
                 if (TabViewModel* tab = mediaViewerTargetTab())
                 {
-                    tab->setMediaViewerNameFilter(query, options);
+                    tab->mediaViewer()->setNameFilter(query, options);
                 }
             });
 
@@ -1175,27 +1176,29 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     {
         if (m_mediaViewerTrackedTab)
         {
-            disconnect(m_mediaViewerTrackedTab, &TabViewModel::mediaViewerModeChanged, this, nullptr);
-            disconnect(m_mediaViewerTrackedTab, &TabViewModel::mediaViewerFailed, this, &MainWindow::onStatusMessage);
-            // Every mediaViewerResultsChanged/mediaViewerKindChanged/mediaViewerCriteriaChanged/
-            // mediaViewerLoading*/mediaViewerFailed/mediaViewerModeChanged connection into
-            // m_mediaViewerSearchPanelWidget or m_mediaViewerModeAction below is a lambda (never a
-            // plain `this` member-function connection) -- disconnecting all of them by receiver
-            // alone is safe and precise, same pattern as m_searchTrackedTab/m_searchPanelWidget
-            // above.
-            disconnect(m_mediaViewerTrackedTab, nullptr, m_mediaViewerSearchPanelWidget, nullptr);
-            disconnect(m_mediaViewerTrackedTab, nullptr, m_mediaViewerModeAction, nullptr);
+            TabMediaViewerViewModel* trackedMediaViewer = m_mediaViewerTrackedTab->mediaViewer();
+            disconnect(trackedMediaViewer, &TabMediaViewerViewModel::modeChanged, this, nullptr);
+            disconnect(trackedMediaViewer, &TabMediaViewerViewModel::failed, this, &MainWindow::onStatusMessage);
+            // Every resultsChanged/kindChanged/criteriaChanged/loading*/failed/modeChanged
+            // connection into m_mediaViewerSearchPanelWidget or m_mediaViewerModeAction below is a
+            // lambda (never a plain `this` member-function connection) -- disconnecting all of
+            // them by receiver alone is safe and precise, same pattern as
+            // m_searchTrackedTab/m_searchPanelWidget above.
+            disconnect(trackedMediaViewer, nullptr, m_mediaViewerSearchPanelWidget, nullptr);
+            disconnect(trackedMediaViewer, nullptr, m_mediaViewerModeAction, nullptr);
         }
         m_mediaViewerTrackedTab = mediaViewerTarget;
 
         if (TabViewModel* viewerTab = m_mediaViewerTrackedTab)
         {
+            TabMediaViewerViewModel* mediaViewer = viewerTab->mediaViewer();
+
             {
                 const QSignalBlocker mediaViewerActionBlocker(m_mediaViewerModeAction);
-                m_mediaViewerModeAction->setChecked(viewerTab->mediaViewerActive());
+                m_mediaViewerModeAction->setChecked(mediaViewer->isActive());
             }
 
-            connect(viewerTab, &TabViewModel::mediaViewerModeChanged, this, [this, viewerTab](bool active) {
+            connect(mediaViewer, &TabMediaViewerViewModel::modeChanged, this, [this, viewerTab](bool active) {
                 if (active)
                 {
                     m_activeMediaViewerTab = viewerTab;
@@ -1206,31 +1209,31 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
                 }
                 onMediaViewerModeChanged(active);
             });
-            connect(viewerTab, &TabViewModel::mediaViewerFailed, this, &MainWindow::onStatusMessage);
+            connect(mediaViewer, &TabMediaViewerViewModel::failed, this, &MainWindow::onStatusMessage);
 
-            connect(viewerTab, &TabViewModel::mediaViewerModeChanged, m_mediaViewerModeAction, [this](bool active) {
+            connect(mediaViewer, &TabMediaViewerViewModel::modeChanged, m_mediaViewerModeAction, [this](bool active) {
                 const QSignalBlocker blocker(m_mediaViewerModeAction);
                 m_mediaViewerModeAction->setChecked(active);
             });
 
-            connect(viewerTab, &TabViewModel::mediaViewerKindChanged, m_mediaViewerSearchPanelWidget,
+            connect(mediaViewer, &TabMediaViewerViewModel::kindChanged, m_mediaViewerSearchPanelWidget,
                     [this](MediaViewerKind kind) { m_mediaViewerSearchPanelWidget->setKind(kind); });
-            connect(viewerTab, &TabViewModel::mediaViewerCriteriaChanged, m_mediaViewerSearchPanelWidget, [this, viewerTab]() {
-                m_mediaViewerSearchPanelWidget->setAppliedTagFilters(viewerTab->resolveMediaViewerTagFilters());
+            connect(mediaViewer, &TabMediaViewerViewModel::criteriaChanged, m_mediaViewerSearchPanelWidget, [this, mediaViewer]() {
+                m_mediaViewerSearchPanelWidget->setAppliedTagFilters(mediaViewer->resolveTagFilters());
             });
-            connect(viewerTab, &TabViewModel::mediaViewerTagBehaviourChanged, m_mediaViewerSearchPanelWidget,
+            connect(mediaViewer, &TabMediaViewerViewModel::tagBehaviourChanged, m_mediaViewerSearchPanelWidget,
                     [this](MediaViewerTagBehaviour behaviour) { m_mediaViewerSearchPanelWidget->setTagBehaviour(behaviour); });
-            connect(viewerTab, &TabViewModel::mediaViewerLoading, m_mediaViewerSearchPanelWidget,
+            connect(mediaViewer, &TabMediaViewerViewModel::loading, m_mediaViewerSearchPanelWidget,
                     [this]() { m_mediaViewerSearchPanelWidget->setLoading(true); });
-            connect(viewerTab, &TabViewModel::mediaViewerLoadingFinished, m_mediaViewerSearchPanelWidget,
+            connect(mediaViewer, &TabMediaViewerViewModel::loadingFinished, m_mediaViewerSearchPanelWidget,
                     [this]() { m_mediaViewerSearchPanelWidget->setLoading(false); });
-            connect(viewerTab, &TabViewModel::mediaViewerFailed, m_mediaViewerSearchPanelWidget,
+            connect(mediaViewer, &TabMediaViewerViewModel::failed, m_mediaViewerSearchPanelWidget,
                     [this]() { m_mediaViewerSearchPanelWidget->setLoading(false); });
 
-            m_mediaViewerSearchPanelWidget->setKind(viewerTab->mediaViewerKind());
-            m_mediaViewerSearchPanelWidget->setTagBehaviour(viewerTab->mediaViewerTagBehaviour());
-            m_mediaViewerSearchPanelWidget->setAppliedTagFilters(viewerTab->resolveMediaViewerTagFilters());
-            m_mediaViewerSearchPanelWidget->setNameFilter(viewerTab->mediaViewerNameFilter(), viewerTab->mediaViewerNameOptions());
+            m_mediaViewerSearchPanelWidget->setKind(mediaViewer->kind());
+            m_mediaViewerSearchPanelWidget->setTagBehaviour(mediaViewer->tagBehaviour());
+            m_mediaViewerSearchPanelWidget->setAppliedTagFilters(mediaViewer->resolveTagFilters());
+            m_mediaViewerSearchPanelWidget->setNameFilter(mediaViewer->nameFilter(), mediaViewer->nameOptions());
             // Prepopulate with every tag (searchTagsForCriteria("") -> all tags, alphabetically)
             // rather than leaving the matching-tags section empty until the user types something.
             m_mediaViewerSearchPanelWidget->setTagSearchResults(viewerTab->searchTagsForCriteria(QString()));

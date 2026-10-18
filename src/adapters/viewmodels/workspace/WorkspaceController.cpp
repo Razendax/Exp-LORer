@@ -227,7 +227,7 @@ void WorkspaceController::onPathRenamed(const std::filesystem::path& source, con
             // above (Architecture.md §14.61/§14.75's follow-up) -- patch it directly so a rename
             // committed from the grid doesn't leave the tile showing its old name. No-op inside
             // the method itself unless this tab's Media Viewer mode is active.
-            tab->renameMediaViewerEntry(source, destination);
+            tab->mediaViewer()->renameEntry(source, destination);
         }
     }
 }
