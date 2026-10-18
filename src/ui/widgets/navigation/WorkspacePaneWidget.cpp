@@ -11,6 +11,7 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QSplitter>
@@ -1286,10 +1287,12 @@ void WorkspacePaneWidget::onBranchButtonClicked()
         return;
     }
 
-    m_boundTab->requestLocalBranches([this](Result<std::vector<std::string>> result) {
-        if (!m_boundTab)
+    QPointer<WorkspacePaneWidget> selfGuard(this);
+    m_boundTab->requestLocalBranches([this, selfGuard](Result<std::vector<std::string>> result) {
+        if (!selfGuard || !m_boundTab)
         {
-            // The bound tab changed (or the pane closed) while the fetch was in flight.
+            // The pane was closed (freeing this widget), or the bound tab changed, while the fetch
+            // was in flight.
             return;
         }
 

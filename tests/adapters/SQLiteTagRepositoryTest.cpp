@@ -251,10 +251,18 @@ TEST_F(SQLiteTagRepositoryTest, FindFilesWithAnyOfTagGroupsAndsAcrossGroupsOrsWi
 
     ASSERT_TRUE(result.hasValue());
     EXPECT_EQ(result.value().size(), 2u); // one association per group for the single matching file
+    std::vector<Tag::Id> reportedTagIds;
     for (const auto& association : result.value())
     {
         EXPECT_EQ(association.filePath(), std::filesystem::path("C:/data/matching.pdf"));
+        reportedTagIds.push_back(association.tagId());
     }
+    // The file is only actually tagged with "action" (not the group's first id, "game"), so the
+    // reported tagId for the first group must name the tag the file really has.
+    std::sort(reportedTagIds.begin(), reportedTagIds.end());
+    std::vector<Tag::Id> expectedTagIds{ action.id(), urgent.id() };
+    std::sort(expectedTagIds.begin(), expectedTagIds.end());
+    EXPECT_EQ(reportedTagIds, expectedTagIds);
 }
 
 TEST_F(SQLiteTagRepositoryTest, FindFilesWithAnyOfTagGroupsWithSingleIdGroupsMatchesExactAndSemantics)

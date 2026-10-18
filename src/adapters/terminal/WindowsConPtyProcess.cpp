@@ -123,13 +123,32 @@ Result<void> WindowsConPtyProcess::start(const std::filesystem::path& cwd, int c
 
     CloseHandle(processInfo.hThread); // only the process handle is needed past this point
 
+    // std::thread's constructor can throw (e.g. resource_unavailable_try_again) if the OS can't
+    // spawn the thread. By this point the pseudoconsole/process are live OS resources, so a thrown
+    // exception must be caught and translated here (Architecture.md §6 "Errors") rather than
+    // escaping uncaught and leaking the ConPTY session, handles, and child process.
+    try
+    {
+        m_readerThread = std::thread(&WindowsConPtyProcess::readLoop, this);
+    }
+    catch (const std::exception& ex)
+    {
+        TerminateProcess(processInfo.hProcess, 0);
+        ClosePseudoConsole(pseudoConsole);
+        CloseHandle(inputWrite);
+        CloseHandle(outputRead);
+        CloseHandle(processInfo.hProcess);
+
+        Logging::warn("WindowsConPtyProcess: start failed: " + std::string(toLogString(ErrorCode::IoError)) + " ("
+                       + ex.what() + ")");
+        return Result<void>::failure(Error(ErrorCode::IoError, "Failed to start the terminal reader thread"));
+    }
+
     m_pseudoConsole = pseudoConsole;
     m_inputWrite = inputWrite;
     m_outputRead = outputRead;
     m_processHandle = processInfo.hProcess;
     m_running = true;
-
-    m_readerThread = std::thread(&WindowsConPtyProcess::readLoop, this);
 
     Logging::info("WindowsConPtyProcess: process started (" + std::to_string(size.X) + "x" + std::to_string(size.Y) + ")");
     return Result<void>::success();

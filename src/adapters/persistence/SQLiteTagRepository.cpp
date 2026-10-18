@@ -94,33 +94,48 @@ void SQLiteTagRepository::runMigrations()
     }
 
     QSqlQuery migration(m_db);
-    migration.exec(QStringLiteral(R"(
-        CREATE TABLE IF NOT EXISTS Tags (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            name        TEXT NOT NULL UNIQUE,
-            hex_color   TEXT NOT NULL,
-            created_at  INTEGER NOT NULL
-        )
-    )"));
-    migration.exec(QStringLiteral(R"(
-        CREATE TABLE IF NOT EXISTS Files (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            path          TEXT NOT NULL UNIQUE,
-            file_hash     TEXT NOT NULL,
-            size          INTEGER NOT NULL DEFAULT 0,
-            modified_at   INTEGER NOT NULL DEFAULT 0,
-            last_seen_at  INTEGER NOT NULL
-        )
-    )"));
-    migration.exec(QStringLiteral("CREATE INDEX IF NOT EXISTS idx_files_hash ON Files(file_hash)"));
-    migration.exec(QStringLiteral(R"(
-        CREATE TABLE IF NOT EXISTS FileTags (
-            file_id  INTEGER NOT NULL REFERENCES Files(id) ON DELETE CASCADE,
-            tag_id   INTEGER NOT NULL REFERENCES Tags(id) ON DELETE CASCADE,
-            PRIMARY KEY (file_id, tag_id)
-        )
-    )"));
-    migration.exec(QStringLiteral("PRAGMA user_version = 1"));
+    const bool migrated = migration.exec(QStringLiteral(R"(
+                                    CREATE TABLE IF NOT EXISTS Tags (
+                                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                                        name        TEXT NOT NULL UNIQUE,
+                                        hex_color   TEXT NOT NULL,
+                                        created_at  INTEGER NOT NULL
+                                    )
+                                )"))
+                           && migration.exec(QStringLiteral(R"(
+                                    CREATE TABLE IF NOT EXISTS Files (
+                                        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                                        path          TEXT NOT NULL UNIQUE,
+                                        file_hash     TEXT NOT NULL,
+                                        size          INTEGER NOT NULL DEFAULT 0,
+                                        modified_at   INTEGER NOT NULL DEFAULT 0,
+                                        last_seen_at  INTEGER NOT NULL
+                                    )
+                                )"))
+                           && migration.exec(QStringLiteral("CREATE INDEX IF NOT EXISTS idx_files_hash ON Files(file_hash)"))
+                           && migration.exec(QStringLiteral(R"(
+                                    CREATE TABLE IF NOT EXISTS FileTags (
+                                        file_id  INTEGER NOT NULL REFERENCES Files(id) ON DELETE CASCADE,
+                                        tag_id   INTEGER NOT NULL REFERENCES Tags(id) ON DELETE CASCADE,
+                                        PRIMARY KEY (file_id, tag_id)
+                                    )
+                                )"));
+
+    if (!migrated)
+    {
+        // Leaving user_version at 0 means a retry on the next launch will attempt these
+        // CREATE-TABLE-IF-NOT-EXISTS statements again rather than silently trusting a DB that may
+        // be missing tables (disk full, read-only file, etc.).
+        Logging::warn("SQLiteTagRepository: migration to version 1 failed: " + migration.lastError().text().toStdString());
+        return;
+    }
+
+    if (!migration.exec(QStringLiteral("PRAGMA user_version = 1")))
+    {
+        Logging::warn("SQLiteTagRepository: failed to record migration version 1: "
+                       + migration.lastError().text().toStdString());
+        return;
+    }
 
     Logging::info("SQLiteTagRepository: migration applied (version 1)");
 }
@@ -566,6 +581,7 @@ Result<std::vector<FileTagAssociation>> SQLiteTagRepository::findFilesWithAnyOfT
     }
 
     QStringList existsClauses;
+    QStringList matchedTagClauses;
     for (const auto& group : tagIdGroups)
     {
         QStringList placeholders;
@@ -573,17 +589,31 @@ Result<std::vector<FileTagAssociation>> SQLiteTagRepository::findFilesWithAnyOfT
         {
             placeholders << QStringLiteral("?");
         }
+        const QString placeholderList = placeholders.join(QStringLiteral(","));
         existsClauses << QStringLiteral("EXISTS (SELECT 1 FROM FileTags ft WHERE ft.file_id = f.id AND ft.tag_id IN (%1))")
-                             .arg(placeholders.join(QStringLiteral(",")));
+                             .arg(placeholderList);
+        // Which member of this OR-group the file is actually tagged with -- any member can satisfy
+        // the EXISTS clause above, so the reported tagId must come from the file's real FileTags
+        // rows rather than an arbitrary group member (e.g. group.front()) that may not apply to it.
+        matchedTagClauses << QStringLiteral(
+                                  "(SELECT ft.tag_id FROM FileTags ft WHERE ft.file_id = f.id AND ft.tag_id IN (%1) LIMIT 1)")
+                                 .arg(placeholderList);
     }
 
     QSqlQuery query(m_db);
     query.prepare(QStringLiteral(R"(
-        SELECT f.path, f.file_hash
+        SELECT f.path, f.file_hash, %1
         FROM Files f
-        WHERE %1
+        WHERE %2
     )")
-                       .arg(existsClauses.join(QStringLiteral(" AND "))));
+                       .arg(matchedTagClauses.join(QStringLiteral(", ")), existsClauses.join(QStringLiteral(" AND "))));
+    for (const auto& group : tagIdGroups)
+    {
+        for (Tag::Id id : group)
+        {
+            query.addBindValue(static_cast<qint64>(id));
+        }
+    }
     for (const auto& group : tagIdGroups)
     {
         for (Tag::Id id : group)
@@ -603,9 +633,10 @@ Result<std::vector<FileTagAssociation>> SQLiteTagRepository::findFilesWithAnyOfT
         const std::filesystem::path path = toPath(query.value(0).toString());
         const std::uint64_t hash = query.value(1).toString().toULongLong();
 
-        for (const auto& group : tagIdGroups)
+        for (int groupIndex = 0; groupIndex < static_cast<int>(tagIdGroups.size()); ++groupIndex)
         {
-            auto association = FileTagAssociation::create(path, hash, group.front());
+            const Tag::Id matchedTagId = static_cast<Tag::Id>(query.value(2 + groupIndex).toLongLong());
+            auto association = FileTagAssociation::create(path, hash, matchedTagId);
             if (association)
             {
                 associations.push_back(std::move(association).value());
