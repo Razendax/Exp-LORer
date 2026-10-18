@@ -14,6 +14,7 @@
 #include <QPushButton>
 #include <QScrollArea>
 #include <QSettings>
+#include <QSignalBlocker>
 #include <QSplitter>
 #include <QStackedWidget>
 #include <QToolButton>
@@ -453,9 +454,35 @@ void TagManagerDialog::rebuildTagTree(const std::vector<Tag>& tags)
 
 void TagManagerDialog::onMatchingTagsChanged(const std::vector<Tag>& tags)
 {
-    rebuildTagChips(tags);
-    rebuildTagTree(tags);
-    applySelectedTag(std::nullopt);
+    // matchingTagsChanged carries no indication of *why* it fired -- it's the same signal for an
+    // actual add/rename/delete/merge as for toggling "show counts," changing sort order, or typing
+    // in the search box, all of which just re-filter/re-render the same underlying tag set. Capture
+    // the selection before rebuilding and restore it below if the selected tag still exists, instead
+    // of unconditionally deselecting and blanking the results pane on every one of those.
+    const std::optional<Tag::Id> previousSelection = m_selectedTagId;
+
+    {
+        // rebuildTagTree() calls QTreeWidget::clear(), which would otherwise fire
+        // currentItemChanged(nullptr, ...) -> onTreeSelectionChanged() -> applySelectedTag(nullopt)
+        // as a side effect of the rebuild itself, clearing m_selectedTagId and the results pane
+        // before we even get a chance to check whether the selection should survive.
+        const QSignalBlocker blocker(m_tagTree);
+        rebuildTagChips(tags);
+        rebuildTagTree(tags);
+    }
+
+    const bool selectionStillMatches =
+        previousSelection.has_value() &&
+        std::any_of(tags.begin(), tags.end(), [&previousSelection](const Tag& tag) { return tag.id() == *previousSelection; });
+
+    if (selectionStillMatches)
+    {
+        highlightSelectedTag(*previousSelection);
+    }
+    else
+    {
+        applySelectedTag(std::nullopt);
+    }
 }
 
 void TagManagerDialog::onChipClicked(Tag::Id id)
@@ -480,6 +507,47 @@ void TagManagerDialog::onTreeSelectionChanged(QTreeWidgetItem* current)
     }
 
     applySelectedTag(static_cast<Tag::Id>(current->data(0, kTagIdRole).toLongLong()));
+}
+
+void TagManagerDialog::highlightSelectedTag(Tag::Id id)
+{
+    for (int i = 0; i < m_chipLayout->count(); ++i)
+    {
+        if (auto* chip = qobject_cast<TagChipWidget*>(m_chipLayout->itemAt(i)->widget()))
+        {
+            chip->setSelected(chip->tag().id() == id);
+        }
+    }
+
+    // Blocked the same way the rebuild itself was (see onMatchingTagsChanged): setCurrentItem()
+    // would otherwise fire currentItemChanged() -> onTreeSelectionChanged() -> applySelectedTag(id),
+    // which is redundant here (id isn't changing) and would re-trigger the ViewModel's async
+    // files-for-tag fetch for no reason.
+    const QSignalBlocker blocker(m_tagTree);
+
+    std::function<QTreeWidgetItem*(QTreeWidgetItem*)> findItem = [&](QTreeWidgetItem* item) -> QTreeWidgetItem* {
+        if (!item->data(0, kIsVirtualRole).toBool() && static_cast<Tag::Id>(item->data(0, kTagIdRole).toLongLong()) == id)
+        {
+            return item;
+        }
+        for (int i = 0; i < item->childCount(); ++i)
+        {
+            if (QTreeWidgetItem* found = findItem(item->child(i)))
+            {
+                return found;
+            }
+        }
+        return nullptr;
+    };
+
+    for (int i = 0; i < m_tagTree->topLevelItemCount(); ++i)
+    {
+        if (QTreeWidgetItem* found = findItem(m_tagTree->topLevelItem(i)))
+        {
+            m_tagTree->setCurrentItem(found);
+            break;
+        }
+    }
 }
 
 void TagManagerDialog::applySelectedTag(std::optional<Tag::Id> id)

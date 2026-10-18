@@ -85,7 +85,15 @@ void WorkspacePaneViewModel::closeTab(int index)
 
     emit tabClosed(index);
 
-    if (m_activeIndex >= static_cast<int>(m_tabs.size()))
+    if (index < m_activeIndex)
+    {
+        // A tab before the active one shifted everything after it down by one index -- the active
+        // TabViewModel itself is unchanged, but its index needs to follow, or Preview/Tags/
+        // Monitoring and session-save end up tracking the wrong tab.
+        --m_activeIndex;
+        emit activeTabChanged(m_activeIndex);
+    }
+    else if (m_activeIndex >= static_cast<int>(m_tabs.size()))
     {
         m_activeIndex = static_cast<int>(m_tabs.size()) - 1;
         emit activeTabChanged(m_activeIndex);

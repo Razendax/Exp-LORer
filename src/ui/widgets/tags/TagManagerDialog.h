@@ -57,6 +57,13 @@ private:
     void onChipClicked(Tag::Id id);
     void onTreeSelectionChanged(QTreeWidgetItem* current);
     void applySelectedTag(std::optional<Tag::Id> id);
+
+    // Re-applies the chip/tree highlighting for `id` after rebuildTagChips()/rebuildTagTree() threw
+    // away the old widgets/items -- used by onMatchingTagsChanged() to keep a still-matching
+    // selection visually selected across a non-destructive rebuild (search text, show-counts, sort),
+    // without touching m_selectedTagId, the Rename/Delete buttons, or the results pane, all of which
+    // are already correct and shouldn't flicker.
+    void highlightSelectedTag(Tag::Id id);
     void onViewModeChanged(int index);
     void onSortSettingsChanged();
     void onAddClicked();

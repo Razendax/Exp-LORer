@@ -13,6 +13,7 @@
 #include <QTreeView>
 #include <QVBoxLayout>
 #include <algorithm>
+#include <functional>
 
 #include "FileBrowserView.h"
 #include "FileListModel.h"
@@ -326,8 +327,60 @@ void SearchPanelWidget::setResults(const std::vector<FileNode>& entries, const s
     m_lastResults = entries;
     m_listModel->setEntries(root, entries);
     m_listModel->setIcons(icons);
+
+    const std::vector<std::filesystem::path> expandedPaths = collectExpandedPaths();
+
     m_treeModel->setRoot(root);
     m_treeModel->setResults(entries);
+
+    restoreExpandedPaths(expandedPaths);
+}
+
+std::vector<std::filesystem::path> SearchPanelWidget::collectExpandedPaths() const
+{
+    std::vector<std::filesystem::path> expanded;
+
+    std::function<void(const QModelIndex&)> collect = [this, &expanded, &collect](const QModelIndex& parent) {
+        const int rows = m_treeModel->rowCount(parent);
+        for (int i = 0; i < rows; ++i)
+        {
+            const QModelIndex child = m_treeModel->index(i, 0, parent);
+            if (m_treeResultsView->isExpanded(child))
+            {
+                expanded.push_back(m_treeModel->pathForIndex(child));
+            }
+            collect(child);
+        }
+    };
+    collect(QModelIndex());
+
+    return expanded;
+}
+
+void SearchPanelWidget::restoreExpandedPaths(const std::vector<std::filesystem::path>& expandedPaths)
+{
+    if (expandedPaths.empty())
+    {
+        return;
+    }
+
+    std::function<void(const QModelIndex&)> restore = [this, &expandedPaths, &restore](const QModelIndex& parent) {
+        const int rows = m_treeModel->rowCount(parent);
+        for (int i = 0; i < rows; ++i)
+        {
+            const QModelIndex child = m_treeModel->index(i, 0, parent);
+            const std::filesystem::path childPath = m_treeModel->pathForIndex(child);
+            const bool wasExpanded =
+                std::any_of(expandedPaths.begin(), expandedPaths.end(),
+                            [&childPath](const std::filesystem::path& path) { return pathsEqualCaseInsensitive(path, childPath); });
+            if (wasExpanded)
+            {
+                m_treeResultsView->setExpanded(child, true);
+            }
+            restore(child);
+        }
+    };
+    restore(QModelIndex());
 }
 
 void SearchPanelWidget::applyIcons(const QHash<QString, QIcon>& icons)

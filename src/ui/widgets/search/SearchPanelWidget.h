@@ -87,6 +87,15 @@ private:
     void setViewAsTree(bool tree);
     void onTreeSelectionChanged();
 
+    // SearchResultsTreeModel::setResults() rebuilds its whole tree (no diffing) on every call,
+    // including every progress tick of an in-progress recursive scan -- that resets the view's
+    // expanded state along with everything else, so without this a tree the user expanded while a
+    // scan is still running keeps visibly collapsing back. QModelIndexes don't survive the rebuild,
+    // so expansion is captured/restored by path instead, around the setResults() call in
+    // setResults() below.
+    std::vector<std::filesystem::path> collectExpandedPaths() const;
+    void restoreExpandedPaths(const std::vector<std::filesystem::path>& expandedPaths);
+
     // Enforces "at most one of Whole Word/Exact Name/Regex checked, but clicking the active one
     // again unchecks it" -- this vendored Qt build's QButtonGroup has no
     // ExclusionPolicy::ExclusiveOptional, so the 3 buttons aren't grouped at all and this is done

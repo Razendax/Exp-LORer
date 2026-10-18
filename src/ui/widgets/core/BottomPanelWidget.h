@@ -62,4 +62,14 @@ private:
 
     bool m_expanded = false;
     int m_activeIndex = -1;
+
+    // Last-seen height of the owning QSplitter (our parent), tracked across resizeEvent calls to
+    // tell an actual splitter-handle drag (the splitter's own total height is unchanged -- only how
+    // it's divided between children moved) apart from this widget merely growing because the whole
+    // window was resized/maximized, which proportionally redistributes space across the splitter's
+    // children and can push a collapsed panel's height past collapsedHeight() without anyone
+    // dragging anything. -1 ("never observed yet") never matches a real height, so the very first
+    // resizeEvent never auto-expands. See resizeEvent() for why this distinction matters (mirrors
+    // SidePanelWidget's own m_lastKnownSplitterWidth).
+    int m_lastKnownSplitterHeight = -1;
 };

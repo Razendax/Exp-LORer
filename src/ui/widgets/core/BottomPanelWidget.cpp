@@ -2,6 +2,7 @@
 
 #include <QHBoxLayout>
 #include <QResizeEvent>
+#include <QSplitter>
 #include <QStackedWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -111,10 +112,28 @@ void BottomPanelWidget::resizeEvent(QResizeEvent* event)
     // with no tab selected (m_activeIndex reset to -1 on collapse, see onPanelTabButtonClicked) and
     // the user drags the divider up. Treat that the same as clicking the first panel tab, so the
     // user always sees content rather than blank space below the header strip.
-    if (m_activeIndex < 0 && !m_buttons.empty() && height() > collapsedHeight())
+    //
+    // Only do this when it's actually a handle drag, i.e. the splitter's own total height is
+    // unchanged from the last resize (just redistributed between its children) -- NOT when the
+    // whole window was resized/maximized, which proportionally redistributes space across the
+    // splitter's children too and can nudge a deliberately-collapsed panel's height past
+    // collapsedHeight() without anyone dragging anything. Without this guard, maximizing the window
+    // after collapsing a deliberately-collapsed terminal panel silently re-expands it, and that then
+    // gets persisted on close (Architecture.md §14.48) -- sticking the panel back open on every
+    // future launch. Mirrors SidePanelWidget's own m_lastKnownSplitterWidth guard.
+    int splitterHeight = -1;
+    if (auto* splitter = qobject_cast<QSplitter*>(parentWidget()))
+    {
+        splitterHeight = splitter->height();
+    }
+    const bool likelyHandleDrag = splitterHeight >= 0 && splitterHeight == m_lastKnownSplitterHeight;
+
+    if (m_activeIndex < 0 && !m_buttons.empty() && height() > collapsedHeight() && likelyHandleDrag)
     {
         onPanelTabButtonClicked(0);
     }
+
+    m_lastKnownSplitterHeight = splitterHeight;
 }
 
 int BottomPanelWidget::collapsedHeight() const
