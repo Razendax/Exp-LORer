@@ -1,21 +1,13 @@
 #include "TagManagementUseCase.h"
 
 #include <algorithm>
-#include <cctype>
 
 #include "TagHierarchy.h"
+#include "UnicodeCaseFold.h"
 
 namespace
 {
-    std::string toLower(std::string text)
-    {
-        std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
-            return static_cast<char>(std::tolower(c));
-        });
-        return text;
-    }
-
-    // Ranks a tag name against a (already-lowercased) query: exact match ranks best, then prefix,
+    // Ranks a tag name against a (already-folded) query: exact match ranks best, then prefix,
     // then substring; anything else does not match at all.
     enum class MatchRank
     {
@@ -255,7 +247,9 @@ Result<std::vector<Tag>> TagManagementUseCase::searchTags(const std::string& que
 
     std::vector<Tag> tags = std::move(all).value();
 
-    auto byNameAscending = [](const Tag& lhs, const Tag& rhs) { return toLower(lhs.name()) < toLower(rhs.name()); };
+    auto byNameAscending = [](const Tag& lhs, const Tag& rhs) {
+        return UnicodeCaseFold::foldUtf8(lhs.name()) < UnicodeCaseFold::foldUtf8(rhs.name());
+    };
 
     if (query.empty())
     {
@@ -263,25 +257,25 @@ Result<std::vector<Tag>> TagManagementUseCase::searchTags(const std::string& que
         return Result<std::vector<Tag>>::success(std::move(tags));
     }
 
-    const std::string lowerQuery = toLower(query);
+    const std::string foldedQuery = UnicodeCaseFold::foldUtf8(query);
 
     std::vector<Tag> matched;
     for (const auto& tag : tags)
     {
-        if (rankMatch(toLower(tag.name()), lowerQuery) != MatchRank::None)
+        if (rankMatch(UnicodeCaseFold::foldUtf8(tag.name()), foldedQuery) != MatchRank::None)
         {
             matched.push_back(tag);
         }
     }
 
-    std::stable_sort(matched.begin(), matched.end(), [&lowerQuery](const Tag& lhs, const Tag& rhs) {
-        const MatchRank rankLhs = rankMatch(toLower(lhs.name()), lowerQuery);
-        const MatchRank rankRhs = rankMatch(toLower(rhs.name()), lowerQuery);
+    std::stable_sort(matched.begin(), matched.end(), [&foldedQuery](const Tag& lhs, const Tag& rhs) {
+        const MatchRank rankLhs = rankMatch(UnicodeCaseFold::foldUtf8(lhs.name()), foldedQuery);
+        const MatchRank rankRhs = rankMatch(UnicodeCaseFold::foldUtf8(rhs.name()), foldedQuery);
         if (rankLhs != rankRhs)
         {
             return rankLhs < rankRhs;
         }
-        return toLower(lhs.name()) < toLower(rhs.name());
+        return UnicodeCaseFold::foldUtf8(lhs.name()) < UnicodeCaseFold::foldUtf8(rhs.name());
     });
 
     return Result<std::vector<Tag>>::success(std::move(matched));

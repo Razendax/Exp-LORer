@@ -1,24 +1,12 @@
 #include "FileNavigationUseCase.h"
 
 #include <algorithm>
-#include <cctype>
 
 #include "GlobMatch.h"
 #include "PathUtf8.h"
 #include "RegexMatch.h"
 #include "UnicodeCaseFold.h"
 #include "WholeWordMatch.h"
-
-namespace
-{
-    std::string toLower(std::string text)
-    {
-        std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
-            return static_cast<char>(std::tolower(c));
-        });
-        return text;
-    }
-}
 
 FileNavigationUseCase::FileNavigationUseCase(IFileSystemRepository& fileSystemRepository, IContextMenuProvider& contextMenuProvider)
     : m_fileSystemRepository(fileSystemRepository)
@@ -65,14 +53,16 @@ std::vector<FileNode> FileNavigationUseCase::sortBy(std::vector<FileNode> files,
         switch (criterion)
         {
             case SortCriterion::Name:
-                return toLower(PathUtf8::toUtf8(lhs.name())) < toLower(PathUtf8::toUtf8(rhs.name()));
+                return UnicodeCaseFold::foldUtf8(PathUtf8::toUtf8(lhs.name())) <
+                       UnicodeCaseFold::foldUtf8(PathUtf8::toUtf8(rhs.name()));
             case SortCriterion::Size:
             case SortCriterion::Percent:
                 return effectiveSize(lhs) < effectiveSize(rhs);
             case SortCriterion::ModificationDate:
                 return lhs.modificationDate() < rhs.modificationDate();
             case SortCriterion::FileType:
-                return toLower(PathUtf8::toUtf8(lhs.path().extension())) < toLower(PathUtf8::toUtf8(rhs.path().extension()));
+                return UnicodeCaseFold::foldUtf8(PathUtf8::toUtf8(lhs.path().extension())) <
+                       UnicodeCaseFold::foldUtf8(PathUtf8::toUtf8(rhs.path().extension()));
         }
         return false;
     };
@@ -93,11 +83,11 @@ std::vector<FileNode> FileNavigationUseCase::sortBy(std::vector<FileNode> files,
 
 std::vector<FileNode> FileNavigationUseCase::filterByExtension(std::vector<FileNode> files, const std::string& extension)
 {
-    const std::string wanted = toLower(extension);
+    const std::string wanted = UnicodeCaseFold::foldUtf8(extension);
 
     std::vector<FileNode> result;
     std::copy_if(files.begin(), files.end(), std::back_inserter(result), [&wanted](const FileNode& file) {
-        return toLower(PathUtf8::toUtf8(file.path().extension())) == wanted;
+        return UnicodeCaseFold::foldUtf8(PathUtf8::toUtf8(file.path().extension())) == wanted;
     });
 
     return result;

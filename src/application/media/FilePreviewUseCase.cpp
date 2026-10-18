@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <string>
 
 #include "ArchiveExtensions.h"
@@ -11,6 +10,7 @@
 #include "MediaExtensions.h"
 #include "MediaMetadata.h"
 #include "PathUtf8.h"
+#include "UnicodeCaseFold.h"
 
 namespace
 {
@@ -27,10 +27,7 @@ namespace
 
     bool caseInsensitiveLess(const FileNode& lhs, const FileNode& rhs)
     {
-        const std::string lhsName = PathUtf8::toUtf8(lhs.name());
-        const std::string rhsName = PathUtf8::toUtf8(rhs.name());
-        return std::lexicographical_compare(lhsName.begin(), lhsName.end(), rhsName.begin(), rhsName.end(),
-                                             [](unsigned char a, unsigned char b) { return std::tolower(a) < std::tolower(b); });
+        return UnicodeCaseFold::foldUtf8(PathUtf8::toUtf8(lhs.name())) < UnicodeCaseFold::foldUtf8(PathUtf8::toUtf8(rhs.name()));
     }
 }
 

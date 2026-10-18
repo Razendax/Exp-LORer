@@ -1,7 +1,6 @@
 #include "TagListViewModel.h"
 
 #include <algorithm>
-#include <cctype>
 
 #include "ArchiveExtensions.h"
 #include "FileNavigationUseCase.h"
@@ -12,6 +11,7 @@
 #include "TagChangeNotifier.h"
 #include "TagColorPalette.h"
 #include "TagManagementUseCase.h"
+#include "UnicodeCaseFold.h"
 #include "VirtualPaths.h"
 
 namespace
@@ -434,11 +434,9 @@ void TagListViewModel::refreshSearchSection()
         emit operationFailed(QString::fromStdString(result.error().message));
     }
 
-    const bool hasExactMatch = std::any_of(ranked.begin(), ranked.end(), [&query](const Tag& tag) {
-        return tag.name().size() == query.size() &&
-               std::equal(tag.name().begin(), tag.name().end(), query.begin(), [](unsigned char a, unsigned char b) {
-                   return std::tolower(a) == std::tolower(b);
-               });
+    const std::string foldedQuery = UnicodeCaseFold::foldUtf8(query);
+    const bool hasExactMatch = std::any_of(ranked.begin(), ranked.end(), [&foldedQuery](const Tag& tag) {
+        return UnicodeCaseFold::foldUtf8(tag.name()) == foldedQuery;
     });
     m_canCreateTagFromQuery = !query.empty() && !hasExactMatch;
 
