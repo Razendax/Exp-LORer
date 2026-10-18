@@ -190,5 +190,7 @@ bool WorkspaceStore::deleteWorkspace(const QString& id)
 
     std::error_code errorCode;
     std::filesystem::remove(configFilePath(id), errorCode);
-    return true;
+    // remove() clears errorCode both when it deleted the file and when the file was already gone;
+    // it only sets errorCode on a genuine failure (e.g. permission denied), so that's what we report.
+    return !errorCode;
 }
