@@ -1,5 +1,7 @@
 #include "LanguageRegistry.h"
 
+#include <QObject>
+
 std::optional<Language> LanguageRegistry::languageForExtension(const std::string& lowercaseExtension)
 {
     if (lowercaseExtension == ".c")
@@ -43,4 +45,30 @@ std::optional<Language> LanguageRegistry::languageForExtension(const std::string
         return Language::Css;
     }
     return std::nullopt;
+}
+
+QString LanguageRegistry::displayName(Language language)
+{
+    switch (language)
+    {
+        case Language::C:
+            return QObject::tr("C");
+        case Language::Cpp:
+            return QObject::tr("C++");
+        case Language::CSharp:
+            return QObject::tr("C#");
+        case Language::Python:
+            return QObject::tr("Python");
+        case Language::JavaScript:
+            return QObject::tr("JavaScript");
+        case Language::TypeScript:
+            return QObject::tr("TypeScript");
+        case Language::Json:
+            return QObject::tr("JSON");
+        case Language::Html:
+            return QObject::tr("HTML");
+        case Language::Css:
+            return QObject::tr("CSS");
+    }
+    return QString();
 }

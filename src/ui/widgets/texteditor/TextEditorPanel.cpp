@@ -8,10 +8,13 @@
 #include "TextEditorGotoLineBar.h"
 #include "TextEditorWidget.h"
 
-TextEditorPanel::TextEditorPanel(const TextEditorOptions& options, QWidget* parent)
+TextEditorPanel::TextEditorPanel(const TextEditorOptions& options, QWidget* parent,
+                                  SyntaxHighlightEngine* highlightEngine,
+                                  HighlightThemeViewModel* highlightThemeViewModel)
     : QWidget(parent)
-    , m_editor(new TextEditorWidget(options, this))
-    , m_findBar(options.findEnabled ? new TextEditorFindBar(m_editor, options.multicursorEnabled) : nullptr)
+    , m_editor(new TextEditorWidget(options, this, highlightEngine, highlightThemeViewModel))
+    , m_findBar(options.findEnabled ? new TextEditorFindBar(m_editor, options.multicursorEnabled, options.readOnly)
+                                     : nullptr)
     , m_gotoLineBar(options.goToLineEnabled ? new TextEditorGotoLineBar(m_editor) : nullptr)
 {
     auto* layout = new QVBoxLayout(this);

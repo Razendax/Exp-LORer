@@ -800,7 +800,7 @@ void MainWindow::showTextEditorDialog()
     if (optionsDialog.exec() != QDialog::Accepted)
         return;
 
-    TextEditorDialog dialog(optionsDialog.options(), this);
+    TextEditorDialog dialog(optionsDialog.options(), this, &m_syntaxHighlightEngine, &m_highlightThemeViewModel);
     dialog.exec();
 }
 

@@ -27,8 +27,10 @@ public:
     // editor also becomes this widget's parent, so the find bar is a floating child drawn on top
     // of the editor's viewport instead of a widget in some enclosing layout. multicursorEnabled
     // hides the "Select All Occurrences" control (button + Alt+Enter) when the editor it's
-    // attached to was built without multicursor support.
-    explicit TextEditorFindBar(TextEditorWidget* editor, bool multicursorEnabled);
+    // attached to was built without multicursor support. readOnly hides the Replace row (toggle
+    // button included) entirely, same gating as multicursorEnabled above -- fixed at construction,
+    // like multicursorEnabled, since the editor's own read-only state is itself construction-time.
+    explicit TextEditorFindBar(TextEditorWidget* editor, bool multicursorEnabled, bool readOnly = false);
 
     // Shows the bar if hidden, repositions it over the editor, focuses the line edit and selects
     // its current text, then re-runs the search (so reopening with stale text immediately
@@ -127,4 +129,5 @@ private:
     QTimer* m_searchDebounceTimer = nullptr;
 
     bool m_multicursorEnabled = true;
+    bool m_readOnly = false;
 };

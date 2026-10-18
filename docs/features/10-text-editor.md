@@ -5,7 +5,7 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.93–14.95 — the built-in text editor dialog (`src/ui/widgets/texteditor/`). The editor widget
+Covers §14.93–14.96 — the built-in text editor dialog (`src/ui/widgets/texteditor/`). The editor widget
 itself (multi-cursor editing, line-number gutter, the Find bar's search/highlight mechanics, Go to
 Line) predates this file and shipped undocumented; this file starts from the Find bar's Replace
 addition and is where later text-editor features should be logged going forward.
@@ -103,3 +103,80 @@ checked by default) plus an Ok button relabeled "Open Editor" — before `MainWi
 knowledge of `TextEditorDialog`; it only collects and returns a `TextEditorOptions` via a getter,
 keeping the two dialogs as decoupled as `TextEditorFindBar`/`TextEditorGotoLineBar` already are
 from each other.
+
+---
+### 14.96 Read-Only Mode + Syntax Highlighting
+
+Two more independently-switchable `TextEditorOptions` flags, following §14.95's established
+pattern: `readOnly` (`bool`, default `false`) and `highlightLanguage`
+(`std::optional<Language>`, default `std::nullopt`).
+
+**Read-only.** `TextEditorWidget` calls `setReadOnly(options.readOnly)` in its constructor, which
+is enough for `QPlainTextEdit`'s own single-cursor path (typing/paste/cut already no-op when
+`isReadOnly()`). The multi-cursor path bypasses `QPlainTextEdit`'s own editing entirely, though, so
+`handleMultiCursorKeyPress`'s mutating branches (Backspace, Delete, Return/Enter, Tab, Ctrl+X, and
+the trailing "insert printable text" fallback) each gained an `if (!m_readOnly)` guard around the
+mutation while still returning `true` (swallowing the keystroke, matching `QPlainTextEdit`'s own
+read-only behavior of consuming the key without inserting). Navigation, Ctrl+C, Ctrl+Click/
+Ctrl+Alt+Up/Down secondary-cursor creation, and Select All Occurrences are deliberately
+unguarded — read-only means "no edits," not "no cursors."
+
+`TextEditorFindBar` mutates the document directly via `QTextCursor::insertText` in
+`onReplace`/`onReplaceAll`, bypassing `TextEditorWidget` (and so its read-only guard) entirely, so
+the find bar needed its own `readOnly` constructor parameter (default `false`, threaded through
+from `TextEditorPanel`): the Replace row's toggle button is hidden outright (`setVisible(!readOnly)`
+at construction, same gating `multicursorEnabled` already uses for `m_selectAllOccurrencesButton`),
+and `onReplace`/`onReplaceAll` each still check `m_readOnly` defensively — belt-and-suspenders
+against any path that could reach them despite the row being hidden (there currently is none, since
+the row's own Ctrl+Alt+Enter shortcut only fires once the row is visible), rather than relying
+solely on the UI being hidden.
+
+**Syntax highlighting.** Rather than building a parallel highlighter for the editor, this reuses
+the stack already built for the Preview panel (§14.26): `SyntaxHighlightEngine` +
+`HighlightThemeViewModel` + `LanguageRegistry` + the shared `SyntaxHighlighter`
+(`QSyntaxHighlighter`) in `src/ui/widgets/preview/`. `TextEditorWidget`'s constructor gained two
+optional pointer parameters — `SyntaxHighlightEngine*` and `HighlightThemeViewModel*`, both
+defaulting to `nullptr` since, unlike `TextPreviewWidget` (which always has them), a given
+`TextEditorWidget` embedding may not request highlighting at all. When
+`options.highlightLanguage` has a value and both pointers are non-null, the widget constructs its
+own `SyntaxHighlighter` on `document()` and calls `setLanguage(*options.highlightLanguage)` once;
+a requested language without the engine/theme to render it is treated as "highlighting
+unavailable," not an error. `TextEditorPanel`/`TextEditorDialog` thread the same two pointers
+straight through with no opinion of their own, and `MainWindow::showTextEditorDialog` passes its
+own already-existing `m_syntaxHighlightEngine`/`m_highlightThemeViewModel` members.
+
+`SyntaxHighlighter` itself gained live-edit support, since its header previously documented preview
+text as "never live-edited" and computed spans once per `setLanguage()` call on that assumption.
+A new `m_liveEditDebounceTimer` (150ms single-shot, same convention as
+`TextEditorFindBar::m_searchDebounceTimer`) is wired to `document()`'s `QTextDocument::
+contentsChange` signal in the constructor; the connection's lambda only (re)starts the timer while
+`m_language` is set, and the timer's timeout calls `recomputeSpans(); rehighlight();` — identical
+to what `setLanguage()` already does on a load. `TextPreviewWidget`'s own use is unaffected: its
+document is never edited after `setPreview()` (blocked via `document()->blockSignals(true)` around
+the one `setPlainText()` call that would otherwise fire it), so `contentsChange` simply never
+fires there, and the new connection is dormant.
+
+Known limitation, accepted for v1 rather than engineered away up front (matching the project's
+existing posture toward documented limitations, e.g. §14.93's lookaround caveat):
+`SyntaxHighlightEngine::highlight()` re-parses the whole document from scratch on every call, by
+its own header comment's design. For the editor this now happens on a 150ms debounce per edit
+burst instead of once per file load — acceptable at today's scale, but something an incremental-
+parsing pass would need to revisit if large-file editing becomes a real use case.
+
+`LanguageRegistry` gained a `displayName(Language)` helper (`SettingsDialog.cpp` previously kept a
+private copy of this exact switch statement for its own per-language theme list), so
+`TextEditorOptionsDialog`'s new highlighting `QComboBox` ("Plain Text (no highlighting)" plus the
+nine `Language` values) and `SettingsDialog` both call the one shared mapping instead of keeping
+two copies in sync.
+
+`TextEditorOptionsDialog` gained a "Read-only" checkbox (default unchecked) and the language combo
+box (default "Plain Text") alongside the four pre-existing checkboxes; `options()` sets
+`TextEditorOptions::readOnly` and `highlightLanguage` from them, same pattern as the four flags
+§14.95 already wires up.
+
+Both flags stay construction-time settings, consistent with how the other four already work. The
+Preview-panel-integration ToDo item (replacing the Preview panel's text view with this editor, with
+an "Edit" button flipping an *already-open* editor between read-only and editable) will need to
+upgrade `readOnly` to a runtime setter at that point — out of scope here, since today's only call
+site (`Tools > Text Editor...`) always constructs a fresh editor per `TextEditorOptionsDialog`
+choice.

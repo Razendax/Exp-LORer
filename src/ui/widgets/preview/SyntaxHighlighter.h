@@ -11,12 +11,15 @@
 class HighlightThemeViewModel;
 class SyntaxHighlightEngine;
 class QTextDocument;
+class QTimer;
 
-// Attached to PreviewPanelWidget's text view QTextDocument (Architecture.md §14.26). Preview text
-// is capped and read-only -- never live-edited -- so spans are computed once per setLanguage() call
-// (i.e. once per preview load) rather than re-running the parser/query from highlightBlock() on
-// every block, the same "one-shot cost per preview load, not per keystroke" posture the feature was
-// designed around.
+// Attached to PreviewPanelWidget's text view QTextDocument and (per TextEditorWidget's own
+// §14.96) TextEditorWidget's QTextDocument (Architecture.md §14.26). Preview text is capped and
+// never live-edited, so for that use spans are computed once per setLanguage() call (i.e. once per
+// preview load) rather than re-running the parser/query from highlightBlock() on every block --
+// the "one-shot cost per preview load, not per keystroke" posture the feature was originally
+// designed around. The text editor breaks that assumption (its document IS live-edited), so this
+// class also recomputes spans on a debounce after document edits -- see m_liveEditDebounceTimer.
 class SyntaxHighlighter : public QSyntaxHighlighter
 {
     Q_OBJECT
@@ -44,6 +47,13 @@ private:
     };
 
     void recomputeSpans();
+
+    // Started (if not already running) from document()'s contentsChange signal whenever
+    // m_language is set; on timeout, recomputes spans and rehighlights. 150ms, same debounce
+    // convention as TextEditorFindBar::m_searchDebounceTimer -- a full re-parse (recomputeSpans
+    // re-parses the whole document from scratch, by SyntaxHighlightEngine::highlight's own design)
+    // on every keystroke would otherwise be wasted work during a fast typing burst.
+    QTimer* m_liveEditDebounceTimer = nullptr;
 
     SyntaxHighlightEngine& m_engine;
     HighlightThemeViewModel& m_themeViewModel;

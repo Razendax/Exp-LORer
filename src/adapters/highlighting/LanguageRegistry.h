@@ -3,6 +3,8 @@
 #include <optional>
 #include <string>
 
+#include <QString>
+
 #include "Language.h"
 
 // Extension -> Language dispatch for the syntax-highlighting scope this pass supports
@@ -15,4 +17,9 @@ namespace LanguageRegistry
     // `lowercaseExtension` must already be lowercased with a leading dot (e.g. ".cpp"), the same
     // shape MediaExtensions::lowercaseExtension produces.
     std::optional<Language> languageForExtension(const std::string& lowercaseExtension);
+
+    // Human-readable name for a Language value (e.g. Cpp -> "C++"), used wherever the enum is
+    // presented in UI -- SettingsDialog's per-language theme list and TextEditorOptionsDialog's
+    // highlighting combo box both call this instead of keeping their own copy of the mapping.
+    QString displayName(Language language);
 }

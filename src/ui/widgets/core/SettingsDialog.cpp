@@ -30,6 +30,7 @@
 #include "FileDecorationsViewModel.h"
 #include "FileListModel.h"
 #include "HighlightThemeViewModel.h"
+#include "LanguageRegistry.h"
 #include "NotificationSettingsViewModel.h"
 #include "SyntaxHighlightEngine.h"
 #include "UiTheme.h"
@@ -42,32 +43,6 @@ namespace
         Language::C,      Language::Cpp,        Language::CSharp, Language::Python, Language::JavaScript,
         Language::TypeScript, Language::Json,   Language::Html,   Language::Css,
     };
-
-    QString languageDisplayName(Language language)
-    {
-        switch (language)
-        {
-            case Language::C:
-                return QObject::tr("C");
-            case Language::Cpp:
-                return QObject::tr("C++");
-            case Language::CSharp:
-                return QObject::tr("C#");
-            case Language::Python:
-                return QObject::tr("Python");
-            case Language::JavaScript:
-                return QObject::tr("JavaScript");
-            case Language::TypeScript:
-                return QObject::tr("TypeScript");
-            case Language::Json:
-                return QObject::tr("JSON");
-            case Language::Html:
-                return QObject::tr("HTML");
-            case Language::Css:
-                return QObject::tr("CSS");
-        }
-        return QString();
-    }
 
     constexpr int kLanguageIndexRole = Qt::UserRole;
 
@@ -148,7 +123,7 @@ SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeView
     {
         const Language language = kAllLanguages[i];
 
-        auto* item = new QTreeWidgetItem(languagesRoot, QStringList{ languageDisplayName(language) });
+        auto* item = new QTreeWidgetItem(languagesRoot, QStringList{ LanguageRegistry::displayName(language) });
         item->setData(0, kLanguageIndexRole, static_cast<int>(i));
 
         // Cheap placeholder -- ensureLanguagePageBuilt() swaps in the real page (built via

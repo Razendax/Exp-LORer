@@ -63,10 +63,11 @@ QString expandCaptureRefs(const QString& replacement, const QRegularExpressionMa
 
 } // namespace
 
-TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor, bool multicursorEnabled)
+TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor, bool multicursorEnabled, bool readOnly)
     : QWidget(editor)
     , m_editor(editor)
     , m_multicursorEnabled(multicursorEnabled)
+    , m_readOnly(readOnly)
 {
     // Keep the bar's own sizeHint compact -- it floats over the editor rather than being
     // stretched by an enclosing layout (see repositionOverEditor).
@@ -142,6 +143,7 @@ TextEditorFindBar::TextEditorFindBar(TextEditorWidget* editor, bool multicursorE
     m_toggleReplaceButton->setText(tr("▸"));
     m_toggleReplaceButton->setCheckable(true);
     m_toggleReplaceButton->setToolTip(tr("Show Replace"));
+    m_toggleReplaceButton->setVisible(!m_readOnly);
 
     m_replaceEdit = new QLineEdit(this);
     m_replaceEdit->setPlaceholderText(tr("Replace"));
@@ -383,6 +385,9 @@ QString TextEditorFindBar::computeReplacement(int matchIndex) const
 
 void TextEditorFindBar::onReplace()
 {
+    if (m_readOnly)
+        return;
+
     if (m_searchEdit->text().isEmpty())
         return;
 
@@ -400,6 +405,9 @@ void TextEditorFindBar::onReplace()
 
 void TextEditorFindBar::onReplaceAll()
 {
+    if (m_readOnly)
+        return;
+
     if (m_matches.isEmpty())
         return;
 

@@ -4,9 +4,11 @@
 
 #include "TextEditorPanel.h"
 
-TextEditorDialog::TextEditorDialog(const TextEditorOptions& options, QWidget* parent)
+TextEditorDialog::TextEditorDialog(const TextEditorOptions& options, QWidget* parent,
+                                    SyntaxHighlightEngine* highlightEngine,
+                                    HighlightThemeViewModel* highlightThemeViewModel)
     : QDialog(parent)
-    , m_panel(new TextEditorPanel(options, this))
+    , m_panel(new TextEditorPanel(options, this, highlightEngine, highlightThemeViewModel))
 {
     setWindowTitle(tr("Text Editor"));
     resize(800, 600);

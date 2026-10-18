@@ -2,6 +2,8 @@
 
 #include "TextEditorLineNumberArea.h"
 
+#include "SyntaxHighlighter.h"
+
 #include <QApplication>
 #include <QClipboard>
 #include <QFocusEvent>
@@ -16,11 +18,24 @@
 
 #include <algorithm>
 
-TextEditorWidget::TextEditorWidget(const TextEditorOptions& options, QWidget* parent)
+TextEditorWidget::TextEditorWidget(const TextEditorOptions& options, QWidget* parent,
+                                    SyntaxHighlightEngine* highlightEngine,
+                                    HighlightThemeViewModel* highlightThemeViewModel)
     : QPlainTextEdit(parent)
     , m_lineNumbersEnabled(options.lineNumbersEnabled)
     , m_multicursorEnabled(options.multicursorEnabled)
+    , m_readOnly(options.readOnly)
 {
+    setReadOnly(m_readOnly);
+
+    // A requested language without the engine/theme to render it (e.g. an embedding site that
+    // doesn't have the highlighting stack wired up yet) is treated as highlighting unavailable,
+    // not an error -- the editor still works, just unhighlighted.
+    if (options.highlightLanguage.has_value() && highlightEngine != nullptr && highlightThemeViewModel != nullptr) {
+        m_syntaxHighlighter = new SyntaxHighlighter(document(), *highlightEngine, *highlightThemeViewModel);
+        m_syntaxHighlighter->setLanguage(*options.highlightLanguage);
+    }
+
     m_secondaryCaretBlinkTimer = new QTimer(this);
     connect(m_secondaryCaretBlinkTimer, &QTimer::timeout, this, [this] {
         m_secondaryCaretVisible = !m_secondaryCaretVisible;
@@ -398,17 +413,21 @@ bool TextEditorWidget::handleMultiCursorKeyPress(QKeyEvent* event)
         // secondaries vanish the instant the user presses Ctrl before Ctrl+Left/Right lands.
         return false;
     case Qt::Key_Backspace:
-        deleteAtAllCursors(false, event->modifiers() & Qt::ControlModifier);
+        if (!m_readOnly)
+            deleteAtAllCursors(false, event->modifiers() & Qt::ControlModifier);
         return true;
     case Qt::Key_Delete:
-        deleteAtAllCursors(true, event->modifiers() & Qt::ControlModifier);
+        if (!m_readOnly)
+            deleteAtAllCursors(true, event->modifiers() & Qt::ControlModifier);
         return true;
     case Qt::Key_Return:
     case Qt::Key_Enter:
-        insertAtAllCursors(QStringLiteral("\n"));
+        if (!m_readOnly)
+            insertAtAllCursors(QStringLiteral("\n"));
         return true;
     case Qt::Key_Tab:
-        insertAtAllCursors(QStringLiteral("\t"));
+        if (!m_readOnly)
+            insertAtAllCursors(QStringLiteral("\t"));
         return true;
     case Qt::Key_Left:
         moveAllCursors((event->modifiers() & Qt::ControlModifier) ? QTextCursor::PreviousWord
@@ -440,13 +459,15 @@ bool TextEditorWidget::handleMultiCursorKeyPress(QKeyEvent* event)
         break;
     case Qt::Key_X:
         if (event->modifiers() & Qt::ControlModifier) {
-            copyOrCutAtAllCursors(true);
+            if (!m_readOnly)
+                copyOrCutAtAllCursors(true);
             return true;
         }
         break;
     case Qt::Key_V:
         if (event->modifiers() & Qt::ControlModifier) {
-            pasteAtAllCursors();
+            if (!m_readOnly)
+                pasteAtAllCursors();
             return true;
         }
         break;
@@ -455,7 +476,8 @@ bool TextEditorWidget::handleMultiCursorKeyPress(QKeyEvent* event)
     }
 
     if (isPrintable) {
-        insertAtAllCursors(text);
+        if (!m_readOnly)
+            insertAtAllCursors(text);
         return true;
     }
 

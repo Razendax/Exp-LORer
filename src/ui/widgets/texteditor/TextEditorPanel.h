@@ -7,6 +7,8 @@
 class TextEditorWidget;
 class TextEditorFindBar;
 class TextEditorGotoLineBar;
+class SyntaxHighlightEngine;
+class HighlightThemeViewModel;
 
 // Standalone embeddable unit: TextEditorWidget plus its find bar and go-to-line overlay, wired up
 // with Ctrl+F / Ctrl+G shortcuts and the "opening one bar closes the other" behavior. Usable
@@ -18,7 +20,11 @@ class TextEditorPanel : public QWidget
     Q_OBJECT
 
 public:
-    explicit TextEditorPanel(const TextEditorOptions& options = TextEditorOptions{}, QWidget* parent = nullptr);
+    // highlightEngine/highlightThemeViewModel are threaded straight through to TextEditorWidget
+    // (see its constructor comment) -- this panel has no opinion on highlighting itself.
+    explicit TextEditorPanel(const TextEditorOptions& options = TextEditorOptions{}, QWidget* parent = nullptr,
+                              SyntaxHighlightEngine* highlightEngine = nullptr,
+                              HighlightThemeViewModel* highlightThemeViewModel = nullptr);
 
 private:
     TextEditorWidget* m_editor = nullptr;

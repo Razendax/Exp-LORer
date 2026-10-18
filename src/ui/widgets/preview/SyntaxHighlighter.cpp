@@ -5,6 +5,7 @@
 #include <QTextBlock>
 #include <QTextCharFormat>
 #include <QTextDocument>
+#include <QTimer>
 
 #include "HighlightThemeViewModel.h"
 #include "SyntaxHighlightEngine.h"
@@ -73,6 +74,24 @@ SyntaxHighlighter::SyntaxHighlighter(QTextDocument* document, SyntaxHighlightEng
     , m_themeViewModel(themeViewModel)
 {
     connect(&m_themeViewModel, &HighlightThemeViewModel::themeChanged, this, [this]() { rehighlight(); });
+
+    m_liveEditDebounceTimer = new QTimer(this);
+    m_liveEditDebounceTimer->setSingleShot(true);
+    m_liveEditDebounceTimer->setInterval(150);
+    connect(m_liveEditDebounceTimer, &QTimer::timeout, this, [this]() {
+        recomputeSpans();
+        rehighlight();
+    });
+
+    // Only restarts the debounce while a language is set -- TextPreviewWidget's document is never
+    // edited after setPreview() (its view is read-only), so this simply never fires there; the
+    // editor's document, which is live-edited, is what this connection exists for.
+    connect(document, &QTextDocument::contentsChange, this, [this](int, int, int) {
+        if (m_language)
+        {
+            m_liveEditDebounceTimer->start();
+        }
+    });
 }
 
 void SyntaxHighlighter::setLanguage(std::optional<Language> language)

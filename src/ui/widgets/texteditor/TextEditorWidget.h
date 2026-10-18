@@ -13,6 +13,9 @@ class QPaintEvent;
 class QResizeEvent;
 class QFocusEvent;
 class TextEditorLineNumberArea;
+class SyntaxHighlighter;
+class SyntaxHighlightEngine;
+class HighlightThemeViewModel;
 
 // Base widget for Exp-LORer's own text editor (ToDo.md "Core editing" section) -- grown
 // incrementally as editor features (line numbers, multi-cursor, syntax highlighting, etc.)
@@ -24,7 +27,14 @@ class TextEditorWidget : public QPlainTextEdit
     Q_OBJECT
 
 public:
-    explicit TextEditorWidget(const TextEditorOptions& options, QWidget* parent = nullptr);
+    // highlightEngine/highlightThemeViewModel are only consulted when options.highlightLanguage
+    // has a value; both default to nullptr for call sites (e.g. TextEditorOptionsDialog's "no
+    // highlighting" default) that never request a language, matching this widget's own optional
+    // relationship to the shared highlighting stack (Architecture.md §14.26) -- unlike
+    // TextPreviewWidget, which always has them.
+    explicit TextEditorWidget(const TextEditorOptions& options, QWidget* parent = nullptr,
+                               SyntaxHighlightEngine* highlightEngine = nullptr,
+                               HighlightThemeViewModel* highlightThemeViewModel = nullptr);
 
     // Set by TextEditorFindBar; merged with the secondary-cursor highlight list so neither
     // highlight source clobbers the other (see applyExtraSelections).
@@ -82,4 +92,6 @@ private:
     TextEditorLineNumberArea* m_lineNumberArea = nullptr;
     bool m_lineNumbersEnabled = true;
     bool m_multicursorEnabled = true;
+    bool m_readOnly = false;
+    SyntaxHighlighter* m_syntaxHighlighter = nullptr;
 };
