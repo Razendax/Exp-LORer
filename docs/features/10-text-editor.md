@@ -5,7 +5,7 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.93–14.97 — the built-in text editor dialog (`src/ui/widgets/texteditor/`). The editor widget
+Covers §14.93–14.97, 14.99 — the built-in text editor dialog (`src/ui/widgets/texteditor/`). The editor widget
 itself (multi-cursor editing, line-number gutter, the Find bar's search/highlight mechanics, Go to
 Line) predates this file and shipped undocumented; this file starts from the Find bar's Replace
 addition and is where later text-editor features should be logged going forward.
@@ -209,3 +209,60 @@ flip specifically).
   `document()->modificationChanged` — without this panel growing a forwarding method for each one.
 - `TextEditorDialog` / `Tools > Text Editor...`: untouched, same as every prior increment in this
   file — this only adds a capability, read-only editors opened from there still never flip.
+
+---
+### 14.99 Highlight Occurrences of Selected Text
+
+A fifth independently-switchable `TextEditorOptions` flag, `highlightSelectionOccurrences` (default
+`true`), following §14.95's established pattern: when the primary cursor has a selection,
+`TextEditorWidget` highlights every other occurrence of that exact text elsewhere in the document —
+a passive reading aid, not an edit action (compare §14.94's Select All Occurrences, which turns
+matches into live cursors instead).
+
+The highlight is a fourth `QList<QTextEdit::ExtraSelection>` layer, `m_occurrenceSelections`, folded
+into the existing `applyExtraSelections()` merge — `m_currentLineSelections + m_occurrenceSelections
++ m_findSelections + m_secondarySelections` — placed so the find bar's matches and the opaque
+secondary-cursor fill still render on top wherever they happen to overlap this new, deliberately
+subtler layer. The color is `palette().color(QPalette::Highlight)` with alpha reduced to 70 rather
+than a hardcoded value (unlike the find bar's hardcoded yellow, `QColor(255, 255, 0, 120)`) — it
+stays visually related to the selection color while remaining theme-relative, and the lower alpha
+keeps it from competing with either the find bar's yellow or the secondary-cursor opaque fill when
+multiple layers land on the same character.
+
+`updateOccurrenceHighlights()` recomputes the layer and early-returns to an empty one (no
+highlights) when: the flag is off; `hasSecondaryCursors()` is true — multi-cursor/Select-All-
+Occurrences mode already shows the identical information via `m_secondarySelections`, so this layer
+deliberately steps aside rather than drawing a redundant second copy; the primary cursor has no
+selection; the selected text contains a newline (multi-line selections are skipped — avoids
+whole-paragraph matching, which reads as noise rather than as "find this word again"); or the
+selected text is entirely whitespace. Otherwise it scans the whole document with a
+`document()->find(selectedText, cursor, QTextDocument::FindCaseSensitively)` loop — the same scan
+shape `TextEditorFindBar::runSearch` already uses — case-sensitive and exact-substring (no
+whole-word requirement), skipping only the one match that exactly coincides with the current
+selection's own range so the active selection isn't double-painted under both Qt's native selection
+color and this tint.
+
+Two recompute paths, both already-established conventions elsewhere in this stack: an immediate
+recompute on `QPlainTextEdit::selectionChanged` (selection changes are discrete, infrequent events,
+cheap to react to directly), and a 150ms-debounced recompute on `QPlainTextEdit::textChanged`
+(mirroring `SyntaxHighlighter::m_liveEditDebounceTimer`'s precedent, §14.96) — needed because a
+document edit shifts character offsets out from under a selection whose match positions were
+computed before the edit, and recomputing on every keystroke rather than debounced would repeat the
+whole-document scan far more often than necessary.
+
+`TextEditorOptionsDialog` gains a sixth checkbox, "Highlight selected text occurrences" (default
+checked), alongside the five pre-existing controls. The Preview-panel embedding
+(`docs/features/05-preview-and-decoration.md` §14.98) gains a matching fifth `Settings > General >
+Preview` checkbox and `Preview/HighlightSelectionOccurrencesEnabled` `QSettings` key, read by
+`TextEditPreviewWidget::defaultOptions()` alongside the existing four — both following the exact
+checkbox-per-flag convention every prior `TextEditorOptions` addition has used.
+
+Known limitation, accepted for v1 rather than engineered away up front (same posture as §14.93's
+lookaround caveat and §14.96's rehighlight-per-edit note): the occurrence scan has no cap on
+document size or match count, so a very large file with a very common selected substring repeats
+the full linear scan on every debounce tick.
+
+**Testing**: no new GTest coverage — pure `TextEditorWidget` UI-layer painting logic with no
+Domain/Application/Port surface, the same carve-out `TextEditorWidget`/`TextEditorFindBar`/
+`TextEditPreviewWidget` already have (none of those have unit tests either); no `ui_tests/`
+addition in this pass.

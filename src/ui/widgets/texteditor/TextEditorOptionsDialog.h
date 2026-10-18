@@ -26,6 +26,7 @@ private:
     QCheckBox* m_goToLineCheckBox = nullptr;
     QCheckBox* m_lineNumbersCheckBox = nullptr;
     QCheckBox* m_multicursorCheckBox = nullptr;
+    QCheckBox* m_highlightSelectionOccurrencesCheckBox = nullptr;
     QCheckBox* m_readOnlyCheckBox = nullptr;
     QComboBox* m_highlightLanguageComboBox = nullptr;
 };

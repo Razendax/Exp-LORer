@@ -79,6 +79,7 @@ private:
     void mergeCollidingCursors();
     void updateSecondarySelectionHighlight();
     void updateCurrentLineHighlight();
+    void updateOccurrenceHighlights();
     void applyExtraSelections();
 
     bool handleMultiCursorKeyPress(QKeyEvent* event);
@@ -96,9 +97,12 @@ private:
     QList<QTextEdit::ExtraSelection> m_findSelections;
     QList<QTextEdit::ExtraSelection> m_secondarySelections;
     QList<QTextEdit::ExtraSelection> m_currentLineSelections;
+    QList<QTextEdit::ExtraSelection> m_occurrenceSelections;
+    QTimer* m_occurrenceDebounceTimer = nullptr;
     TextEditorLineNumberArea* m_lineNumberArea = nullptr;
     bool m_lineNumbersEnabled = true;
     bool m_multicursorEnabled = true;
+    bool m_highlightSelectionOccurrencesEnabled = true;
     bool m_readOnly = false;
     SyntaxHighlighter* m_syntaxHighlighter = nullptr;
 };

@@ -674,7 +674,7 @@ QWidget* SettingsDialog::buildGeneralPreviewPage()
         const char* settingsKey;
     };
 
-    const std::array<PreviewCheckBoxSpec, 4> specs = {
+    const std::array<PreviewCheckBoxSpec, 5> specs = {
         PreviewCheckBoxSpec{ tr("Show line numbers"), QStringLiteral("settingsPreviewLineNumbersCheckBox"),
                               TextEditPreviewWidget::kLineNumbersEnabledSettingsKey },
         PreviewCheckBoxSpec{ tr("Enable Find"), QStringLiteral("settingsPreviewFindCheckBox"),
@@ -683,6 +683,9 @@ QWidget* SettingsDialog::buildGeneralPreviewPage()
                               TextEditPreviewWidget::kGoToLineEnabledSettingsKey },
         PreviewCheckBoxSpec{ tr("Enable multi-cursor editing"), QStringLiteral("settingsPreviewMulticursorCheckBox"),
                               TextEditPreviewWidget::kMulticursorEnabledSettingsKey },
+        PreviewCheckBoxSpec{ tr("Highlight selected text occurrences"),
+                              QStringLiteral("settingsPreviewHighlightSelectionOccurrencesCheckBox"),
+                              TextEditPreviewWidget::kHighlightSelectionOccurrencesEnabledSettingsKey },
     };
 
     for (const PreviewCheckBoxSpec& spec : specs)

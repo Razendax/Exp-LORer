@@ -111,6 +111,7 @@ void TextEditPreviewWidget::setPreview(const FilePreview& preview)
         && options.goToLineEnabled == m_currentPanelOptions.goToLineEnabled
         && options.lineNumbersEnabled == m_currentPanelOptions.lineNumbersEnabled
         && options.multicursorEnabled == m_currentPanelOptions.multicursorEnabled
+        && options.highlightSelectionOccurrences == m_currentPanelOptions.highlightSelectionOccurrences
         && options.highlightLanguage == m_currentPanelOptions.highlightLanguage;
 
     if (!canReuseExistingPanel)
@@ -293,6 +294,7 @@ TextEditorOptions TextEditPreviewWidget::defaultOptions()
     options.findEnabled = findEnabled();
     options.goToLineEnabled = goToLineEnabled();
     options.multicursorEnabled = multicursorEnabled();
+    options.highlightSelectionOccurrences = highlightSelectionOccurrencesEnabled();
     return options;
 }
 
@@ -322,4 +324,9 @@ bool TextEditPreviewWidget::goToLineEnabled()
 bool TextEditPreviewWidget::multicursorEnabled()
 {
     return settingsBool(kMulticursorEnabledSettingsKey);
+}
+
+bool TextEditPreviewWidget::highlightSelectionOccurrencesEnabled()
+{
+    return settingsBool(kHighlightSelectionOccurrencesEnabledSettingsKey);
 }

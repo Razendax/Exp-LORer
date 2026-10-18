@@ -36,6 +36,9 @@ TextEditorOptionsDialog::TextEditorOptionsDialog(QWidget* parent)
     m_multicursorCheckBox = new QCheckBox(tr("Multicursor"), this);
     m_multicursorCheckBox->setChecked(true);
 
+    m_highlightSelectionOccurrencesCheckBox = new QCheckBox(tr("Highlight selected text occurrences"), this);
+    m_highlightSelectionOccurrencesCheckBox->setChecked(true);
+
     m_readOnlyCheckBox = new QCheckBox(tr("Read-only"), this);
     m_readOnlyCheckBox->setChecked(false);
 
@@ -52,6 +55,7 @@ TextEditorOptionsDialog::TextEditorOptionsDialog(QWidget* parent)
     layout->addWidget(m_goToLineCheckBox);
     layout->addWidget(m_lineNumbersCheckBox);
     layout->addWidget(m_multicursorCheckBox);
+    layout->addWidget(m_highlightSelectionOccurrencesCheckBox);
     layout->addWidget(m_readOnlyCheckBox);
     layout->addWidget(m_highlightLanguageComboBox);
     layout->addWidget(buttonBox);
@@ -67,6 +71,7 @@ TextEditorOptions TextEditorOptionsDialog::options() const
     result.goToLineEnabled = m_goToLineCheckBox->isChecked();
     result.lineNumbersEnabled = m_lineNumbersCheckBox->isChecked();
     result.multicursorEnabled = m_multicursorCheckBox->isChecked();
+    result.highlightSelectionOccurrences = m_highlightSelectionOccurrencesCheckBox->isChecked();
     result.readOnly = m_readOnlyCheckBox->isChecked();
 
     const int languageIndex = m_highlightLanguageComboBox->currentIndex();

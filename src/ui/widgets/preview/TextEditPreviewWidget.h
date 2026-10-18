@@ -53,11 +53,14 @@ public:
     static constexpr const char* kFindEnabledSettingsKey = "Preview/FindEnabled";
     static constexpr const char* kGoToLineEnabledSettingsKey = "Preview/GoToLineEnabled";
     static constexpr const char* kMulticursorEnabledSettingsKey = "Preview/MulticursorEnabled";
+    static constexpr const char* kHighlightSelectionOccurrencesEnabledSettingsKey =
+        "Preview/HighlightSelectionOccurrencesEnabled";
 
     static bool lineNumbersEnabled();
     static bool findEnabled();
     static bool goToLineEnabled();
     static bool multicursorEnabled();
+    static bool highlightSelectionOccurrencesEnabled();
 
 private:
     void onEditClicked();

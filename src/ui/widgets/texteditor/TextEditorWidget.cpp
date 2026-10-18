@@ -6,6 +6,7 @@
 
 #include <QApplication>
 #include <QClipboard>
+#include <QColor>
 #include <QFocusEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
@@ -14,6 +15,7 @@
 #include <QResizeEvent>
 #include <QStringList>
 #include <QTextBlock>
+#include <QTextDocument>
 #include <QTimer>
 
 #include <algorithm>
@@ -24,6 +26,7 @@ TextEditorWidget::TextEditorWidget(const TextEditorOptions& options, QWidget* pa
     : QPlainTextEdit(parent)
     , m_lineNumbersEnabled(options.lineNumbersEnabled)
     , m_multicursorEnabled(options.multicursorEnabled)
+    , m_highlightSelectionOccurrencesEnabled(options.highlightSelectionOccurrences)
     , m_readOnly(options.readOnly)
 {
     setReadOnly(m_readOnly);
@@ -61,6 +64,15 @@ TextEditorWidget::TextEditorWidget(const TextEditorOptions& options, QWidget* pa
     connect(this, &QPlainTextEdit::cursorPositionChanged, this, &TextEditorWidget::updateCurrentLineHighlight);
     setViewportMargins(lineNumberAreaWidth(), 0, 0, 0);
     updateCurrentLineHighlight();
+
+    // 150ms single-shot, same convention as SyntaxHighlighter::m_liveEditDebounceTimer/
+    // TextEditorFindBar::m_searchDebounceTimer: recompute is debounced on edits (match positions
+    // drift as the document is mutated) but immediate on selection changes (discrete, infrequent).
+    m_occurrenceDebounceTimer = new QTimer(this);
+    m_occurrenceDebounceTimer->setSingleShot(true);
+    connect(m_occurrenceDebounceTimer, &QTimer::timeout, this, &TextEditorWidget::updateOccurrenceHighlights);
+    connect(this, &QPlainTextEdit::selectionChanged, this, &TextEditorWidget::updateOccurrenceHighlights);
+    connect(this, &QPlainTextEdit::textChanged, this, [this] { m_occurrenceDebounceTimer->start(150); });
 }
 
 int TextEditorWidget::lineNumberAreaWidth() const
@@ -129,6 +141,7 @@ void TextEditorWidget::selectAllOccurrences(const QVector<QTextCursor>& matches)
     updateSecondarySelectionHighlight();
     ensureCursorVisible();
     viewport()->update();
+    updateOccurrenceHighlights();
 }
 
 void TextEditorWidget::setReadOnly(bool readOnly)
@@ -192,6 +205,7 @@ void TextEditorWidget::clearSecondaryCursors()
     m_secondaryCursors.clear();
     updateSecondarySelectionHighlight();
     viewport()->update();
+    updateOccurrenceHighlights();
 }
 
 void TextEditorWidget::mergeCollidingCursors()
@@ -255,9 +269,47 @@ void TextEditorWidget::setExtraFindSelections(const QList<QTextEdit::ExtraSelect
     applyExtraSelections();
 }
 
+void TextEditorWidget::updateOccurrenceHighlights()
+{
+    const QTextCursor primary = textCursor();
+    const QString selectedText = primary.selectedText();
+
+    // This layer is a passive single-cursor reading aid, not a second copy of the information
+    // multi-cursor mode already shows via m_secondarySelections (Architecture.md §14.99) -- and
+    // multi-line selections/whitespace-only selections are skipped to avoid odd whole-paragraph
+    // or near-universal matching.
+    if (!m_highlightSelectionOccurrencesEnabled || hasSecondaryCursors() || selectedText.isEmpty()
+        || selectedText.contains(QChar::ParagraphSeparator) || selectedText.trimmed().isEmpty()) {
+        m_occurrenceSelections.clear();
+        applyExtraSelections();
+        return;
+    }
+
+    QColor color = palette().color(QPalette::Highlight);
+    color.setAlpha(70);
+
+    QList<QTextEdit::ExtraSelection> selections;
+    QTextCursor cursor(document());
+    while (true) {
+        cursor = document()->find(selectedText, cursor, QTextDocument::FindCaseSensitively);
+        if (cursor.isNull())
+            break;
+
+        if (cursor.selectionStart() != primary.selectionStart() || cursor.selectionEnd() != primary.selectionEnd()) {
+            QTextEdit::ExtraSelection selection;
+            selection.cursor = cursor;
+            selection.format.setBackground(color);
+            selections.append(selection);
+        }
+    }
+
+    m_occurrenceSelections = selections;
+    applyExtraSelections();
+}
+
 void TextEditorWidget::applyExtraSelections()
 {
-    setExtraSelections(m_currentLineSelections + m_findSelections + m_secondarySelections);
+    setExtraSelections(m_currentLineSelections + m_occurrenceSelections + m_findSelections + m_secondarySelections);
 }
 
 void TextEditorWidget::insertAtAllCursors(const QString& text)
