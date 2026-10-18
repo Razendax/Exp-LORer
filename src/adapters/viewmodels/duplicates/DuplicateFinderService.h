@@ -8,11 +8,10 @@
 #include <memory>
 #include <vector>
 
-#include <QHash>
-#include <QMutex>
 #include <QObject>
-#include <QThread>
+#include <QPointer>
 
+#include "CancellableScanService.h"
 #include "DuplicateFinderWorker.h"
 #include "Result.h"
 
@@ -24,14 +23,16 @@ class IFileSystemRepository;
 // one dedicated background QThread, off the Qt UI thread. One thread means a second scan request
 // while one is in flight queues behind it -- in practice never reached, since DuplicateFinderDialog
 // disables its Scan buttons for the duration of a scan, same posture as FolderSizeWidget.
-class DuplicateFinderService : public QObject
+//
+// Thread/cancel-flag/callback-bouncing plumbing lives in CancellableScanService, shared with
+// DiskUsageService/FragmentationService (Architecture.md §14.70).
+class DuplicateFinderService : public CancellableScanService
 {
     Q_OBJECT
 
 public:
     DuplicateFinderService(DuplicateFinderUseCase& useCase, IFileSystemRepository& fileSystemRepository,
                             QObject* parent = nullptr);
-    ~DuplicateFinderService() override;
 
     struct Callbacks
     {
@@ -42,18 +43,10 @@ public:
     // requestId is caller-supplied (DuplicateFinderDialog passes the NotificationCenter ProgressId
     // it already created, same "ids line up 1:1" posture as FileTransferService::requestTransfer) so
     // cancel() needs no second map on the caller's side. Every Callbacks member is bounced back to
-    // `context`'s thread via QMetaObject::invokeMethod, guarded by a QPointer so none fire after
-    // `context` is destroyed.
+    // `context`'s thread, guarded so none fire after `context` is destroyed.
     void requestScan(QObject* context, int requestId, const std::filesystem::path& root, std::uintmax_t minFileSizeBytes,
                       Callbacks callbacks);
 
-    // Flips the matching cancel flag if `requestId` is still in flight; a no-op otherwise -- safe to
-    // call blindly, same posture as FileTransferService::cancel.
-    void cancel(int requestId);
-
 private:
-    QThread m_workerThread;
     DuplicateFinderWorker* m_worker = nullptr;
-    QMutex m_cancelFlagsMutex;
-    QHash<int, std::shared_ptr<std::atomic<bool>>> m_cancelFlags; // guarded by m_cancelFlagsMutex
 };
