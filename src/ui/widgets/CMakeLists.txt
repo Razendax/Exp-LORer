@@ -4,6 +4,8 @@ add_library(explorer_ui_widgets STATIC
     core/MainWindow.cpp
     core/WorkspaceLayoutWidget.h
     core/WorkspaceLayoutWidget.cpp
+    core/CollapsiblePanelWidget.h
+    core/CollapsiblePanelWidget.cpp
     core/SidePanelWidget.h
     core/SidePanelWidget.cpp
     core/BottomPanelWidget.h
