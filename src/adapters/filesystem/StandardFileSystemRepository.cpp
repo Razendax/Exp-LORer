@@ -669,7 +669,7 @@ Result<void> StandardFileSystemRepository::moveToTrash(const std::filesystem::pa
     }
 
 #ifdef _WIN32
-    std::wstring nativePath = path.wstring();
+    std::wstring nativePath = withPrefix(path).wstring();
     nativePath.push_back(L'\0'); // SHFileOperationW requires a double-null-terminated list.
 
     SHFILEOPSTRUCTW operation{};

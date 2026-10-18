@@ -424,9 +424,28 @@ void AnsiTerminalBuffer::feed(QByteArrayView bytes)
                 }
                 else if (b == 0x1B) // possible start of an ST (ESC \) terminator
                 {
-                    m_parseState = ParseState::Escape;
+                    m_parseState = ParseState::OscEscape;
                 }
                 // else: OSC payload byte -- consumed, not printed.
+                break;
+
+            case ParseState::OscEscape:
+                if (b == '\\') // ST confirmed
+                {
+                    m_parseState = ParseState::Ground;
+                }
+                else if (b == 0x1B)
+                {
+                    // Another ESC right away -- still undecided, keep waiting for '\'.
+                }
+                else
+                {
+                    // Not ST after all: the ESC was a stray/malformed payload byte, not a
+                    // terminator. Resume consuming the OSC payload instead of dispatching this
+                    // byte as a fresh escape sequence, which would risk misreading OSC payload
+                    // bytes as a CSI sequence.
+                    m_parseState = ParseState::Osc;
+                }
                 break;
 
             case ParseState::CsiParams:

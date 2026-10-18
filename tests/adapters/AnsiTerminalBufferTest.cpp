@@ -225,6 +225,19 @@ TEST(AnsiTerminalBuffer, OscSequenceTerminatedBySTIsConsumedNotLeakedAsText)
     EXPECT_EQ(charAt(buffer, 0, 1), QLatin1Char('k'));
 }
 
+TEST(AnsiTerminalBuffer, OscSequenceWithStrayEscapeNotFollowedByBackslashStaysInPayload)
+{
+    AnsiTerminalBuffer buffer;
+    buffer.resize(20, 3);
+    // Regresses a desync: a malformed/non-ST ESC inside the OSC payload (here "ESC[2J", not an ST
+    // "ESC\") must not abort the OSC and get dispatched as a real CSI sequence (which would clear
+    // the grid here) -- it stays part of the discarded payload until the real BEL terminator.
+    buffer.feed(QByteArrayView("\x1b]0;\x1b[2Jtitle\x07ok"));
+
+    EXPECT_EQ(charAt(buffer, 0, 0), QLatin1Char('o'));
+    EXPECT_EQ(charAt(buffer, 0, 1), QLatin1Char('k'));
+}
+
 TEST(AnsiTerminalBuffer, DeleteCharactersShiftsRemainingCellsLeftAndBlanksTail)
 {
     AnsiTerminalBuffer buffer;

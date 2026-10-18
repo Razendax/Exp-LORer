@@ -1,10 +1,12 @@
 #include "WorkspaceInstanceGuard.h"
 
+#include <string>
 #include <utility>
 
 #include <QLocalServer>
 #include <QLocalSocket>
 
+#include "ExceptionHandler.h"
 #include "WorkspaceInstanceProbe.h"
 
 #ifdef _WIN32
@@ -42,14 +44,21 @@ bool WorkspaceInstanceGuard::tryAcquire()
 {
 #ifdef _WIN32
     HANDLE handle = CreateMutexW(nullptr, TRUE, reinterpret_cast<const wchar_t*>(m_channelName.utf16()));
-    const bool lostTheRace = !handle || GetLastError() == ERROR_ALREADY_EXISTS;
-
-    if (lostTheRace)
+    if (!handle)
     {
-        if (handle)
-        {
-            CloseHandle(handle);
-        }
+        // A genuine OS-level failure, not "another instance owns it" -- GetLastError() here is
+        // whatever CreateMutexW itself failed with (e.g. a resource-exhaustion or handle-table
+        // error), never ERROR_ALREADY_EXISTS (that case always returns a valid handle). Surfacing
+        // this silently as "lost the race" would make the app exit with no window and no
+        // explanation, so report it the same way any other unrecoverable startup failure is
+        // reported.
+        const DWORD error = GetLastError();
+        ExceptionHandler::handleFatal("Failed to create the single-instance mutex (Windows error " + std::to_string(error) + ")");
+    }
+
+    if (GetLastError() == ERROR_ALREADY_EXISTS)
+    {
+        CloseHandle(handle);
 
         QLocalSocket socket;
         socket.connectToServer(m_channelName);

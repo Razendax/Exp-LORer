@@ -77,6 +77,11 @@ private:
         // terminator (BEL, or ST i.e. ESC \) rather than leaked into the grid as text. cmd.exe and
         // PowerShell emit these for window-title updates on every prompt.
         Osc,
+        // Seen an ESC while inside Osc: still undecided whether it's the first half of an ST (ESC
+        // \) terminator or just a stray/malformed byte inside the payload. Only a following '\'
+        // confirms ST; anything else resumes Osc rather than falling through to general escape
+        // dispatch, which would otherwise risk misreading OSC payload bytes as a CSI sequence.
+        OscEscape,
     };
 
     void putChar(QChar ch);
