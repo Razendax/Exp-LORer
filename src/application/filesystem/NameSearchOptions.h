@@ -21,6 +21,6 @@ struct NameSearchOptions
     // Quick Search tab's "skip git-ignored files/folders" toggle (Architecture.md §14.45).
     // Orthogonal to mode/caseSensitive: unlike those, it changes what gets *scanned* (pruning the
     // recursive walk), not just how an already-scanned candidate list is filtered -- see
-    // TabViewModel::setSearchOptions, which forces a rescan specifically when this changes.
+    // TabQuickSearchViewModel::setOptions, which forces a rescan specifically when this changes.
     bool skipGitIgnored = false;
 };

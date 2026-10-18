@@ -36,6 +36,7 @@
 #include "SearchCriteria.h"
 #include "Tag.h"
 #include "TabMonitoringViewModel.h"
+#include "TabQuickSearchViewModel.h"
 #include "TagManagementUseCase.h"
 #include "ViewMode.h"
 
@@ -89,25 +90,11 @@ public:
     }
 
     FileListModel* fileListModel() const noexcept { return m_fileListModel; }
-    FileListModel* searchResultsModel() const noexcept { return m_searchResultsModel; }
 
-    // Icons resolved so far for the current Quick Search candidate list (Architecture.md §14.42).
-    // The Search tab's results render in the left panel's SearchPanelWidget via its own, independent
-    // FileListModel (not searchResultsModel() above, which nothing displays) -- SearchPanelWidget
-    // has no way to reach m_searchSnapshotIcons on its own, so this accessor plus
-    // searchResultIconsChanged() below is how MainWindow relays icon updates to it.
-    const QHash<QString, QIcon>& searchResultIcons() const noexcept { return m_searchSnapshotIcons; }
-
-    bool searchActive() const noexcept { return m_searchActive; }
-    QString searchQuery() const noexcept { return m_searchQuery; }
-
-    // Quick Search tab's Match Case/Whole Word/Exact Name/Match Regex/Skip Git-Ignored toggles
-    // (Architecture.md §14.44/§14.45), per-tab and not persisted across restarts (same posture as
-    // m_searchQuery/View as tree).
-    NameSearchOptions searchOptions() const noexcept
-    {
-        return { m_searchMatchMode, m_searchCaseSensitive, m_searchSkipGitIgnored };
-    }
+    // Quick Search ("Search tab") state (Architecture.md §14.42), extracted into its own owned
+    // sub-object (Architecture.md §14.96) -- callers call its methods and connect to its signals
+    // directly rather than through TabViewModel forwarders.
+    TabQuickSearchViewModel* quickSearch() const noexcept { return m_quickSearch; }
 
     FileListModel* advancedSearchResultsModel() const noexcept { return m_advancedSearchResultsModel; }
     bool advancedSearchActive() const noexcept { return m_advancedSearchActive; }
@@ -278,33 +265,13 @@ public slots:
     // navigateTo(); exits any active search.
     void replaceCurrentPath(const std::filesystem::path& path);
 
-    // Recursive filename search scoped to currentPath() (Architecture.md §14.42), async via
-    // AdvancedSearchService -- same in-flight-scan-reuse posture as Advanced Search (Architecture.md
-    // §14.37/§14.38). Empty/whitespace-only query exits search (no-op if already inactive).
-    // Otherwise: the first call against a given root dispatches one recursive scan; an edit that
-    // arrives before that scan finishes re-filters its latest progress tick in memory instead of
-    // starting a second concurrent scan of the same root; an edit after it finishes re-filters the
-    // cached snapshot, no disk I/O. On a scan failure, emits searchFailed and leaves prior search
-    // state untouched.
+    // Thin wrapper over TabQuickSearchViewModel::updateQuery/refresh (Architecture.md §14.96):
+    // Quick Search and Advanced Search stay a single-active-mode invariant, and Advanced Search
+    // isn't extracted yet, so exiting it on a real (non-empty) query edit stays TabViewModel's
+    // call. Empty/whitespace-only query is left to quickSearch()->updateQuery()/refresh() to turn
+    // into an exit, same as before extraction.
     void updateSearchQuery(const QString& query);
-
-    // Forces a fresh recursive rescan of currentPath() against `query` (Refresh button / Enter in
-    // the search bar). Unlike the old no-arg form, this always (re)starts a search scoped to
-    // wherever the tab is *currently* browsing, even if a prior search was exited by an in-tab
-    // navigation (searchActive() == false) -- the search bar's text can outlive navigateTo()'s
-    // exitSearch() without this being a no-op. Empty/whitespace-only query exits search instead.
     void refreshSearch(const QString& query);
-
-    // Updates the Match Case/Whole Word/Exact Name/Match Regex toggles (Architecture.md §14.44) and
-    // re-filters whatever candidate list (cached snapshot, or an in-flight scan's latest partial
-    // snapshot) is already available in memory -- never dispatches a rescan, since the option
-    // change doesn't affect which root/candidate set is being searched, only how it's filtered. A
-    // no-op beyond updating the two members if the search query is currently empty (nothing to
-    // filter yet) -- the new options still take effect the next time a query is typed.
-    void setSearchOptions(const NameSearchOptions& options);
-
-    // Clears search state and flips searchActive off. No-op if already inactive.
-    void exitSearch();
 
     // Advanced (criteria) search pane (Architecture.md §14.19), parallel to the quick-search block
     // above. Reveals the pane with a plain non-recursive listing of the current folder (not a real
@@ -454,24 +421,8 @@ signals:
     void selectedEntriesChanged(const std::vector<FileNode>& entries);
     void sortOrderChanged(SortCriterion criterion, bool ascending);
 
-    void searchModeChanged(bool active);
-    void searchResultsChanged(const std::vector<FileNode>& entries);
-    // Fired whenever m_searchSnapshotIcons gains newly-resolved icons (requestSearchResultIcons's
-    // batch callback) -- unlike searchResultsChanged, this does NOT mean the candidate list itself
-    // changed, just that searchResultIcons() has more to offer. MainWindow relays this to
-    // SearchPanelWidget so already-visible rows light up progressively instead of only updating on
-    // the next query edit.
-    void searchResultIconsChanged();
-    void searchFailed(const QString& message);
-
-    // Emitted right before dispatching a recursive-scan request for the Search tab's own quick
-    // search (Architecture.md §14.42), mirroring advancedSearchLoading below.
-    void searchLoading();
-
-    // Emitted once the in-flight scan that most recently triggered searchLoading() actually
-    // finishes (successfully -- searchFailed covers the error case); does NOT fire for a long
-    // scan's intermediate progress ticks, same posture as advancedSearchLoadingFinished.
-    void searchLoadingFinished();
+    // Quick Search's own signals moved to TabQuickSearchViewModel (Architecture.md §14.96) -- see
+    // quickSearch() accessor.
 
     void advancedSearchModeChanged(bool active);
     void advancedSearchResultsChanged(const std::vector<FileNode>& entries);
@@ -594,14 +545,7 @@ private:
     // dropping a reply for a path that's no longer current the same way requestGitStatus does.
     void requestIcons(const std::filesystem::path& path, const std::vector<FileNode>& entries);
 
-    // Same mechanism as requestIcons, for the quick-search results model -- called wherever
-    // requestSearchResultTags already is (i.e. whenever the search candidate list itself changes),
-    // mirroring how that function covers m_searchResultsModel. Discarded if `generation` no longer
-    // matches m_searchGeneration, same discard-by-generation-id approach as
-    // onSearchCandidatesReady/onSearchProgress.
-    void requestSearchResultIcons(int generation, const std::vector<FileNode>& candidates);
-
-    // Same as requestSearchResultIcons, for the advanced-search results model -- called wherever
+    // Same as requestIcons, for the advanced-search results model -- called wherever
     // requestAdvancedSearchResultTags already is. Discarded if `generation` no longer matches
     // m_advancedSearchGeneration.
     void requestAdvancedSearchResultIcons(int generation, const std::vector<FileNode>& candidates);
@@ -640,22 +584,14 @@ private:
     void requestBrowsingThumbnails(const std::filesystem::path& path, const std::vector<FileNode>& entries);
 
     // Fetches tags for every file in `candidates` and, once they arrive (discarded if
-    // `generation` no longer matches m_searchGeneration), caches them into m_searchSnapshotTags and
-    // applies them to m_searchResultsModel. Used whenever the search candidate set itself changes
-    // (a new full/partial snapshot) -- applySearchFilter's own re-filters reuse the cached map
-    // directly instead of re-dispatching (its filtered subset is always a subset of the same
-    // snapshot).
-    void requestSearchResultTags(int generation, const std::vector<FileNode>& candidates);
-
-    // Same shape as requestSearchResultTags, for the advanced-search side: fetches tags for
-    // `candidates`, discarded if `generation` no longer matches m_advancedSearchGeneration, then
-    // caches into m_advancedSearchSnapshotTags and applies to m_advancedSearchResultsModel. Used
-    // whenever the candidate set itself changes (a new full/tag-first snapshot, a progress tick, or
+    // `generation` no longer matches m_advancedSearchGeneration), caches them into
+    // m_advancedSearchSnapshotTags and applies to m_advancedSearchResultsModel. Used whenever the
+    // candidate set itself changes (a new full/tag-first snapshot, a progress tick, or
     // showAdvancedSearchPanel's initial listing) -- applyAdvancedSearchFilter's own re-filters reuse
     // the cached map directly.
     void requestAdvancedSearchResultTags(int generation, const std::vector<FileNode>& candidates);
 
-    // Same shape as requestSearchResultTags/requestAdvancedSearchResultTags, for the Media Viewer
+    // Same shape as requestAdvancedSearchResultTags, for the Media Viewer
     // results model (Architecture.md §14.69's Details view tag row): fetches tags for
     // `candidates`, discarded if `generation` no longer matches m_mediaViewerGeneration, then
     // applies directly to m_mediaViewerResultsModel. Called from applyMediaViewerFilter() alongside
@@ -696,36 +632,14 @@ private:
     // rescan (see the "reuse the in-flight scan" branch of runAdvancedSearch).
     void onAdvancedSearchProgress(int generation, std::vector<FileNode> partial);
 
-    // Shared implementation of updateSearchQuery/refreshSearch (Architecture.md §14.42), mirroring
-    // runAdvancedSearch's non-tag branch: re-scans recursively only when forceRescan or no valid
-    // cached/in-flight scan of the current root exists yet, otherwise re-filters whatever candidate
-    // list (cached snapshot, or an in-flight scan's latest partial snapshot) is already available in
-    // memory -- never a second concurrent scan of the same root.
-    void runSearch(bool forceRescan);
-
-    // Composes filterByName -> sortBy -> setEntries -> activate-if-needed -> emit
-    // searchResultsChanged, the tail shared by the synchronous cached-snapshot path and both async
-    // completion callbacks below. Mirrors applyAdvancedSearchFilter.
-    void applySearchFilter(const std::vector<FileNode>& candidates);
-
-    // Completion callback for the recursive scan dispatched by runSearch() (via
-    // AdvancedSearchService::requestRecursiveScan, same off-UI-thread scan the Advanced Search pane
-    // uses). Discards the result if `generation` no longer matches m_searchGeneration (a newer
-    // dispatch, or exitSearch()/tab close, superseded it in the meantime).
-    void onSearchCandidatesReady(int generation, Result<std::vector<FileNode>> result);
-
-    // Progress callback for AdvancedSearchService::requestRecursiveScan's onProgress
-    // (Architecture.md §14.37), mirroring onAdvancedSearchProgress: discarded the same way as
-    // onSearchCandidatesReady via the generation check. Caches `partial` as the best-known
-    // candidate list so far and re-filters it with whatever m_searchQuery holds *right now* -- so a
-    // query edit that arrives while the scan is still running is reflected on the very next tick.
-    void onSearchProgress(int generation, std::vector<FileNode> partial);
+    // Quick Search's own runSearch/applySearchFilter/onSearchCandidatesReady/onSearchProgress
+    // moved to TabQuickSearchViewModel (Architecture.md §14.96) -- see quickSearch() accessor.
 
     // Dispatches Media Viewer mode's candidate fetch via the already-injected
     // m_advancedSearchService (Architecture.md §14.61) -- tag-first (requestTagFirstCandidates)
     // when m_mediaViewerTagIds is non-empty, else a plain recursive scan
     // (requestRecursiveScan) of m_mediaViewerRoot. Deliberately simpler than
-    // runAdvancedSearch/runSearch: no in-flight-scan reuse or progress-tick machinery, since this
+    // runAdvancedSearch: no in-flight-scan reuse or progress-tick machinery, since this
     // is only ever called right after the tag filter set itself changed (enterMediaViewer/
     // addMediaViewerTagFilter/removeMediaViewerTagFilter), not on every keystroke. On completion,
     // caches the result into m_mediaViewerCandidates and calls applyMediaViewerFilter().
@@ -849,47 +763,9 @@ private:
     FileListModel* m_fileListModel = nullptr;
     std::vector<FileNode> m_selectedEntries;
 
-    FileListModel* m_searchResultsModel = nullptr;
-    bool m_searchActive = false;
-    std::filesystem::path m_searchRoot;
-    std::vector<FileNode> m_searchSnapshot;
-    // True only right after a successful recursive scan has fully populated m_searchSnapshot --
-    // mirrors m_advancedSearchFullScanDone.
-    bool m_searchFullScanDone = false;
-    // True from the moment a recursive scan is dispatched until its completion callback runs (with
-    // a matching generation) or exitSearch() resets it -- mirrors m_advancedSearchScanPending. While
-    // true, a query edit (updateSearchQuery, forceRescan=false) does NOT dispatch a second
-    // concurrent scan of the same root; it just re-filters m_searchPartialSnapshot synchronously.
-    bool m_searchScanPending = false;
-    // Best-known candidate list from the in-flight scan's progress ticks (Architecture.md §14.37),
-    // updated by onSearchProgress -- mirrors m_advancedSearchPartialSnapshot.
-    std::vector<FileNode> m_searchPartialSnapshot;
-    // Tags for whichever candidate list (m_searchSnapshot or m_searchPartialSnapshot) was most
-    // recently fetched, fetched via requestSearchResultTags whenever that candidate list itself
-    // changes and reapplied as-is by every applySearchFilter re-filter -- a filtered subset never
-    // needs a fresh fetch since it's always a subset of the same candidate list.
-    TagsByPathMap m_searchSnapshotTags;
-    // Icons resolved so far for the current candidate list, accumulated chunk-by-chunk by
-    // requestSearchResultIcons and reapplied as-is by every applySearchFilter re-filter -- mirrors
-    // m_searchSnapshotTags. Needed because FileListModel::setEntries() (which every re-filter goes
-    // through) clears the model's own per-path icon cache, so without this a query edit on an
-    // already-fully-scanned root would flash every row back to its placeholder icon instead of
-    // keeping the ones IconLoadingService already resolved.
-    QHash<QString, QIcon> m_searchSnapshotIcons;
-    QString m_searchQuery;
-    // Match Case/Whole Word/Exact Name/Match Regex toggle state (Architecture.md §14.44), applied
-    // by applySearchFilter via FileNavigationUseCase::filterByName's options-aware overload. Reset
-    // to their defaults by exitSearch(), mirroring m_searchQuery.
-    NameMatchMode m_searchMatchMode = NameMatchMode::Contains;
-    bool m_searchCaseSensitive = false;
-    // Skip Git-Ignored toggle state (Architecture.md §14.45) -- unlike the three above, changing
-    // this forces a rescan (setSearchOptions), since it changes what a scan visits, not just how a
-    // candidate list already in memory is filtered. Reset to false by exitSearch().
-    bool m_searchSkipGitIgnored = false;
-    // Bumped on every recursive-scan dispatch and on exitSearch(); onSearchCandidatesReady/
-    // onSearchProgress discard any reply whose generation no longer matches, same discard-by-
-    // generation-id approach as m_advancedSearchGeneration above.
-    int m_searchGeneration = 0;
+    // Quick Search state, extracted into its own owned sub-object (Architecture.md §14.96) --
+    // exposed via quickSearch() above.
+    TabQuickSearchViewModel* m_quickSearch;
 
     FileListModel* m_advancedSearchResultsModel = nullptr;
     bool m_advancedSearchActive = false;
@@ -919,8 +795,8 @@ private:
     TagsByPathMap m_advancedSearchSnapshotTags;
     // Icons resolved so far for the current candidate list, accumulated chunk-by-chunk by
     // requestAdvancedSearchResultIcons and reapplied as-is by every applyAdvancedSearchFilter
-    // re-filter -- mirrors m_advancedSearchSnapshotTags; see m_searchSnapshotIcons for why this is
-    // needed.
+    // re-filter -- mirrors m_advancedSearchSnapshotTags; see TabQuickSearchViewModel's
+    // m_snapshotIcons for why this is needed.
     QHash<QString, QIcon> m_advancedSearchSnapshotIcons;
     // The tagIds that m_advancedSearchSnapshot/m_advancedSearchFullScanDone/m_advancedSearchScanPending
     // currently pertain to when they were populated by the tag-first branch of runAdvancedSearch
@@ -976,7 +852,8 @@ private:
     // applyMediaViewerFilter() re-filters this in memory for every kind/name-filter edit.
     std::vector<FileNode> m_mediaViewerCandidates;
     // Bumped on every candidate-fetch dispatch and on exitMediaViewer(); discards a stale reply
-    // the same way m_advancedSearchGeneration/m_searchGeneration do.
+    // the same way m_advancedSearchGeneration does (and TabQuickSearchViewModel's own generation
+    // counter does for its own replies).
     int m_mediaViewerGeneration = 0;
     // The copy-style progress notification driving entering Media Viewer mode (Architecture.md
     // §14.65) -- 0 means none currently active. Owned/driven directly by this class, same posture

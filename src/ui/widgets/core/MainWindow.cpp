@@ -57,6 +57,7 @@
 #include "NotificationOverlayWidget.h"
 #include "SettingsDialog.h"
 #include "TabMonitoringViewModel.h"
+#include "TabQuickSearchViewModel.h"
 #include "TabViewModel.h"
 #include "TagManagerDialog.h"
 #include "TagManagerViewModel.h"
@@ -430,7 +431,7 @@ void MainWindow::createShowHiddenFilesAction()
             {
                 TabViewModel* tab = pane->tabAt(i);
                 tab->fileListModel()->setShowHiddenFiles(checked);
-                tab->searchResultsModel()->setShowHiddenFiles(checked);
+                tab->quickSearch()->resultsModel()->setShowHiddenFiles(checked);
                 tab->advancedSearchResultsModel()->setShowHiddenFiles(checked);
             }
         }
@@ -807,7 +808,7 @@ void MainWindow::createSearchPanel()
     connect(m_searchPanelWidget, &SearchPanelWidget::clearRequested, this, [this]() {
         if (TabViewModel* tab = m_workspaceController->focusedTab())
         {
-            tab->exitSearch();
+            tab->quickSearch()->exit();
         }
     });
     connect(m_searchPanelWidget, &SearchPanelWidget::advancedSearchRequested, this, [this]() {
@@ -819,7 +820,7 @@ void MainWindow::createSearchPanel()
     connect(m_searchPanelWidget, &SearchPanelWidget::searchOptionsChanged, this, [this](const NameSearchOptions& options) {
         if (TabViewModel* tab = m_workspaceController->focusedTab())
         {
-            tab->setSearchOptions(options);
+            tab->quickSearch()->setOptions(options, tab->currentPath());
         }
     });
     connect(m_searchPanelWidget, &SearchPanelWidget::resultActivated, this, &MainWindow::onSearchResultActivated);
@@ -1153,13 +1154,13 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
 
     if (m_searchTrackedTab)
     {
-        disconnect(m_searchTrackedTab, &TabViewModel::searchFailed, this, &MainWindow::onStatusMessage);
+        disconnect(m_searchTrackedTab->quickSearch(), &TabQuickSearchViewModel::failed, this, &MainWindow::onStatusMessage);
         disconnect(m_searchTrackedTab, &TabViewModel::advancedSearchFailed, this, &MainWindow::onStatusMessage);
-        // Every searchResultsChanged/searchModeChanged/searchLoading/searchLoadingFinished/
-        // searchFailed connection into m_searchPanelWidget below is a lambda (receiver ==
-        // m_searchPanelWidget, never `this`) -- disconnecting all of them by receiver alone is
-        // safe and precise, same pattern as MonitoringPanelViewModel::disconnectDisplayedTab.
-        disconnect(m_searchTrackedTab, nullptr, m_searchPanelWidget, nullptr);
+        // Every resultsChanged/modeChanged/loading/loadingFinished/failed connection into
+        // m_searchPanelWidget below is a lambda (receiver == m_searchPanelWidget, never `this`) --
+        // disconnecting all of them by receiver alone is safe and precise, same pattern as
+        // MonitoringPanelViewModel::disconnectDisplayedTab.
+        disconnect(m_searchTrackedTab->quickSearch(), nullptr, m_searchPanelWidget, nullptr);
     }
     m_searchTrackedTab = tab;
 
@@ -1274,34 +1275,35 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     connect(tab, &TabViewModel::sortOrderChanged, this, &MainWindow::onSortOrderChanged);
     onSortOrderChanged(tab->sortCriterion(), tab->sortAscending());
 
-    connect(tab, &TabViewModel::searchFailed, this, &MainWindow::onStatusMessage);
+    TabQuickSearchViewModel* quickSearch = tab->quickSearch();
+    connect(quickSearch, &TabQuickSearchViewModel::failed, this, &MainWindow::onStatusMessage);
     connect(tab, &TabViewModel::advancedSearchFailed, this, &MainWindow::onStatusMessage);
 
-    connect(tab, &TabViewModel::searchResultsChanged, m_searchPanelWidget, [this, tab](const std::vector<FileNode>& entries) {
-        m_searchPanelWidget->setResults(entries, tab->searchResultsModel()->currentDirectory(), tab->searchResultIcons());
+    connect(quickSearch, &TabQuickSearchViewModel::resultsChanged, m_searchPanelWidget, [this, quickSearch](const std::vector<FileNode>& entries) {
+        m_searchPanelWidget->setResults(entries, quickSearch->resultsModel()->currentDirectory(), quickSearch->resultIcons());
     });
-    // searchResultsChanged alone misses icons that resolve after the candidate list itself last
-    // changed (the common case -- IconLoadingService's batches arrive asynchronously, well after
-    // applySearchFilter already emitted) -- see TabViewModel::searchResultIconsChanged.
-    connect(tab, &TabViewModel::searchResultIconsChanged, m_searchPanelWidget, [this, tab]() {
-        m_searchPanelWidget->applyIcons(tab->searchResultIcons());
+    // resultsChanged alone misses icons that resolve after the candidate list itself last changed
+    // (the common case -- IconLoadingService's batches arrive asynchronously, well after
+    // applyFilter already emitted) -- see TabQuickSearchViewModel::resultIconsChanged.
+    connect(quickSearch, &TabQuickSearchViewModel::resultIconsChanged, m_searchPanelWidget, [this, quickSearch]() {
+        m_searchPanelWidget->applyIcons(quickSearch->resultIcons());
     });
-    connect(tab, &TabViewModel::searchModeChanged, m_searchPanelWidget, [this](bool active) {
+    connect(quickSearch, &TabQuickSearchViewModel::modeChanged, m_searchPanelWidget, [this](bool active) {
         if (!active)
         {
             m_searchPanelWidget->setResults({}, {});
         }
     });
-    connect(tab, &TabViewModel::searchLoading, m_searchPanelWidget, [this]() { m_searchPanelWidget->setLoading(true); });
-    connect(tab, &TabViewModel::searchLoadingFinished, m_searchPanelWidget, [this]() { m_searchPanelWidget->setLoading(false); });
-    connect(tab, &TabViewModel::searchFailed, m_searchPanelWidget, [this]() { m_searchPanelWidget->setLoading(false); });
+    connect(quickSearch, &TabQuickSearchViewModel::loading, m_searchPanelWidget, [this]() { m_searchPanelWidget->setLoading(true); });
+    connect(quickSearch, &TabQuickSearchViewModel::loadingFinished, m_searchPanelWidget, [this]() { m_searchPanelWidget->setLoading(false); });
+    connect(quickSearch, &TabQuickSearchViewModel::failed, m_searchPanelWidget, [this]() { m_searchPanelWidget->setLoading(false); });
 
-    m_searchPanelWidget->setQuery(tab->searchActive() ? tab->searchQuery() : QString());
-    m_searchPanelWidget->setOptions(tab->searchOptions());
-    if (tab->searchActive())
+    m_searchPanelWidget->setQuery(quickSearch->isActive() ? quickSearch->query() : QString());
+    m_searchPanelWidget->setOptions(quickSearch->options());
+    if (quickSearch->isActive())
     {
-        m_searchPanelWidget->setResults(tab->searchResultsModel()->entries(), tab->searchResultsModel()->currentDirectory(),
-                                         tab->searchResultIcons());
+        m_searchPanelWidget->setResults(quickSearch->resultsModel()->entries(), quickSearch->resultsModel()->currentDirectory(),
+                                         quickSearch->resultIcons());
     }
     else
     {

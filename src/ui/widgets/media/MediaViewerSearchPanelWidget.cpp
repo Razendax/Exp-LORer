@@ -67,7 +67,7 @@ MediaViewerSearchPanelWidget::MediaViewerSearchPanelWidget(UiThemeChangeNotifier
     // SearchCriteriaPanel's own row (Architecture.md §14.61) rather than extracted into a shared
     // widget -- this codebase already duplicates this row between SearchPanelWidget and
     // SearchCriteriaPanel instead of sharing it. Skip Git-Ignored is deliberately inert here: it
-    // only ever mattered to decide whether to re-scan (TabViewModel::setSearchOptions), and Media
+    // only ever mattered to decide whether to re-scan (TabQuickSearchViewModel::setOptions), and Media
     // Viewer's name/options edits never re-scan (TabViewModel::setMediaViewerNameFilter) --
     // FileNavigationUseCase::filterByName itself never reads the flag either way.
     m_matchCaseButton = new QToolButton(this);
