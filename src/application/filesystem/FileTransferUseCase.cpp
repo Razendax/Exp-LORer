@@ -1,5 +1,8 @@
 #include "FileTransferUseCase.h"
 
+#include <iterator>
+#include <optional>
+
 #include "PathContainment.h"
 
 namespace fs = std::filesystem;
@@ -126,18 +129,48 @@ Result<void> FileTransferUseCase::executeTransfer(const FileTransferPlan& plan,
                                                    const std::vector<std::pair<fs::path, fs::path>>& topLevelRoots,
                                                    bool isMove, const FileTransferCallbacks& callbacks)
 {
-    std::uintmax_t bytesCopiedSoFar = 0;
-
-    for (const auto& [rootSource, rootDestination] : topLevelRoots)
+    // Assign each item to exactly one top-level root in a single pass over plan.items, picking the
+    // most specific (deepest) containing root. This replaces rescanning the whole plan once per
+    // root (O(roots x items)) with one O(items x roots) pass, and -- unlike independently matching
+    // an item against every root -- guarantees each item lands in exactly one root's bucket, so a
+    // root nested inside another root can no longer cause the same item to be copied (and, for a
+    // move, its source deleted) twice.
+    std::vector<std::vector<const FileTransferItem*>> itemsByRoot(topLevelRoots.size());
+    for (const auto& item : plan.items)
     {
-        (void)rootDestination;
-
-        for (const auto& item : plan.items)
+        std::optional<std::size_t> bestRootIndex;
+        std::size_t bestDepth = 0;
+        for (std::size_t rootIndex = 0; rootIndex < topLevelRoots.size(); ++rootIndex)
         {
+            const fs::path& rootSource = topLevelRoots[rootIndex].first;
             if (!isPathWithinOrEqual(item.source, rootSource))
             {
                 continue;
             }
+
+            const auto depth = static_cast<std::size_t>(std::distance(rootSource.begin(), rootSource.end()));
+            if (!bestRootIndex || depth > bestDepth)
+            {
+                bestRootIndex = rootIndex;
+                bestDepth = depth;
+            }
+        }
+
+        if (bestRootIndex)
+        {
+            itemsByRoot[*bestRootIndex].push_back(&item);
+        }
+    }
+
+    std::uintmax_t bytesCopiedSoFar = 0;
+
+    for (std::size_t rootIndex = 0; rootIndex < topLevelRoots.size(); ++rootIndex)
+    {
+        const fs::path& rootSource = topLevelRoots[rootIndex].first;
+
+        for (const FileTransferItem* itemPtr : itemsByRoot[rootIndex])
+        {
+            const FileTransferItem& item = *itemPtr;
 
             if (callbacks.shouldCancel && callbacks.shouldCancel())
             {
