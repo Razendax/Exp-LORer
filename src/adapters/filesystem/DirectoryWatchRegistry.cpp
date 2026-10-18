@@ -1,33 +1,19 @@
 #include "DirectoryWatchRegistry.h"
 
 #include <algorithm>
-#include <type_traits>
 
 #include "Logging.h"
 #include "UnicodeCaseFold.h"
 
-namespace
-{
-    // Windows filesystems are case-insensitive, so watch refcounting keys must be too -- otherwise
-    // two watch() calls on the same directory differing only in letter case (e.g. "d:\data" vs
-    // "D:\Data") are treated as independent, un-refcounted watches. Folds each UTF-16 code unit
-    // individually: every codepoint UnicodeCaseFold::foldCodepoint covers (Architecture.md's
-    // non-ASCII hard requirement's core scripts) fits in one UTF-16 code unit, so this is equivalent
-    // to folding full codepoints without needing a UTF-8 round trip.
-    std::wstring normalizeKey(const std::wstring& pathKey)
-    {
-        std::wstring normalized = pathKey;
-        for (wchar_t& c : normalized)
-        {
-            c = static_cast<wchar_t>(UnicodeCaseFold::foldCodepoint(static_cast<char32_t>(static_cast<std::make_unsigned_t<wchar_t>>(c))));
-        }
-        return normalized;
-    }
-}
-
+// Windows filesystems are case-insensitive, so watch refcounting keys must be too -- otherwise two
+// watch() calls on the same directory differing only in letter case (e.g. "d:\data" vs "D:\Data")
+// are treated as independent, un-refcounted watches. UnicodeCaseFold::foldWide (see
+// UnicodeCaseFold.h) folds each UTF-16 code unit individually rather than round-tripping through
+// UTF-8, since every codepoint it covers (Architecture.md's non-ASCII hard requirement's core
+// scripts) fits in one UTF-16 code unit.
 DirectoryWatchRegistry::AddOutcome DirectoryWatchRegistry::addWatch(const std::wstring& pathKey, std::function<void()> callback)
 {
-    const std::wstring normalizedKey = normalizeKey(pathKey);
+    const std::wstring normalizedKey = UnicodeCaseFold::foldWide(pathKey);
     const bool isFirstForPath = m_canonicalPathKeys.find(normalizedKey) == m_canonicalPathKeys.end();
     if (isFirstForPath)
     {
@@ -77,7 +63,7 @@ DirectoryWatchRegistry::RemoveOutcome DirectoryWatchRegistry::removeWatch(Direct
 
 std::vector<std::function<void()>> DirectoryWatchRegistry::callbacksForPath(const std::wstring& pathKey) const
 {
-    const std::wstring normalizedKey = normalizeKey(pathKey);
+    const std::wstring normalizedKey = UnicodeCaseFold::foldWide(pathKey);
     std::vector<std::function<void()>> callbacks;
     for (const Entry& entry : m_entries)
     {

@@ -42,7 +42,7 @@ namespace
         std::string exact;
 
         explicit SortKey(const std::filesystem::path& name)
-            : folded(UnicodeCaseFold::foldUtf8(PathUtf8::toUtf8(name)))
+            : folded(PathUtf8::toUtf8(UnicodeCaseFold::foldPath(name)))
             , exact(PathUtf8::toUtf8(name))
         {
         }

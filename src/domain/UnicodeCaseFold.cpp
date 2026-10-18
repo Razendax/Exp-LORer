@@ -1,5 +1,9 @@
 #include "UnicodeCaseFold.h"
 
+#include <type_traits>
+
+#include "PathUtf8.h"
+
 std::vector<char32_t> UnicodeCaseFold::decodeUtf8(const std::string& utf8)
 {
     std::vector<char32_t> codepoints;
@@ -161,4 +165,20 @@ std::string UnicodeCaseFold::foldUtf8(const std::string& utf8)
         c = foldCodepoint(c);
     }
     return encodeUtf8(codepoints);
+}
+
+std::filesystem::path UnicodeCaseFold::foldPath(const std::filesystem::path& path)
+{
+    const std::string folded = foldUtf8(PathUtf8::toUtf8(path));
+    return std::filesystem::path(std::u8string(folded.begin(), folded.end()));
+}
+
+std::wstring UnicodeCaseFold::foldWide(const std::wstring& wide)
+{
+    std::wstring folded = wide;
+    for (wchar_t& c : folded)
+    {
+        c = static_cast<wchar_t>(foldCodepoint(static_cast<char32_t>(static_cast<std::make_unsigned_t<wchar_t>>(c))));
+    }
+    return folded;
 }

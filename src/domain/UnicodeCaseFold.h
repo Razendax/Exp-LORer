@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -20,4 +21,16 @@ namespace UnicodeCaseFold
     // Decodes, folds every codepoint, and re-encodes -- for whole-string case-insensitive
     // comparisons.
     std::string foldUtf8(const std::string& utf8);
+
+    // Case-folds `path`'s text and rebuilds it as a path -- separators are untouched by folding,
+    // so the rebuilt path still has the same components as the original. For Windows'
+    // case-insensitive path comparisons/containment (shared by PathContainment and
+    // FolderTreeModel).
+    std::filesystem::path foldPath(const std::filesystem::path& path);
+
+    // Case-folds a UTF-16 string one code unit at a time. Every codepoint foldCodepoint covers
+    // (this header's core scripts) fits in one UTF-16 code unit, so this is equivalent to folding
+    // full codepoints without a UTF-8 round trip -- for native wide path keys (e.g.
+    // DirectoryWatchRegistry) where the extra round trip would be pure overhead.
+    std::wstring foldWide(const std::wstring& wide);
 }
