@@ -1,5 +1,6 @@
 add_library(explorer_adapters_viewmodels STATIC
     CancellableScanService.h
+    WorkerThreadPool.h
     filesystem/NavigationHistory.h
     filesystem/NavigationHistory.cpp
     filesystem/ViewMode.h

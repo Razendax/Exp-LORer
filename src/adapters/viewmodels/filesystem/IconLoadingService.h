@@ -15,6 +15,7 @@
 
 #include "FileNode.h"
 #include "IconSizeMask.h"
+#include "WorkerThreadPool.h"
 
 class IconLoadingWorker;
 
@@ -63,13 +64,7 @@ public:
                        IconSizeMask sizeMask, std::function<void(QHash<QString, QIcon> batch)> onBatch);
 
 private:
-    struct PoolWorker
-    {
-        QThread* thread = nullptr;
-        IconLoadingWorker* worker = nullptr;
-    };
-
-    std::vector<PoolWorker> m_pool;
+    WorkerThreadPool<IconLoadingWorker> m_pool;
     // Round-robin cursor across m_pool, incremented per chunk (not per request) so one huge
     // directory's chunks spread across every pool worker. Atomic rather than mutex-guarded since
     // it's on every chunk's dispatch path and needs no synchronization with anything else.

@@ -7,49 +7,21 @@
 #include <QMutexLocker>
 #include <QPixmap>
 #include <QPointer>
-#include <QThread>
 
 #include "IconLoadingWorker.h"
 
 namespace
 {
     constexpr std::size_t kChunkSize = 20;
-
-    // Clamped to [2, 4]: enough to actually parallelize icon extraction, while leaving headroom
-    // for the UI thread and every other service's own single worker thread (see
-    // IconLoadingService.h's class comment for why this one deviates from that convention).
-    std::size_t poolSize()
-    {
-        return static_cast<std::size_t>(std::clamp(QThread::idealThreadCount() / 2, 2, 4));
-    }
 }
 
 IconLoadingService::IconLoadingService(QObject* parent)
     : QObject(parent)
+    , m_pool([] { return new IconLoadingWorker(); })
 {
-    const std::size_t count = poolSize();
-    m_pool.reserve(count);
-    for (std::size_t i = 0; i < count; ++i)
-    {
-        PoolWorker entry;
-        entry.worker = new IconLoadingWorker();
-        entry.thread = new QThread();
-        entry.worker->moveToThread(entry.thread);
-        entry.thread->start();
-        m_pool.push_back(entry);
-    }
 }
 
-IconLoadingService::~IconLoadingService()
-{
-    for (PoolWorker& entry : m_pool)
-    {
-        entry.thread->quit();
-        entry.thread->wait();
-        delete entry.worker;
-        delete entry.thread;
-    }
-}
+IconLoadingService::~IconLoadingService() = default;
 
 void IconLoadingService::requestIcons(QObject* context, const std::filesystem::path& directory, std::vector<FileNode> entries,
                                        IconSizeMask sizeMask, std::function<void(QHash<QString, QIcon>)> onBatch)
@@ -68,7 +40,7 @@ void IconLoadingService::requestIcons(QObject* context, const std::filesystem::p
                                      entries.begin() + static_cast<std::ptrdiff_t>(offset + count));
 
         const std::size_t workerIndex = m_nextWorkerIndex.fetch_add(1, std::memory_order_relaxed) % m_pool.size();
-        IconLoadingWorker* worker = m_pool[workerIndex].worker;
+        IconLoadingWorker* worker = m_pool.workerAt(workerIndex);
 
         // Both hops are queued functor calls (QMetaObject::invokeMethod), not Qt signals/slots --
         // QHash<QString, QIcon>/std::vector<FileNode> aren't (and shouldn't need to become)

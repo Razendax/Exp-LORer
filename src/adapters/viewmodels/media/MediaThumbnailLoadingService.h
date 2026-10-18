@@ -16,6 +16,7 @@
 
 #include "FileNode.h"
 #include "MediaThumbnailData.h"
+#include "WorkerThreadPool.h"
 
 class MediaProcessingUseCase;
 class MediaThumbnailLoadingWorker;
@@ -87,12 +88,6 @@ private:
         Priority priority = Priority::High;
     };
 
-    struct PoolWorker
-    {
-        QThread* thread = nullptr;
-        MediaThumbnailLoadingWorker* worker = nullptr;
-    };
-
     // While m_pending and m_idleWorkers are both non-empty, pops one of each and dispatches that
     // chunk to that pool worker; its completion callback returns the worker's index to
     // m_idleWorkers and calls this again, so every idle pool worker stays busy as long as there's
@@ -100,7 +95,7 @@ private:
     // worker was idle) and after each chunk finishes.
     void startNextIfIdle();
 
-    std::vector<PoolWorker> m_pool;
+    WorkerThreadPool<MediaThumbnailLoadingWorker> m_pool;
 
     QMutex m_activeRootMutex;
     // Latest requested root per context, compared by pointer value only (never dereferenced) --

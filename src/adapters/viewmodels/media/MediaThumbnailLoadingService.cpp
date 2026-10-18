@@ -5,50 +5,25 @@
 
 #include <QMetaObject>
 #include <QMutexLocker>
-#include <QThread>
 
 #include "MediaThumbnailLoadingWorker.h"
 
 namespace
 {
     constexpr std::size_t kChunkSize = 10;
-
-    // Clamped to [2, 4]: enough to actually parallelize decode across independent videos/images,
-    // while leaving headroom for the UI thread and every other background service's own worker(s)
-    // -- same formula as IconLoadingService::poolSize() (Architecture.md §14.78).
-    std::size_t poolSize()
-    {
-        return static_cast<std::size_t>(std::clamp(QThread::idealThreadCount() / 2, 2, 4));
-    }
 }
 
 MediaThumbnailLoadingService::MediaThumbnailLoadingService(MediaProcessingUseCase& mediaProcessingUseCase, QObject* parent)
     : QObject(parent)
+    , m_pool([&mediaProcessingUseCase] { return new MediaThumbnailLoadingWorker(mediaProcessingUseCase); })
 {
-    const std::size_t count = poolSize();
-    m_pool.reserve(count);
-    for (std::size_t i = 0; i < count; ++i)
+    for (std::size_t i = 0; i < m_pool.size(); ++i)
     {
-        PoolWorker entry;
-        entry.worker = new MediaThumbnailLoadingWorker(mediaProcessingUseCase);
-        entry.thread = new QThread();
-        entry.worker->moveToThread(entry.thread);
-        entry.thread->start();
-        m_pool.push_back(entry);
         m_idleWorkers.push_back(i);
     }
 }
 
-MediaThumbnailLoadingService::~MediaThumbnailLoadingService()
-{
-    for (PoolWorker& entry : m_pool)
-    {
-        entry.thread->quit();
-        entry.thread->wait();
-        delete entry.worker;
-        delete entry.thread;
-    }
-}
+MediaThumbnailLoadingService::~MediaThumbnailLoadingService() = default;
 
 void MediaThumbnailLoadingService::requestThumbnails(QObject* context, const std::filesystem::path& root,
                                                        std::vector<FileNode> entries, int maxWidth, int maxHeight,
@@ -123,7 +98,7 @@ void MediaThumbnailLoadingService::startNextIfIdle()
             m_idleWorkers.pop_front();
         }
 
-        MediaThumbnailLoadingWorker* worker = m_pool[workerIndex].worker;
+        MediaThumbnailLoadingWorker* worker = m_pool.workerAt(workerIndex);
 
         QMetaObject::invokeMethod(
             worker,
