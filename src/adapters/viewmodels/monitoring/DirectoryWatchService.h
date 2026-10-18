@@ -46,6 +46,8 @@ private:
         TabViewModel* tab = nullptr;
         DirectoryWatchId watchId = 0;
         QTimer* debounceTimer = nullptr;
+        QMetaObject::Connection pathChangedConnection;
+        QMetaObject::Connection destroyedConnection;
     };
 
     void startWatching(TabViewModel* tab);

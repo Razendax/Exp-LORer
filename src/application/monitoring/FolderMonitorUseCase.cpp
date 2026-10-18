@@ -33,6 +33,23 @@ void FolderMonitorUseCase::startMonitoring(const std::filesystem::path& rootDire
 
     auto debouncedOnChanged = [onChanged = std::move(onChanged), lastSeen](const std::vector<FolderChangeEvent>& batch) {
         const auto now = std::chrono::steady_clock::now();
+
+        // Prune entries whose debounce window has already elapsed before considering this batch --
+        // only the last kDebounceWindow of history is ever consulted below, so anything older than
+        // that is dead weight. Without this, a long-running monitoring session (e.g. a long build)
+        // touching many distinct paths would grow this map for the lifetime of the session.
+        for (auto it = lastSeen->begin(); it != lastSeen->end();)
+        {
+            if (now - it->second.second >= kDebounceWindow)
+            {
+                it = lastSeen->erase(it);
+            }
+            else
+            {
+                ++it;
+            }
+        }
+
         std::vector<FolderChangeEvent> filtered;
         filtered.reserve(batch.size());
 

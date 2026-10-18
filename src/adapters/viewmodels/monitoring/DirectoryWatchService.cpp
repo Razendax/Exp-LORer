@@ -39,6 +39,8 @@ void DirectoryWatchService::setVisibleTabs(const std::vector<TabViewModel*>& tab
         }
 
         m_useCase.unwatch(it->watchId);
+        QObject::disconnect(it->pathChangedConnection);
+        QObject::disconnect(it->destroyedConnection);
         delete it->debounceTimer;
         it = m_watched.erase(it);
     }
@@ -75,8 +77,9 @@ void DirectoryWatchService::startWatching(TabViewModel* tab)
     auto result = m_useCase.watch(tab->currentPath(), [debounceTimer]() { debounceTimer->start(); });
     watched.watchId = result ? result.value() : DirectoryWatchId{ 0 };
 
-    connect(tab, &TabViewModel::currentPathChanged, this, [this, tab](const std::filesystem::path&) { rewatch(tab); });
-    connect(tab, &QObject::destroyed, this, [this](QObject* tabObject) { handleTabDestroyed(tabObject); });
+    watched.pathChangedConnection =
+        connect(tab, &TabViewModel::currentPathChanged, this, [this, tab](const std::filesystem::path&) { rewatch(tab); });
+    watched.destroyedConnection = connect(tab, &QObject::destroyed, this, [this](QObject* tabObject) { handleTabDestroyed(tabObject); });
 
     m_watched.push_back(watched);
 
@@ -139,6 +142,8 @@ void DirectoryWatchService::handleTabDestroyed(QObject* tabObject)
     }
 
     m_useCase.unwatch(it->watchId);
+    QObject::disconnect(it->pathChangedConnection);
+    QObject::disconnect(it->destroyedConnection);
     delete it->debounceTimer;
     m_watched.erase(it);
 }
