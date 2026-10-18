@@ -121,8 +121,28 @@ void FilePreviewViewModel::refresh()
 
     if (!target)
     {
+        m_currentTargetPath.reset();
         emit previewCleared();
         return;
+    }
+
+    // Emitted unconditionally, even on a small-result cache hit below -- this is PreviewPanelWidget's
+    // only signal that the preview target is about to change (TextEditPreviewWidget::
+    // prepareForTargetChange() hangs off it, Architecture.md §14.98). A cache hit used to skip
+    // straight to previewReady(), which meant switching to a file this session had already
+    // previewed before (common once a handful of files have been browsed) silently replaced an
+    // unsaved in-progress edit with no save prompt at all.
+    //
+    // Skipped, though, when the resolved target is the SAME path already on screen -- a
+    // directory-watch-triggered refresh (directoryContentsChanged) re-resolves to the current
+    // target too, and that is a content-only refresh, not the user navigating away. Firing
+    // previewLoading() for it would make TextEditPreviewWidget treat it as a target change and pop
+    // its unsaved-changes prompt while the user is simply typing.
+    const bool targetChanged = m_currentTargetPath != target->path();
+    m_currentTargetPath = target->path();
+    if (targetChanged)
+    {
+        emit previewLoading();
     }
 
     const CacheKey key{ target->path(), target->modificationDate() };
@@ -132,7 +152,6 @@ void FilePreviewViewModel::refresh()
         return;
     }
 
-    emit previewLoading();
     dispatchGeneration(*target);
 }
 

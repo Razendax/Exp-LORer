@@ -172,6 +172,7 @@ int main(int argc, char* argv[])
         MainWindow mainWindow(workspaceController.get(), compositionRoot.appConfigStore(), compositionRoot.tagManagementUseCase(),
                               compositionRoot.tagChangeNotifier(), compositionRoot.advancedSearchService(),
                               compositionRoot.iconLoadingService(), compositionRoot.fileTagsService(),
+                              compositionRoot.textFileEditViewModel(),
                               compositionRoot.uiThemeChangeNotifier(),
                               compositionRoot.syntaxHighlightEngine(),
                               compositionRoot.highlightThemeViewModel(), compositionRoot.fileDecorationsViewModel(),

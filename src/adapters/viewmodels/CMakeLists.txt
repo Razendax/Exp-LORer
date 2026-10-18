@@ -103,6 +103,10 @@ add_library(explorer_adapters_viewmodels STATIC
     fragmentation/FragmentationViewModel.cpp
     fragmentation/FragmentationResultsModel.h
     fragmentation/FragmentationResultsModel.cpp
+    texteditor/TextFileEditWorker.h
+    texteditor/TextFileEditWorker.cpp
+    texteditor/TextFileEditViewModel.h
+    texteditor/TextFileEditViewModel.cpp
 )
 
 target_include_directories(explorer_adapters_viewmodels PUBLIC
@@ -117,6 +121,7 @@ target_include_directories(explorer_adapters_viewmodels PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/search
     ${CMAKE_CURRENT_SOURCE_DIR}/duplicates
     ${CMAKE_CURRENT_SOURCE_DIR}/fragmentation
+    ${CMAKE_CURRENT_SOURCE_DIR}/texteditor
 )
 # explorer_adapters_git: AdvancedSearchWorker constructs its own LibGit2StatusProvider/
 # GitStatusUseCase pair directly (Architecture.md §14.45), the same "own thread-affine instance"

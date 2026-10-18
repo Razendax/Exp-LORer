@@ -54,6 +54,13 @@ public:
     // subsequent typing replaces every occurrence at once.
     void selectAllOccurrences(const QVector<QTextCursor>& matches);
 
+    // Runtime toggle (Architecture.md §14.97), unlike the construction-time-only TextEditorOptions::
+    // readOnly this widget still also honors. Calls the inherited QPlainTextEdit::setReadOnly()
+    // *and* updates m_readOnly together, since the multi-cursor path in
+    // handleMultiCursorKeyPress bypasses QPlainTextEdit's own editing entirely and so has its own
+    // separate m_readOnly guard that QPlainTextEdit::setReadOnly() alone would leave stale.
+    void setReadOnly(bool readOnly);
+
 protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;

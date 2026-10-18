@@ -26,6 +26,7 @@ add_executable(explorer_application_tests
     DuplicateFinderUseCaseTest.cpp
     FragmentationUseCaseTest.cpp
     BulkRenameUseCaseTest.cpp
+    TextFileEditUseCaseTest.cpp
 )
 
 target_link_libraries(explorer_application_tests PRIVATE

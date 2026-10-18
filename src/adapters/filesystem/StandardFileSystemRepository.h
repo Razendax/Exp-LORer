@@ -40,6 +40,8 @@ public:
     Result<void> showProperties(const std::filesystem::path& path, NativeWindowHandle ownerWindow) override;
 
     Result<std::vector<std::byte>> readFilePrefix(const std::filesystem::path& path, std::size_t maxBytes) const override;
+    Result<std::vector<std::byte>> readFile(const std::filesystem::path& path) const override;
+    Result<void> writeFile(const std::filesystem::path& path, const std::vector<std::byte>& content) override;
 
     Result<void> extractArchive(const std::filesystem::path& archiveFile,
                                  const std::filesystem::path& destinationDirectory) override;

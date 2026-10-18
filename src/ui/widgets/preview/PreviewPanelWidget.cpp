@@ -11,10 +11,11 @@
 #include "FolderPreviewWidget.h"
 #include "MediaExtensions.h"
 #include "MediaPreviewWidget.h"
-#include "TextPreviewWidget.h"
+#include "TextEditPreviewWidget.h"
 
 PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHighlightEngine& syntaxHighlightEngine,
-                                        HighlightThemeViewModel& highlightThemeViewModel, QWidget* parent)
+                                        HighlightThemeViewModel& highlightThemeViewModel,
+                                        TextFileEditViewModel& textFileEditViewModel, QWidget* parent)
     : QWidget(parent)
     , m_viewModel(viewModel)
 {
@@ -41,7 +42,7 @@ PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHi
     m_mediaPreviewWidget = new MediaPreviewWidget(m_stack);
     m_stack->addWidget(m_mediaPreviewWidget);
 
-    m_textPreviewWidget = new TextPreviewWidget(syntaxHighlightEngine, highlightThemeViewModel, m_stack);
+    m_textPreviewWidget = new TextEditPreviewWidget(textFileEditViewModel, syntaxHighlightEngine, highlightThemeViewModel, m_stack);
     m_stack->addWidget(m_textPreviewWidget);
 
     m_folderPreviewWidget = new FolderPreviewWidget(m_stack);
@@ -90,6 +91,11 @@ void PreviewPanelWidget::hideEvent(QHideEvent* event)
 
 void PreviewPanelWidget::onPreviewLoading()
 {
+    // Latest point the *old* editor (if dirty) still exists -- the pane's selection has already
+    // moved on by the time this fires (Architecture.md §14.98). Called unconditionally, since the
+    // new target's own kind isn't known yet.
+    m_textPreviewWidget->prepareForTargetChange();
+
     resetVideoState();
     resetGifState();
     m_stack->setCurrentWidget(m_loadingLabel);
@@ -154,6 +160,12 @@ void PreviewPanelWidget::onPreviewFailed(const QString& message)
 
 void PreviewPanelWidget::onPreviewCleared()
 {
+    // Reaching this (instead of onPreviewLoading()) means the new target isn't a single
+    // previewable file -- a folder, a multi-selection, or nothing selected at all -- but the old
+    // target's editor (if dirty) still needs the same save prompt before it's torn down, same as
+    // the onPreviewLoading() call below (Architecture.md §14.98).
+    m_textPreviewWidget->prepareForTargetChange();
+
     resetVideoState();
     resetGifState();
     m_stack->setCurrentWidget(m_unsupportedLabel);

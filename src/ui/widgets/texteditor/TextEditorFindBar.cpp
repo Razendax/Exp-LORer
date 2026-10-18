@@ -345,6 +345,20 @@ void TextEditorFindBar::hideAndClear()
     m_editor->setFocus();
 }
 
+void TextEditorFindBar::setReadOnly(bool readOnly)
+{
+    if (m_readOnly == readOnly)
+        return;
+
+    m_readOnly = readOnly;
+    m_toggleReplaceButton->setVisible(!m_readOnly);
+
+    // Collapse an already-expanded Replace row rather than leaving it visible but inert --
+    // onToggleReplaceRow(false) hides its widgets and repositions the (now shorter) overlay.
+    if (m_readOnly && m_toggleReplaceButton->isChecked())
+        m_toggleReplaceButton->setChecked(false);
+}
+
 void TextEditorFindBar::onMatchModeButtonToggled(QToolButton* button, bool checked)
 {
     if (checked) {

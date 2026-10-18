@@ -5,7 +5,7 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.93–14.96 — the built-in text editor dialog (`src/ui/widgets/texteditor/`). The editor widget
+Covers §14.93–14.97 — the built-in text editor dialog (`src/ui/widgets/texteditor/`). The editor widget
 itself (multi-cursor editing, line-number gutter, the Find bar's search/highlight mechanics, Go to
 Line) predates this file and shipped undocumented; this file starts from the Find bar's Replace
 addition and is where later text-editor features should be logged going forward.
@@ -180,3 +180,32 @@ an "Edit" button flipping an *already-open* editor between read-only and editabl
 upgrade `readOnly` to a runtime setter at that point — out of scope here, since today's only call
 site (`Tools > Text Editor...`) always constructs a fresh editor per `TextEditorOptionsDialog`
 choice.
+
+---
+### 14.97 Runtime Read-Only Toggle
+
+Closes §14.96's own ToDo note above: `readOnly` upgrades from construction-time-only to a real
+runtime toggle, the groundwork the Preview-panel integration (§14.98,
+`docs/features/05-preview-and-decoration.md`) needed to flip an *already-open* editor between
+read-only and editable rather than tearing down and reconstructing it for that alone (the panel
+integration still rebuilds the whole `TextEditorPanel` per previewed file for other reasons — a
+clean slate with no leftover find-bar/cursor/undo state — but no longer *needs* to for a read-only
+flip specifically).
+
+- `TextEditorWidget::setReadOnly(bool)` (new, shadows `QPlainTextEdit::setReadOnly` by name, not by
+  override — the base method isn't virtual): calls the inherited `QPlainTextEdit::setReadOnly()`
+  *and* updates `m_readOnly` together. Calling the inherited setter alone would leave `m_readOnly`
+  stale, since `handleMultiCursorKeyPress`'s mutating branches (Backspace, Delete, Return/Enter,
+  Tab, Ctrl+X, the printable-text fallback — the same set §14.96 originally guarded) read
+  `m_readOnly` directly rather than consulting `QPlainTextEdit::isReadOnly()` on every keystroke.
+- `TextEditorFindBar::setReadOnly(bool)` (new): toggles `m_toggleReplaceButton`'s visibility to
+  match, mirroring the constructor's existing one-time `setVisible(!readOnly)` call. Flipping to
+  read-only while the Replace row is already expanded also collapses it
+  (`m_toggleReplaceButton->setChecked(false)`, which `onToggleReplaceRow`'s existing handler already
+  hides/repositions for) rather than leaving an now-inert expanded row on screen.
+- `TextEditorPanel::setReadOnly(bool)` (new): forwards to the editor and, if present, the find bar.
+  `TextEditorPanel::editor()` (new, previously private with no getter) lets an embedding site drive
+  the editor directly — `toPlainText()`/`setPlainText()`/`document()->isModified()`/
+  `document()->modificationChanged` — without this panel growing a forwarding method for each one.
+- `TextEditorDialog` / `Tools > Text Editor...`: untouched, same as every prior increment in this
+  file — this only adds a capability, read-only editors opened from there still never flip.

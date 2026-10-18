@@ -51,3 +51,10 @@ TextEditorPanel::TextEditorPanel(const TextEditorOptions& options, QWidget* pare
         });
     }
 }
+
+void TextEditorPanel::setReadOnly(bool readOnly)
+{
+    m_editor->setReadOnly(readOnly);
+    if (m_findBar)
+        m_findBar->setReadOnly(readOnly);
+}

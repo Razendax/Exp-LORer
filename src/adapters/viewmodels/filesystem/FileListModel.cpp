@@ -554,6 +554,44 @@ void FileListModel::setEntriesPreSorted(const std::filesystem::path& directory, 
 
 void FileListModel::setEntriesImpl(const std::filesystem::path& directory, std::vector<FileNode> entries)
 {
+    // Re-listing the SAME directory (DirectoryWatchService's live refresh, or an explicit F5) --
+    // update via layoutChanged + persistent-index remap instead of a hard reset, so the view's
+    // selection/current index survives, same technique and rationale as setFolderSizes()'s own
+    // re-sort below. Per-path caches (icons/tags/git status/...) are deliberately left as-is rather
+    // than cleared: TabViewModel's directoryContentsChanged handlers re-fetch them for the new
+    // listing regardless, and clearing here would just flash every decoration blank in between.
+    if (directory == m_directory && !m_entries.empty())
+    {
+        emit layoutAboutToBeChanged();
+
+        const QModelIndexList oldPersistent = persistentIndexList();
+        std::vector<QString> oldPersistentPaths;
+        oldPersistentPaths.reserve(static_cast<size_t>(oldPersistent.size()));
+        for (const QModelIndex& persistentIndex : oldPersistent)
+        {
+            const auto entry = entryAt(persistentIndex.row());
+            oldPersistentPaths.push_back(entry ? toQString(entry->path()) : QString());
+        }
+
+        m_entries = std::move(entries);
+        recomputeTotalSize();
+        rebuildVisibleRows();
+
+        QModelIndexList newPersistent;
+        newPersistent.reserve(oldPersistent.size());
+        for (int i = 0; i < oldPersistent.size(); ++i)
+        {
+            const QString& path = oldPersistentPaths[static_cast<size_t>(i)];
+            const auto rowIt = path.isEmpty() ? m_rowByPath.constEnd() : m_rowByPath.constFind(path);
+            newPersistent.push_back(rowIt == m_rowByPath.constEnd() ? QModelIndex()
+                                                                      : index(rowIt.value(), oldPersistent[i].column()));
+        }
+        changePersistentIndexList(oldPersistent, newPersistent);
+
+        emit layoutChanged();
+        return;
+    }
+
     beginResetModel();
     m_directory = directory;
     m_entries = std::move(entries);

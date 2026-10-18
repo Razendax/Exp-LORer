@@ -11,7 +11,8 @@ class FolderPreviewWidget;
 class HighlightThemeViewModel;
 class MediaPreviewWidget;
 class SyntaxHighlightEngine;
-class TextPreviewWidget;
+class TextEditPreviewWidget;
+class TextFileEditViewModel;
 class QComboBox;
 class QHideEvent;
 class QLabel;
@@ -36,7 +37,8 @@ class PreviewPanelWidget : public QWidget
 
 public:
     PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHighlightEngine& syntaxHighlightEngine,
-                        HighlightThemeViewModel& highlightThemeViewModel, QWidget* parent = nullptr);
+                        HighlightThemeViewModel& highlightThemeViewModel, TextFileEditViewModel& textFileEditViewModel,
+                        QWidget* parent = nullptr);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -66,7 +68,7 @@ private:
     QComboBox* m_gifModeCombo = nullptr;     // objectName "gifModeCombo"
     QStackedWidget* m_stack = nullptr;
     MediaPreviewWidget* m_mediaPreviewWidget = nullptr;
-    TextPreviewWidget* m_textPreviewWidget = nullptr;
+    TextEditPreviewWidget* m_textPreviewWidget = nullptr;
     FolderPreviewWidget* m_folderPreviewWidget = nullptr;
     QLabel* m_loadingLabel = nullptr;
     QLabel* m_unsupportedLabel = nullptr;

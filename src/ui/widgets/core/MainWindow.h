@@ -37,6 +37,7 @@ class TagChangeNotifier;
 class AdvancedSearchService;
 class IconLoadingService;
 class FileTagsService;
+class TextFileEditViewModel;
 class UiThemeChangeNotifier;
 class WorkspaceStore;
 class WorkspaceController;
@@ -70,6 +71,7 @@ public:
     MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore, TagManagementUseCase& tagManagementUseCase,
                TagChangeNotifier& tagChangeNotifier, AdvancedSearchService& advancedSearchService,
                IconLoadingService& iconLoadingService, FileTagsService& fileTagsService,
+               TextFileEditViewModel& textFileEditViewModel,
                UiThemeChangeNotifier& uiThemeChangeNotifier,
                SyntaxHighlightEngine& syntaxHighlightEngine,
                HighlightThemeViewModel& highlightThemeViewModel, FileDecorationsViewModel& fileDecorationsViewModel,
@@ -166,6 +168,7 @@ private:
     AdvancedSearchService& m_advancedSearchService;
     IconLoadingService& m_iconLoadingService;
     FileTagsService& m_fileTagsService;
+    TextFileEditViewModel& m_textFileEditViewModel;
     UiThemeChangeNotifier& m_uiThemeChangeNotifier;
     SyntaxHighlightEngine& m_syntaxHighlightEngine;
     HighlightThemeViewModel& m_highlightThemeViewModel;

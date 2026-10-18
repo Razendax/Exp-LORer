@@ -251,7 +251,7 @@ void TabViewModel::setSelectedEntries(const std::vector<FileNode>& entries)
 
 void TabViewModel::refresh()
 {
-    loadAndApply(currentPath(), HistoryUpdate::None);
+    loadAndApply(currentPath(), HistoryUpdate::None, /*preserveSelection=*/true);
 }
 
 void TabViewModel::replaceCurrentPath(const std::filesystem::path& path)
@@ -309,7 +309,7 @@ void TabViewModel::setColumnHidden(FileListModel::Column column, bool hidden)
     m_hiddenColumns[static_cast<std::size_t>(column)] = hidden;
 }
 
-void TabViewModel::loadAndApply(const std::filesystem::path& path, HistoryUpdate historyUpdate)
+void TabViewModel::loadAndApply(const std::filesystem::path& path, HistoryUpdate historyUpdate, bool preserveSelection)
 {
     auto result = m_fileNavigationUseCase.listDirectory(path);
     if (result.hasError())
@@ -327,11 +327,53 @@ void TabViewModel::loadAndApply(const std::filesystem::path& path, HistoryUpdate
         m_history.replaceCurrent(path);
     }
 
-    setSelectedEntries({});
+    if (preserveSelection)
+    {
+        reconcileSelectionAfterRefresh(result.value());
+    }
+    else
+    {
+        setSelectedEntries({});
+    }
 
     emit currentPathChanged(path);
     emit directoryContentsChanged(path, result.value());
     emitAvailability();
+}
+
+void TabViewModel::reconcileSelectionAfterRefresh(const std::vector<FileNode>& freshEntries)
+{
+    if (m_selectedEntries.empty())
+    {
+        return;
+    }
+
+    std::vector<FileNode> stillSelected;
+    stillSelected.reserve(m_selectedEntries.size());
+    for (const FileNode& selected : m_selectedEntries)
+    {
+        const auto it = std::find_if(freshEntries.begin(), freshEntries.end(),
+                                       [&selected](const FileNode& entry) { return entry.path() == selected.path(); });
+        if (it != freshEntries.end())
+        {
+            stillSelected.push_back(*it);
+        }
+    }
+
+    if (stillSelected.size() == m_selectedEntries.size())
+    {
+        // Every previously-selected path is still present -- refresh the cached FileNode data
+        // (size/mtime may have changed, e.g. the Preview panel's text editor just saved this very
+        // file) without going through setSelectedEntries()'s equality check, which compares full
+        // FileNode content and would spuriously emit selectedEntriesChanged here even though the
+        // selected *paths* didn't change.
+        m_selectedEntries = std::move(stillSelected);
+        return;
+    }
+
+    // At least one previously-selected path was deleted/renamed out from under the selection
+    // during the refresh -- a real change consumers (preview, status bar, tag actions) must see.
+    setSelectedEntries(stillSelected);
 }
 
 void TabViewModel::updateSearchQuery(const QString& query)

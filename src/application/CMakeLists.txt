@@ -58,6 +58,8 @@ add_library(explorer_application STATIC
     fragmentation/FragmentCountsByPath.h
     fragmentation/FragmentationUseCase.h
     fragmentation/FragmentationUseCase.cpp
+    texteditor/TextFileEditUseCase.h
+    texteditor/TextFileEditUseCase.cpp
 )
 
 target_include_directories(explorer_application PUBLIC
@@ -70,5 +72,6 @@ target_include_directories(explorer_application PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/diskusage
     ${CMAKE_CURRENT_SOURCE_DIR}/duplicates
     ${CMAKE_CURRENT_SOURCE_DIR}/fragmentation
+    ${CMAKE_CURRENT_SOURCE_DIR}/texteditor
 )
 target_link_libraries(explorer_application PUBLIC explorer_domain)

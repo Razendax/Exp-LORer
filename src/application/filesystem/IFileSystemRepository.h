@@ -81,6 +81,16 @@ public:
     virtual Result<std::vector<std::byte>> readFilePrefix(const std::filesystem::path& path,
                                                             std::size_t maxBytes) const = 0;
 
+    // Full, uncapped read of path's contents (Architecture.md §14.98). Used by the Preview panel's
+    // text editor "Edit" action, which needs the whole file rather than readFilePrefix's capped
+    // preview bytes.
+    virtual Result<std::vector<std::byte>> readFile(const std::filesystem::path& path) const = 0;
+
+    // Overwrites path with content (Architecture.md §14.98). Used by the Preview panel's text
+    // editor "Save" action. Fails on a path inside a read-only archive (Architecture.md §14.28),
+    // same posture as createDirectory/createFileFromTemplate above.
+    virtual Result<void> writeFile(const std::filesystem::path& path, const std::vector<std::byte>& content) = 0;
+
     // Extracts every entry under archiveFile (or, if archiveFile names a folder *inside* an
     // archive, every entry under that subtree) into destinationDirectory, preserving relative
     // structure. Read-only counterpart to createDirectory/copy for archive content

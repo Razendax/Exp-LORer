@@ -33,6 +33,7 @@
 #include "LanguageRegistry.h"
 #include "NotificationSettingsViewModel.h"
 #include "SyntaxHighlightEngine.h"
+#include "TextEditPreviewWidget.h"
 #include "UiTheme.h"
 #include "UiThemeChangeNotifier.h"
 #include "WorkspacePaneWidget.h"
@@ -142,13 +143,16 @@ SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeView
     notificationsItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()) + 2);
     auto* columnsItem = new QTreeWidgetItem(generalRoot, QStringList{ tr("Columns") });
     columnsItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()) + 3);
+    auto* previewItem = new QTreeWidgetItem(generalRoot, QStringList{ tr("Preview") });
+    previewItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()) + 4);
 
-    // All four built eagerly (unlike the lazily-built language pages above) since they're cheap --
+    // All five built eagerly (unlike the lazily-built language pages above) since they're cheap --
     // no tree-sitter/query compilation involved.
     m_pageStack->addWidget(buildGeneralUiPage());
     m_pageStack->addWidget(buildFileDecorationsPage());
     m_pageStack->addWidget(buildNotificationsPage());
     m_pageStack->addWidget(buildColumnsPage());
+    m_pageStack->addWidget(buildGeneralPreviewPage());
 
     m_categoryTree->expandAll();
 
@@ -654,6 +658,48 @@ QWidget* SettingsDialog::buildColumnsPage()
 
     pageLayout->addWidget(groupBox);
     pageLayout->addStretch();
+
+    return page;
+}
+
+QWidget* SettingsDialog::buildGeneralPreviewPage()
+{
+    auto* page = new QWidget(m_pageStack);
+    auto* layout = new QVBoxLayout(page);
+
+    struct PreviewCheckBoxSpec
+    {
+        QString label;
+        QString objectName;
+        const char* settingsKey;
+    };
+
+    const std::array<PreviewCheckBoxSpec, 4> specs = {
+        PreviewCheckBoxSpec{ tr("Show line numbers"), QStringLiteral("settingsPreviewLineNumbersCheckBox"),
+                              TextEditPreviewWidget::kLineNumbersEnabledSettingsKey },
+        PreviewCheckBoxSpec{ tr("Enable Find"), QStringLiteral("settingsPreviewFindCheckBox"),
+                              TextEditPreviewWidget::kFindEnabledSettingsKey },
+        PreviewCheckBoxSpec{ tr("Enable Go to Line"), QStringLiteral("settingsPreviewGoToLineCheckBox"),
+                              TextEditPreviewWidget::kGoToLineEnabledSettingsKey },
+        PreviewCheckBoxSpec{ tr("Enable multi-cursor editing"), QStringLiteral("settingsPreviewMulticursorCheckBox"),
+                              TextEditPreviewWidget::kMulticursorEnabledSettingsKey },
+    };
+
+    for (const PreviewCheckBoxSpec& spec : specs)
+    {
+        auto* checkBox = new QCheckBox(spec.label, page);
+        checkBox->setObjectName(spec.objectName);
+        checkBox->setChecked(QSettings().value(QLatin1String(spec.settingsKey), true).toBool());
+        layout->addWidget(checkBox);
+
+        const char* settingsKey = spec.settingsKey;
+        connect(checkBox, &QCheckBox::toggled, this, [settingsKey](bool checked) {
+            QSettings settings;
+            settings.setValue(QLatin1String(settingsKey), checked);
+        });
+    }
+
+    layout->addStretch(1);
 
     return page;
 }

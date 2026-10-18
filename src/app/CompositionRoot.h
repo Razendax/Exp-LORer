@@ -57,6 +57,8 @@
 #include "SyntaxHighlightEngine.h"
 #include "TagChangeNotifier.h"
 #include "TagManagementUseCase.h"
+#include "TextFileEditUseCase.h"
+#include "TextFileEditViewModel.h"
 #include "ThumbnailCache.h"
 #include "UiThemeChangeNotifier.h"
 #include "WindowsDiskUsageScanner.h"
@@ -109,6 +111,7 @@ public:
     BulkRenameUseCase& bulkRenameUseCase() noexcept { return m_bulkRenameUseCase; }
     AdvancedSearchService& advancedSearchService() noexcept { return m_advancedSearchService; }
     FileTagsService& fileTagsService() noexcept { return m_fileTagsService; }
+    TextFileEditViewModel& textFileEditViewModel() noexcept { return m_textFileEditViewModel; }
 
 private:
     StandardFileSystemRepository m_fileSystemRepository;
@@ -132,6 +135,14 @@ private:
     // CachingMediaDecoder instance (and its on-disk ThumbnailCache) as m_filePreviewUseCase above --
     // same "stateless, safe for concurrent callers" posture (Architecture.md §14.2).
     MediaProcessingUseCase m_mediaProcessingUseCase;
+
+    // Architecture.md §14.98: the Preview panel's text editor Edit/Save actions. Use case before
+    // ViewModel (construction order matches declaration order); m_textFileEditViewModel owns its
+    // own background QThread, same "one always-alive worker" shape as m_fileTagsService below,
+    // rather than FilePreviewViewModel's per-pane-retargeted ownership inside WorkspaceController --
+    // there is exactly one Preview panel/text editor in the app, with no per-tab retargeting need.
+    TextFileEditUseCase m_textFileEditUseCase;
+    TextFileEditViewModel m_textFileEditViewModel;
 
     // Architecture.md §14.x: per-file/folder git status badges. Provider before use case before
     // service (construction order matches this declaration order).

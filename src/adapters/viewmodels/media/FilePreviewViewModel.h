@@ -87,6 +87,13 @@ private:
     bool m_panelActive = false;
     bool m_pendingRefreshWhileInactive = false;
 
+    // The path previewLoading() was last emitted for. A directory-watch-triggered refresh()
+    // (directoryContentsChanged) can re-resolve to the exact same target that's already on screen
+    // -- that is a content-only refresh, not the user navigating away, so previewLoading() (and
+    // the "switching target" handling it triggers, e.g. TextEditPreviewWidget's unsaved-changes
+    // prompt) must not fire for it. See refresh().
+    std::optional<std::filesystem::path> m_currentTargetPath;
+
     // Folder/Text results only -- Image/Video are already cached on disk by CachingMediaDecoder,
     // so caching them here too would be redundant. front = most recently used.
     std::deque<std::pair<CacheKey, FilePreview>> m_smallResultCache;

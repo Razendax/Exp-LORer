@@ -5,14 +5,15 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81, §14.84–14.85 — the right-panel file Preview tab, its
+Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81, §14.84–14.85, §14.98 — the right-panel file Preview tab, its
 text-preview syntax highlighting, archive browsing/preview/extraction, per-file/folder font &
 color decoration, the Preview panel's dedicated per-kind widgets and media-layout rework, the
 built-in Widgets video player (first used here, before Media Viewer mode reused it), real
 image/video previews in the main browser's Extra Large Icons view, the mouse-hover preview
 popup, GIF animation / SVG rendering support across both, a GIF-thumbnail-decode bug fix, a
-checkerboard background fix for transparent SVG/GIF previews in both of those surfaces, and a
-content-only mode-switch/collapsible-properties rework of the Preview tab's media chrome.
+checkerboard background fix for transparent SVG/GIF previews in both of those surfaces, a
+content-only mode-switch/collapsible-properties rework of the Preview tab's media chrome, and
+replacing the text page's bare read-only view with the built-in text editor (Edit/Revert/Save).
 Section numbers are **not** contiguous with this file's neighbors — they were assigned chronologically as
 each feature was built and are kept stable since code comments cite them directly. See
 [Architecture.md](../Architecture.md) §14 for the full topic index across all nine files.
@@ -799,4 +800,105 @@ existed on the static-image page. Separately, the Properties box was a plain, al
 * **Testing**: no new GTest coverage — pure Qt painting code in the UI/ViewModel-glue layer, same
   carve-out as §14.82; manual smoke test only (hover a transparent SVG/GIF and open one in the
   Preview tab, in a dark theme, and confirm dark content is now visible against the checkerboard).
+
+---
+### 14.98 Preview Panel: Built-In Text Editor Integration
+
+Replaces the text page's bare read-only `QPlainTextEdit` (`TextPreviewWidget`, §14.26/§14.58) with
+the real editor built up over §14.93–14.97 (`src/ui/widgets/texteditor/`) — opened read-only for
+plain browsing, with Edit/Revert/Save controls to flip it into a real editing session and persist
+changes. §14.97's own closing note already named this as its reason for existing.
+
+* **New read/write capability, Domain untouched.** `IFileSystemRepository` gains two methods
+  alongside the existing capped `readFilePrefix` (§14.26): `readFile(path)` (full, uncapped read)
+  and `writeFile(path, content)` (overwrite). `StandardFileSystemRepository` implements both by
+  mirroring existing patterns one-for-one — `readFile` is `readFilePrefix` without the `maxBytes`
+  cap; `writeFile` reuses `createFileFromTemplate`'s `isInsideArchive(path)` guard so saving into a
+  virtual/archive-internal path fails with a reportable `Error` instead of silently writing to a
+  temp copy that's never persisted (archives are read-only, §14.29).
+* **`TextFileEditUseCase`** (new, `src/application/texteditor/`) — the single entry point for this
+  feature's business logic, stateless and depending only on `IFileSystemRepository`, same posture
+  as `FilePreviewUseCase`/`FileTransferUseCase`. `readFullText(path)` calls
+  `materializeForReading(path)` first when `path` has an archive ancestor (the same
+  `archiveAncestorInPath` precedent `FilePreviewUseCase::generatePreview` already follows before
+  `readFilePrefix`), then `readFile` on the resolved path. `writeText(path, content)` calls
+  `writeFile` directly on the **original** path, deliberately never materialized — a save must
+  target the real file, never a temp-extracted archive copy.
+* **`TextFileEditWorker`/`TextFileEditViewModel`** (new, `src/adapters/viewmodels/texteditor/`) —
+  mirror `FilePreviewWorker`/`FilePreviewViewModel`'s shape exactly: one dedicated background
+  `QThread` + always-alive worker, dispatched via `QMetaObject::invokeMethod(...,
+  Qt::QueuedConnection)` rather than Qt signals/slots, since `Result<std::string>`/`Result<void>`
+  aren't Qt-meta-type-registered. Unlike `FilePreviewViewModel`, there is no generation-counter
+  staleness logic — Edit/Save are explicit, user-triggered, single-flight actions (the widget
+  disables Edit/Save while a request is outstanding), not reactive to rapid selection changes — and
+  no per-tab retargeting, since there is exactly one Preview panel/text editor in the app;
+  `CompositionRoot` owns `TextFileEditUseCase`/`TextFileEditViewModel` directly (own background
+  thread, started/stopped in its ctor/dtor) rather than inside `WorkspaceController` the way
+  `FilePreviewViewModel` is, the same "owned long-lived by `CompositionRoot`" posture
+  `FileTagsService`/`AdvancedSearchService` already use for a feature with no per-pane retargeting
+  need.
+* **`TextEditPreviewWidget`** (new, `src/ui/widgets/preview/`, replacing `TextPreviewWidget` in
+  `PreviewPanelWidget`'s stack) — a toolbar (`Edit`/`Revert`/`Save` `QToolButton`s, plus an inline
+  error label) above a `TextEditorPanel`. One instance lives for the life of the Preview panel; its
+  inner `TextEditorPanel` is destroyed and rebuilt fresh every time `setPreview()` targets a new
+  file — a clean slate with no leftover find-bar/cursor/undo state, and it sidesteps
+  `TextEditorOptions` being construction-time-only for everything except `readOnly` (§14.97's
+  runtime setter covers that one).
+  * `setPreview()`: builds read-only, populated from the already-capped preview text
+    (`preview.text()`/`textTruncated()`, the same source §14.26 always used) — plain browsing has
+    zero behavior/performance change from before. Options come from `defaultOptions()` (below) plus
+    `highlightLanguage` via the same `LanguageRegistry::languageForExtension` call
+    `TextPreviewWidget::setPreview` used. The inner editor keeps the `previewTextView` objectName
+    `TextPreviewWidget` used, so existing `ui_tests/` automation (`right_panel.py`'s `text_view`)
+    needed no changes.
+  * `Edit`: disables itself, calls `TextFileEditViewModel::requestLoad(path)`. On success, swaps in
+    the full content (cached for `Revert`), flips `TextEditorPanel::setReadOnly(false)`, and connects
+    `document()->modificationChanged` to drive `Save`'s enabled state live. On failure, re-enables
+    `Edit` and shows the error inline.
+  * `Revert`: reloads the cached last-loaded content via `setPlainText()` — discards edits but
+    **stays in edit mode**; `setPlainText()` already clears the modified flag for free (no manual
+    dirty-tracking needed anywhere in this stack — `QTextDocument` already owns that), which fires
+    `modificationChanged(false)` and disables `Save` through the same connection `Edit` set up.
+  * `Save` (click or Ctrl+S, a `QShortcut` on this widget at `Qt::WidgetWithChildrenShortcut` scope
+    — same convention the Find/Go-to-Line bars use, and the app's first Ctrl+S binding): calls
+    `TextFileEditViewModel::requestSave(path, toPlainText())`. On success, **stays in edit mode**
+    and clears the modified flag (which disables `Save` again via the same connection). On failure,
+    leaves state as-is and shows the error inline, re-enabling `Save` since the content is still
+    modified.
+  * **Unsaved-changes guard on navigating away**: `PreviewPanelWidget::onPreviewLoading()` — fired
+    synchronously before the new target's content is fetched, and by then the pane's selection has
+    already moved on, so it's the latest point the *old* editor still exists — now calls
+    `TextEditPreviewWidget::prepareForTargetChange()` first. If the current editor is open for
+    editing and `document()->isModified()`, a modal `QMessageBox` offers exactly **Save** and
+    **Don't Save** (no Cancel — the selection has already changed by this point, so there's nothing
+    to cancel back to). **Save** fires `requestSave` best-effort (the widget's editor is about to be
+    torn down by the next `setPreview()` call either way, so a failure here has no UI left to report
+    into — a documented limitation); **Don't Save** does nothing further. Either way, the old
+    `TextEditorPanel` is torn down as part of the normal clear/rebuild flow.
+* **Settings > General > Preview** (new page, `SettingsDialog`): four checkboxes — "Show line
+  numbers", "Enable Find", "Enable Go to Line", "Enable multi-cursor editing" — all defaulting
+  checked (matching `TextEditorOptions`' own defaults), persisted as `QSettings` keys under
+  `Preview/*`, following `buildGeneralUiPage()`'s exact immediate-apply checkbox wiring. A static
+  `TextEditPreviewWidget::defaultOptions()` reads these four keys fresh every time `setPreview()`
+  rebuilds the inner `TextEditorPanel` — no live-reapply broadcast signal needed (unlike the
+  tab-close-button setting, §14.27), since a settings change takes effect the next time any file is
+  previewed. No "read-only default" or "highlight language" entries on this page — preview always
+  opens read-only, and highlighting stays auto-detected per extension, both unchanged from before.
+* **Wiring**: `PreviewPanelWidget` gains a `TextFileEditViewModel&` constructor parameter, forwarded
+  straight into the `TextEditPreviewWidget` it now constructs in place of `TextPreviewWidget`;
+  threaded from `MainWindow` (its own new `TextFileEditViewModel&` constructor parameter) up through
+  `main.cpp`'s `CompositionRoot::textFileEditViewModel()`.
+* **Not built**: guarding any dirty-editor loss path other than the in-Preview-panel
+  file-selection switch — closing a tab, switching panes/workspaces some other way, or quitting the
+  app with a dirty preview editor is unguarded in this pass. A file-size guard on `Edit` (a full
+  synchronous-off-UI-thread read happens regardless of size, matching the project's existing posture
+  toward documented-but-unaddressed scale limits, e.g. §14.96's rehighlight-per-edit note). Any
+  encoding handling beyond UTF-8 — content is read/written as raw bytes decoded/encoded as UTF-8,
+  identical to how `FilePreviewUseCase`/`TextPreviewWidget` already treated text.
+* **Testing**: `TextFileEditUseCase` is GTest-covered against a mocked `IFileSystemRepository`
+  (`tests/application/TextFileEditUseCaseTest.cpp`, mirroring `FilePreviewUseCaseTest.cpp`'s
+  patterns), and `StandardFileSystemRepository::readFile`/`writeFile` against real temp files
+  (`tests/adapters/StandardFileSystemRepositoryTest.cpp`), per §11's adapter-test convention. The
+  `TextEditPreviewWidget`/Settings-page UI wiring falls under the existing UI/ViewModel-glue
+  carve-out — no new GTest coverage, no UI blackbox coverage in this pass.
 

@@ -96,8 +96,8 @@ add_library(explorer_ui_widgets STATIC
     preview/PreviewPanelWidget.cpp
     preview/MediaPreviewWidget.h
     preview/MediaPreviewWidget.cpp
-    preview/TextPreviewWidget.h
-    preview/TextPreviewWidget.cpp
+    preview/TextEditPreviewWidget.h
+    preview/TextEditPreviewWidget.cpp
     preview/FolderPreviewWidget.h
     preview/FolderPreviewWidget.cpp
     preview/FolderPreviewListModel.h

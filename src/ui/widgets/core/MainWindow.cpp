@@ -133,7 +133,8 @@ namespace
 MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore& configStore,
                          TagManagementUseCase& tagManagementUseCase, TagChangeNotifier& tagChangeNotifier,
                          AdvancedSearchService& advancedSearchService, IconLoadingService& iconLoadingService,
-                         FileTagsService& fileTagsService, UiThemeChangeNotifier& uiThemeChangeNotifier,
+                         FileTagsService& fileTagsService, TextFileEditViewModel& textFileEditViewModel,
+                         UiThemeChangeNotifier& uiThemeChangeNotifier,
                          SyntaxHighlightEngine& syntaxHighlightEngine,
                          HighlightThemeViewModel& highlightThemeViewModel, FileDecorationsViewModel& fileDecorationsViewModel,
                          FavoritesViewModel& favoritesViewModel, NotificationCenter& notificationCenter,
@@ -151,6 +152,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_advancedSearchService(advancedSearchService)
     , m_iconLoadingService(iconLoadingService)
     , m_fileTagsService(fileTagsService)
+    , m_textFileEditViewModel(textFileEditViewModel)
     , m_uiThemeChangeNotifier(uiThemeChangeNotifier)
     , m_syntaxHighlightEngine(syntaxHighlightEngine)
     , m_highlightThemeViewModel(highlightThemeViewModel)
@@ -450,7 +452,7 @@ void MainWindow::createWorkspace()
     m_rightPanelWidget->addPanelTab(tr("Tags"), m_tagPanelWidget, QStringLiteral("rightPanelTagsButton"));
 
     m_previewPanelWidget = new PreviewPanelWidget(m_workspaceController->filePreviewViewModel(), m_syntaxHighlightEngine,
-                                                   m_highlightThemeViewModel, m_rightPanelWidget);
+                                                   m_highlightThemeViewModel, m_textFileEditViewModel, m_rightPanelWidget);
     m_previewPanelWidget->setObjectName(QStringLiteral("previewPanelWidget"));
     m_rightPanelWidget->addPanelTab(tr("Preview"), m_previewPanelWidget, QStringLiteral("rightPanelPreviewButton"));
 

@@ -47,6 +47,8 @@ CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir, const 
     , m_cachingMediaDecoder(m_mediaDecoder, m_thumbnailCache)
     , m_filePreviewUseCase(m_fileSystemRepository, m_cachingMediaDecoder)
     , m_mediaProcessingUseCase(m_cachingMediaDecoder)
+    , m_textFileEditUseCase(m_fileSystemRepository)
+    , m_textFileEditViewModel(m_textFileEditUseCase)
     , m_gitStatusUseCase(m_gitStatusProvider)
     , m_gitBranchUseCase(m_gitBranchProvider)
     , m_gitStatusService(m_gitStatusUseCase, m_gitBranchUseCase)

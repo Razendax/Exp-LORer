@@ -90,6 +90,13 @@ private:
     // buildNotificationsPage()'s enabled-checkbox column, minus the timeout spin box.
     QWidget* buildColumnsPage();
 
+    // General -> Preview page (Architecture.md §14.98): four checkboxes controlling the default
+    // feature set (Find/Go to Line/line numbers/multicursor) the Preview panel's text editor
+    // opens with -- same immediate-apply QSettings-backed wiring as buildGeneralUiPage()'s tab
+    // close-button checkbox, read fresh by TextEditPreviewWidget::defaultOptions() every time a
+    // file is previewed rather than broadcast live.
+    QWidget* buildGeneralPreviewPage();
+
     static constexpr int kHiddenRowCount = 2;
 
     SyntaxHighlightEngine& m_engine;

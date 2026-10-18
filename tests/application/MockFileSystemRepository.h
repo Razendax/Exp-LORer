@@ -26,6 +26,8 @@ public:
     MOCK_METHOD(Result<void>, showProperties, (const std::filesystem::path& path, NativeWindowHandle ownerWindow), (override));
     MOCK_METHOD(Result<std::vector<std::byte>>, readFilePrefix, (const std::filesystem::path& path, std::size_t maxBytes),
                 (const, override));
+    MOCK_METHOD(Result<std::vector<std::byte>>, readFile, (const std::filesystem::path& path), (const, override));
+    MOCK_METHOD(Result<void>, writeFile, (const std::filesystem::path& path, const std::vector<std::byte>& content), (override));
     MOCK_METHOD(Result<void>, extractArchive,
                 (const std::filesystem::path& archiveFile, const std::filesystem::path& destinationDirectory), (override));
     MOCK_METHOD(Result<std::filesystem::path>, materializeForReading, (const std::filesystem::path& path), (const, override));

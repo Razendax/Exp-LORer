@@ -40,6 +40,12 @@ public:
     // Clears the editor's find highlights, hides the bar, and returns focus to the editor.
     void hideAndClear();
 
+    // Runtime toggle (Architecture.md §14.97), unlike the construction-time-only readOnly
+    // constructor parameter above. Shows/hides the Replace row's toggle button (and, if currently
+    // expanded, the row's own widgets) in step with the new value, same visibility rule the
+    // constructor already applies once.
+    void setReadOnly(bool readOnly);
+
 protected:
     // Installed on m_editor (to reposition this overlay when the editor is resized) and on the
     // search line edit (so Escape closes the bar while it has focus, without touching

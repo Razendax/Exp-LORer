@@ -45,17 +45,21 @@ instance safely serves concurrent callers from every tab/pane (§14.2).
   copy or move with per-file progress and cooperative cancellation, backing the custom copy/move
   progress notification (§14.47). Stateless, depends only on `IFileSystemRepository`, same posture
   as `FilePreviewUseCase`.
+* `TextFileEditUseCase` — reads a file's full text for the Preview panel's in-place text editor and
+  writes edited text back to disk. Stateless, depends only on `IFileSystemRepository`, same posture
+  as `FilePreviewUseCase`/`FileTransferUseCase`.
 
 **Ports:**
 * `IFileSystemRepository` — file operations: list, recursive list, move, copy, delete, hash,
   single-path stat, create folder/file, open-with-default-app, show OS properties dialog, read a
-  capped byte prefix of a file (`readFilePrefix`, §14.26), extract archive content
-  (`extractArchive`, §14.29), and resolve a path to a real, on-disk file for callers that need
-  actual file I/O (`materializeForReading` — identity for a real path, a private temp-extracted
-  copy for an entry inside an archive, §14.29). `copyFileWithProgress` (§14.47) byte-copies one real
-  file with a periodic progress callback that doubles as a cooperative-cancel hook, for
-  `FileTransferUseCase`'s per-file execution step — `copy()` above stays a one-shot, non-cancellable
-  call for every other existing caller.
+  capped byte prefix of a file (`readFilePrefix`, §14.26), read/write a file's full content
+  (`readFile`/`writeFile`, for the Preview panel's text editor — `writeFile` fails for a path inside
+  an archive, which is read-only), extract archive content (`extractArchive`, §14.29), and resolve a
+  path to a real, on-disk file for callers that need actual file I/O (`materializeForReading` —
+  identity for a real path, a private temp-extracted copy for an entry inside an archive, §14.29).
+  `copyFileWithProgress` (§14.47) byte-copies one real file with a periodic progress callback that
+  doubles as a cooperative-cancel hook, for `FileTransferUseCase`'s per-file execution step —
+  `copy()` above stays a one-shot, non-cancellable call for every other existing caller.
 * `ITagRepository` — persists tags and file/tag associations.
 * `IMediaDecoder` — decodes media streams, extracts thumbnails.
 * `IContextMenuProvider` — builds a registry/COM-sourced context menu as plain data
@@ -388,7 +392,8 @@ Exp-LORer/
 │   │   ├── monitoring/  # DirectoryWatchUseCase, FolderMonitorUseCase, IDirectoryWatcher, IFolderMonitor
 │   │   ├── diskusage/   # DiskUsageUseCase, IDiskUsageScanner, IDiskUsageRepository
 │   │   ├── duplicates/  # DuplicateFinderUseCase, IDuplicateFileScanner
-│   │   └── fragmentation/ # FragmentationUseCase, IFragmentationScanner, IFragmentationRepository
+│   │   ├── fragmentation/ # FragmentationUseCase, IFragmentationScanner, IFragmentationRepository
+│   │   └── texteditor/  # TextFileEditUseCase
 │   ├── adapters/
 │   │   ├── viewmodels/  # ViewModels/controllers (Qt-facing; §2.3, §14; single target, folder-grouped like application/)
 │   │   │   ├── filesystem/ # FileListModel, FolderTreeModel, FileOperationsController, FileTransferService/Worker, BulkRenameViewModel, IconLoadingService/Worker, NavigationHistory, ViewMode
@@ -400,7 +405,8 @@ Exp-LORer/
 │   │   │   ├── diskusage/  # DiskUsageService/Worker, DriveSpaceInfoWorker, FolderSizeViewModel (§14.40)
 │   │   │   ├── search/     # AdvancedSearchService/Worker, SearchResultsTreeModel
 │   │   │   ├── duplicates/ # DuplicateFinderService/Worker, DuplicateGroupsModel (§14.51)
-│   │   │   └── fragmentation/ # FragmentationService/Worker, FragmentationViewModel, FragmentationResultsModel
+│   │   │   ├── fragmentation/ # FragmentationService/Worker, FragmentationViewModel, FragmentationResultsModel
+│   │   │   └── texteditor/ # TextFileEditViewModel, TextFileEditWorker
 │   │   ├── persistence/ # SQLiteTagRepository + migrations
 │   │   ├── filesystem/  # StandardFileSystemRepository
 │   │   ├── shell/       # ShellContextMenuProvider
@@ -419,7 +425,7 @@ Exp-LORer/
 │   │   │   ├── navigation/ # WorkspacePaneWidget, FileBrowserView, FolderTreeView, delegates, context menus
 │   │   │   ├── search/  # SearchCriteriaPanel, SearchResultsPane, SearchPanelWidget
 │   │   │   ├── tags/    # TagChipWidget, TagPanelWidget, TagManagerDialog
-│   │   │   ├── preview/ # PreviewPanelWidget, MediaPreviewWidget, TextPreviewWidget, SyntaxHighlighter
+│   │   │   ├── preview/ # PreviewPanelWidget, MediaPreviewWidget, TextEditPreviewWidget, SyntaxHighlighter
 │   │   │   ├── video/   # VideoPlayerWidget (§14.67) -- standalone, reusable beyond the Preview tab
 │   │   │   ├── diskusage/ # PieChartWidget, FolderSizeWidget
 │   │   │   ├── fragmentation/ # FragmentationWidget

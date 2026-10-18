@@ -165,8 +165,10 @@ public:
 
 public slots:
     // Per-tab selection state (Architecture.md §14.9), set by WorkspacePaneWidget from this tab's
-    // FileBrowserView::selectionChanged. Cleared on every navigation (see loadAndApply) so a
-    // stale selection from the previous folder never leaks into the new one.
+    // FileBrowserView::selectionChanged. Cleared on every real navigation (see loadAndApply) so a
+    // stale selection from the previous folder never leaks into the new one -- but NOT on
+    // refresh()'s re-list of the same directory, which reconciles the existing selection instead
+    // of wiping it (see reconcileSelectionAfterRefresh).
     void setSelectedEntries(const std::vector<FileNode>& entries);
 
     // Validates the path via FileNavigationUseCase before recording it in history ("safe
@@ -283,8 +285,21 @@ private:
         Record,         // a new navigation step
         ReplaceCurrent, // current entry swapped in place (replaceCurrentPath)
     };
-    void loadAndApply(const std::filesystem::path& path, HistoryUpdate historyUpdate);
+    // `preserveSelection` is true only for refresh()'s own call: a re-list of the SAME directory
+    // (DirectoryWatchService's live refresh, or an explicit F5) is not a navigation, so the
+    // existing selection shouldn't be wiped the way a real navigation's stale-selection guard
+    // requires -- see reconcileSelectionAfterRefresh().
+    void loadAndApply(const std::filesystem::path& path, HistoryUpdate historyUpdate, bool preserveSelection = false);
     void emitAvailability();
+
+    // Re-validates m_selectedEntries against a fresh listing of the same directory: paths still
+    // present keep their selected status (refreshed to the new FileNode data), anything deleted
+    // out from under the selection drops out. Only emits selectedEntriesChanged when the selected
+    // *path set* actually changed -- e.g. a live refresh right after the Preview panel's text
+    // editor Save (Architecture.md §14.98) must NOT re-signal a selection that, from every
+    // consumer's point of view, never changed, or FilePreviewViewModel would tear down and rebuild
+    // the in-progress edit session for no reason.
+    void reconcileSelectionAfterRefresh(const std::vector<FileNode>& freshEntries);
 
     // Connected to directoryContentsChanged (normal browsing only -- not the search result
     // signals, per the v1 scope cut). Dispatches a background git-status scan for `path` and

@@ -26,6 +26,15 @@ public:
                               SyntaxHighlightEngine* highlightEngine = nullptr,
                               HighlightThemeViewModel* highlightThemeViewModel = nullptr);
 
+    // Runtime toggle (Architecture.md §14.97): forwards to the editor and, if present, the find
+    // bar (whose Replace row needs independent gating -- see TextEditorFindBar::setReadOnly).
+    void setReadOnly(bool readOnly);
+
+    // Lets an embedding site (TextEditPreviewWidget) drive the editor directly -- toPlainText()/
+    // setPlainText()/document()->isModified()/document()->modificationChanged -- rather than this
+    // panel growing a forwarding method for each one.
+    TextEditorWidget* editor() const { return m_editor; }
+
 private:
     TextEditorWidget* m_editor = nullptr;
     TextEditorFindBar* m_findBar = nullptr;

@@ -319,6 +319,64 @@ TEST_F(StandardFileSystemRepositoryTest, CreateFileFromTemplateFailsIfDestinatio
     EXPECT_EQ(result.error().code, ErrorCode::AlreadyExists);
 }
 
+TEST_F(StandardFileSystemRepositoryTest, ReadFileReadsFullFileContent)
+{
+    writeFile(m_tempDir / "full.txt", "hello world, this is more than a prefix cap would read");
+
+    auto result = m_repository.readFile(m_tempDir / "full.txt");
+
+    ASSERT_TRUE(result.hasValue());
+    const std::vector<std::byte>& bytes = result.value();
+    const std::string content(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    EXPECT_EQ(content, "hello world, this is more than a prefix cap would read");
+}
+
+TEST_F(StandardFileSystemRepositoryTest, ReadFileFailsForMissingFile)
+{
+    auto result = m_repository.readFile(m_tempDir / "does-not-exist.txt");
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::IoError);
+}
+
+TEST_F(StandardFileSystemRepositoryTest, WriteFileCreatesFileWithGivenContent)
+{
+    const std::string content = "written by the text editor";
+    std::vector<std::byte> bytes(content.size());
+    std::transform(content.begin(), content.end(), bytes.begin(), [](char c) { return std::byte(c); });
+
+    auto result = m_repository.writeFile(m_tempDir / "new.txt", bytes);
+
+    ASSERT_TRUE(result.hasValue());
+    ASSERT_TRUE(fs::exists(m_tempDir / "new.txt"));
+    EXPECT_EQ(fs::file_size(m_tempDir / "new.txt"), content.size());
+}
+
+TEST_F(StandardFileSystemRepositoryTest, WriteFileOverwritesExistingContent)
+{
+    writeFile(m_tempDir / "existing.txt", "old content that is longer than the new one");
+
+    const std::string content = "new";
+    std::vector<std::byte> bytes(content.size());
+    std::transform(content.begin(), content.end(), bytes.begin(), [](char c) { return std::byte(c); });
+
+    auto result = m_repository.writeFile(m_tempDir / "existing.txt", bytes);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(fs::file_size(m_tempDir / "existing.txt"), content.size());
+}
+
+TEST_F(StandardFileSystemRepositoryTest, WriteFileFailsForPathInsideArchive)
+{
+    const fs::path archivePath = m_tempDir / "photos.zip";
+    ArchiveFixture::writeZip(archivePath, { { "readme.txt", "hello" } });
+
+    auto result = m_repository.writeFile(archivePath / "readme.txt", {});
+
+    ASSERT_TRUE(result.hasError());
+    EXPECT_EQ(result.error().code, ErrorCode::InvalidArgument);
+}
+
 TEST_F(StandardFileSystemRepositoryTest, ListDirectoryIncludesValidSymlink)
 {
     writeFile(m_tempDir / "target.txt", "hello");

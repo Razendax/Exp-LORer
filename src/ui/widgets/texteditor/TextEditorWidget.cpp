@@ -131,6 +131,12 @@ void TextEditorWidget::selectAllOccurrences(const QVector<QTextCursor>& matches)
     viewport()->update();
 }
 
+void TextEditorWidget::setReadOnly(bool readOnly)
+{
+    QPlainTextEdit::setReadOnly(readOnly);
+    m_readOnly = readOnly;
+}
+
 void TextEditorWidget::resizeEvent(QResizeEvent* event)
 {
     QPlainTextEdit::resizeEvent(event);

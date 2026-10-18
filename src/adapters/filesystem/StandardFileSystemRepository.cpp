@@ -865,6 +865,82 @@ Result<std::vector<std::byte>> StandardFileSystemRepository::readFilePrefix(cons
     return Result<std::vector<std::byte>>::success(std::move(buffer));
 }
 
+Result<std::vector<std::byte>> StandardFileSystemRepository::readFile(const std::filesystem::path& path) const
+{
+    const fs::path target = withPrefix(path);
+
+    std::ifstream stream(target, std::ios::binary);
+    if (!stream)
+    {
+        return Result<std::vector<std::byte>>::failure(
+            Error(ErrorCode::IoError, "Failed to open " + PathUtf8::toUtf8(path) + " for reading"));
+    }
+
+    stream.seekg(0, std::ios::end);
+    const auto size = stream.tellg();
+    stream.seekg(0, std::ios::beg);
+
+    std::vector<std::byte> buffer(size > 0 ? static_cast<std::size_t>(size) : 0);
+    if (!buffer.empty())
+    {
+        stream.read(reinterpret_cast<char*>(buffer.data()), static_cast<std::streamsize>(buffer.size()));
+        buffer.resize(static_cast<std::size_t>(stream.gcount()));
+    }
+
+    return Result<std::vector<std::byte>>::success(std::move(buffer));
+}
+
+Result<void> StandardFileSystemRepository::writeFile(const std::filesystem::path& path, const std::vector<std::byte>& content)
+{
+    if (isInsideArchive(path))
+    {
+        return readOnlyArchiveError();
+    }
+
+    const fs::path target = withPrefix(path);
+
+    // Write to a temp file alongside `target` and rename it over the destination, rather than
+    // opening `target` itself with std::ios::trunc -- trunc destroys the existing content before a
+    // single byte of the new content is confirmed written, so a failure partway through (full
+    // disk, AV lock, process kill) used to leave the file empty/partial with no way back. Same
+    // directory keeps the rename on one volume so it replaces the destination atomically.
+    const auto uniqueSuffix = std::chrono::steady_clock::now().time_since_epoch().count();
+    const fs::path tempTarget = target.parent_path() /
+        (L"." + target.filename().wstring() + L"." + std::to_wstring(static_cast<unsigned long long>(uniqueSuffix)) + L".tmp");
+
+    {
+        std::ofstream stream(tempTarget, std::ios::binary | std::ios::trunc);
+        if (!stream)
+        {
+            return Result<void>::failure(Error(ErrorCode::IoError, "Failed to open " + PathUtf8::toUtf8(path) + " for writing"));
+        }
+
+        if (!content.empty())
+        {
+            stream.write(reinterpret_cast<const char*>(content.data()), static_cast<std::streamsize>(content.size()));
+        }
+
+        if (!stream)
+        {
+            stream.close();
+            std::error_code removeEc;
+            fs::remove(tempTarget, removeEc);
+            return Result<void>::failure(Error(ErrorCode::IoError, "Failed to write " + PathUtf8::toUtf8(path)));
+        }
+    }
+
+    std::error_code renameEc;
+    fs::rename(tempTarget, target, renameEc);
+    if (renameEc)
+    {
+        std::error_code removeEc;
+        fs::remove(tempTarget, removeEc);
+        return Result<void>::failure(Error(ErrorCode::IoError, "Failed to replace " + PathUtf8::toUtf8(path)));
+    }
+
+    return Result<void>::success();
+}
+
 Result<std::vector<FileNode>> StandardFileSystemRepository::listThisPc() const
 {
 #ifdef _WIN32
