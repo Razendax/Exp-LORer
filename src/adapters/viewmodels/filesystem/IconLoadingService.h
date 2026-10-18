@@ -64,7 +64,6 @@ public:
                        IconSizeMask sizeMask, std::function<void(QHash<QString, QIcon> batch)> onBatch);
 
 private:
-    WorkerThreadPool<IconLoadingWorker> m_pool;
     // Round-robin cursor across m_pool, incremented per chunk (not per request) so one huge
     // directory's chunks spread across every pool worker. Atomic rather than mutex-guarded since
     // it's on every chunk's dispatch path and needs no synchronization with anything else.
@@ -75,4 +74,12 @@ private:
     // overwritten the next time that same context (or, vanishingly unlikely, a reused address)
     // issues a new request before any of its chunks are checked.
     QHash<QObject*, std::filesystem::path> m_activeDirectoryByContext;
+    // Declared last so it's destroyed first: its dtor (quit()+wait() per worker) must fully stop
+    // every pool thread before m_activeDirectoryMutex/m_activeDirectoryByContext above are torn
+    // down, since an in-flight chunk on a pool thread still locks/reads them right up to that
+    // point. Reversing this order is a real (if narrow) crash: a worker mid-chunk reading a
+    // just-destroyed QHash/QMutex when this service itself is destroyed (every run of
+    // WorkspaceControllerTest.RenamingAnAncestorFolderMovesTabsBrowsingInsideIt bar app shutdown,
+    // where the process exits before teardown even runs).
+    WorkerThreadPool<IconLoadingWorker> m_pool;
 };

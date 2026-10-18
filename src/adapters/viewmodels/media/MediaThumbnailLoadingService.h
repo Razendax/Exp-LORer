@@ -95,8 +95,6 @@ private:
     // worker was idle) and after each chunk finishes.
     void startNextIfIdle();
 
-    WorkerThreadPool<MediaThumbnailLoadingWorker> m_pool;
-
     QMutex m_activeRootMutex;
     // Latest requested root per context, compared by pointer value only (never dereferenced) --
     // safe to keep an entry around after its context is destroyed, same posture as
@@ -108,4 +106,10 @@ private:
     // Indices into m_pool that are currently idle, guarded by m_pendingMutex alongside m_pending
     // since both are consulted/mutated together in startNextIfIdle().
     std::deque<std::size_t> m_idleWorkers;
+
+    // Declared last so it's destroyed first: its dtor (quit()+wait() per worker) must fully stop
+    // every pool thread before the mutex-guarded members above are torn down, since an in-flight
+    // chunk on a pool thread still locks/reads them right up to that point (same ordering bug as
+    // IconLoadingService::m_pool -- see its comment).
+    WorkerThreadPool<MediaThumbnailLoadingWorker> m_pool;
 };
