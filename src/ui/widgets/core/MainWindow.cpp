@@ -7,23 +7,13 @@
 #include <QActionGroup>
 #include <QCloseEvent>
 #include <QCoreApplication>
-#include <QFileIconProvider>
-#include <QFileInfo>
-#include <QFont>
-#include <QHBoxLayout>
-#include <QIcon>
 #include <QInputDialog>
-#include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QMetaObject>
-#include <QPaintEvent>
-#include <QPainter>
-#include <QPalette>
-#include <QPointer>
 #include <QProcess>
 #include <QResizeEvent>
 #include <QSettings>
@@ -32,8 +22,6 @@
 #include <QStatusBar>
 #include <QToolBar>
 #include <QToolButton>
-#include <QVBoxLayout>
-#include <QWidgetAction>
 
 #include "AdvancedSearchService.h"
 #include "AppConfigStore.h"
@@ -43,6 +31,7 @@
 #include "DriveSpaceInfoWorker.h"
 #include "DuplicateFinderDialog.h"
 #include "EnvironmentVariablesDialog.h"
+#include "FavoritesMenuController.h"
 #include "FavoritesViewModel.h"
 #include "FileBrowserView.h"
 #include "FileDecorationsViewModel.h"
@@ -88,116 +77,6 @@ namespace
         SplitLayout::TwoVertical,
         SplitLayout::TwoHorizontal,
         SplitLayout::FourGrid,
-    };
-
-    // Same QFileIconProvider-based lookup FileListModel/MonitoringLogModel use for file/folder
-    // icons, applied to a favorite's target path.
-    QIcon favoriteItemIcon(const std::filesystem::path& path)
-    {
-        static QFileIconProvider provider;
-        return provider.icon(QFileInfo(QString::fromStdWString(path.wstring())));
-    }
-
-    QIcon favoriteCategoryIcon()
-    {
-        static QFileIconProvider provider;
-        return provider.icon(QFileIconProvider::Folder);
-    }
-
-    // Custom QWidgetAction row for a favorite item: icon + name + a second, smaller/grayed line
-    // with the full path, all as ONE menu entry rather than two separate actions. Both this widget
-    // and its child labels are WA_TransparentForMouseEvents so mouse clicks/moves fall through to
-    // the owning QMenu untouched -- QMenu then hit-tests, highlights, triggers and closes the
-    // cascade exactly as it would for a plain QAction; only the highlight repaint (menu doesn't
-    // paint anything behind a widget-action row) and the highlighted-text color swap are done here,
-    // driven by the menu's hovered(QAction*) signal (see addFavoriteItemActions below).
-    class FavoriteMenuRowWidget : public QWidget
-    {
-    public:
-        FavoriteMenuRowWidget(const QIcon& icon, const QString& name, const QString& path, QWidget* parent = nullptr)
-            : QWidget(parent)
-        {
-            setAttribute(Qt::WA_TransparentForMouseEvents);
-
-            auto* layout = new QHBoxLayout(this);
-            layout->setContentsMargins(4, 3, 16, 3);
-            layout->setSpacing(6);
-
-            auto* iconLabel = new QLabel(this);
-            iconLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-            iconLabel->setPixmap(icon.pixmap(16, 16));
-            layout->addWidget(iconLabel);
-
-            auto* textLayout = new QVBoxLayout();
-            textLayout->setContentsMargins(0, 0, 0, 0);
-            textLayout->setSpacing(0);
-
-            m_nameLabel = new QLabel(name, this);
-            m_nameLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-            textLayout->addWidget(m_nameLabel);
-
-            m_pathLabel = new QLabel(path, this);
-            m_pathLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-            QFont pathFont = m_pathLabel->font();
-            pathFont.setPointSizeF(pathFont.pointSizeF() * 0.85);
-            m_pathLabel->setFont(pathFont);
-            QPalette pathPalette = m_pathLabel->palette();
-            pathPalette.setColor(QPalette::WindowText, Qt::gray);
-            m_pathLabel->setPalette(pathPalette);
-            textLayout->addWidget(m_pathLabel);
-
-            layout->addLayout(textLayout, 1);
-
-            m_normalNamePalette = m_nameLabel->palette();
-            m_normalPathPalette = m_pathLabel->palette();
-        }
-
-        void setHighlighted(bool highlighted)
-        {
-            if (m_highlighted == highlighted)
-            {
-                return;
-            }
-            m_highlighted = highlighted;
-
-            if (!highlighted)
-            {
-                m_nameLabel->setPalette(m_normalNamePalette);
-                m_pathLabel->setPalette(m_normalPathPalette);
-                update();
-                return;
-            }
-
-            QPalette namePalette = m_normalNamePalette;
-            namePalette.setColor(QPalette::WindowText, namePalette.color(QPalette::HighlightedText));
-            m_nameLabel->setPalette(namePalette);
-
-            QPalette pathPalette = m_normalPathPalette;
-            pathPalette.setColor(QPalette::WindowText, pathPalette.color(QPalette::HighlightedText));
-            m_pathLabel->setPalette(pathPalette);
-            update();
-        }
-
-    protected:
-        // QMenu paints nothing behind a widget-action row, so the usual blue selection band has to
-        // be drawn here -- otherwise hovering only swaps the text to (invisible-on-white)
-        // highlighted-text color, per the bug this fixed.
-        void paintEvent(QPaintEvent* event) override
-        {
-            if (m_highlighted)
-            {
-                QPainter painter(this);
-                painter.fillRect(rect(), palette().color(QPalette::Highlight));
-            }
-            QWidget::paintEvent(event);
-        }
-
-    private:
-        QLabel* m_nameLabel = nullptr;
-        QLabel* m_pathLabel = nullptr;
-        QPalette m_normalNamePalette;
-        QPalette m_normalPathPalette;
-        bool m_highlighted = false;
     };
 
     constexpr std::array<WorkspacePaneId, 4> kAllPanes = {
@@ -525,18 +404,16 @@ void MainWindow::createMenuBar()
 
 void MainWindow::createFavoritesMenu()
 {
-    m_favoritesMenu = menuBar()->addMenu(tr("F&avorites"));
-
-    m_addToFavoritesAction = new QAction(tr("Add to Favorites"), this);
-    connect(m_addToFavoritesAction, &QAction::triggered, this, &MainWindow::onAddToFavoritesTriggered);
-    m_favoritesMenu->addAction(m_addToFavoritesAction);
-
-    m_favoritesMenu->addAction(tr("Manage Favorites..."), this, &MainWindow::showManageFavoritesDialog);
-    m_favoritesMenu->addSeparator();
-
-    // Rebuilt lazily right before the menu is shown, rather than kept live-synced against
-    // favoritesChanged() -- always current with no extra wiring here (Architecture.md §14.35).
-    connect(m_favoritesMenu, &QMenu::aboutToShow, this, &MainWindow::rebuildFavoritesMenuItems);
+    // `paneWidgetResolver` defers the WorkspaceLayoutWidget lookup to when a favorite item is
+    // actually clicked: createWorkspace() (which constructs m_workspaceLayoutWidget) hasn't run
+    // yet at this point in the constructor (createMenuBar() runs first).
+    m_favoritesMenuController = new FavoritesMenuController(
+        m_favoritesViewModel, m_workspaceController->fileNavigationUseCase(), *m_workspaceController,
+        [this](WorkspacePaneId id) { return m_workspaceLayoutWidget->paneWidget(id); }, this);
+    menuBar()->addMenu(m_favoritesMenuController->menu());
+    connect(m_favoritesMenuController, &FavoritesMenuController::manageFavoritesRequested, this,
+            &MainWindow::showManageFavoritesDialog);
+    connect(m_favoritesMenuController, &FavoritesMenuController::statusMessage, this, &MainWindow::onStatusMessage);
 }
 
 void MainWindow::createWorkspacesMenu(QMenu* fileMenu)
@@ -544,7 +421,7 @@ void MainWindow::createWorkspacesMenu(QMenu* fileMenu)
     m_workspacesMenu = fileMenu->addMenu(tr("&Workspaces"));
 
     // Rebuilt lazily right before the menu is shown, rather than kept live-synced -- same posture
-    // as m_favoritesMenu above (Architecture.md §14.60).
+    // FavoritesMenuController's own menu uses (Architecture.md §14.60).
     connect(m_workspacesMenu, &QMenu::aboutToShow, this, &MainWindow::rebuildWorkspacesMenuItems);
 
     fileMenu->addAction(tr("Save as &Workspace..."), this, &MainWindow::onSaveAsWorkspaceTriggered);
@@ -1251,13 +1128,6 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     }
     m_driveInfoTrackedTab = tab;
 
-    if (m_favoritesTrackedTab)
-    {
-        disconnect(m_favoritesTrackedTab, &TabViewModel::selectedEntriesChanged, this, &MainWindow::onFavoritesTrackedSelectionChanged);
-        disconnect(m_favoritesTrackedTab, &TabViewModel::currentPathChanged, this, &MainWindow::onFavoritesTrackedPathChanged);
-    }
-    m_favoritesTrackedTab = tab;
-
     if (!tab)
     {
         m_sortByMenu->setEnabled(false);
@@ -1271,7 +1141,7 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
             m_mediaViewerModeAction->setEnabled(false);
         }
         onActiveTabPathChanged({});
-        updateFavoritesActionEnabled();
+        m_favoritesMenuController->setFocusedTab(nullptr);
         return;
     }
 
@@ -1322,9 +1192,7 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     connect(tab, &TabViewModel::currentPathChanged, this, &MainWindow::onActiveTabPathChanged);
     onActiveTabPathChanged(tab->currentPath());
 
-    connect(tab, &TabViewModel::selectedEntriesChanged, this, &MainWindow::onFavoritesTrackedSelectionChanged);
-    connect(tab, &TabViewModel::currentPathChanged, this, &MainWindow::onFavoritesTrackedPathChanged);
-    updateFavoritesActionEnabled();
+    m_favoritesMenuController->setFocusedTab(tab);
 }
 
 void MainWindow::onActiveTabPathChanged(const std::filesystem::path& path)
@@ -1376,190 +1244,6 @@ void MainWindow::onDriveSpaceInfoReady(int generation, Result<DriveSpaceInfo> re
                                    QLocale().formattedDataSize(static_cast<qint64>(info.freeBytes)),
                                    QLocale().formattedDataSize(static_cast<qint64>(info.totalBytes)));
     m_mainStatusBarWidget->setDriveInfoText(text);
-}
-
-void MainWindow::onAddToFavoritesTriggered()
-{
-    TabViewModel* tab = m_workspaceController->focusedTab();
-    if (!tab)
-    {
-        return;
-    }
-
-    const std::vector<FileNode>& selected = tab->selectedEntries();
-    if (selected.empty())
-    {
-        // Falls back to the focused tab's current browsed folder itself, mirroring the Tag
-        // Panel's "no selection" convention (Architecture.md §14.9/§14.35).
-        if (tab->currentPath() != VirtualPaths::ThisPC)
-        {
-            m_favoritesViewModel.addItem(tab->currentPath());
-        }
-        return;
-    }
-
-    // Every selected entry becomes its own top-level, uncategorized favorite (Architecture.md
-    // §14.35) -- categorization only happens from the Manage Favorites dialog.
-    for (const FileNode& entry : selected)
-    {
-        m_favoritesViewModel.addItem(entry.path());
-    }
-}
-
-void MainWindow::onFavoriteItemTriggered(Favorites::Id id)
-{
-    std::optional<std::filesystem::path> targetPath;
-    for (const Favorites::Entry& entry : m_favoritesViewModel.entries())
-    {
-        if (const auto* item = std::get_if<FavoriteItem>(&entry); item && item->id() == id)
-        {
-            targetPath = item->path();
-            break;
-        }
-        if (const auto* category = std::get_if<FavoriteCategory>(&entry))
-        {
-            const auto& items = category->items();
-            const auto it = std::find_if(items.begin(), items.end(), [id](const FavoriteItem& item) { return item.id() == id; });
-            if (it != items.end())
-            {
-                targetPath = it->path();
-                break;
-            }
-        }
-    }
-
-    if (!targetPath)
-    {
-        return;
-    }
-
-    WorkspacePaneWidget* paneWidget = m_workspaceLayoutWidget->paneWidget(m_workspaceController->focusedPane());
-    if (!paneWidget)
-    {
-        return;
-    }
-
-    const std::filesystem::path path = *targetPath;
-    QPointer<WorkspacePaneWidget> paneGuard(paneWidget);
-
-    // FileNavigationUseCase::stat() is disk I/O and must never run on the Qt UI thread -- reuses
-    // m_driveInfoWorker/m_driveInfoThread (Architecture.md §14.30) rather than spinning up a
-    // dedicated thread just for this one call site. Both hops are queued functor calls, the same
-    // shape onActiveTabPathChanged/onDriveSpaceInfoReady already use.
-    QMetaObject::invokeMethod(
-        m_driveInfoWorker,
-        [this, paneGuard, path]() {
-            Result<FileNode> stat = m_driveInfoWorker->stat(path);
-
-            QMetaObject::invokeMethod(
-                this,
-                [this, paneGuard, path, stat = std::move(stat)]() mutable {
-                    if (!paneGuard)
-                    {
-                        // The focused pane changed/closed while the stat was in flight.
-                        return;
-                    }
-
-                    if (!stat)
-                    {
-                        // Target no longer exists on disk -- surfaces through the same status-bar
-                        // path as any other bad navigation target (Architecture.md §14.35), no modal.
-                        onStatusMessage(QString::fromStdString(stat.error().message));
-                        return;
-                    }
-
-                    if (stat.value().isDirectory())
-                    {
-                        // Folder favorite: navigate into it (Explorer Quick-Access-style).
-                        paneGuard->navigateAndSelect(path, std::nullopt);
-                    }
-                    else
-                    {
-                        // File favorite: navigate to its parent folder with the file selected.
-                        paneGuard->navigateAndSelect(path.parent_path(), path);
-                    }
-                },
-                Qt::QueuedConnection);
-        },
-        Qt::QueuedConnection);
-}
-
-void MainWindow::rebuildFavoritesMenuItems()
-{
-    // The first 3 actions (Add to Favorites, Manage Favorites..., separator) are static, added
-    // once by createFavoritesMenu() -- only entries after them are torn down and rebuilt here.
-    constexpr int kStaticActionCount = 3;
-
-    const QList<QAction*> actions = m_favoritesMenu->actions();
-    for (int i = actions.size() - 1; i >= kStaticActionCount; --i)
-    {
-        QAction* action = actions[i];
-        m_favoritesMenu->removeAction(action);
-        if (QMenu* submenu = action->menu())
-        {
-            // Deleting the submenu also deletes its owned menuAction() (the action itself).
-            submenu->deleteLater();
-        }
-        else
-        {
-            action->deleteLater();
-        }
-    }
-
-    // Adds ONE menu entry per favorite item -- a QWidgetAction whose FavoriteMenuRowWidget renders
-    // the name and, below it, the smaller/grayed full path -- rather than a separate action per
-    // line. menu's hovered() signal drives the row's highlight repaint since QMenu itself paints
-    // nothing behind a widget-action row (see FavoriteMenuRowWidget's comment above).
-    auto addFavoriteItemAction = [this](QMenu* menu, const FavoriteItem& favoriteItem)
-    {
-        const Favorites::Id id = favoriteItem.id();
-        const QString name = QString::fromStdWString(favoriteItem.displayName().wstring());
-        const QString path = QString::fromStdWString(favoriteItem.path().wstring());
-
-        auto* rowWidget = new FavoriteMenuRowWidget(favoriteItemIcon(favoriteItem.path()), name, path);
-
-        auto* action = new QWidgetAction(menu);
-        action->setToolTip(path);
-        action->setDefaultWidget(rowWidget);
-        connect(action, &QAction::triggered, this, [this, id]() { onFavoriteItemTriggered(id); });
-        menu->addAction(action);
-
-        connect(menu, &QMenu::hovered, rowWidget, [rowWidget, action](QAction* hoveredAction) {
-            rowWidget->setHighlighted(hoveredAction == action);
-        });
-    };
-
-    for (const Favorites::Entry& entry : m_favoritesViewModel.entries())
-    {
-        if (const auto* item = std::get_if<FavoriteItem>(&entry))
-        {
-            addFavoriteItemAction(m_favoritesMenu, *item);
-        }
-        else if (const auto* category = std::get_if<FavoriteCategory>(&entry))
-        {
-            QMenu* submenu = m_favoritesMenu->addMenu(favoriteCategoryIcon(), QString::fromStdString(category->name()));
-            for (const FavoriteItem& categoryItem : category->items())
-            {
-                addFavoriteItemAction(submenu, categoryItem);
-            }
-        }
-    }
-}
-
-void MainWindow::updateFavoritesActionEnabled()
-{
-    const bool enabled = m_favoritesTrackedTab && m_favoritesTrackedTab->currentPath() != VirtualPaths::ThisPC;
-    m_addToFavoritesAction->setEnabled(enabled);
-}
-
-void MainWindow::onFavoritesTrackedSelectionChanged(const std::vector<FileNode>&)
-{
-    updateFavoritesActionEnabled();
-}
-
-void MainWindow::onFavoritesTrackedPathChanged(const std::filesystem::path&)
-{
-    updateFavoritesActionEnabled();
 }
 
 void MainWindow::resizeEvent(QResizeEvent* event)

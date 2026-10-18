@@ -2,6 +2,8 @@ add_library(explorer_ui_widgets STATIC
     ExclusiveToggleButtons.h
     MinFileSizeInput.h
     MinFileSizeInput.cpp
+    core/FavoritesMenuController.h
+    core/FavoritesMenuController.cpp
     core/MainWindow.h
     core/MainWindow.cpp
     core/WorkspaceLayoutWidget.h

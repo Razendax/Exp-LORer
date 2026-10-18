@@ -9,7 +9,6 @@
 #include <QThread>
 
 #include "AppConfig.h"
-#include "Favorites.h"
 #include "FileListModel.h"
 #include "FileNavigationUseCase.h"
 #include "FileNode.h"
@@ -26,6 +25,7 @@ class AppConfigStore;
 class HighlightThemeViewModel;
 class FileDecorationsViewModel;
 class FavoritesViewModel;
+class FavoritesMenuController;
 class EnvironmentVariablesViewModel;
 class NotificationCenter;
 class NotificationSettingsViewModel;
@@ -159,17 +159,9 @@ private:
 
     // Search tab result activation (Architecture.md §14.42): a file navigates to its parent
     // folder with the file selected, a folder navigates into it -- same two forms as
-    // onFavoriteItemTriggered's file/folder favorite handling, via the same navigateAndSelect entry
-    // point.
+    // FavoritesMenuController's own file/folder favorite handling, via the same navigateAndSelect
+    // entry point.
     void onSearchResultActivated(const std::filesystem::path& path, bool isDirectory);
-
-    // Favorites menu (Architecture.md §14.35).
-    void onAddToFavoritesTriggered();
-    void onFavoriteItemTriggered(Favorites::Id id);
-    void rebuildFavoritesMenuItems();
-    void updateFavoritesActionEnabled();
-    void onFavoritesTrackedSelectionChanged(const std::vector<FileNode>& entries);
-    void onFavoritesTrackedPathChanged(const std::filesystem::path& path);
 
     // Bubbled up from WorkspacePaneWidget::bulkRenameRequested (Architecture.md §14.55) -- resolves
     // `paths` back to FileNode via tab->selectedEntries() (the exact list they were built from) and
@@ -223,14 +215,12 @@ private:
     TabViewModel* m_driveInfoTrackedTab = nullptr;
     MainStatusBarWidget* m_mainStatusBarWidget = nullptr;
 
-    // Favorites menu (Architecture.md §14.35): rebuilt lazily on QMenu::aboutToShow rather than
-    // kept live-synced, so no direct favoritesChanged() wiring is needed here.
-    QMenu* m_favoritesMenu = nullptr;
-    QAction* m_addToFavoritesAction = nullptr;
-    TabViewModel* m_favoritesTrackedTab = nullptr;
+    // Favorites menu (Architecture.md §14.35), extracted into its own owned sub-object
+    // (Architecture.md §14.96).
+    FavoritesMenuController* m_favoritesMenuController = nullptr;
 
     // Workspaces submenu (Architecture.md §14.60): rebuilt lazily on QMenu::aboutToShow, same
-    // posture as m_favoritesMenu above.
+    // posture FavoritesMenuController's own menu uses.
     QMenu* m_workspacesMenu = nullptr;
 
     // Drive/volume info query (Architecture.md §14.30) runs on m_driveInfoThread rather than the
