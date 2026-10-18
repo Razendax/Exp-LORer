@@ -19,12 +19,21 @@ Full requirements and design live in [`Specification.md`](docs/Specification.md)
   navigation history, view mode, and sort order.
 - **Left panel** — folder tree and a search tab (quick + inline advanced search).
 - **Right panel** — collapsible, tabbed tag list and file preview.
-- **Tag support** — tags live in a local SQLite database (never modify the tagged files), with a
-  Tag Manager dialog and tag-integrated advanced search.
+- **Tag support** — tags live in a local SQLite database (never modify the tagged files);
+  nested (`/`-separated) tags, AND/OR combine mode for multi-item tagging, keyboard autocomplete,
+  and a Tag Manager dialog (file counts per tag, browse files by tag, rename-with-merge, sorting)
+  plus tag-integrated advanced search.
 - **Search** — recursive filename quick search (regex/case/whole-word/exact-name toggles,
-  git-ignore skip) and an async advanced criteria search.
-- **Content preview** — folders, text (with syntax highlighting), images, video, and read-only
-  archive browsing/extraction, via dedicated per-kind preview widgets with zoom.
+  git-ignore skip) and an async advanced criteria search, both with hierarchical
+  (exact-or-include-children) tag matching.
+- **Content preview** — folders, text (with syntax highlighting), images (including animated GIF
+  and SVG), video (static poster or a built-in play/pause/seek/volume player), and read-only
+  archive browsing/extraction, via dedicated per-kind preview widgets with zoom; a mouse-hover
+  preview popup and real decoded thumbnails in Extra Large Icons view in the main file listing.
+- **Media Viewer mode** — a full-grid gallery for recursively browsing every image/video under a
+  folder, filterable by tag (Filter/Apply tag-click toggle) and name, with Thumbnails/Filmstrip/
+  Details view layouts, sort controls, video hover-scrub previews, and the ability to tag items
+  directly from the grid.
 - **File operations** — clipboard cut/copy/paste interoperable with File Explorer, custom copy/move
   with progress notifications, trash/permanent delete, batch rename, and a registry-sourced context
   menu (shell extensions included).
