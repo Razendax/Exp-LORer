@@ -1,12 +1,13 @@
 #include "HighlightThemeStore.h"
 
 #include <optional>
+#include <string>
 
-#include <QDebug>
 #include <QJsonObject>
 #include <QString>
 
 #include "JsonFileStore.h"
+#include "Logging.h"
 
 namespace
 {
@@ -120,8 +121,8 @@ bool HighlightThemeStore::save(const HighlightTheme& theme) const
             // enum was extended without updating this switch) -- writing that under key "" would
             // silently collide with/overwrite another unmapped language's colors on this and every
             // future save, so skip it and say why instead.
-            qWarning() << "HighlightThemeStore: no JSON key for Language value" << static_cast<int>(language)
-                       << "-- its overrides will not be saved";
+            Logging::warn("HighlightThemeStore: no JSON key for Language value "
+                          + std::to_string(static_cast<int>(language)) + " -- its overrides will not be saved");
             continue;
         }
 
