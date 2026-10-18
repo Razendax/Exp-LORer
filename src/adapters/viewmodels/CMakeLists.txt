@@ -65,6 +65,8 @@ add_library(explorer_adapters_viewmodels STATIC
     git/GitStatusService.cpp
     monitoring/DirectoryWatchService.h
     monitoring/DirectoryWatchService.cpp
+    monitoring/TabMonitoringViewModel.h
+    monitoring/TabMonitoringViewModel.cpp
     monitoring/MonitoringPanelViewModel.h
     monitoring/MonitoringPanelViewModel.cpp
     diskusage/DriveSpaceInfoWorker.h

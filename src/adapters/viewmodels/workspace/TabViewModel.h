@@ -2,7 +2,6 @@
 
 #include <array>
 #include <cstddef>
-#include <deque>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -36,6 +35,7 @@
 #include "NotificationCenter.h"
 #include "SearchCriteria.h"
 #include "Tag.h"
+#include "TabMonitoringViewModel.h"
 #include "TagManagementUseCase.h"
 #include "ViewMode.h"
 
@@ -211,13 +211,10 @@ public:
     // summary together). On failure, emits gitOperationFailed instead.
     void checkoutBranch(const QString& branchName);
 
-    // Recursive folder monitoring (Architecture.md §14.24, "Monitoring panel"). Multiple tabs may
-    // monitor concurrently; only one is ever *displayed* at a time by MonitoringPanelViewModel.
-    bool isMonitoringActive() const noexcept { return m_monitoringActive; }
-    std::filesystem::path monitoringRoot() const { return m_monitoringRoot; }
-    bool isMonitoringPinned() const noexcept { return m_monitoringPinned; }
-    const std::deque<FolderChangeEvent>& monitoringLog() const noexcept { return m_monitoringLog; }
-    int monitoringTotal() const noexcept { return m_monitoringTotal; }
+    // Recursive folder monitoring (Architecture.md §14.24, "Monitoring panel"), extracted into its
+    // own owned sub-object (Architecture.md §14.96) -- callers call its methods and connect to its
+    // signals directly rather than through TabViewModel forwarders.
+    TabMonitoringViewModel* monitoring() const noexcept { return m_monitoring; }
 
     // Navigation-guard pure queries (no I/O, no side effects) used by WorkspacePaneWidget's
     // monitoring-scope guard.
@@ -446,24 +443,6 @@ public slots:
     void mediaViewerGoBack();
     void mediaViewerGoForward();
 
-    // No-op if already active or already starting, or if currentPath() is VirtualPaths::ThisPC/an
-    // archive-virtual path (the Start button is also UI-disabled in that state, but this slot stays
-    // defensive). Clears any previous session's log/total, then dispatches an async watch request
-    // for currentPath() -- opening the directory handle is I/O and does not happen synchronously
-    // here (Architecture.md's no-I/O-on-UI-thread rule), so isMonitoringActive() only flips true
-    // once that open actually succeeds; monitoringFailed is emitted instead on failure.
-    void startMonitoring();
-
-    // No-op if not active and no start is currently in flight. If a start dispatched moments ago
-    // hasn't finished opening the directory handle yet, cancels it instead (its completion callback
-    // stops the monitor immediately if the open still ends up succeeding). Log/total are
-    // deliberately left untouched otherwise (a later startMonitoring() call clears them) so the
-    // last session's results stay visible after stopping.
-    void stopMonitoring();
-
-    // No-op if unchanged, or if not currently active (nothing to pin).
-    void setMonitoringPinned(bool pinned);
-
 signals:
     void currentPathChanged(const std::filesystem::path& path);
     void directoryContentsChanged(const std::filesystem::path& path, const std::vector<FileNode>& entries);
@@ -539,12 +518,6 @@ signals:
     void mediaViewerLoading();
     void mediaViewerLoadingFinished();
     void mediaViewerFailed(const QString& message);
-
-    void monitoringActiveChanged(bool active);
-    void monitoringLogAppended(const std::vector<FolderChangeEvent>& batch);
-    void monitoringTotalChanged(int total);
-    void monitoringPinnedChanged(bool pinned);
-    void monitoringFailed(const QString& message);
 
     // Git branch indicator/checkout (Architecture.md §14.34).
     void gitRepositorySummaryChanged(const GitRepositorySummary& summary);
@@ -860,7 +833,6 @@ private:
     FileNavigationUseCase& m_fileNavigationUseCase;
     TagManagementUseCase& m_tagManagementUseCase;
     GitStatusService& m_gitStatusService;
-    FolderMonitorUseCase& m_folderMonitorUseCase;
     AdvancedSearchService& m_advancedSearchService;
     FileTagsService& m_fileTagsService;
     DiskUsageService& m_diskUsageService;
@@ -1026,22 +998,9 @@ private:
     bool m_mediaViewerVideoSweepRequested = false;
     bool m_mediaViewerAnimationSweepRequested = false;
 
-    // True from startMonitoring() dispatching StandardFolderMonitor's async open until that open's
-    // onStarted callback runs (successfully or not) -- opening the directory handle is I/O and now
-    // happens on IFolderMonitor's own worker thread rather than inline, so there is a real gap
-    // where a monitor has been requested but m_monitoringActive is still false. Guards against a
-    // redundant second startMonitoring() dispatch during that gap.
-    bool m_monitoringStarting = false;
-    // Set by stopMonitoring() if it runs during that gap (there is no FolderMonitorId yet to stop
-    // via m_folderMonitorUseCase) -- checked by the onStarted completion callback, which stops the
-    // monitor immediately instead of activating it if this is set.
-    bool m_monitoringCancelled = false;
-    bool m_monitoringActive = false;
-    std::filesystem::path m_monitoringRoot;
-    FolderMonitorId m_monitoringId = 0;
-    bool m_monitoringPinned = false;
-    std::deque<FolderChangeEvent> m_monitoringLog; // capped at kMonitoringLogCap, oldest dropped
-    int m_monitoringTotal = 0; // uncapped
+    // Recursive folder monitoring (Architecture.md §14.24), extracted into its own owned sub-object
+    // (Architecture.md §14.96) -- exposed via monitoring() above.
+    TabMonitoringViewModel* m_monitoring;
 
     GitRepositorySummary m_lastGitRepositorySummary;
 };

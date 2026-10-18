@@ -28,10 +28,11 @@ public slots:
     // `tab` and re-emits its current state.
     void setFocusedTab(TabViewModel* tab);
 
-    // active -> tab->stopMonitoring(); inactive -> tab->startMonitoring(), on m_displayedTab.
+    // active -> tab->monitoring()->stop(); inactive -> tab->monitoring()->start(tab->currentPath()),
+    // on m_displayedTab.
     void toggleStartStop();
 
-    // tab->setMonitoringPinned(!tab->isMonitoringPinned()), on m_displayedTab.
+    // tab->monitoring()->setPinned(!tab->monitoring()->isPinned()), on m_displayedTab.
     void togglePin();
 
 signals:

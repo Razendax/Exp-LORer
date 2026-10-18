@@ -14,6 +14,7 @@
 #include "FolderChangeEvent.h"
 #include "MonitoringLogModel.h"
 #include "MonitoringPanelViewModel.h"
+#include "TabMonitoringViewModel.h"
 #include "TabViewModel.h"
 #include "VirtualPaths.h"
 
@@ -63,7 +64,7 @@ MonitoringPanelWidget::MonitoringPanelWidget(MonitoringPanelViewModel* viewModel
     connect(m_viewModel, &MonitoringPanelViewModel::monitoringFailed, this, &MonitoringPanelWidget::monitoringFailed);
 
     onDisplayedTabChanged(m_viewModel->displayedTab());
-    onMonitoringTotalChanged(m_viewModel->displayedTab() ? m_viewModel->displayedTab()->monitoringTotal() : 0);
+    onMonitoringTotalChanged(m_viewModel->displayedTab() ? m_viewModel->displayedTab()->monitoring()->total() : 0);
     onMonitoringLogReset();
 }
 
@@ -81,8 +82,8 @@ void MonitoringPanelWidget::onDisplayedTabChanged(TabViewModel* tab)
         connect(m_trackedTab, &TabViewModel::currentPathChanged, this, &MonitoringPanelWidget::updateStartStopEnabled);
     }
 
-    onMonitoringActiveChanged(tab && tab->isMonitoringActive());
-    onMonitoringPinnedChanged(tab && tab->isMonitoringPinned());
+    onMonitoringActiveChanged(tab && tab->monitoring()->isActive());
+    onMonitoringPinnedChanged(tab && tab->monitoring()->isPinned());
 }
 
 void MonitoringPanelWidget::updateStartStopEnabled()
@@ -99,7 +100,7 @@ void MonitoringPanelWidget::updateStartStopEnabled()
 
     // Once active, Stop must stay clickable regardless of where the tab has since navigated to
     // (monitoring keeps watching the original root) -- only Start is gated on a valid root.
-    m_startStopButton->setEnabled(tab->isMonitoringActive() || validRoot);
+    m_startStopButton->setEnabled(tab->monitoring()->isActive() || validRoot);
 }
 
 void MonitoringPanelWidget::onMonitoringActiveChanged(bool active)
@@ -126,5 +127,5 @@ void MonitoringPanelWidget::onMonitoringTotalChanged(int total)
 void MonitoringPanelWidget::onMonitoringLogReset()
 {
     TabViewModel* tab = m_viewModel->displayedTab();
-    m_logModel->setEntries(tab ? tab->monitoringLog() : std::deque<FolderChangeEvent>());
+    m_logModel->setEntries(tab ? tab->monitoring()->log() : std::deque<FolderChangeEvent>());
 }

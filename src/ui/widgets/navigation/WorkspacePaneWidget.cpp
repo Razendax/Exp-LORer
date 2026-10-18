@@ -39,6 +39,7 @@
 #include "SearchCriteriaPanel.h"
 #include "SearchResultsPane.h"
 #include "StatusBarWidget.h"
+#include "TabMonitoringViewModel.h"
 #include "TabViewModel.h"
 #include "TerminalSessionsWidget.h"
 #include "TerminalWidget.h"
@@ -910,7 +911,7 @@ void WorkspacePaneWidget::onNewTabRequested()
 void WorkspacePaneWidget::onTabCloseRequested(int index)
 {
     TabViewModel* tab = m_pane->tabAt(index);
-    if (tab && tab->isMonitoringActive())
+    if (tab && tab->monitoring()->isActive())
     {
         const QMessageBox::StandardButton answer =
             QMessageBox::question(this, tr("Close Tab"), tr("Monitoring will stop if you close this tab. Continue?"));
@@ -1019,21 +1020,21 @@ void WorkspacePaneWidget::onForwardRequested()
 
 bool WorkspacePaneWidget::confirmLeavingMonitoredScope(TabViewModel* tab, const std::filesystem::path& target)
 {
-    if (!tab->isMonitoringActive() || isPathWithinOrEqual(target, tab->monitoringRoot()))
+    if (!tab->monitoring()->isActive() || isPathWithinOrEqual(target, tab->monitoring()->root()))
     {
         return true;
     }
 
     const QMessageBox::StandardButton answer = QMessageBox::question(
         this, tr("Stop Monitoring"),
-        tr("Monitoring will stop if you navigate outside %1. Continue?").arg(displayPathText(tab->monitoringRoot())));
+        tr("Monitoring will stop if you navigate outside %1. Continue?").arg(displayPathText(tab->monitoring()->root())));
 
     if (answer != QMessageBox::Yes)
     {
         return false;
     }
 
-    tab->stopMonitoring();
+    tab->monitoring()->stop();
     return true;
 }
 

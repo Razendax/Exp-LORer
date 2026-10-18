@@ -1,5 +1,6 @@
 #include "MonitoringPanelViewModel.h"
 
+#include "TabMonitoringViewModel.h"
 #include "TabViewModel.h"
 
 MonitoringPanelViewModel::MonitoringPanelViewModel(QObject* parent)
@@ -9,7 +10,7 @@ MonitoringPanelViewModel::MonitoringPanelViewModel(QObject* parent)
 
 void MonitoringPanelViewModel::setFocusedTab(TabViewModel* tab)
 {
-    if (m_displayedTab && m_displayedTab->isMonitoringPinned())
+    if (m_displayedTab && m_displayedTab->monitoring()->isPinned())
     {
         // Pin locks the panel onto its current tab regardless of focus.
         return;
@@ -36,13 +37,13 @@ void MonitoringPanelViewModel::toggleStartStop()
         return;
     }
 
-    if (m_displayedTab->isMonitoringActive())
+    if (m_displayedTab->monitoring()->isActive())
     {
-        m_displayedTab->stopMonitoring();
+        m_displayedTab->monitoring()->stop();
     }
     else
     {
-        m_displayedTab->startMonitoring();
+        m_displayedTab->monitoring()->start(m_displayedTab->currentPath());
         emit monitoringLogReset();
     }
 }
@@ -54,7 +55,7 @@ void MonitoringPanelViewModel::togglePin()
         return;
     }
 
-    m_displayedTab->setMonitoringPinned(!m_displayedTab->isMonitoringPinned());
+    m_displayedTab->monitoring()->setPinned(!m_displayedTab->monitoring()->isPinned());
 }
 
 void MonitoringPanelViewModel::connectDisplayedTab()
@@ -64,11 +65,12 @@ void MonitoringPanelViewModel::connectDisplayedTab()
         return;
     }
 
-    connect(m_displayedTab, &TabViewModel::monitoringActiveChanged, this, &MonitoringPanelViewModel::monitoringActiveChanged);
-    connect(m_displayedTab, &TabViewModel::monitoringLogAppended, this, &MonitoringPanelViewModel::monitoringLogAppended);
-    connect(m_displayedTab, &TabViewModel::monitoringTotalChanged, this, &MonitoringPanelViewModel::monitoringTotalChanged);
-    connect(m_displayedTab, &TabViewModel::monitoringPinnedChanged, this, &MonitoringPanelViewModel::monitoringPinnedChanged);
-    connect(m_displayedTab, &TabViewModel::monitoringFailed, this, &MonitoringPanelViewModel::monitoringFailed);
+    TabMonitoringViewModel* monitoring = m_displayedTab->monitoring();
+    connect(monitoring, &TabMonitoringViewModel::activeChanged, this, &MonitoringPanelViewModel::monitoringActiveChanged);
+    connect(monitoring, &TabMonitoringViewModel::logAppended, this, &MonitoringPanelViewModel::monitoringLogAppended);
+    connect(monitoring, &TabMonitoringViewModel::totalChanged, this, &MonitoringPanelViewModel::monitoringTotalChanged);
+    connect(monitoring, &TabMonitoringViewModel::pinnedChanged, this, &MonitoringPanelViewModel::monitoringPinnedChanged);
+    connect(monitoring, &TabMonitoringViewModel::failed, this, &MonitoringPanelViewModel::monitoringFailed);
 
     // Self-heals if the displayed tab is closed while pinned/displayed -- WorkspaceController
     // calls setFocusedTab(focusedTab()) again right after any tab-closed bookkeeping anyway, but
@@ -88,6 +90,7 @@ void MonitoringPanelViewModel::disconnectDisplayedTab()
     }
 
     disconnect(m_displayedTab, nullptr, this, nullptr);
+    disconnect(m_displayedTab->monitoring(), nullptr, this, nullptr);
 }
 
 void MonitoringPanelViewModel::emitCurrentState()
@@ -100,7 +103,7 @@ void MonitoringPanelViewModel::emitCurrentState()
         return;
     }
 
-    emit monitoringActiveChanged(m_displayedTab->isMonitoringActive());
-    emit monitoringTotalChanged(m_displayedTab->monitoringTotal());
-    emit monitoringPinnedChanged(m_displayedTab->isMonitoringPinned());
+    emit monitoringActiveChanged(m_displayedTab->monitoring()->isActive());
+    emit monitoringTotalChanged(m_displayedTab->monitoring()->total());
+    emit monitoringPinnedChanged(m_displayedTab->monitoring()->isPinned());
 }

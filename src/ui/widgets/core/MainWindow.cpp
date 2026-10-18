@@ -56,6 +56,7 @@
 #include "MonitoringPanelWidget.h"
 #include "NotificationOverlayWidget.h"
 #include "SettingsDialog.h"
+#include "TabMonitoringViewModel.h"
 #include "TabViewModel.h"
 #include "TagManagerDialog.h"
 #include "TagManagerViewModel.h"
@@ -1585,7 +1586,7 @@ void MainWindow::closeEvent(QCloseEvent* event)
         WorkspacePaneViewModel* pane = m_workspaceController->pane(paneId);
         for (int i = 0; pane && i < pane->tabCount(); ++i)
         {
-            if (pane->tabAt(i)->isMonitoringActive())
+            if (pane->tabAt(i)->monitoring()->isActive())
             {
                 anyMonitoringActive = true;
                 break;

@@ -4,10 +4,7 @@
 #include <unordered_map>
 #include <utility>
 
-#include <QPointer>
-
 #include "AdvancedSearchService.h"
-#include "ArchiveExtensions.h"
 #include "DiskUsageNode.h"
 #include "DiskUsageService.h"
 #include "FileFragmentationInfo.h"
@@ -56,8 +53,6 @@ namespace
     {
         return criteria.nameQuery.empty() && !criteria.minSizeBytes && !criteria.maxSizeBytes && criteria.tagIds.empty();
     }
-
-    constexpr std::size_t kMonitoringLogCap = 200;
 }
 
 TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
@@ -71,7 +66,6 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     , m_fileNavigationUseCase(fileNavigationUseCase)
     , m_tagManagementUseCase(tagManagementUseCase)
     , m_gitStatusService(gitStatusService)
-    , m_folderMonitorUseCase(folderMonitorUseCase)
     , m_advancedSearchService(advancedSearchService)
     , m_fileTagsService(fileTagsService)
     , m_diskUsageService(diskUsageService)
@@ -84,6 +78,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     , m_searchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_advancedSearchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_mediaViewerResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
+    , m_monitoring(new TabMonitoringViewModel(folderMonitorUseCase, this))
 {
     connect(this, &TabViewModel::directoryContentsChanged, m_fileListModel, &FileListModel::setEntries);
     connect(m_fileListModel, &FileListModel::sortOrderChanged, this, &TabViewModel::sortOrderChanged);
@@ -145,21 +140,12 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
 
 TabViewModel::~TabViewModel()
 {
-    // A still-active monitor is normally stopped by WorkspacePaneViewModel::closeTab() before a tab
-    // is destroyed, but guard here too for any other destruction path. A monitor whose
-    // startMonitoring() open is still in flight (StandardFolderMonitor now opens the directory
-    // handle on its own worker thread, not inline) needs no equivalent handling here: its
-    // completion callback captures a QPointer guard on `this`, not `this` itself, and stops the
-    // now-ownerless monitor by that captured pointer directly if the guard is already null by the
-    // time the open finishes -- see startMonitoring()'s comment.
-    if (m_monitoringActive)
-    {
-        m_folderMonitorUseCase.stopMonitoring(m_monitoringId);
-    }
+    // Stopping an active monitor on destruction is now TabMonitoringViewModel's own responsibility
+    // (its destructor guards this the same way, Architecture.md §14.96) -- m_monitoring is a child
+    // QObject destroyed after this body runs.
 
-    // Defensive guard mirroring the one above -- exitMediaViewer()/WorkspacePaneViewModel::closeTab
-    // normally terminate this first, but cover any other destruction path too (Architecture.md
-    // §14.65).
+    // Defensive guard -- exitMediaViewer()/WorkspacePaneViewModel::closeTab normally terminate this
+    // first, but cover any other destruction path too (Architecture.md §14.65).
     if (m_mediaViewerProgressId != 0)
     {
         m_notificationCenter.terminateProgressNotification(m_mediaViewerProgressId);
@@ -2191,123 +2177,4 @@ void TabViewModel::checkoutBranch(const QString& branchName)
 
                                             refresh();
                                         });
-}
-
-void TabViewModel::startMonitoring()
-{
-    if (m_monitoringActive || m_monitoringStarting)
-    {
-        return;
-    }
-
-    const std::filesystem::path root = currentPath();
-    if (root.empty() || root == VirtualPaths::ThisPC || ArchiveExtensions::archiveAncestorInPath(root))
-    {
-        return;
-    }
-
-    m_monitoringLog.clear();
-    m_monitoringTotal = 0;
-    m_monitoringRoot = root;
-    m_monitoringStarting = true;
-    m_monitoringCancelled = false;
-
-    // Opening the directory handle is disk I/O and now happens on IFolderMonitor's own worker
-    // thread rather than synchronously here (Architecture.md's no-I/O-on-UI-thread rule) -- onStarted
-    // reports the outcome once it's known. `guard` detects this tab being closed while the open is
-    // still in flight; `folderMonitorUseCase` is captured separately (a plain pointer to a
-    // CompositionRoot-owned, long-lived object) so the now-ownerless monitor can still be stopped
-    // via it even if `this`/`guard` is already gone by the time the callback runs.
-    QPointer<TabViewModel> guard(this);
-    FolderMonitorUseCase* const folderMonitorUseCase = &m_folderMonitorUseCase;
-
-    m_folderMonitorUseCase.startMonitoring(
-        root,
-        [this](const std::vector<FolderChangeEvent>& batch) {
-            for (const FolderChangeEvent& event : batch)
-            {
-                if (m_monitoringLog.size() >= kMonitoringLogCap)
-                {
-                    m_monitoringLog.pop_front();
-                }
-                m_monitoringLog.push_back(event);
-            }
-            m_monitoringTotal += static_cast<int>(batch.size());
-
-            emit monitoringLogAppended(batch);
-            emit monitoringTotalChanged(m_monitoringTotal);
-        },
-        [this, guard, folderMonitorUseCase](Result<FolderMonitorId> result) {
-            if (!guard)
-            {
-                // This tab was closed while the open was still in flight -- stop the now-ownerless
-                // monitor immediately (if it actually succeeded) rather than leaking it for the
-                // rest of the app's lifetime.
-                if (result)
-                {
-                    folderMonitorUseCase->stopMonitoring(result.value());
-                }
-                return;
-            }
-
-            m_monitoringStarting = false;
-
-            if (m_monitoringCancelled)
-            {
-                // stopMonitoring() ran while this was still in flight (there was no FolderMonitorId
-                // yet to stop it by) -- honor that now instead of activating it.
-                m_monitoringCancelled = false;
-                if (result)
-                {
-                    folderMonitorUseCase->stopMonitoring(result.value());
-                }
-                return;
-            }
-
-            if (!result)
-            {
-                emit monitoringFailed(QString::fromStdString(result.error().message));
-                return;
-            }
-
-            m_monitoringId = result.value();
-            m_monitoringActive = true;
-            emit monitoringActiveChanged(true);
-        });
-}
-
-void TabViewModel::stopMonitoring()
-{
-    if (m_monitoringStarting)
-    {
-        // The open dispatched moments ago hasn't finished yet (Architecture.md's no-I/O-on-UI-thread
-        // rule means that can take a while against an unresponsive network share) -- there is no
-        // FolderMonitorId yet to stop it by. Flag it so startMonitoring()'s completion callback stops
-        // it immediately once it does finish, instead of activating it.
-        m_monitoringCancelled = true;
-        return;
-    }
-
-    if (!m_monitoringActive)
-    {
-        return;
-    }
-
-    m_folderMonitorUseCase.stopMonitoring(m_monitoringId);
-    m_monitoringActive = false;
-    m_monitoringPinned = false;
-
-    emit monitoringActiveChanged(false);
-    emit monitoringPinnedChanged(false);
-}
-
-void TabViewModel::setMonitoringPinned(bool pinned)
-{
-    if (pinned == m_monitoringPinned || !m_monitoringActive)
-    {
-        return;
-    }
-
-    m_monitoringPinned = pinned;
-    emit monitoringPinnedChanged(pinned);
 }

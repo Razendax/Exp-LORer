@@ -1,5 +1,6 @@
 #include "WorkspacePaneViewModel.h"
 
+#include "TabMonitoringViewModel.h"
 #include "TabViewModel.h"
 
 WorkspacePaneViewModel::WorkspacePaneViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
@@ -76,9 +77,9 @@ void WorkspacePaneViewModel::closeTab(int index)
     }
 
     TabViewModel* tab = m_tabs[static_cast<size_t>(index)];
-    if (tab->isMonitoringActive())
+    if (tab->monitoring()->isActive())
     {
-        tab->stopMonitoring();
+        tab->monitoring()->stop();
     }
     m_tabs.erase(m_tabs.begin() + index);
     tab->deleteLater();

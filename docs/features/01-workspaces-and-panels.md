@@ -5,10 +5,11 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.1–14.8, §14.14, §14.24–14.25, §14.41, §14.48, §14.60 — split-window layout/panes/tabs,
-session persistence, the bottom/right/left collapsible panel shells (and their first tab each:
-Terminal, Tags, folder Tree), left/right panel state persistence, and named workspaces
-(multi-instance launch). Section numbers are **not** contiguous with this file's neighbors — they
+Covers §14.1–14.8, §14.14, §14.24–14.25, §14.41, §14.48, §14.60, §14.96 — split-window
+layout/panes/tabs, session persistence, the bottom/right/left collapsible panel shells (and their
+first tab each: Terminal, Tags, folder Tree), left/right panel state persistence, named workspaces
+(multi-instance launch), and decomposing `TabViewModel`/`MainWindow` into owned sub-objects.
+Section numbers are **not** contiguous with this file's neighbors — they
 were assigned chronologically as each feature was built and are kept stable since code comments
 cite them directly. See [Architecture.md](../Architecture.md) §14 for the full topic index across
 all nine files.
@@ -435,4 +436,60 @@ section, each one openable as its own OS process running concurrently with the o
   "Carve-out — OS-shell side effects with no assertable return" (§11, same posture as
   `ShellContextMenuProvider`) — manually smoke-tested, not CTest-covered; its key-derivation step is
   still a plain, independently testable pure function. UI is still not covered by CTest in v1 (§11).
+
+### 14.96 TabViewModel/MainWindow Decomposition into Owned Sub-Objects
+
+`TabViewModel` and `MainWindow` each grew into a god object bundling 5+ largely independent feature
+areas (for `TabViewModel`: navigation/history, selection, view mode/sort, quick search, advanced
+search, Media Viewer, recursive folder monitoring, git/drive-info readouts; for `MainWindow`: menu/
+toolbar construction, workspace/panel construction, focus-tab retargeting, sort/search/Media-Viewer-
+mode UI, favorites, drive-info, workspace management, settings/dialog launchers). Pure refactor —
+no Domain/Application change, no new Port, no schema change — decomposing both into smaller
+single-purpose classes, following the one precedent already in this codebase for the shape: rather
+than the `TagListViewModel`/`FilePreviewViewModel` pattern (a single shared instance retargeted
+across tabs via `setActiveTab()`, right for a cross-cutting "whatever is focused now" concern),
+this reuses `WorkspaceController`'s ownership of `FileOperationsController` — a plain `QObject`
+constructed by its parent in the parent's own constructor, exposed via a `const` accessor, and
+wired to **directly** by whichever widget needs its signals/slots, with no forwarding wrappers kept
+on the parent (that would defeat the point of the split). Each extracted sub-object receives only
+the subset of its parent's existing injected dependencies it actually needs; no constructor gains
+new parameters, so `WorkspacePaneViewModel::addTab()` (the sole `TabViewModel` construction site)
+and `main.cpp` (the sole `MainWindow` construction site) are unaffected.
+
+* **`TabViewModel` track** (`adapters/viewmodels/workspace/TabViewModel.{h,cpp}`) extracts 4 owned
+  `QObject`s, placed per the existing `adapters/viewmodels/<feature>/` convention next to their
+  already-existing non-ViewModel siblings: `TabMonitoringViewModel` (`monitoring/`, recursive folder
+  monitoring), `TabQuickSearchViewModel` (`search/`, the per-tab Quick Search/"Search tab" state),
+  `TabAdvancedSearchViewModel` (`search/`, the per-tab Advanced Search criteria panel state), and
+  `TabMediaViewerViewModel` (`media/`, gallery mode + its own tag-apply workflow + folder-grouped
+  browsing + GIF preview mode — the largest and most internally tangled group, done last since
+  `MainWindow`'s `MediaViewerModeController` below wires directly to its signals). `TabViewModel`
+  itself keeps only its core identity — navigation/history, selection, view mode/columns/sort, and
+  the git-branch-summary/drive-space-info readouts (too small, combined, to justify their own
+  per-tab class) — plus the navigation funnel (file-tags/disk-usage/fragmentation/icon dispatch on
+  `directoryContentsChanged`) those readouts and several sibling widgets hang off. The one genuine
+  cross-group dependency (Media Viewer's tag-apply-to-selection needs the tab's current
+  `m_selectedEntries`) stays a thin delegating method on `TabViewModel` rather than giving
+  `TabMediaViewerViewModel` a back-reference to its owner.
+* **`MainWindow` track** (`ui/widgets/core/MainWindow.{h,cpp}`) extracts `FavoritesMenuController`
+  (the Favorites menu, nearly self-contained already) and `MediaViewerModeController` (Media Viewer
+  mode plus the Media-Viewer slice of `onFocusedTabChanged()`'s six-tracked-tab-pointer dispatch —
+  the single biggest coupling hotspot in the class), both placed in `ui/widgets/core/` next to
+  `MainWindow` as `MainWindow`-specific coordinators. `FavoritesMenuController` gets its own one-off
+  `stat()` call instead of reusing `MainWindow`'s drive-info worker, removing that incidental
+  coupling. Settings/dialog launchers, the drive-info worker, workspace management (save/switch/
+  manage workspaces), and `createWorkspace()`'s one-shot construction wiring are deliberately **not**
+  extracted — each is either already independent of the rest of the class or has no runtime coupling
+  to untangle, so moving it would only relocate lines, not reduce `MainWindow`'s conceptual surface.
+* **Testing**: no new CTest coverage — extracted classes are Qt-facing ViewModels/UI controllers,
+  following the same "UI, untested in v1" convention already covering `WorkspaceController`,
+  `TagListViewModel`, and `FilePreviewViewModel` (§11). `tests/adapters/WorkspaceControllerTest.cpp`
+  (the one existing test exercising real `TabViewModel` instances) must keep passing unchanged
+  throughout, since it only drives navigation/rename/delete side effects — the surface staying on
+  `TabViewModel`, not any of the extracted pieces.
+* **Phased, not a single change**: each extraction above is its own commit, implemented and
+  manually tested in isolation before the next (`TabMonitoringViewModel` first, as the smallest
+  fully self-contained piece, validating the ownership/accessor/call-site-update pattern end to end;
+  `TabMediaViewerViewModel` and `MediaViewerModeController` last and in that order, since the latter
+  depends on the former).
 
