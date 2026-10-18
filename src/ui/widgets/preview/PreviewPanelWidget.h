@@ -54,6 +54,12 @@ private:
     void releaseGifPlayerIfActive();
     void showGifPage();
 
+    // Releases the video/GIF player (if active) and clears the corresponding mode combo/cached
+    // preview -- shared by onPreviewLoading/onPreviewFailed/onPreviewCleared (which reset both)
+    // and onPreviewReady (which resets only whichever one the new preview doesn't need).
+    void resetVideoState();
+    void resetGifState();
+
     FilePreviewViewModel* m_viewModel = nullptr;
 
     QComboBox* m_previewModeCombo = nullptr; // objectName "previewModeCombo"

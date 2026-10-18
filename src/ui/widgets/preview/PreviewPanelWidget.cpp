@@ -90,12 +90,8 @@ void PreviewPanelWidget::hideEvent(QHideEvent* event)
 
 void PreviewPanelWidget::onPreviewLoading()
 {
-    m_mediaPreviewWidget->releaseVideoPlayer();
-    m_previewModeCombo->hide();
-    m_currentVideoPreview.reset();
-    m_mediaPreviewWidget->releaseGifPlayer();
-    m_gifModeCombo->hide();
-    m_currentGifPreview.reset();
+    resetVideoState();
+    resetGifState();
     m_stack->setCurrentWidget(m_loadingLabel);
 }
 
@@ -103,18 +99,14 @@ void PreviewPanelWidget::onPreviewReady(const FilePreview& preview)
 {
     if (preview.kind() != FilePreviewKind::Video)
     {
-        m_mediaPreviewWidget->releaseVideoPlayer();
-        m_previewModeCombo->hide();
-        m_currentVideoPreview.reset();
+        resetVideoState();
     }
 
     const bool isAnimatedImage = preview.kind() == FilePreviewKind::Image
         && MediaExtensions::isAnimatedImageExtension(MediaExtensions::lowercaseExtension(preview.path()));
     if (!isAnimatedImage)
     {
-        m_mediaPreviewWidget->releaseGifPlayer();
-        m_gifModeCombo->hide();
-        m_currentGifPreview.reset();
+        resetGifState();
     }
 
     switch (preview.kind())
@@ -154,25 +146,31 @@ void PreviewPanelWidget::onPreviewReady(const FilePreview& preview)
 
 void PreviewPanelWidget::onPreviewFailed(const QString& message)
 {
-    m_mediaPreviewWidget->releaseVideoPlayer();
-    m_previewModeCombo->hide();
-    m_currentVideoPreview.reset();
-    m_mediaPreviewWidget->releaseGifPlayer();
-    m_gifModeCombo->hide();
-    m_currentGifPreview.reset();
+    resetVideoState();
+    resetGifState();
     m_errorLabel->setText(message);
     m_stack->setCurrentWidget(m_errorLabel);
 }
 
 void PreviewPanelWidget::onPreviewCleared()
 {
+    resetVideoState();
+    resetGifState();
+    m_stack->setCurrentWidget(m_unsupportedLabel);
+}
+
+void PreviewPanelWidget::resetVideoState()
+{
     m_mediaPreviewWidget->releaseVideoPlayer();
     m_previewModeCombo->hide();
     m_currentVideoPreview.reset();
+}
+
+void PreviewPanelWidget::resetGifState()
+{
     m_mediaPreviewWidget->releaseGifPlayer();
     m_gifModeCombo->hide();
     m_currentGifPreview.reset();
-    m_stack->setCurrentWidget(m_unsupportedLabel);
 }
 
 void PreviewPanelWidget::onPreviewModeChanged(int /*index*/)
