@@ -5,11 +5,11 @@
 #include <vector>
 
 #include <QObject>
-#include <QThread>
 
 #include "FileNode.h"
 #include "Result.h"
 #include "Tag.h"
+#include "WorkerThreadService.h"
 
 class FileNavigationUseCase;
 class IFileSystemRepository;
@@ -23,15 +23,15 @@ class AdvancedSearchWorker;
 // Uses a context-guarded/callback API (not FilePreviewViewModel's own-signals style) because,
 // unlike the singleton FilePreviewViewModel, TabViewModel instances are destroyed when a tab
 // closes while a request could still be in flight -- the QPointer<QObject> guard(context) pattern
-// GitStatusService already uses is exactly the tool for that.
-class AdvancedSearchService : public QObject
+// GitStatusService already uses is exactly the tool for that. Thread/callback-bouncing plumbing
+// lives in WorkerThreadService.
+class AdvancedSearchService : public WorkerThreadService
 {
     Q_OBJECT
 
 public:
     AdvancedSearchService(FileNavigationUseCase& fileNavigationUseCase, IFileSystemRepository& fileSystemRepository,
                            const std::filesystem::path& databasePath, QObject* parent = nullptr);
-    ~AdvancedSearchService() override;
 
     // onProgress, when set, is invoked on `context`'s thread with the files discovered so far,
     // roughly once/second while the scan runs (StandardFileSystemRepository's throttling,
@@ -60,6 +60,5 @@ public:
     void requestFilesForTag(QObject* context, Tag::Id tagId, std::function<void(Result<std::vector<FileNode>>)> callback);
 
 private:
-    QThread m_workerThread;
     AdvancedSearchWorker* m_worker = nullptr;
 };
