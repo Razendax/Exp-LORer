@@ -4,6 +4,8 @@ add_library(explorer_ui_widgets STATIC
     MinFileSizeInput.cpp
     core/FavoritesMenuController.h
     core/FavoritesMenuController.cpp
+    core/MediaViewerModeController.h
+    core/MediaViewerModeController.cpp
     core/MainWindow.h
     core/MainWindow.cpp
     core/WorkspaceLayoutWidget.h

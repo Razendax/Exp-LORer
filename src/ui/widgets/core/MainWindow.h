@@ -26,6 +26,7 @@ class HighlightThemeViewModel;
 class FileDecorationsViewModel;
 class FavoritesViewModel;
 class FavoritesMenuController;
+class MediaViewerModeController;
 class EnvironmentVariablesViewModel;
 class NotificationCenter;
 class NotificationSettingsViewModel;
@@ -137,17 +138,6 @@ private:
     void onLayoutChanged(SplitLayout layout);
     void onStatusMessage(const QString& message);
     void onFocusedTabChanged(TabViewModel* tab);
-
-    // Media Viewer mode (Architecture.md §14.61): shows/hides the left panel and the right panel's
-    // Tags/Preview/Monitoring/Searcher tab buttons, and switches the right panel to the Searcher
-    // tab, in response to the focused tab's own TabMediaViewerViewModel::modeChanged.
-    void onMediaViewerModeChanged(bool active);
-
-    // Resolves which tab Media-Viewer-related actions (the toggle action, the Searcher panel's
-    // exit/kind/filter/tag controls) should act on: the tab actually in Media Viewer mode
-    // (m_activeMediaViewerTab) when one exists, since focus may have moved elsewhere in a split
-    // workspace; otherwise the currently-focused tab (e.g. for entering Media Viewer mode).
-    TabViewModel* mediaViewerTargetTab() const;
     void onSortOrderChanged(SortCriterion criterion, bool ascending);
     void onActiveTabPathChanged(const std::filesystem::path& path);
     void onDriveSpaceInfoReady(int generation, Result<DriveSpaceInfo> result);
@@ -204,20 +194,17 @@ private:
     MediaViewerSearchPanelWidget* m_mediaViewerSearchPanelWidget = nullptr;
     TabViewModel* m_sortTrackedTab = nullptr;
     TabViewModel* m_searchTrackedTab = nullptr;
-    TabViewModel* m_mediaViewerTrackedTab = nullptr;
-    // The tab actually in Media Viewer mode, independent of which tab/pane currently has focus --
-    // set when its TabMediaViewerViewModel::modeChanged(true) fires, cleared on modeChanged(false).
-    // In a split workspace, focus can move to a different tab while this one still shows Media
-    // Viewer mode (forced single-pane); mediaViewerTargetTab() is what every Media-Viewer action
-    // (toggle, exit, kind/filter changes from the Searcher panel) should resolve its target tab
-    // through, instead of re-deriving m_workspaceController->focusedTab() live.
-    TabViewModel* m_activeMediaViewerTab = nullptr;
     TabViewModel* m_driveInfoTrackedTab = nullptr;
     MainStatusBarWidget* m_mainStatusBarWidget = nullptr;
 
     // Favorites menu (Architecture.md §14.35), extracted into its own owned sub-object
     // (Architecture.md §14.96).
     FavoritesMenuController* m_favoritesMenuController = nullptr;
+
+    // Media Viewer mode (Architecture.md §14.61), extracted into its own owned sub-object
+    // (Architecture.md §14.96). m_mediaViewerModeAction below is still created here (it must exist
+    // before createMenuBar() runs) and handed to the controller once constructed.
+    MediaViewerModeController* m_mediaViewerModeController = nullptr;
 
     // Workspaces submenu (Architecture.md §14.60): rebuilt lazily on QMenu::aboutToShow, same
     // posture FavoritesMenuController's own menu uses.
@@ -260,21 +247,17 @@ private:
     // affects an already-populated model rather than something read fresh at next use.
     QAction* m_showHiddenFilesAction = nullptr;
 
-    // Media Viewer mode toggle (Architecture.md §14.61), wired to the focused tab's enterMediaViewer()/
-    // mediaViewer()->exit() the same way the sort actions target focusedTab(). Not persisted (same
-    // posture as m_showHiddenFilesAction is NOT -- this one specifically mirrors
-    // m_searchTrackedTab's per-tab, not-restored-on-restart posture).
+    // Media Viewer mode toggle (Architecture.md §14.61): created here since it must exist before
+    // createMenuBar() runs, but wired up by MediaViewerModeController (constructed later, once
+    // createWorkspace() has built every widget the controller needs). Not persisted (same posture
+    // as m_showHiddenFilesAction is NOT -- this one specifically mirrors m_searchTrackedTab's
+    // per-tab, not-restored-on-restart posture).
     QAction* m_mediaViewerModeAction = nullptr;
 
     // Hover preview popup toggle (Architecture.md §14.76), persisted via QSettings under
     // FileBrowserView::kHoverPreviewEnabledSettingsKey -- same "read fresh at next use" posture as
     // m_extendedContextMenuAction, not m_showHiddenFilesAction's live-broadcast one.
     QAction* m_hoverPreviewEnabledAction = nullptr;
-
-    // Right panel's active tab index right before Media Viewer mode's Searcher tab took over, so
-    // exiting the mode restores whichever tab (Tags/Preview/Monitoring) was showing before. -1 if
-    // none was active (panel was collapsed).
-    int m_rightPanelActiveIndexBeforeMediaViewer = -1;
 
     // Details-view column widths (Architecture.md §14.14): loaded from AppConfig, handed to
     // WorkspaceLayoutWidget so every pane's FileBrowserView starts out sized this way, then
