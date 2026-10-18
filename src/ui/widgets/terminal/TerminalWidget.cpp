@@ -5,6 +5,7 @@
 #include <QClipboard>
 #include <QFontMetrics>
 #include <QGuiApplication>
+#include <QHash>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
@@ -19,6 +20,43 @@ namespace
     const QColor kDefaultForeground(0xE5, 0xE5, 0xE5);
     const QColor kDefaultBackground(0x0C, 0x0C, 0x0C);
     constexpr int kScrollLinesPerNotch = 3;
+
+    // Modifier state a kShortcutTable entry requires, tested against (Ctrl|Shift) of the event --
+    // every shortcut below needs an exact match on just those two (Alt/Meta are irrelevant to all
+    // of them), so this covers the three combinations actually used.
+    enum class ShortcutMods
+    {
+        CtrlShift,
+        ShiftOnly,
+        CtrlOnly,
+    };
+
+    struct ShortcutEntry
+    {
+        ShortcutMods mods;
+        Qt::Key key;
+        void (TerminalWidget::*handler)(QKeyEvent*);
+    };
+
+    // Plain key -> VT escape sequence forwarded to the child process, once no shortcut above
+    // matched. Key_Tab and the default (printable text) case need extra logic and stay out of this
+    // table -- see keyPressEvent().
+    const QHash<int, QByteArray> kKeyEscapeSequences = {
+        { Qt::Key_Return, QByteArrayLiteral("\r") },
+        { Qt::Key_Enter, QByteArrayLiteral("\r") },
+        { Qt::Key_Backspace, QByteArrayLiteral("\x08") },
+        { Qt::Key_Escape, QByteArrayLiteral("\x1b") },
+        { Qt::Key_Up, QByteArrayLiteral("\x1b[A") },
+        { Qt::Key_Down, QByteArrayLiteral("\x1b[B") },
+        { Qt::Key_Right, QByteArrayLiteral("\x1b[C") },
+        { Qt::Key_Left, QByteArrayLiteral("\x1b[D") },
+        { Qt::Key_Home, QByteArrayLiteral("\x1b[H") },
+        { Qt::Key_End, QByteArrayLiteral("\x1b[F") },
+        { Qt::Key_PageUp, QByteArrayLiteral("\x1b[5~") },
+        { Qt::Key_PageDown, QByteArrayLiteral("\x1b[6~") },
+        { Qt::Key_Delete, QByteArrayLiteral("\x1b[3~") },
+        { Qt::Key_Insert, QByteArrayLiteral("\x1b[2~") },
+    };
 }
 
 TerminalWidget::TerminalWidget(TerminalShellType shellType, QWidget* parent)
@@ -467,64 +505,37 @@ void TerminalWidget::keyPressEvent(QKeyEvent* event)
     const bool shiftOnly = (mods & (Qt::ControlModifier | Qt::ShiftModifier)) == Qt::ShiftModifier;
     const int key = event->key();
 
-    if (ctrlShift && (key == Qt::Key_Left || key == Qt::Key_Right))
-    {
-        extendSelectionByWord(key == Qt::Key_Left ? -1 : 1);
-        m_process->writeInput(key == Qt::Key_Left ? QByteArrayLiteral("\x1b[1;5D") : QByteArrayLiteral("\x1b[1;5C"));
-        event->accept();
-        return;
-    }
+    // Modifier-combo + key shortcuts, checked in order before the plain-key forwarding below.
+    // Ctrl+Shift+A (not plain Ctrl+A) is deliberate -- Ctrl+A is SOH (0x01), universally bound by
+    // readline-based programs (bash, Python's REPL, vim/nano, an SSH session) to "move cursor to
+    // start of line", and must keep falling through to the generic Ctrl+[A-Z] forwarding further
+    // below (not part of this table -- it's a key *range*, not a fixed list). Same collision-
+    // avoidance reasoning as Copy/Paste living on Ctrl+Shift+C/V instead of Ctrl+C/V. A function-
+    // local static (rather than file-scope) because it takes the address of private member
+    // functions, which is only accessible from within a TerminalWidget member function.
+    static const ShortcutEntry kShortcutTable[] = {
+        { ShortcutMods::CtrlShift, Qt::Key_Left, &TerminalWidget::handleWordSelectShortcut },
+        { ShortcutMods::CtrlShift, Qt::Key_Right, &TerminalWidget::handleWordSelectShortcut },
+        { ShortcutMods::CtrlShift, Qt::Key_C, &TerminalWidget::handleCopyShortcut },
+        { ShortcutMods::CtrlShift, Qt::Key_V, &TerminalWidget::handlePasteShortcut },
+        { ShortcutMods::ShiftOnly, Qt::Key_Left, &TerminalWidget::handleShiftSelectShortcut },
+        { ShortcutMods::ShiftOnly, Qt::Key_Right, &TerminalWidget::handleShiftSelectShortcut },
+        { ShortcutMods::CtrlShift, Qt::Key_A, &TerminalWidget::handleSelectAllShortcut },
+        { ShortcutMods::CtrlOnly, Qt::Key_Left, &TerminalWidget::handleCtrlArrowWordNavShortcut },
+        { ShortcutMods::CtrlOnly, Qt::Key_Right, &TerminalWidget::handleCtrlArrowWordNavShortcut },
+    };
 
-    if (ctrlShift && key == Qt::Key_C)
+    for (const ShortcutEntry& entry : kShortcutTable)
     {
-        if (hasSelection())
+        const bool modsMatch = (entry.mods == ShortcutMods::CtrlShift && ctrlShift) ||
+                                (entry.mods == ShortcutMods::ShiftOnly && shiftOnly) ||
+                                (entry.mods == ShortcutMods::CtrlOnly && ctrlOnly);
+        if (modsMatch && key == entry.key)
         {
-            const QString text = selectedText();
-            if (!text.isEmpty())
-            {
-                QGuiApplication::clipboard()->setText(text);
-            }
+            (this->*entry.handler)(event);
+            event->accept();
+            return;
         }
-        event->accept();
-        return;
-    }
-
-    if (ctrlShift && key == Qt::Key_V)
-    {
-        QString text = QGuiApplication::clipboard()->text();
-        text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
-        text.replace(QLatin1Char('\n'), QLatin1Char('\r'));
-        m_process->writeInput(text.toUtf8());
-        clearSelection();
-        event->accept();
-        return;
-    }
-
-    if (shiftOnly && (key == Qt::Key_Left || key == Qt::Key_Right))
-    {
-        extendSelection(0, key == Qt::Key_Left ? -1 : 1);
-        event->accept();
-        return;
-    }
-
-    if (ctrlShift && key == Qt::Key_A)
-    {
-        // Deliberately Ctrl+Shift+A, not plain Ctrl+A -- Ctrl+A is SOH (0x01), universally bound by
-        // readline-based programs (bash, Python's REPL, vim/nano, an SSH session) to "move cursor to
-        // start of line", and must keep falling through to the generic Ctrl+[A-Z] forwarding below.
-        // Same collision-avoidance reasoning as Copy/Paste already living on Ctrl+Shift+C/V instead
-        // of Ctrl+C/V.
-        selectAll();
-        event->accept();
-        return;
-    }
-
-    if (ctrlOnly && (key == Qt::Key_Left || key == Qt::Key_Right))
-    {
-        clearSelection();
-        m_process->writeInput(key == Qt::Key_Left ? QByteArrayLiteral("\x1b[1;5D") : QByteArrayLiteral("\x1b[1;5C"));
-        event->accept();
-        return;
     }
 
     if (ctrlOnly && key >= Qt::Key_A && key <= Qt::Key_Z)
@@ -537,93 +548,96 @@ void TerminalWidget::keyPressEvent(QKeyEvent* event)
 
     clearSelection();
 
-    switch (event->key())
+    if (key == Qt::Key_Tab)
     {
-        case Qt::Key_Return:
-        case Qt::Key_Enter:
-            m_process->writeInput(QByteArrayLiteral("\r"));
-            break;
-        case Qt::Key_Backspace:
-            m_process->writeInput(QByteArrayLiteral("\x08"));
-            break;
-        case Qt::Key_Tab:
+        // cmd.exe's own Tab completion only recognizes '\' as a path separator and silently does
+        // nothing for a token containing '/' (e.g. "resources/tree"). Rewrite the token being
+        // completed to use '\' first so cmd's native completion can actually match it. Skip tokens
+        // where '/' is the very first character (e.g. "dir /w") -- those are almost certainly a
+        // command switch, not a path, and rewriting them could change what Tab does.
+        const int liveRow = m_buffer->scrollbackLineCount() + m_buffer->cursorRow();
+        const int cursorColumn = m_buffer->cursorColumn();
+        const int tokenStart = promptBoundaryColumn(liveRow);
+
+        int start = cursorColumn;
+        while (start > tokenStart && cellAtLogicalRow(liveRow, start - 1).character != QLatin1Char(' '))
         {
-            // cmd.exe's own Tab completion only recognizes '\' as a path separator and silently
-            // does nothing for a token containing '/' (e.g. "resources/tree"). Rewrite the token
-            // being completed to use '\' first so cmd's native completion can actually match it.
-            // Skip tokens where '/' is the very first character (e.g. "dir /w") -- those are almost
-            // certainly a command switch, not a path, and rewriting them could change what Tab does.
-            const int liveRow = m_buffer->scrollbackLineCount() + m_buffer->cursorRow();
-            const int cursorColumn = m_buffer->cursorColumn();
-            const int tokenStart = promptBoundaryColumn(liveRow);
-
-            int start = cursorColumn;
-            while (start > tokenStart && cellAtLogicalRow(liveRow, start - 1).character != QLatin1Char(' '))
-            {
-                --start;
-            }
-
-            QString token;
-            for (int c = start; c < cursorColumn; ++c)
-            {
-                token.append(cellAtLogicalRow(liveRow, c).character);
-            }
-
-            if (token.contains(QLatin1Char('/')) && !token.startsWith(QLatin1Char('/')))
-            {
-                token.replace(QLatin1Char('/'), QLatin1Char('\\'));
-                m_process->writeInput(QByteArray(cursorColumn - start, '\x08'));
-                m_process->writeInput(token.toUtf8());
-            }
-
-            m_process->writeInput(QByteArrayLiteral("\t"));
-            break;
+            --start;
         }
-        case Qt::Key_Escape:
-            m_process->writeInput(QByteArrayLiteral("\x1b"));
-            break;
-        case Qt::Key_Up:
-            m_process->writeInput(QByteArrayLiteral("\x1b[A"));
-            break;
-        case Qt::Key_Down:
-            m_process->writeInput(QByteArrayLiteral("\x1b[B"));
-            break;
-        case Qt::Key_Right:
-            m_process->writeInput(QByteArrayLiteral("\x1b[C"));
-            break;
-        case Qt::Key_Left:
-            m_process->writeInput(QByteArrayLiteral("\x1b[D"));
-            break;
-        case Qt::Key_Home:
-            m_process->writeInput(QByteArrayLiteral("\x1b[H"));
-            break;
-        case Qt::Key_End:
-            m_process->writeInput(QByteArrayLiteral("\x1b[F"));
-            break;
-        case Qt::Key_PageUp:
-            m_process->writeInput(QByteArrayLiteral("\x1b[5~"));
-            break;
-        case Qt::Key_PageDown:
-            m_process->writeInput(QByteArrayLiteral("\x1b[6~"));
-            break;
-        case Qt::Key_Delete:
-            m_process->writeInput(QByteArrayLiteral("\x1b[3~"));
-            break;
-        case Qt::Key_Insert:
-            m_process->writeInput(QByteArrayLiteral("\x1b[2~"));
-            break;
-        default:
+
+        QString token;
+        for (int c = start; c < cursorColumn; ++c)
         {
-            const QString text = event->text();
-            if (!text.isEmpty())
-            {
-                m_process->writeInput(text.toUtf8());
-            }
-            break;
+            token.append(cellAtLogicalRow(liveRow, c).character);
+        }
+
+        if (token.contains(QLatin1Char('/')) && !token.startsWith(QLatin1Char('/')))
+        {
+            token.replace(QLatin1Char('/'), QLatin1Char('\\'));
+            m_process->writeInput(QByteArray(cursorColumn - start, '\x08'));
+            m_process->writeInput(token.toUtf8());
+        }
+
+        m_process->writeInput(QByteArrayLiteral("\t"));
+    }
+    else if (const auto it = kKeyEscapeSequences.constFind(key); it != kKeyEscapeSequences.constEnd())
+    {
+        m_process->writeInput(it.value());
+    }
+    else
+    {
+        const QString text = event->text();
+        if (!text.isEmpty())
+        {
+            m_process->writeInput(text.toUtf8());
         }
     }
 
     event->accept();
+}
+
+void TerminalWidget::handleWordSelectShortcut(QKeyEvent* event)
+{
+    const int direction = event->key() == Qt::Key_Left ? -1 : 1;
+    extendSelectionByWord(direction);
+    m_process->writeInput(direction < 0 ? QByteArrayLiteral("\x1b[1;5D") : QByteArrayLiteral("\x1b[1;5C"));
+}
+
+void TerminalWidget::handleCopyShortcut(QKeyEvent*)
+{
+    if (hasSelection())
+    {
+        const QString text = selectedText();
+        if (!text.isEmpty())
+        {
+            QGuiApplication::clipboard()->setText(text);
+        }
+    }
+}
+
+void TerminalWidget::handlePasteShortcut(QKeyEvent*)
+{
+    QString text = QGuiApplication::clipboard()->text();
+    text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    text.replace(QLatin1Char('\n'), QLatin1Char('\r'));
+    m_process->writeInput(text.toUtf8());
+    clearSelection();
+}
+
+void TerminalWidget::handleShiftSelectShortcut(QKeyEvent* event)
+{
+    extendSelection(0, event->key() == Qt::Key_Left ? -1 : 1);
+}
+
+void TerminalWidget::handleSelectAllShortcut(QKeyEvent*)
+{
+    selectAll();
+}
+
+void TerminalWidget::handleCtrlArrowWordNavShortcut(QKeyEvent* event)
+{
+    clearSelection();
+    m_process->writeInput(event->key() == Qt::Key_Left ? QByteArrayLiteral("\x1b[1;5D") : QByteArrayLiteral("\x1b[1;5C"));
 }
 
 bool TerminalWidget::focusNextPrevChild(bool)

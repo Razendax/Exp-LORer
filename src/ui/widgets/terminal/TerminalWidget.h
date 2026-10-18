@@ -96,6 +96,16 @@ private:
     QString selectedText() const;
     static bool isWordChar(QChar ch);
 
+    // Keyboard-shortcut handlers dispatched from keyPressEvent() via kShortcutTable (TerminalWidget.cpp)
+    // -- each handles one modifier-combo+key entry, reading event->key() itself where a handler is
+    // shared by more than one key (e.g. Left/Right).
+    void handleWordSelectShortcut(QKeyEvent* event);
+    void handleCopyShortcut(QKeyEvent* event);
+    void handlePasteShortcut(QKeyEvent* event);
+    void handleShiftSelectShortcut(QKeyEvent* event);
+    void handleSelectAllShortcut(QKeyEvent* event);
+    void handleCtrlArrowWordNavShortcut(QKeyEvent* event);
+
     TerminalShellType m_shellType;
     AnsiTerminalBuffer* m_buffer = nullptr;
     WindowsConPtyProcess* m_process = nullptr;
