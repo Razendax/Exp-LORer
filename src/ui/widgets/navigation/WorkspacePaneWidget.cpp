@@ -704,48 +704,14 @@ void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewM
 
 void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
 {
-    if (m_boundTab)
+    // Tears down every connection bindToolBarToTab() previously made to the old m_boundTab. Storing
+    // them in m_tabConnections (rather than a hand-written disconnect() call mirroring each connect()
+    // call below) means a future connection added to this function can't be forgotten here.
+    for (const QMetaObject::Connection& connection : m_tabConnections)
     {
-        disconnect(m_boundTab, &TabViewModel::currentPathChanged, this, &WorkspacePaneWidget::onCurrentPathChanged);
-        disconnect(m_boundTab, &TabViewModel::backAvailableChanged, m_backAction, &QAction::setEnabled);
-        disconnect(m_boundTab, &TabViewModel::forwardAvailableChanged, m_forwardAction, &QAction::setEnabled);
-        disconnect(m_boundTab, &TabViewModel::upAvailableChanged, m_upAction, &QAction::setEnabled);
-        disconnect(m_boundTab, &TabViewModel::navigationFailed, this, &WorkspacePaneWidget::onNavigationFailed);
-        disconnect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged);
-        disconnect(m_boundTab, &TabViewModel::mediaViewerModeChanged, this, &WorkspacePaneWidget::updateToolBarEnabledForMediaViewer);
-        disconnect(m_boundTab, &TabViewModel::mediaViewerSortCriterionChanged, m_mediaViewerSortViewBar,
-                   &MediaViewerSortViewBar::setSortCriterion);
-        disconnect(m_boundTab, &TabViewModel::mediaViewerSortAscendingChanged, m_mediaViewerSortViewBar,
-                   &MediaViewerSortViewBar::setSortAscending);
-        disconnect(m_boundTab, &TabViewModel::mediaViewerViewModeChanged, m_mediaViewerSortViewBar,
-                   &MediaViewerSortViewBar::setViewMode);
-        disconnect(m_boundTab, &TabViewModel::mediaViewerGroupModeChanged, m_mediaViewerSortViewBar,
-                   &MediaViewerSortViewBar::setGroupMode);
-        disconnect(m_boundTab, &TabViewModel::mediaViewerPreviewModeChanged, m_mediaViewerSortViewBar,
-                   &MediaViewerSortViewBar::setPreviewMode);
-        disconnect(m_boundTab, &TabViewModel::mediaViewerGroupModeChanged, this,
-                   &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
-        disconnect(m_boundTab, &TabViewModel::mediaViewerViewModeChanged, this,
-                   &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
-        disconnect(m_boundTab, &TabViewModel::mediaViewerBackAvailableChanged, this,
-                   &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
-        disconnect(m_boundTab, &TabViewModel::mediaViewerForwardAvailableChanged, this,
-                   &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
-        disconnect(m_boundTab, &TabViewModel::mediaViewerUpAvailableChanged, this,
-                   &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
-        disconnect(m_boundTab, &TabViewModel::mediaViewerCurrentFolderChanged, this, &WorkspacePaneWidget::onCurrentPathChanged);
-
-        disconnect(m_boundTab, &TabViewModel::directoryContentsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
-        disconnect(m_boundTab, &TabViewModel::advancedSearchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
-        disconnect(m_boundTab, &TabViewModel::advancedSearchModeChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
-        disconnect(m_boundTab, &TabViewModel::selectedEntriesChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
-
-        disconnect(m_boundTab, &TabViewModel::currentPathChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
-        disconnect(m_boundTab, &TabViewModel::advancedSearchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
-
-        disconnect(m_boundTab, &TabViewModel::gitRepositorySummaryChanged, this, &WorkspacePaneWidget::updateGitStatusBar);
-        disconnect(m_boundTab, &TabViewModel::gitOperationFailed, this, &WorkspacePaneWidget::gitOperationFailed);
+        disconnect(connection);
     }
+    m_tabConnections.clear();
 
     m_boundTab = tab;
 
@@ -762,46 +728,48 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
         return;
     }
 
-    connect(m_boundTab, &TabViewModel::currentPathChanged, this, &WorkspacePaneWidget::onCurrentPathChanged);
-    connect(m_boundTab, &TabViewModel::backAvailableChanged, m_backAction, &QAction::setEnabled);
-    connect(m_boundTab, &TabViewModel::forwardAvailableChanged, m_forwardAction, &QAction::setEnabled);
-    connect(m_boundTab, &TabViewModel::upAvailableChanged, m_upAction, &QAction::setEnabled);
-    connect(m_boundTab, &TabViewModel::navigationFailed, this, &WorkspacePaneWidget::onNavigationFailed);
-    connect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged);
-    connect(m_boundTab, &TabViewModel::mediaViewerModeChanged, this, &WorkspacePaneWidget::updateToolBarEnabledForMediaViewer);
-    connect(m_boundTab, &TabViewModel::mediaViewerSortCriterionChanged, m_mediaViewerSortViewBar,
-            &MediaViewerSortViewBar::setSortCriterion);
-    connect(m_boundTab, &TabViewModel::mediaViewerSortAscendingChanged, m_mediaViewerSortViewBar,
-            &MediaViewerSortViewBar::setSortAscending);
-    connect(m_boundTab, &TabViewModel::mediaViewerViewModeChanged, m_mediaViewerSortViewBar,
-            &MediaViewerSortViewBar::setViewMode);
-    connect(m_boundTab, &TabViewModel::mediaViewerGroupModeChanged, m_mediaViewerSortViewBar,
-            &MediaViewerSortViewBar::setGroupMode);
-    connect(m_boundTab, &TabViewModel::mediaViewerPreviewModeChanged, m_mediaViewerSortViewBar,
-            &MediaViewerSortViewBar::setPreviewMode);
-    // Folder-Grouped Browsing (Architecture.md §14.74): back/forward/up/address-bar enabled state
-    // depends on mediaViewerGroupMode()/mediaViewerViewMode() (whether folder-nav is even active)
-    // and on the folder-nav history's own availability, so every one of these needs to re-run
-    // updateToolBarEnabledForMediaViewer(), not just mediaViewerModeChanged above.
-    connect(m_boundTab, &TabViewModel::mediaViewerGroupModeChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
-    connect(m_boundTab, &TabViewModel::mediaViewerViewModeChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
-    connect(m_boundTab, &TabViewModel::mediaViewerBackAvailableChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
-    connect(m_boundTab, &TabViewModel::mediaViewerForwardAvailableChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
-    connect(m_boundTab, &TabViewModel::mediaViewerUpAvailableChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged);
-    // Folder-nav's own address-bar text sync -- mirrors onCurrentPathChanged's role for real
-    // navigation (both just set m_addressBar's text from a path), so the same slot serves both.
-    connect(m_boundTab, &TabViewModel::mediaViewerCurrentFolderChanged, this, &WorkspacePaneWidget::onCurrentPathChanged);
+    m_tabConnections = {
+        connect(m_boundTab, &TabViewModel::currentPathChanged, this, &WorkspacePaneWidget::onCurrentPathChanged),
+        connect(m_boundTab, &TabViewModel::backAvailableChanged, m_backAction, &QAction::setEnabled),
+        connect(m_boundTab, &TabViewModel::forwardAvailableChanged, m_forwardAction, &QAction::setEnabled),
+        connect(m_boundTab, &TabViewModel::upAvailableChanged, m_upAction, &QAction::setEnabled),
+        connect(m_boundTab, &TabViewModel::navigationFailed, this, &WorkspacePaneWidget::onNavigationFailed),
+        connect(m_boundTab, &TabViewModel::viewModeChanged, this, &WorkspacePaneWidget::onViewModeChanged),
+        connect(m_boundTab, &TabViewModel::mediaViewerModeChanged, this, &WorkspacePaneWidget::updateToolBarEnabledForMediaViewer),
+        connect(m_boundTab, &TabViewModel::mediaViewerSortCriterionChanged, m_mediaViewerSortViewBar,
+                &MediaViewerSortViewBar::setSortCriterion),
+        connect(m_boundTab, &TabViewModel::mediaViewerSortAscendingChanged, m_mediaViewerSortViewBar,
+                &MediaViewerSortViewBar::setSortAscending),
+        connect(m_boundTab, &TabViewModel::mediaViewerViewModeChanged, m_mediaViewerSortViewBar,
+                &MediaViewerSortViewBar::setViewMode),
+        connect(m_boundTab, &TabViewModel::mediaViewerGroupModeChanged, m_mediaViewerSortViewBar,
+                &MediaViewerSortViewBar::setGroupMode),
+        connect(m_boundTab, &TabViewModel::mediaViewerPreviewModeChanged, m_mediaViewerSortViewBar,
+                &MediaViewerSortViewBar::setPreviewMode),
+        // Folder-Grouped Browsing (Architecture.md §14.74): back/forward/up/address-bar enabled
+        // state depends on mediaViewerGroupMode()/mediaViewerViewMode() (whether folder-nav is even
+        // active) and on the folder-nav history's own availability, so every one of these needs to
+        // re-run updateToolBarEnabledForMediaViewer(), not just mediaViewerModeChanged above.
+        connect(m_boundTab, &TabViewModel::mediaViewerGroupModeChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged),
+        connect(m_boundTab, &TabViewModel::mediaViewerViewModeChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged),
+        connect(m_boundTab, &TabViewModel::mediaViewerBackAvailableChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged),
+        connect(m_boundTab, &TabViewModel::mediaViewerForwardAvailableChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged),
+        connect(m_boundTab, &TabViewModel::mediaViewerUpAvailableChanged, this, &WorkspacePaneWidget::onMediaViewerFolderNavChanged),
+        // Folder-nav's own address-bar text sync -- mirrors onCurrentPathChanged's role for real
+        // navigation (both just set m_addressBar's text from a path), so the same slot serves both.
+        connect(m_boundTab, &TabViewModel::mediaViewerCurrentFolderChanged, this, &WorkspacePaneWidget::onCurrentPathChanged),
 
-    connect(m_boundTab, &TabViewModel::directoryContentsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
-    connect(m_boundTab, &TabViewModel::advancedSearchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
-    connect(m_boundTab, &TabViewModel::advancedSearchModeChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
-    connect(m_boundTab, &TabViewModel::selectedEntriesChanged, this, &WorkspacePaneWidget::refreshStatusCounts);
+        connect(m_boundTab, &TabViewModel::directoryContentsChanged, this, &WorkspacePaneWidget::refreshStatusCounts),
+        connect(m_boundTab, &TabViewModel::advancedSearchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts),
+        connect(m_boundTab, &TabViewModel::advancedSearchModeChanged, this, &WorkspacePaneWidget::refreshStatusCounts),
+        connect(m_boundTab, &TabViewModel::selectedEntriesChanged, this, &WorkspacePaneWidget::refreshStatusCounts),
 
-    connect(m_boundTab, &TabViewModel::currentPathChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
-    connect(m_boundTab, &TabViewModel::advancedSearchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect);
+        connect(m_boundTab, &TabViewModel::currentPathChanged, m_statusBar, &StatusBarWidget::clearQuickSelect),
+        connect(m_boundTab, &TabViewModel::advancedSearchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect),
 
-    connect(m_boundTab, &TabViewModel::gitRepositorySummaryChanged, this, &WorkspacePaneWidget::updateGitStatusBar);
-    connect(m_boundTab, &TabViewModel::gitOperationFailed, this, &WorkspacePaneWidget::gitOperationFailed);
+        connect(m_boundTab, &TabViewModel::gitRepositorySummaryChanged, this, &WorkspacePaneWidget::updateGitStatusBar),
+        connect(m_boundTab, &TabViewModel::gitOperationFailed, this, &WorkspacePaneWidget::gitOperationFailed),
+    };
 
     // Sync against a tab that already navigated before this binding existed (e.g. tabs restored
     // from the saved workspace config navigate before MainWindow/WorkspacePaneWidget are

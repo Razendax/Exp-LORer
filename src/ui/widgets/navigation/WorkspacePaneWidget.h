@@ -214,6 +214,11 @@ private:
     NotificationCenter& m_notificationCenter;
     UiThemeChangeNotifier& m_uiThemeChangeNotifier;
     TabViewModel* m_boundTab = nullptr;
+    // Every connection bindToolBarToTab() makes to m_boundTab, so unbinding is just "disconnect
+    // everything in this list" instead of a hand-maintained disconnect() call paired to each
+    // connect() call -- that pairing had nothing enforcing it stayed correct as connections were
+    // added over time.
+    QList<QMetaObject::Connection> m_tabConnections;
 
     QTabWidget* m_tabWidget = nullptr;
     // Blank, borderless button manually positioned (not a QTabWidget corner widget -- corner
