@@ -21,6 +21,7 @@
 #include "DuplicateGroupsModel.h"
 #include "FileNavigationUseCase.h"
 #include "FileSizeFormat.h"
+#include "MinFileSizeInput.h"
 #include "NotificationCenter.h"
 
 DuplicateFinderDialog::DuplicateFinderDialog(DuplicateFinderService& duplicateFinderService,
@@ -302,20 +303,5 @@ void DuplicateFinderDialog::updateButtonsEnabled()
 
 std::uintmax_t DuplicateFinderDialog::minFileSizeBytes() const
 {
-    std::uintmax_t multiplier = 1;
-    switch (m_minSizeUnitCombo->currentIndex())
-    {
-        case 0: // B
-            multiplier = 1;
-            break;
-        case 1: // KB
-            multiplier = 1024;
-            break;
-        case 2: // MB
-            multiplier = 1024 * 1024;
-            break;
-        default:
-            break;
-    }
-    return static_cast<std::uintmax_t>(m_minSizeSpinBox->value()) * multiplier;
+    return minFileSizeBytesFrom(m_minSizeUnitCombo, m_minSizeSpinBox);
 }
