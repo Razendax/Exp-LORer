@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cassert>
 #include <optional>
 #include <utility>
 #include <variant>
@@ -19,12 +20,32 @@ public:
     bool hasError() const noexcept { return !hasValue(); }
     explicit operator bool() const noexcept { return hasValue(); }
 
-    const T& value() const& { return std::get<T>(m_value); }
-    T& value() & { return std::get<T>(m_value); }
-    T&& value() && { return std::get<T>(std::move(m_value)); }
+    [[nodiscard]] const T& value() const&
+    {
+        assert(hasValue() && "Result::value() called on a failure Result");
+        return std::get<T>(m_value);
+    }
+    [[nodiscard]] T& value() &
+    {
+        assert(hasValue() && "Result::value() called on a failure Result");
+        return std::get<T>(m_value);
+    }
+    [[nodiscard]] T&& value() &&
+    {
+        assert(hasValue() && "Result::value() called on a failure Result");
+        return std::get<T>(std::move(m_value));
+    }
 
-    const Error& error() const& { return std::get<Error>(m_value); }
-    Error&& error() && { return std::get<Error>(std::move(m_value)); }
+    [[nodiscard]] const Error& error() const&
+    {
+        assert(hasError() && "Result::error() called on a success Result");
+        return std::get<Error>(m_value);
+    }
+    [[nodiscard]] Error&& error() &&
+    {
+        assert(hasError() && "Result::error() called on a success Result");
+        return std::get<Error>(std::move(m_value));
+    }
 
 private:
     explicit Result(T value)
@@ -51,8 +72,16 @@ public:
     bool hasError() const noexcept { return m_error.has_value(); }
     explicit operator bool() const noexcept { return hasValue(); }
 
-    const Error& error() const& { return *m_error; }
-    Error&& error() && { return std::move(*m_error); }
+    [[nodiscard]] const Error& error() const&
+    {
+        assert(hasError() && "Result::error() called on a success Result");
+        return *m_error;
+    }
+    [[nodiscard]] Error&& error() &&
+    {
+        assert(hasError() && "Result::error() called on a success Result");
+        return std::move(*m_error);
+    }
 
 private:
     Result() = default;
