@@ -11,7 +11,6 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
-#include "ArchiveExtensions.h"
 #include "FolderChangeEvent.h"
 #include "MonitoringLogModel.h"
 #include "MonitoringPanelViewModel.h"
@@ -96,7 +95,7 @@ void MonitoringPanelWidget::updateStartStopEnabled()
     }
 
     const std::filesystem::path path = tab->currentPath();
-    const bool validRoot = !path.empty() && path != VirtualPaths::ThisPC && !ArchiveExtensions::archiveAncestorInPath(path);
+    const bool validRoot = VirtualPaths::isValidScanRoot(path);
 
     // Once active, Stop must stay clickable regardless of where the tab has since navigated to
     // (monitoring keeps watching the original root) -- only Start is gated on a valid root.

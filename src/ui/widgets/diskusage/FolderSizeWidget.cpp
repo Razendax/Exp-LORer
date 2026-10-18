@@ -4,7 +4,6 @@
 #include <QPushButton>
 #include <QVBoxLayout>
 
-#include "ArchiveExtensions.h"
 #include "FolderSizeViewModel.h"
 #include "NotificationCenter.h"
 #include "PieChartWidget.h"
@@ -58,7 +57,7 @@ FolderSizeWidget::FolderSizeWidget(DiskUsageService& service, NotificationCenter
 void FolderSizeWidget::updateButtonsEnabled()
 {
     const std::filesystem::path path = m_tab->currentPath();
-    const bool validRoot = !path.empty() && path != VirtualPaths::ThisPC && !ArchiveExtensions::archiveAncestorInPath(path);
+    const bool validRoot = VirtualPaths::isValidScanRoot(path);
 
     const bool scanning = m_viewModel->isScanning();
     m_scanFolderButton->setEnabled(validRoot && !scanning);

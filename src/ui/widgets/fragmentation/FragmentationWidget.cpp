@@ -11,7 +11,6 @@
 #include <QTreeView>
 #include <QVBoxLayout>
 
-#include "ArchiveExtensions.h"
 #include "FileSizeFormat.h"
 #include "FragmentationResultsModel.h"
 #include "FragmentationViewModel.h"
@@ -105,7 +104,7 @@ FragmentationWidget::FragmentationWidget(FragmentationService& service, Notifica
 void FragmentationWidget::updateButtonsEnabled()
 {
     const std::filesystem::path path = m_tab->currentPath();
-    const bool validRoot = !path.empty() && path != VirtualPaths::ThisPC && !ArchiveExtensions::archiveAncestorInPath(path);
+    const bool validRoot = VirtualPaths::isValidScanRoot(path);
 
     const bool scanning = m_viewModel->isScanning();
     m_scanFolderButton->setEnabled(validRoot && !scanning);
