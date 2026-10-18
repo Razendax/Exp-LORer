@@ -210,6 +210,11 @@ void FileOperationsController::pasteInto(const std::filesystem::path& destinatio
         std::uintmax_t totalBytes = 0;
         std::size_t filesStarted = 0;       // current (1-based) file number; incremented in onFileStarted.
         std::uintmax_t bytesCopiedSoFar = 0; // last value reported by onBytesProgress, across the whole plan.
+        // Index into `needsCopy` for the top-level root the most recently started file belongs to.
+        // onFileStarted is called in the same root-by-root order the transfer plan was built in
+        // (each root's whole subtree before the next root's), so this only ever advances forward --
+        // an amortized O(1) walk instead of rescanning all of `needsCopy` for every file.
+        std::size_t rootCursor = 0;
         QString aboveText;
         QString belowText;
     };
@@ -259,14 +264,13 @@ void FileOperationsController::pasteInto(const std::filesystem::path& destinatio
         state->filesStarted += 1;
 
         std::filesystem::path relative = item.source.filename();
-        for (const auto& [rootSource, rootDestination] : needsCopy)
+        while (state->rootCursor < needsCopy.size() && !isPathWithinOrEqual(item.source, needsCopy[state->rootCursor].first))
         {
-            (void)rootDestination;
-            if (isPathWithinOrEqual(item.source, rootSource))
-            {
-                relative = item.source.lexically_relative(rootSource.parent_path());
-                break;
-            }
+            ++state->rootCursor;
+        }
+        if (state->rootCursor < needsCopy.size())
+        {
+            relative = item.source.lexically_relative(needsCopy[state->rootCursor].first.parent_path());
         }
 
         state->belowText = tr("%1 (%2)").arg(toQString(relative)).arg(FileSizeFormat::format(item.size));
