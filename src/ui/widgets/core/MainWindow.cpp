@@ -56,6 +56,7 @@
 #include "MonitoringPanelWidget.h"
 #include "NotificationOverlayWidget.h"
 #include "SettingsDialog.h"
+#include "TabAdvancedSearchViewModel.h"
 #include "TabMonitoringViewModel.h"
 #include "TabQuickSearchViewModel.h"
 #include "TabViewModel.h"
@@ -432,7 +433,7 @@ void MainWindow::createShowHiddenFilesAction()
                 TabViewModel* tab = pane->tabAt(i);
                 tab->fileListModel()->setShowHiddenFiles(checked);
                 tab->quickSearch()->resultsModel()->setShowHiddenFiles(checked);
-                tab->advancedSearchResultsModel()->setShowHiddenFiles(checked);
+                tab->advancedSearch()->resultsModel()->setShowHiddenFiles(checked);
             }
         }
         m_workspaceController->folderTreeModel()->setShowHiddenFiles(checked);
@@ -1155,7 +1156,7 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     if (m_searchTrackedTab)
     {
         disconnect(m_searchTrackedTab->quickSearch(), &TabQuickSearchViewModel::failed, this, &MainWindow::onStatusMessage);
-        disconnect(m_searchTrackedTab, &TabViewModel::advancedSearchFailed, this, &MainWindow::onStatusMessage);
+        disconnect(m_searchTrackedTab->advancedSearch(), &TabAdvancedSearchViewModel::failed, this, &MainWindow::onStatusMessage);
         // Every resultsChanged/modeChanged/loading/loadingFinished/failed connection into
         // m_searchPanelWidget below is a lambda (receiver == m_searchPanelWidget, never `this`) --
         // disconnecting all of them by receiver alone is safe and precise, same pattern as
@@ -1277,7 +1278,7 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
 
     TabQuickSearchViewModel* quickSearch = tab->quickSearch();
     connect(quickSearch, &TabQuickSearchViewModel::failed, this, &MainWindow::onStatusMessage);
-    connect(tab, &TabViewModel::advancedSearchFailed, this, &MainWindow::onStatusMessage);
+    connect(tab->advancedSearch(), &TabAdvancedSearchViewModel::failed, this, &MainWindow::onStatusMessage);
 
     connect(quickSearch, &TabQuickSearchViewModel::resultsChanged, m_searchPanelWidget, [this, quickSearch](const std::vector<FileNode>& entries) {
         m_searchPanelWidget->setResults(entries, quickSearch->resultsModel()->currentDirectory(), quickSearch->resultIcons());

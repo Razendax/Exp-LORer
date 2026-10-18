@@ -48,11 +48,6 @@ namespace
         }
         return false;
     }
-
-    bool isCriteriaEmpty(const SearchCriteria& criteria)
-    {
-        return criteria.nameQuery.empty() && !criteria.minSizeBytes && !criteria.maxSizeBytes && criteria.tagIds.empty();
-    }
 }
 
 TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
@@ -77,7 +72,9 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     , m_fileListModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_quickSearch(new TabQuickSearchViewModel(advancedSearchService, fileTagsService, iconLoadingService, tagChangeNotifier,
                                                  fileDecorationRules, fileDecorationsChangeSource, this))
-    , m_advancedSearchResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
+    , m_advancedSearch(new TabAdvancedSearchViewModel(fileNavigationUseCase, advancedSearchService, tagManagementUseCase,
+                                                       fileTagsService, iconLoadingService, tagChangeNotifier, fileDecorationRules,
+                                                       fileDecorationsChangeSource, this))
     , m_mediaViewerResultsModel(new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this))
     , m_monitoring(new TabMonitoringViewModel(folderMonitorUseCase, this))
 {
@@ -85,8 +82,8 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     connect(m_fileListModel, &FileListModel::sortOrderChanged, this, &TabViewModel::sortOrderChanged);
 
     // Normal browsing only (Architecture.md §14.x's v1 scope cut) -- quick-search/advanced-search
-    // results fire their own searchResultsChanged/advancedSearchResultsChanged signals instead,
-    // which this deliberately does not connect to.
+    // results fire their own resultsChanged signals instead, which this deliberately does not
+    // connect to.
     connect(this, &TabViewModel::directoryContentsChanged, this,
             [this](const std::filesystem::path& path, const std::vector<FileNode>& entries) {
                 requestGitStatus(path);
@@ -104,18 +101,11 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     // Architecture.md §14.x: a tag assigned/removed/renamed/deleted anywhere re-fetches this tab's
     // currently-listed directory's tags, not just the path that actually changed -- correctness
     // over precision, since the alternative is threading which-path-changed information through a
-    // signal meant to stay a plain broadcast. Also refreshes whichever of advanced search/Media
-    // Viewer is currently active, for the same reason -- Quick Search reacts to the same event on
-    // its own, via TabQuickSearchViewModel's own TagChangeNotifier connection.
+    // signal meant to stay a plain broadcast. Also refreshes Media Viewer if currently active, for
+    // the same reason -- Quick Search/Advanced Search react to the same event on their own, via
+    // their own TagChangeNotifier connections.
     connect(&m_tagChangeNotifier, &TagChangeNotifier::tagsChanged, this, [this]() {
         requestFileTags(currentPath(), m_fileListModel->entries());
-
-        if (m_advancedSearchActive)
-        {
-            const std::vector<FileNode>& candidates =
-                m_advancedSearchFullScanDone ? m_advancedSearchSnapshot : m_advancedSearchPartialSnapshot;
-            requestAdvancedSearchResultTags(m_advancedSearchGeneration, candidates);
-        }
 
         if (m_mediaViewerActive)
         {
@@ -123,11 +113,12 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
         }
     });
 
-    // Clearing the selection on a Quick Search activation/deactivation edge mirrors what
+    // Clearing the selection on a Quick/Advanced Search activation/deactivation edge mirrors what
     // applyFilter()/exit() did inline before extraction (Architecture.md §14.96) -- kept here,
-    // rather than giving TabQuickSearchViewModel a back-reference, since selection is Selection-
-    // group (TabViewModel's own) state.
+    // rather than giving the sub-objects a back-reference, since selection is Selection-group
+    // (TabViewModel's own) state.
     connect(m_quickSearch, &TabQuickSearchViewModel::modeChanged, this, [this](bool) { setSelectedEntries({}); });
+    connect(m_advancedSearch, &TabAdvancedSearchViewModel::modeChanged, this, [this](bool) { setSelectedEntries({}); });
 
     // Entering Media Viewer mode's own progress-bar card (Architecture.md §14.65) -- only this
     // tab's own in-flight notification cares about a Cancel click, same filter-by-id posture
@@ -217,7 +208,7 @@ std::filesystem::path TabViewModel::expandEnvironmentVariables(const std::filesy
 void TabViewModel::navigateTo(const std::filesystem::path& path)
 {
     m_quickSearch->exit();
-    exitAdvancedSearch();
+    m_advancedSearch->exit();
     loadAndApply(path, HistoryUpdate::Record);
 }
 
@@ -269,7 +260,7 @@ void TabViewModel::goUp()
 void TabViewModel::goBack()
 {
     m_quickSearch->exit();
-    exitAdvancedSearch();
+    m_advancedSearch->exit();
 
     const auto path = m_history.goBack();
     if (!path)
@@ -283,7 +274,7 @@ void TabViewModel::goBack()
 void TabViewModel::goForward()
 {
     m_quickSearch->exit();
-    exitAdvancedSearch();
+    m_advancedSearch->exit();
 
     const auto path = m_history.goForward();
     if (!path)
@@ -313,7 +304,7 @@ void TabViewModel::refresh()
 void TabViewModel::replaceCurrentPath(const std::filesystem::path& path)
 {
     m_quickSearch->exit();
-    exitAdvancedSearch();
+    m_advancedSearch->exit();
     loadAndApply(path, HistoryUpdate::ReplaceCurrent);
 }
 
@@ -347,11 +338,7 @@ void TabViewModel::setViewMode(ViewMode mode)
 
     requestIcons(currentPath(), m_fileListModel->entries());
     m_quickSearch->setIconMask(newMask);
-
-    if (m_advancedSearchActive)
-    {
-        requestAdvancedSearchResultIcons(m_advancedSearchGeneration, m_advancedSearchResultsModel->entries());
-    }
+    m_advancedSearch->setIconMask(newMask);
 }
 
 void TabViewModel::setSortCriterion(SortCriterion criterion, bool ascending)
@@ -398,7 +385,7 @@ void TabViewModel::updateSearchQuery(const QString& query)
 {
     if (!query.trimmed().isEmpty())
     {
-        exitAdvancedSearch();
+        m_advancedSearch->exit();
     }
 
     m_quickSearch->updateQuery(query, currentPath());
@@ -408,7 +395,7 @@ void TabViewModel::refreshSearch(const QString& query)
 {
     if (!query.trimmed().isEmpty())
     {
-        exitAdvancedSearch();
+        m_advancedSearch->exit();
     }
 
     m_quickSearch->refresh(query, currentPath());
@@ -416,166 +403,20 @@ void TabViewModel::refreshSearch(const QString& query)
 
 void TabViewModel::showAdvancedSearchPanel()
 {
-    if (m_advancedSearchActive)
-    {
-        return;
-    }
-
     m_quickSearch->exit();
-    showCurrentFolderNonRecursive();
-
-    m_advancedSearchActive = true;
-    setSelectedEntries({});
-    emit advancedSearchModeChanged(true);
-}
-
-void TabViewModel::showCurrentFolderNonRecursive()
-{
-    // Not a real (recursive) search -- just a non-recursive listing of the current folder.
-    const std::filesystem::path path = currentPath();
-    auto result = m_fileNavigationUseCase.listDirectory(path);
-    if (result.hasError())
-    {
-        emit advancedSearchFailed(QString::fromStdString(result.error().message));
-        return;
-    }
-
-    // Discards any in-flight/cached scan -- mirrors exitAdvancedSearch's cleanup, but
-    // m_advancedSearchActive/m_advancedSearchCriteria are left untouched by this function (the
-    // pane stays open, and the criteria that led here, e.g. all-empty fields, is still whatever
-    // the caller already set).
-    m_advancedSearchSnapshot.clear();
-    m_advancedSearchPartialSnapshot.clear();
-    m_advancedSearchSnapshotTags.clear();
-    m_advancedSearchSnapshotIcons.clear();
-    m_advancedSearchRoot.clear();
-    m_advancedSearchCachedTagIds.clear();
-    m_advancedSearchCachedTagIncludeChildren = false;
-    m_advancedSearchFullScanDone = false;
-    m_advancedSearchScanPending = false;
-    ++m_advancedSearchGeneration;
-
-    auto sorted = FileNavigationUseCase::sortBy(std::move(result).value(), SortCriterion::Name, true);
-    m_advancedSearchResultsModel->setEntries(path, sorted);
-    requestAdvancedSearchResultTags(m_advancedSearchGeneration, sorted);
-    requestAdvancedSearchResultIcons(m_advancedSearchGeneration, sorted);
-
-    emit advancedSearchResultsChanged(sorted);
-    emit advancedSearchCriteriaChanged(m_advancedSearchCriteria);
+    m_advancedSearch->showPanel(currentPath());
 }
 
 void TabViewModel::startAdvancedSearch(const SearchCriteria& criteria)
 {
     m_quickSearch->exit();
-
-    m_advancedSearchCriteria = criteria;
-
-    if (isCriteriaEmpty(criteria))
-    {
-        if (!m_advancedSearchActive)
-        {
-            m_advancedSearchActive = true;
-            setSelectedEntries({});
-            emit advancedSearchModeChanged(true);
-        }
-        showCurrentFolderNonRecursive();
-        return;
-    }
-
-    runAdvancedSearch(/*forceRescan=*/true);
-}
-
-void TabViewModel::updateAdvancedSearchCriteria(const SearchCriteria& criteria)
-{
-    if (!m_advancedSearchActive)
-    {
-        return;
-    }
-
-    const bool skipGitIgnoredChanged = criteria.nameOptions.skipGitIgnored != m_advancedSearchCriteria.nameOptions.skipGitIgnored;
-    const bool tagIncludeChildTagsChanged = criteria.tagIncludeChildTags != m_advancedSearchCriteria.tagIncludeChildTags;
-
-    m_advancedSearchCriteria = criteria;
-
-    if (isCriteriaEmpty(criteria))
-    {
-        showCurrentFolderNonRecursive();
-        return;
-    }
-
-    runAdvancedSearch(/*forceRescan=*/skipGitIgnoredChanged || tagIncludeChildTagsChanged);
-}
-
-void TabViewModel::exitAdvancedSearch()
-{
-    if (!m_advancedSearchActive)
-    {
-        return;
-    }
-
-    m_advancedSearchActive = false;
-    m_advancedSearchSnapshot.clear();
-    m_advancedSearchPartialSnapshot.clear();
-    m_advancedSearchSnapshotTags.clear();
-    m_advancedSearchSnapshotIcons.clear();
-    m_advancedSearchCriteria = SearchCriteria();
-    m_advancedSearchRoot.clear();
-    m_advancedSearchCachedTagIds.clear();
-    m_advancedSearchCachedTagIncludeChildren = false;
-    m_advancedSearchFullScanDone = false;
-    m_advancedSearchScanPending = false;
-    // Invalidates any scan/stat-loop still in flight -- its (now-stale) result is discarded by
-    // onAdvancedSearchCandidatesReady/onAdvancedSearchProgress's generation check when it
-    // eventually arrives.
-    ++m_advancedSearchGeneration;
-
-    setSelectedEntries({});
-    emit advancedSearchModeChanged(false);
+    m_advancedSearch->start(criteria, currentPath());
 }
 
 void TabViewModel::addTagSearchCriterion(Tag::Id tagId)
 {
-    if (std::find(m_advancedSearchCriteria.tagIds.begin(), m_advancedSearchCriteria.tagIds.end(), tagId) !=
-        m_advancedSearchCriteria.tagIds.end())
-    {
-        return;
-    }
-
-    const bool wasActive = m_advancedSearchActive;
-    if (!wasActive)
-    {
-        m_quickSearch->exit();
-        m_advancedSearchActive = true;
-        setSelectedEntries({});
-        emit advancedSearchModeChanged(true);
-    }
-
-    m_advancedSearchCriteria.tagIds.push_back(tagId);
-    runAdvancedSearch(/*forceRescan=*/!wasActive);
-}
-
-void TabViewModel::removeTagSearchCriterion(Tag::Id tagId)
-{
-    auto& tagIds = m_advancedSearchCriteria.tagIds;
-    const auto it = std::find(tagIds.begin(), tagIds.end(), tagId);
-    if (it == tagIds.end())
-    {
-        return;
-    }
-
-    tagIds.erase(it);
-
-    if (m_advancedSearchActive)
-    {
-        if (isCriteriaEmpty(m_advancedSearchCriteria))
-        {
-            showCurrentFolderNonRecursive();
-        }
-        else
-        {
-            runAdvancedSearch(/*forceRescan=*/false);
-        }
-    }
+    m_quickSearch->exit();
+    m_advancedSearch->addTagCriterion(tagId, currentPath());
 }
 
 void TabViewModel::enterMediaViewer()
@@ -586,7 +427,7 @@ void TabViewModel::enterMediaViewer()
     }
 
     m_quickSearch->exit();
-    exitAdvancedSearch();
+    m_advancedSearch->exit();
 
     m_mediaViewerRoot = currentPath();
     m_mediaViewerKind = MediaViewerKind::Image;
@@ -1394,26 +1235,6 @@ std::vector<Tag> TabViewModel::searchTagsForCriteria(const QString& query) const
     return result.value();
 }
 
-std::vector<Tag> TabViewModel::resolveTagCriteria() const
-{
-    auto result = m_tagManagementUseCase.allTags();
-    if (result.hasError())
-    {
-        return {};
-    }
-
-    std::vector<Tag> resolved;
-    for (const Tag& tag : result.value())
-    {
-        if (std::find(m_advancedSearchCriteria.tagIds.begin(), m_advancedSearchCriteria.tagIds.end(), tag.id()) !=
-            m_advancedSearchCriteria.tagIds.end())
-        {
-            resolved.push_back(tag);
-        }
-    }
-    return resolved;
-}
-
 std::vector<Tag> TabViewModel::resolveMediaViewerTagFilters() const
 {
     auto result = m_tagManagementUseCase.allTags();
@@ -1436,186 +1257,6 @@ std::vector<Tag> TabViewModel::resolveMediaViewerTagFilters() const
 Result<DriveSpaceInfo> TabViewModel::driveSpaceInfo() const
 {
     return m_fileNavigationUseCase.driveSpaceInfo(currentPath());
-}
-
-void TabViewModel::runAdvancedSearch(bool forceRescan)
-{
-    if (!m_advancedSearchCriteria.tagIds.empty())
-    {
-        // Tag-first path (Architecture.md §14.22): the tag DB alone answers "which files have
-        // this tag" -- no recursive folder scan needed. m_advancedSearchRoot is still set (for
-        // scoping + setEntries's root arg).
-        const std::vector<Tag::Id>& tagIds = m_advancedSearchCriteria.tagIds;
-        const bool includeChildren = m_advancedSearchCriteria.tagIncludeChildTags;
-
-        if (!forceRescan && m_advancedSearchCachedTagIds == tagIds &&
-            m_advancedSearchCachedTagIncludeChildren == includeChildren &&
-            (m_advancedSearchFullScanDone || m_advancedSearchScanPending))
-        {
-            // Same tag set already fetched, or a fetch for it is already in flight (the user kept
-            // typing/adjusting the name/size fields while it runs) -- don't re-dispatch a redundant
-            // DB query + per-file stat loop. Just re-filter whatever candidates are available now;
-            // an in-flight fetch's own completion callback will apply the latest criteria once it
-            // arrives, same "reuse the in-flight request" posture as the non-tag branch below.
-            applyAdvancedSearchFilter(m_advancedSearchFullScanDone ? m_advancedSearchSnapshot : m_advancedSearchPartialSnapshot);
-            return;
-        }
-
-        m_advancedSearchRoot = currentPath();
-        m_advancedSearchCachedTagIds = tagIds;
-        m_advancedSearchCachedTagIncludeChildren = includeChildren;
-        m_advancedSearchFullScanDone = false;
-        m_advancedSearchScanPending = true;
-        m_advancedSearchPartialSnapshot.clear();
-        m_advancedSearchSnapshotIcons.clear();
-
-        const int generation = ++m_advancedSearchGeneration;
-
-        emit advancedSearchLoading();
-        auto onCandidatesReady = [this, generation](Result<std::vector<FileNode>> result) {
-            onAdvancedSearchCandidatesReady(generation, std::move(result), /*isNewSnapshot=*/true);
-        };
-        if (includeChildren)
-        {
-            m_advancedSearchService.requestTagFirstCandidatesIncludingChildren(this, m_advancedSearchRoot, tagIds,
-                                                                                 std::move(onCandidatesReady));
-        }
-        else
-        {
-            m_advancedSearchService.requestTagFirstCandidates(this, m_advancedSearchRoot, tagIds,
-                                                                std::move(onCandidatesReady));
-        }
-        return;
-    }
-
-    // m_advancedSearchCachedTagIds non-empty here means whatever m_advancedSearchSnapshot/
-    // m_advancedSearchFullScanDone/m_advancedSearchScanPending currently hold pertains to the
-    // tag-first branch above (a tag-restricted candidate set), not a real recursive scan of
-    // m_advancedSearchRoot -- reusing it here (now that tagIds is empty) would silently omit every
-    // untagged file. Treat it the same as "no scan cached yet" so a fresh full scan is dispatched.
-    const bool cachedResultIsTagFirst = !m_advancedSearchCachedTagIds.empty();
-
-    if (forceRescan || m_advancedSearchRoot.empty() || cachedResultIsTagFirst ||
-        (!m_advancedSearchFullScanDone && !m_advancedSearchScanPending))
-    {
-        // No scan covering the current root is running or cached -- dispatch a fresh one. This also
-        // covers forceRescan explicitly re-scanning a root that *was* already fully/partially
-        // scanned (e.g. Search clicked again, or the criteria switched away from tags and back).
-        m_advancedSearchRoot = currentPath();
-        // m_advancedSearchSnapshot/m_advancedSearchFullScanDone/m_advancedSearchScanPending are
-        // about to be overwritten with this recursive scan's own results -- invalidate the tag-first
-        // cache-key above so it can't later be mistaken for a still-valid tag-first candidate cache.
-        m_advancedSearchCachedTagIds.clear();
-        m_advancedSearchCachedTagIncludeChildren = false;
-        m_advancedSearchFullScanDone = false;
-        m_advancedSearchPartialSnapshot.clear();
-        m_advancedSearchSnapshotIcons.clear();
-        m_advancedSearchScanPending = true;
-
-        const int generation = ++m_advancedSearchGeneration;
-
-        emit advancedSearchLoading();
-        m_advancedSearchService.requestRecursiveScan(
-            this, m_advancedSearchRoot,
-            [this, generation](Result<std::vector<FileNode>> result) {
-                onAdvancedSearchCandidatesReady(generation, std::move(result), /*isNewSnapshot=*/true);
-            },
-            [this, generation](std::vector<FileNode> partial) { onAdvancedSearchProgress(generation, std::move(partial)); },
-            m_advancedSearchCriteria.nameOptions.skipGitIgnored);
-        return;
-    }
-
-    if (!m_advancedSearchFullScanDone && m_advancedSearchScanPending)
-    {
-        // A recursive scan of this same root is already running (the user kept typing/adjusting
-        // criteria while it's in flight) -- don't start a second, redundant walk of the same
-        // subtree. Just re-filter whatever the in-flight scan has reported so far; its own next
-        // progress tick (or final result) will pick up m_advancedSearchCriteria as it stands then,
-        // so the latest criteria is never lost (Architecture.md §14.37).
-        applyAdvancedSearchFilter(m_advancedSearchPartialSnapshot);
-        return;
-    }
-
-    // Cached, no rescan needed -- no disk I/O, so this stays fully synchronous (the common
-    // "user is typing in the Name field" case).
-    applyAdvancedSearchFilter(m_advancedSearchSnapshot);
-}
-
-void TabViewModel::applyAdvancedSearchFilter(const std::vector<FileNode>& candidates)
-{
-    auto filtered = FileNavigationUseCase::filterByCriteria(candidates, m_advancedSearchCriteria);
-    filtered = FileNavigationUseCase::sortBy(std::move(filtered), SortCriterion::Name, true);
-    m_advancedSearchResultsModel->setEntries(m_advancedSearchRoot, filtered);
-    // setEntries() above clears the model's tags -- m_advancedSearchSnapshotTags already has every
-    // tag for the current candidate list (requestAdvancedSearchResultTags fetched it whenever that
-    // list itself last changed), so re-applying it here needs no new DB round trip even though this
-    // runs on every criteria edit.
-    m_advancedSearchResultsModel->setFileTags(m_advancedSearchSnapshotTags);
-    // setEntries() also clears the model's own icon cache -- same reapply, from
-    // m_advancedSearchSnapshotIcons, so rows whose icon IconLoadingService already resolved don't
-    // flash back to the placeholder on every criteria edit (see TabQuickSearchViewModel's
-    // m_snapshotIcons for the mirror of this).
-    m_advancedSearchResultsModel->setIcons(m_advancedSearchSnapshotIcons);
-
-    if (!m_advancedSearchActive)
-    {
-        m_advancedSearchActive = true;
-        setSelectedEntries({});
-        emit advancedSearchModeChanged(true);
-    }
-
-    emit advancedSearchResultsChanged(filtered);
-    emit advancedSearchCriteriaChanged(m_advancedSearchCriteria);
-}
-
-void TabViewModel::onAdvancedSearchCandidatesReady(int generation, Result<std::vector<FileNode>> result, bool isNewSnapshot)
-{
-    if (generation != m_advancedSearchGeneration)
-    {
-        // Superseded by a newer request, or the search/tab was closed in the meantime -- discard.
-        return;
-    }
-
-    if (isNewSnapshot)
-    {
-        m_advancedSearchScanPending = false;
-    }
-
-    if (result.hasError())
-    {
-        emit advancedSearchFailed(QString::fromStdString(result.error().message));
-        return;
-    }
-
-    if (isNewSnapshot)
-    {
-        m_advancedSearchSnapshot = std::move(result).value();
-        m_advancedSearchPartialSnapshot.clear();
-        m_advancedSearchFullScanDone = true;
-        applyAdvancedSearchFilter(m_advancedSearchSnapshot);
-        requestAdvancedSearchResultTags(generation, m_advancedSearchSnapshot);
-        requestAdvancedSearchResultIcons(generation, m_advancedSearchSnapshot);
-    }
-    else
-    {
-        applyAdvancedSearchFilter(result.value());
-    }
-
-    emit advancedSearchLoadingFinished();
-}
-
-void TabViewModel::onAdvancedSearchProgress(int generation, std::vector<FileNode> partial)
-{
-    if (generation != m_advancedSearchGeneration)
-    {
-        // Superseded/abandoned, same as onAdvancedSearchCandidatesReady -- discard.
-        return;
-    }
-
-    m_advancedSearchPartialSnapshot = std::move(partial);
-    applyAdvancedSearchFilter(m_advancedSearchPartialSnapshot);
-    requestAdvancedSearchResultTags(generation, m_advancedSearchPartialSnapshot);
-    requestAdvancedSearchResultIcons(generation, m_advancedSearchPartialSnapshot);
 }
 
 void TabViewModel::emitAvailability()
@@ -1800,28 +1441,6 @@ void TabViewModel::requestHoverPreviewThumbnail(const FileNode& entry, int maxWi
         MediaThumbnailLoadingService::Priority::High);
 }
 
-void TabViewModel::requestAdvancedSearchResultIcons(int generation, const std::vector<FileNode>& candidates)
-{
-    m_iconLoadingService.requestIcons(
-        m_advancedSearchResultsModel, m_advancedSearchRoot, candidates, iconSizeMaskFor(m_viewMode),
-        [this, generation](QHash<QString, QIcon> batch) {
-            if (generation != m_advancedSearchGeneration)
-            {
-                // Superseded/abandoned, same discard-by-generation-id approach
-                // onAdvancedSearchCandidatesReady/onAdvancedSearchProgress use.
-                return;
-            }
-
-            // Accumulated into m_advancedSearchSnapshotIcons -- see TabQuickSearchViewModel::
-            // requestResultIcons/m_snapshotIcons for why.
-            for (auto it = batch.constBegin(); it != batch.constEnd(); ++it)
-            {
-                m_advancedSearchSnapshotIcons.insert(it.key(), it.value());
-            }
-            m_advancedSearchResultsModel->setIcons(batch);
-        });
-}
-
 void TabViewModel::requestMediaViewerResultIcons(int generation, const std::vector<FileNode>& candidates)
 {
     m_iconLoadingService.requestIcons(
@@ -1892,21 +1511,6 @@ void TabViewModel::requestMediaViewerResultThumbnails(int generation, const std:
             }
         },
         priority);
-}
-
-void TabViewModel::requestAdvancedSearchResultTags(int generation, const std::vector<FileNode>& candidates)
-{
-    m_fileTagsService.requestTags(this, candidates, [this, generation](Result<TagsByPathMap> result) {
-        if (generation != m_advancedSearchGeneration)
-        {
-            // Superseded/abandoned, same discard-by-generation-id approach
-            // onAdvancedSearchCandidatesReady/onAdvancedSearchProgress use.
-            return;
-        }
-
-        m_advancedSearchSnapshotTags = result ? result.value() : TagsByPathMap{};
-        m_advancedSearchResultsModel->setFileTags(m_advancedSearchSnapshotTags);
-    });
 }
 
 void TabViewModel::requestMediaViewerResultTags(int generation, const std::vector<FileNode>& candidates)

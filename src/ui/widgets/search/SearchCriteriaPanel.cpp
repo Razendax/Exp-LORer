@@ -221,8 +221,8 @@ void SearchCriteriaPanel::setCriteria(const SearchCriteria& criteria, const std:
     const QSignalBlocker tagIncludeChildrenBlocker(m_tagIncludeChildrenButton);
 
     // Skip a field that currently has focus: this call is also reached via the round trip of the
-    // user's own edit (onAnyFieldEdited -> criteriaEdited -> TabViewModel::updateAdvancedSearchCriteria
-    // -> advancedSearchCriteriaChanged -> back here), and re-applying setText/setValue while the user
+    // user's own edit (onAnyFieldEdited -> criteriaEdited -> TabAdvancedSearchViewModel::
+    // updateCriteria -> criteriaChanged -> back here), and re-applying setText/setValue while the user
     // is still typing in that field would reset the cursor to the end on every keystroke and, since
     // currentCriteria() trims the name, would also erase a trailing space as soon as it's typed.
     if (!m_nameEdit->hasFocus())

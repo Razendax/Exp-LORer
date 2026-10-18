@@ -40,9 +40,8 @@ public:
 
     // Swaps the Search button's text to "Searching…" while true, restoring it otherwise. The
     // button stays enabled throughout -- clicking it (or editing a field) while a search is still
-    // running restarts it with the latest criteria. Called around TabViewModel::advancedSearchLoading
-    // and the advancedSearchLoadingFinished/advancedSearchFailed signals that follow it
-    // (Architecture.md §14.37).
+    // running restarts it with the latest criteria. Called around TabAdvancedSearchViewModel::
+    // loading and the loadingFinished/failed signals that follow it (Architecture.md §14.37).
     void setSearching(bool searching);
 
 signals:

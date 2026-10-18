@@ -85,6 +85,8 @@ add_library(explorer_adapters_viewmodels STATIC
     search/AdvancedSearchService.cpp
     search/TabQuickSearchViewModel.h
     search/TabQuickSearchViewModel.cpp
+    search/TabAdvancedSearchViewModel.h
+    search/TabAdvancedSearchViewModel.cpp
     duplicates/DuplicateFinderWorker.h
     duplicates/DuplicateFinderWorker.cpp
     duplicates/DuplicateFinderService.h

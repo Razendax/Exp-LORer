@@ -39,6 +39,7 @@
 #include "SearchCriteriaPanel.h"
 #include "SearchResultsPane.h"
 #include "StatusBarWidget.h"
+#include "TabAdvancedSearchViewModel.h"
 #include "TabMonitoringViewModel.h"
 #include "TabViewModel.h"
 #include "TerminalSessionsWidget.h"
@@ -412,8 +413,9 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     wireBrowserView(browserView, tab);
     stack->addWidget(browserView); // page 0: normal browsing
 
-    auto* advancedSearchPane = new SearchResultsPane(tab->advancedSearchResultsModel(), m_uiThemeChangeNotifier, stack);
-    advancedSearchPane->setCriteria(tab->advancedSearchCriteria(), tab->resolveTagCriteria());
+    TabAdvancedSearchViewModel* advancedSearch = tab->advancedSearch();
+    auto* advancedSearchPane = new SearchResultsPane(advancedSearch->resultsModel(), m_uiThemeChangeNotifier, stack);
+    advancedSearchPane->setCriteria(advancedSearch->criteria(), advancedSearch->resolveTagCriteria());
     // Prepopulate with every tag (searchTagsForCriteria("") -> all tags, alphabetically) rather
     // than leaving the matching-tags row empty until the user types something, same reasoning as
     // MainWindow's equivalent prefill for the Media Viewer search panel.
@@ -472,16 +474,18 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     // here -- its results render in the left panel's SearchPanelWidget instead, so this pane's
     // stack only ever switches between normal browsing, Advanced Search's in-place results, and
     // Media Viewer mode's grid (Architecture.md §14.61).
-    auto pickStackPage = [stack, tab]() { stack->setCurrentIndex(tab->mediaViewerActive() ? 2 : (tab->advancedSearchActive() ? 1 : 0)); };
-    connect(tab, &TabViewModel::advancedSearchModeChanged, stack, [pickStackPage](bool) { pickStackPage(); });
+    auto pickStackPage = [stack, tab, advancedSearch]() {
+        stack->setCurrentIndex(tab->mediaViewerActive() ? 2 : (advancedSearch->isActive() ? 1 : 0));
+    };
+    connect(advancedSearch, &TabAdvancedSearchViewModel::modeChanged, stack, [pickStackPage](bool) { pickStackPage(); });
     connect(tab, &TabViewModel::mediaViewerModeChanged, stack, [pickStackPage](bool) { pickStackPage(); });
 
     connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::searchRequested, tab,
             [tab](const SearchCriteria& criteria) { tab->startAdvancedSearch(criteria); });
     connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::criteriaEdited, tab,
-            [tab](const SearchCriteria& criteria) { tab->updateAdvancedSearchCriteria(criteria); });
+            [tab, advancedSearch](const SearchCriteria& criteria) { advancedSearch->updateCriteria(criteria, tab->currentPath()); });
     connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::closeRequested, tab,
-            [tab]() { tab->exitAdvancedSearch(); });
+            [advancedSearch]() { advancedSearch->exit(); });
 
     connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::tagSearchQueryRequested, tab,
             [advancedSearchPane = advancedSearchPane, tab](const QString& query) {
@@ -490,29 +494,29 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::tagCriterionAdded, tab,
             [tab](Tag::Id id) { tab->addTagSearchCriterion(id); });
     connect(advancedSearchPane->criteriaPanel(), &SearchCriteriaPanel::tagCriterionRemoved, tab,
-            [tab](Tag::Id id) { tab->removeTagSearchCriterion(id); });
+            [tab, advancedSearch](Tag::Id id) { advancedSearch->removeTagCriterion(id, tab->currentPath()); });
 
-    connect(tab, &TabViewModel::advancedSearchResultsChanged, advancedSearchPane,
-            [advancedSearchPane, tab](const std::vector<FileNode>&) {
-                const SearchCriteria& criteria = tab->advancedSearchCriteria();
+    connect(advancedSearch, &TabAdvancedSearchViewModel::resultsChanged, advancedSearchPane,
+            [advancedSearchPane, advancedSearch](const std::vector<FileNode>&) {
+                const SearchCriteria& criteria = advancedSearch->criteria();
                 advancedSearchPane->setHighlightQuery(QString::fromStdString(criteria.nameQuery), criteria.nameOptions.caseSensitive);
             });
 
-    connect(tab, &TabViewModel::advancedSearchCriteriaChanged, advancedSearchPane,
-            [advancedSearchPane, tab](const SearchCriteria& criteria) {
-                advancedSearchPane->setCriteria(criteria, tab->resolveTagCriteria());
+    connect(advancedSearch, &TabAdvancedSearchViewModel::criteriaChanged, advancedSearchPane,
+            [advancedSearchPane, advancedSearch](const SearchCriteria& criteria) {
+                advancedSearchPane->setCriteria(criteria, advancedSearch->resolveTagCriteria());
             });
 
     // Busy state around AdvancedSearchService's async recursive-scan/tag-first-candidate requests
-    // (Architecture.md §14.37). Deliberately NOT tied to advancedSearchResultsChanged above --
-    // that also fires for a long scan's intermediate progress ticks, and the busy indicator should
-    // stay up for the whole scan, not clear after the first partial result. advancedSearchLoadingFinished
-    // covers the success case, advancedSearchFailed the error case.
-    connect(tab, &TabViewModel::advancedSearchLoading, advancedSearchPane,
+    // (Architecture.md §14.37). Deliberately NOT tied to resultsChanged above -- that also fires
+    // for a long scan's intermediate progress ticks, and the busy indicator should stay up for the
+    // whole scan, not clear after the first partial result. loadingFinished covers the success
+    // case, failed the error case.
+    connect(advancedSearch, &TabAdvancedSearchViewModel::loading, advancedSearchPane,
             [advancedSearchPane]() { advancedSearchPane->criteriaPanel()->setSearching(true); });
-    connect(tab, &TabViewModel::advancedSearchLoadingFinished, advancedSearchPane,
+    connect(advancedSearch, &TabAdvancedSearchViewModel::loadingFinished, advancedSearchPane,
             [advancedSearchPane]() { advancedSearchPane->criteriaPanel()->setSearching(false); });
-    connect(tab, &TabViewModel::advancedSearchFailed, advancedSearchPane,
+    connect(advancedSearch, &TabAdvancedSearchViewModel::failed, advancedSearchPane,
             [advancedSearchPane](const QString&) { advancedSearchPane->criteriaPanel()->setSearching(false); });
 
     // Bottom panel (Architecture.md §14.24): a splitter over the existing browse/search/
@@ -761,12 +765,12 @@ void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
         connect(m_boundTab, &TabViewModel::mediaViewerCurrentFolderChanged, this, &WorkspacePaneWidget::onCurrentPathChanged),
 
         connect(m_boundTab, &TabViewModel::directoryContentsChanged, this, &WorkspacePaneWidget::refreshStatusCounts),
-        connect(m_boundTab, &TabViewModel::advancedSearchResultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts),
-        connect(m_boundTab, &TabViewModel::advancedSearchModeChanged, this, &WorkspacePaneWidget::refreshStatusCounts),
+        connect(m_boundTab->advancedSearch(), &TabAdvancedSearchViewModel::resultsChanged, this, &WorkspacePaneWidget::refreshStatusCounts),
+        connect(m_boundTab->advancedSearch(), &TabAdvancedSearchViewModel::modeChanged, this, &WorkspacePaneWidget::refreshStatusCounts),
         connect(m_boundTab, &TabViewModel::selectedEntriesChanged, this, &WorkspacePaneWidget::refreshStatusCounts),
 
         connect(m_boundTab, &TabViewModel::currentPathChanged, m_statusBar, &StatusBarWidget::clearQuickSelect),
-        connect(m_boundTab, &TabViewModel::advancedSearchModeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect),
+        connect(m_boundTab->advancedSearch(), &TabAdvancedSearchViewModel::modeChanged, m_statusBar, &StatusBarWidget::clearQuickSelect),
 
         connect(m_boundTab, &TabViewModel::gitRepositorySummaryChanged, this, &WorkspacePaneWidget::updateGitStatusBar),
         connect(m_boundTab, &TabViewModel::gitOperationFailed, this, &WorkspacePaneWidget::gitOperationFailed),
@@ -1237,8 +1241,8 @@ void WorkspacePaneWidget::refreshStatusCounts()
 
     // The Search tab's own quick search (Architecture.md §14.42) renders in the left panel, not in
     // this pane, so it doesn't factor into this pane's own status-bar counts.
-    const int total =
-        m_boundTab->advancedSearchActive() ? m_boundTab->advancedSearchResultsModel()->rowCount() : m_boundTab->fileListModel()->rowCount();
+    const int total = m_boundTab->advancedSearch()->isActive() ? m_boundTab->advancedSearch()->resultsModel()->rowCount()
+                                                                 : m_boundTab->fileListModel()->rowCount();
     const int selected = static_cast<int>(m_boundTab->selectedEntries().size());
     m_statusBar->setCounts(total, selected);
 }
