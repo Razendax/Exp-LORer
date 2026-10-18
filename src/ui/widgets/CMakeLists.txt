@@ -1,4 +1,5 @@
 add_library(explorer_ui_widgets STATIC
+    ExclusiveToggleButtons.h
     core/MainWindow.h
     core/MainWindow.cpp
     core/WorkspaceLayoutWidget.h

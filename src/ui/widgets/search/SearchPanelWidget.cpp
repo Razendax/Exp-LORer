@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <functional>
 
+#include "ExclusiveToggleButtons.h"
 #include "FileBrowserView.h"
 #include "FileListModel.h"
 #include "PathContainment.h"
@@ -276,22 +277,7 @@ void SearchPanelWidget::setOptions(const NameSearchOptions& options)
 
 void SearchPanelWidget::onMatchModeButtonToggled(QToolButton* button, bool checked)
 {
-    if (checked)
-    {
-        // Manual "exclusive but deselectable" behavior: this vendored Qt build's QButtonGroup has
-        // no ExclusionPolicy::ExclusiveOptional (only the classic always-one-selected exclusive
-        // mode), so the 3 buttons aren't in a QButtonGroup at all -- enforce "at most one of the 3
-        // checked" here instead, while still letting a button be unchecked by clicking it again.
-        for (QToolButton* other : { m_wholeWordButton, m_exactNameButton, m_regexButton })
-        {
-            if (other != button && other->isChecked())
-            {
-                const QSignalBlocker blocker(other);
-                other->setChecked(false);
-            }
-        }
-    }
-
+    applyExclusiveToggle(button, checked, { m_wholeWordButton, m_exactNameButton, m_regexButton });
     emitSearchOptionsChanged();
 }
 

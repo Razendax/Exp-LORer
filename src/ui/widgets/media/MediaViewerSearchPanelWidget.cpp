@@ -14,6 +14,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include "ExclusiveToggleButtons.h"
 #include "FlowLayout.h"
 #include "TagChipWidget.h"
 #include "TagSearchEdit.h"
@@ -344,17 +345,6 @@ void MediaViewerSearchPanelWidget::emitNameFilterChanged()
 
 void MediaViewerSearchPanelWidget::onMatchModeButtonToggled(QToolButton* button, bool checked)
 {
-    if (checked)
-    {
-        for (QToolButton* other : { m_wholeWordButton, m_exactNameButton, m_regexButton })
-        {
-            if (other != button && other->isChecked())
-            {
-                const QSignalBlocker blocker(other);
-                other->setChecked(false);
-            }
-        }
-    }
-
+    applyExclusiveToggle(button, checked, { m_wholeWordButton, m_exactNameButton, m_regexButton });
     emitNameFilterChanged();
 }

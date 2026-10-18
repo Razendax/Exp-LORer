@@ -13,6 +13,7 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
+#include "ExclusiveToggleButtons.h"
 #include "FlowLayout.h"
 #include "TagChipWidget.h"
 #include "UiColors.h"
@@ -346,20 +347,6 @@ void SearchCriteriaPanel::scheduleCriteriaEdited(bool bypassDebounceIfTextEmpty)
 
 void SearchCriteriaPanel::onMatchModeButtonToggled(QToolButton* button, bool checked)
 {
-    if (checked)
-    {
-        // Manual "exclusive but deselectable" behavior -- see SearchPanelWidget::
-        // onMatchModeButtonToggled, ported here verbatim for the same vendored-Qt
-        // QButtonGroup limitation.
-        for (QToolButton* other : { m_wholeWordButton, m_exactNameButton, m_regexButton })
-        {
-            if (other != button && other->isChecked())
-            {
-                const QSignalBlocker blocker(other);
-                other->setChecked(false);
-            }
-        }
-    }
-
+    applyExclusiveToggle(button, checked, { m_wholeWordButton, m_exactNameButton, m_regexButton });
     onAnyFieldEdited();
 }
