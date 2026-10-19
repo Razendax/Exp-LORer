@@ -24,6 +24,9 @@ extern "C"
     const TSLanguage* tree_sitter_json(void);
     const TSLanguage* tree_sitter_html(void);
     const TSLanguage* tree_sitter_css(void);
+    const TSLanguage* tree_sitter_yaml(void);
+    const TSLanguage* tree_sitter_powershell(void);
+    const TSLanguage* tree_sitter_markdown(void);
 }
 
 namespace
@@ -50,6 +53,12 @@ namespace
                 return tree_sitter_html();
             case Language::Css:
                 return tree_sitter_css();
+            case Language::Yaml:
+                return tree_sitter_yaml();
+            case Language::PowerShell:
+                return tree_sitter_powershell();
+            case Language::Markdown:
+                return tree_sitter_markdown();
         }
         return nullptr;
     }
@@ -76,6 +85,12 @@ namespace
                 return QStringLiteral(":/highlighting/html.scm");
             case Language::Css:
                 return QStringLiteral(":/highlighting/css.scm");
+            case Language::Yaml:
+                return QStringLiteral(":/highlighting/yaml.scm");
+            case Language::PowerShell:
+                return QStringLiteral(":/highlighting/powershell.scm");
+            case Language::Markdown:
+                return QStringLiteral(":/highlighting/markdown.scm");
         }
         return QString();
     }

@@ -1,0 +1,14 @@
+{
+  "name": "tree-sitter-markdown",
+  "version": "0.5.3",
+  "description": "Markdown (block structure) grammar for tree-sitter",
+  "homepage": "https://github.com/tree-sitter-grammars/tree-sitter-markdown",
+  "license": "MIT",
+  "dependencies": [
+    "tree-sitter",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    }
+  ]
+}

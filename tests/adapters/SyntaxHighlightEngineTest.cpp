@@ -33,14 +33,19 @@ TEST(LanguageRegistry, MapsKnownExtensionsToTheirLanguage)
     EXPECT_EQ(LanguageRegistry::languageForExtension(".html"), Language::Html);
     EXPECT_EQ(LanguageRegistry::languageForExtension(".htm"), Language::Html);
     EXPECT_EQ(LanguageRegistry::languageForExtension(".css"), Language::Css);
+    EXPECT_EQ(LanguageRegistry::languageForExtension(".yaml"), Language::Yaml);
+    EXPECT_EQ(LanguageRegistry::languageForExtension(".yml"), Language::Yaml);
+    EXPECT_EQ(LanguageRegistry::languageForExtension(".ps1"), Language::PowerShell);
+    EXPECT_EQ(LanguageRegistry::languageForExtension(".psm1"), Language::PowerShell);
+    EXPECT_EQ(LanguageRegistry::languageForExtension(".psd1"), Language::PowerShell);
+    EXPECT_EQ(LanguageRegistry::languageForExtension(".md"), Language::Markdown);
 }
 
 TEST(LanguageRegistry, ReturnsNulloptForExtensionsOutOfScope)
 {
-    // Architecture.md §14.26 "Not Built": these stay plain, unhighlighted text.
-    EXPECT_EQ(LanguageRegistry::languageForExtension(".md"), std::nullopt);
+    // Architecture.md §14.26/§14.100 "Not Built": these stay plain, unhighlighted text.
     EXPECT_EQ(LanguageRegistry::languageForExtension(".txt"), std::nullopt);
-    EXPECT_EQ(LanguageRegistry::languageForExtension(".yaml"), std::nullopt);
+    EXPECT_EQ(LanguageRegistry::languageForExtension(".markdown"), std::nullopt);
     EXPECT_EQ(LanguageRegistry::languageForExtension(""), std::nullopt);
 }
 
@@ -145,6 +150,43 @@ TEST(SyntaxHighlightEngine, HighlightsCssKeywordAndComment)
 
     EXPECT_TRUE(hasSpanCovering(spans, source, "keyword", "@media"));
     EXPECT_TRUE(hasSpanCovering(spans, source, "comment", "/* hi */"));
+}
+
+TEST(SyntaxHighlightEngine, HighlightsYamlBooleanStringAndComment)
+{
+    SyntaxHighlightEngine engine;
+    const std::string source = "# a comment\nname: \"value\"\nenabled: true\n";
+
+    const std::vector<HighlightSpan> spans = engine.highlight(Language::Yaml, source);
+
+    EXPECT_TRUE(hasSpanCovering(spans, source, "comment", "# a comment"));
+    EXPECT_TRUE(hasSpanCovering(spans, source, "boolean", "true"));
+    EXPECT_TRUE(hasSpanCovering(spans, source, "string", "\"value\""));
+}
+
+TEST(SyntaxHighlightEngine, HighlightsPowerShellKeywordAndVariable)
+{
+    SyntaxHighlightEngine engine;
+    const std::string source = "function Add($a, $b) {\n    # sum\n    return $a + $b\n}\n";
+
+    const std::vector<HighlightSpan> spans = engine.highlight(Language::PowerShell, source);
+
+    EXPECT_TRUE(hasSpanCovering(spans, source, "keyword", "function"));
+    EXPECT_TRUE(hasSpanCovering(spans, source, "keyword", "return"));
+    EXPECT_TRUE(hasSpanCovering(spans, source, "variable", "$a"));
+    EXPECT_TRUE(hasSpanCovering(spans, source, "comment", "# sum"));
+}
+
+TEST(SyntaxHighlightEngine, HighlightsMarkdownHeadingAndFencedCodeBlock)
+{
+    SyntaxHighlightEngine engine;
+    const std::string source = "# Title\n\n```\ncode\n```\n";
+
+    const std::vector<HighlightSpan> spans = engine.highlight(Language::Markdown, source);
+
+    EXPECT_TRUE(hasSpanCovering(spans, source, "keyword", "Title"));
+    EXPECT_TRUE(hasSpanCovering(spans, source, "comment", "#"));
+    EXPECT_TRUE(hasSpanCovering(spans, source, "comment", "```"));
 }
 
 TEST(SyntaxHighlightEngine, HighlightsNonAsciiSourceWithCorrectByteOffsets)

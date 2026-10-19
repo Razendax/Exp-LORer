@@ -1,0 +1,14 @@
+{
+  "name": "tree-sitter-powershell",
+  "version": "0.38.1",
+  "description": "PowerShell grammar for tree-sitter",
+  "homepage": "https://github.com/wharflab/tree-sitter-powershell",
+  "license": "MIT",
+  "dependencies": [
+    "tree-sitter",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    }
+  ]
+}

@@ -5,8 +5,9 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81, §14.84–14.85, §14.98 — the right-panel file Preview tab, its
-text-preview syntax highlighting, archive browsing/preview/extraction, per-file/folder font &
+Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81, §14.84–14.85, §14.98, §14.100 — the right-panel file Preview tab, its
+text-preview syntax highlighting (plus its later expansion to YAML/PowerShell/Markdown, §14.100),
+archive browsing/preview/extraction, per-file/folder font &
 color decoration, the Preview panel's dedicated per-kind widgets and media-layout rework, the
 built-in Widgets video player (first used here, before Media Viewer mode reused it), real
 image/video previews in the main browser's Extra Large Icons view, the mouse-hover preview
@@ -97,6 +98,11 @@ list/switch statements. Pure internal restructuring; the behavior and bullets ab
 unchanged.
 
 ### 14.27 Text-Preview Syntax Highlighting
+
+*Superseded in part by §14.100:* the language scope recorded below (C/C++/C#/Python/JS/TS/JSON/
+HTML/CSS, with YAML/Markdown/PowerShell left as plain text) reflects this feature as first built;
+§14.100 adds YAML, PowerShell, and Markdown (block-level) to that scope. The mechanism and
+everything else below is otherwise unchanged.
 
 Recognized text/source files shown in the Preview tab (§14.26) are syntax-highlighted using
 tree-sitter as the parsing engine, plus a `File > Settings...` dialog letting the user recolor each
@@ -901,4 +907,69 @@ changes. §14.97's own closing note already named this as its reason for existin
   (`tests/adapters/StandardFileSystemRepositoryTest.cpp`), per §11's adapter-test convention. The
   `TextEditPreviewWidget`/Settings-page UI wiring falls under the existing UI/ViewModel-glue
   carve-out — no new GTest coverage, no UI blackbox coverage in this pass.
+
+### 14.100 Expanded Highlighting Scope: YAML, PowerShell, Markdown (Block-Level)
+
+Extends §14.27's language scope by three grammars, closing part of that section's original "Not
+built" exclusion. Same mechanism, same per-language touch points as the original nine languages —
+no `SyntaxHighlightEngine`/`HighlightTheme` architecture change, no Domain/Application/Port change.
+
+* **Grammar sourcing** (vcpkg overlay ports, same shape as the existing nine — `vcpkg_from_github`
+  pinned to a tag, compiling that tag's already-committed `src/parser.c`/`src/scanner.c` directly,
+  no tree-sitter-CLI codegen step):
+  * **YAML** — `tree-sitter-grammars/tree-sitter-yaml`. Its `src/` also ships
+    `schema.core.c`/`schema.json.c`/`schema.legacy.c` alongside `parser.c`/`scanner.c`, unlike every
+    prior port's plain `parser.c`(+`scanner.c`) pair — all three schema files get compiled into the
+    static lib too.
+  * **PowerShell** — `wharflab/tree-sitter-powershell`, chosen over the older
+    `airbus-cert/tree-sitter-powershell` fork: a much larger fuzz/corpus test suite and the grammar
+    proposed to the official tree-sitter org as PowerShell's successor grammar
+    (tree-sitter/tree-sitter#5575). Flat `src/`, same shape as every other port.
+  * **Markdown — block grammar only.** `tree-sitter-grammars/tree-sitter-markdown` is a monorepo of
+    two sibling grammars, `tree-sitter-markdown/` (block structure) and `tree-sitter-markdown-inline/`
+    (emphasis, links, inline code spans), joined upstream via a second parse pass over
+    `ts_parser_set_included_ranges`-selected ranges. Only the block grammar is vendored — its
+    overlay portfile fetches the whole repo as usual but configures from the
+    `tree-sitter-markdown/` subdirectory rather than the repo root, the one deviation from the
+    standard portfile template. Inline markdown (`**bold**`, `*italic*`, `` `code` ``,
+    `[text](url)`) is **not** highlighted — see "Not built" below.
+* **`src/adapters/highlighting`**: `Language` gains `Yaml`/`PowerShell`/`Markdown`;
+  `LanguageRegistry::languageForExtension` maps `.yaml`/`.yml` → `Yaml`, `.ps1`/`.psm1`/`.psd1` →
+  `PowerShell`, `.md` → `Markdown` (`.markdown` deliberately left unmapped); `displayName` gains
+  `"YAML"`/`"PowerShell"`/`"Markdown"`. `SyntaxHighlightEngine` gains the matching
+  `tree_sitter_<lang>` extern declarations and `tsLanguageFor`/`queryResourcePathFor` cases, same
+  pattern as the original nine.
+* **New `.scm` queries** (`resources/tree-sitter-queries/{yaml,powershell,markdown}.scm`),
+  hand-authored like every existing query in this directory rather than copied verbatim from each
+  grammar's own upstream query: YAML maps scalars/comments/anchors/tags/mapping keys onto
+  `@string`/`@number`/`@boolean`/`@constant.builtin`/`@comment`/`@label`/`@type`/`@property`;
+  PowerShell maps its keyword/operator sets plus `command_name`/`variable`/`type_spec` onto
+  `@keyword`/`@operator`/`@function`/`@variable`/`@type`/`@string`/`@number`/`@comment`; Markdown
+  (block-level) deliberately reuses the *existing six-category* base palette rather than the
+  `@text.*`/`@punctuation.*` names tree-sitter's own convention would suggest: heading text →
+  `@keyword`, ATX/Setext markers, fence delimiters, list markers, thematic breaks, and block-quote
+  markers → `@comment` (dimmed, same as markdown renderers typically mute structural syntax), code
+  fence bodies and link destinations → `@string`, link reference labels → `@type`, and
+  `backslash_escape` → `@string.escape`. YAML's `boolean`/`constant`/`label`/`property` categories
+  (and had Markdown used `text`/`punctuation` instead) aren't in `HighlightTheme::defaultColorFor`'s
+  base palette, so a capture under one of those renders in the default foreground color until a
+  user colors it from Settings — same pre-existing behavior CSS/JSON's own
+  `@operator`/`@constant.builtin`/`@escape` captures already have. No base-palette change was made:
+  adding one would have had to apply uniformly to every language already using that same capture
+  name (e.g. `@property`/`@punctuation.*` appear in half the existing nine languages' own
+  highlights.scm too), well beyond this pass's scope — Markdown's query was written to lean on the
+  existing palette instead specifically so it highlights visibly without that change.
+* **`HighlightThemeStore`**'s `Language`↔`QString` round-trip, `SettingsDialog`'s and
+  `TextEditorOptionsDialog`'s `kAllLanguages` arrays (both `9` → `12`) all extended the same way the
+  original nine languages are listed — no structural change to either dialog.
+* **Not built**: Markdown inline emphasis/links/inline-code-span highlighting — needs the second
+  (`tree-sitter-markdown-inline`) grammar plus an injection/sub-parse mechanism
+  `SyntaxHighlightEngine` doesn't have (it runs exactly one parser+query per `Language`); adding
+  that mechanism is real architecture work and was deliberately left out of this pass. `.markdown`
+  as a second Markdown extension. Any `HighlightTheme` base-palette entries for YAML's
+  `boolean`/`constant`/`label`/`property` capture categories.
+* **Testing**: `tests/adapters/SyntaxHighlightEngineTest.cpp` — `MapsKnownExtensionsToTheirLanguage`
+  extended for the six new/sibling extensions; the now-stale `.md`/`.yaml` cases dropped from
+  `ReturnsNulloptForExtensionsOutOfScope`; one new `Highlights<Lang>KeywordAndComment`-style test per
+  new language, same `hasSpanCovering` helper the existing nine languages' tests already use.
 

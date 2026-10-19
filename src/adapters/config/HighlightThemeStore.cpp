@@ -35,6 +35,12 @@ namespace
                 return QStringLiteral("Html");
             case Language::Css:
                 return QStringLiteral("Css");
+            case Language::Yaml:
+                return QStringLiteral("Yaml");
+            case Language::PowerShell:
+                return QStringLiteral("PowerShell");
+            case Language::Markdown:
+                return QStringLiteral("Markdown");
         }
         return QString();
     }
@@ -59,6 +65,12 @@ namespace
             return Language::Html;
         if (text == QStringLiteral("Css"))
             return Language::Css;
+        if (text == QStringLiteral("Yaml"))
+            return Language::Yaml;
+        if (text == QStringLiteral("PowerShell"))
+            return Language::PowerShell;
+        if (text == QStringLiteral("Markdown"))
+            return Language::Markdown;
         return std::nullopt;
     }
 }

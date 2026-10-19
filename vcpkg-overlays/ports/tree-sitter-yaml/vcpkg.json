@@ -1,0 +1,14 @@
+{
+  "name": "tree-sitter-yaml",
+  "version": "0.7.2",
+  "description": "YAML grammar for tree-sitter",
+  "homepage": "https://github.com/tree-sitter-grammars/tree-sitter-yaml",
+  "license": "MIT",
+  "dependencies": [
+    "tree-sitter",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    }
+  ]
+}

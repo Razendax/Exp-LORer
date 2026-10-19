@@ -14,4 +14,7 @@ enum class Language
     Json,
     Html,
     Css,
+    Yaml,
+    PowerShell,
+    Markdown,
 };

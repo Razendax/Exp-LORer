@@ -21,7 +21,7 @@ target_link_libraries(explorer_adapters_highlighting PRIVATE unofficial::tree-si
 # already ships) as plain static libraries with no CMake package config, so they're located the
 # same way vcpkg itself expects a config-less port to be consumed: find_library against the
 # triplet's installed lib directory (which the vcpkg toolchain file already adds to the search path).
-foreach(grammar IN ITEMS c cpp c-sharp python javascript typescript json html css)
+foreach(grammar IN ITEMS c cpp c-sharp python javascript typescript json html css yaml powershell markdown)
     find_library(EXP_LORER_TS_${grammar}_LIB NAMES tree-sitter-${grammar} REQUIRED)
     target_link_libraries(explorer_adapters_highlighting PRIVATE ${EXP_LORER_TS_${grammar}_LIB})
 endforeach()

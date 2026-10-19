@@ -44,6 +44,18 @@ std::optional<Language> LanguageRegistry::languageForExtension(const std::string
     {
         return Language::Css;
     }
+    if (lowercaseExtension == ".yaml" || lowercaseExtension == ".yml")
+    {
+        return Language::Yaml;
+    }
+    if (lowercaseExtension == ".ps1" || lowercaseExtension == ".psm1" || lowercaseExtension == ".psd1")
+    {
+        return Language::PowerShell;
+    }
+    if (lowercaseExtension == ".md")
+    {
+        return Language::Markdown;
+    }
     return std::nullopt;
 }
 
@@ -69,6 +81,12 @@ QString LanguageRegistry::displayName(Language language)
             return QObject::tr("HTML");
         case Language::Css:
             return QObject::tr("CSS");
+        case Language::Yaml:
+            return QObject::tr("YAML");
+        case Language::PowerShell:
+            return QObject::tr("PowerShell");
+        case Language::Markdown:
+            return QObject::tr("Markdown");
     }
     return QString();
 }

@@ -52,7 +52,7 @@ private:
     // Replaces the placeholder page at `languageIndex` with the real one (built via
     // buildLanguagePage, which compiles that language's tree-sitter query) the first time this
     // language is actually selected -- a no-op on every later selection. Keeps Settings' first open
-    // from paying all nine languages' grammar/query setup cost up front for a QStackedWidget that
+    // from paying all twelve languages' grammar/query setup cost up front for a QStackedWidget that
     // only ever shows one page at a time.
     void ensureLanguagePageBuilt(std::size_t languageIndex);
     QWidget* buildLanguagePage(Language language);

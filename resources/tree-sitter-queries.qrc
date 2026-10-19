@@ -9,5 +9,8 @@
         <file alias="json.scm">tree-sitter-queries/json.scm</file>
         <file alias="html.scm">tree-sitter-queries/html.scm</file>
         <file alias="css.scm">tree-sitter-queries/css.scm</file>
+        <file alias="yaml.scm">tree-sitter-queries/yaml.scm</file>
+        <file alias="powershell.scm">tree-sitter-queries/powershell.scm</file>
+        <file alias="markdown.scm">tree-sitter-queries/markdown.scm</file>
     </qresource>
 </RCC>
