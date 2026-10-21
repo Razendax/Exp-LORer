@@ -13,3 +13,4 @@ vcvars.txt
 ui_tests/.venv/
 **/__pycache__/
 .pytest_cache/
+graphify-out/
