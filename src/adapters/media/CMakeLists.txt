@@ -11,6 +11,8 @@ add_library(explorer_adapters_media STATIC
     QtGifImageDecoder.cpp
     FFmpegMediaDecoder.h
     FFmpegMediaDecoder.cpp
+    PopplerPdfDecoder.h
+    PopplerPdfDecoder.cpp
     MediaDecoder.h
     MediaDecoder.cpp
 )
@@ -48,5 +50,8 @@ target_link_libraries(explorer_adapters_media PRIVATE PkgConfig::VIPS)
 
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil libswscale)
 target_link_libraries(explorer_adapters_media PRIVATE PkgConfig::FFMPEG)
+
+pkg_check_modules(POPPLER_CPP REQUIRED IMPORTED_TARGET poppler-cpp)
+target_link_libraries(explorer_adapters_media PRIVATE PkgConfig::POPPLER_CPP)
 
 target_link_libraries(explorer_adapters_media PRIVATE explorer_adapters_logging)

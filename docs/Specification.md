@@ -367,9 +367,11 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   if nothing is selected): a folder's immediate contents (folders first, then files, both
   alphabetical); a text/source file's content (txt/html/xml/json/md/ini/log/yaml/csv, common
   source extensions such as cs/cpp/h/hpp/c/py/js/ts/css); a scaled preview image for supported
-  image formats (2.3); or, for supported video formats (2.4), a static representative frame by
+  image formats (2.3); for supported video formats (2.4), a static representative frame by
   default with a dropdown to switch to the inline built-in video player instead (Architecture.md
-  §14.67). Anything else shows "no preview available."
+  §14.67); or, for a PDF file, its first page rendered as a static image (Architecture.md §14.101;
+  the Properties block shows its page count; no page navigation in v1). Anything else shows "no
+  preview available."
 * **Syntax highlighting** (Architecture.md §14.27): recognized source files (C, C++, C#, Python,
   JavaScript, TypeScript, JSON, HTML, CSS in this pass) are shown with tree-sitter-based syntax
   highlighting rather than plain monospace text; other accepted text extensions remain plain text.

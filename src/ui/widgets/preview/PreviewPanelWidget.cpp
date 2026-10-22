@@ -144,6 +144,13 @@ void PreviewPanelWidget::onPreviewReady(const FilePreview& preview)
         m_previewModeCombo->show();
         showVideoPage();
         break;
+    case FilePreviewKind::Pdf:
+        m_mediaPreviewWidget->setMetadata(preview);
+        if (m_mediaPreviewWidget->showStaticImage(preview))
+            m_stack->setCurrentWidget(m_mediaPreviewWidget);
+        else
+            m_stack->setCurrentWidget(m_unsupportedLabel);
+        break;
     case FilePreviewKind::Unsupported:
         m_stack->setCurrentWidget(m_unsupportedLabel);
         break;

@@ -134,6 +134,30 @@ TEST(FilePreviewUseCase, ImageExtensionUsesWhateverMetadataTheDecoderReturned)
     EXPECT_EQ(result.value().metadata().height(), 0);
 }
 
+TEST(FilePreviewUseCase, PdfExtensionDispatchesToMediaDecoderAsPdf)
+{
+    MockFileSystemRepository fileSystemRepository;
+    MockMediaDecoder mediaDecoder;
+
+    MediaThumbnail thumbnail;
+    thumbnail.bytes = { std::byte{ 0x25 }, std::byte{ 0x50 } };
+    thumbnail.metadata = MediaMetadata::create(800, 1200, std::chrono::milliseconds(0), "pdf", 0, 5).value();
+    EXPECT_CALL(mediaDecoder, generateThumbnail(std::filesystem::path("C:/data/report.pdf"), 200, 200, 0))
+        .WillOnce(Return(Result<MediaThumbnail>::success(thumbnail)));
+
+    FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
+    auto result = useCase.generatePreview(makeNode("C:/data/report.pdf", FileType::Regular), 200, 200, 1024);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().kind(), FilePreviewKind::Pdf);
+    EXPECT_EQ(result.value().imageBytes(), thumbnail.bytes);
+    EXPECT_EQ(result.value().path(), std::filesystem::path("C:/data/report.pdf"));
+    EXPECT_EQ(result.value().metadata().width(), 800);
+    EXPECT_EQ(result.value().metadata().height(), 1200);
+    EXPECT_EQ(result.value().metadata().pageCount(), 5);
+    EXPECT_EQ(result.value().fileSizeBytes(), 10u);
+}
+
 TEST(FilePreviewUseCase, TextExtensionReadsPrefixAndReturnsText)
 {
     MockFileSystemRepository fileSystemRepository;

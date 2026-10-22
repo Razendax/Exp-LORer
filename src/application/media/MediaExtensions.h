@@ -34,6 +34,13 @@ namespace MediaExtensions
         return std::find(kVideoExtensions.begin(), kVideoExtensions.end(), extension) != kVideoExtensions.end();
     }
 
+    // Its own predicate, not folded into isImageExtension -- same posture as video
+    // (Architecture.md §14.101).
+    inline bool isPdfExtension(const std::string& extension)
+    {
+        return extension == ".pdf";
+    }
+
     // True only for GIF (Architecture.md §14.79) -- the one image extension that always animates
     // on hover and gets its own Media Viewer "Animations" bucket, carved out of isImageExtension's
     // broader set below.

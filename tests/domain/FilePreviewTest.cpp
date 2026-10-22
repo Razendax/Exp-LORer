@@ -71,6 +71,23 @@ TEST(FilePreview, VideoFactorySetsKindPosterBytesPathAndMetadata)
     EXPECT_EQ(preview.fileSizeBytes(), 4096u);
 }
 
+TEST(FilePreview, PdfFactorySetsKindBytesPathAndMetadata)
+{
+    std::vector<std::byte> bytes{ std::byte{ 0x25 }, std::byte{ 0x50 } };
+    MediaMetadata metadata = MediaMetadata::create(800, 1200, std::chrono::milliseconds(0), "pdf", 0, 3).value();
+
+    FilePreview preview = FilePreview::pdf(bytes, "C:/data/doc.pdf", metadata, 1024);
+
+    EXPECT_EQ(preview.kind(), FilePreviewKind::Pdf);
+    EXPECT_EQ(preview.imageBytes(), bytes);
+    EXPECT_EQ(preview.path(), "C:/data/doc.pdf");
+    EXPECT_EQ(preview.metadata(), metadata);
+    EXPECT_EQ(preview.metadata().pageCount(), 3);
+    EXPECT_EQ(preview.fileSizeBytes(), 1024u);
+    EXPECT_TRUE(preview.text().empty());
+    EXPECT_TRUE(preview.folderEntries().empty());
+}
+
 TEST(FilePreview, UnsupportedFactorySetsKindOnly)
 {
     FilePreview preview = FilePreview::unsupported();

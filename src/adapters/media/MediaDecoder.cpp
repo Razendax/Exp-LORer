@@ -27,6 +27,10 @@ Result<MediaThumbnail> MediaDecoder::generateThumbnail(const std::filesystem::pa
     {
         return m_videoDecoder.generateThumbnail(mediaFile, maxWidth, maxHeight, previewIndex);
     }
+    if (MediaExtensions::isPdfExtension(extension))
+    {
+        return m_pdfDecoder.generateThumbnail(mediaFile, maxWidth, maxHeight, previewIndex);
+    }
 
     return Result<MediaThumbnail>::failure(Error(ErrorCode::InvalidArgument, "Unsupported media extension: " + extension));
 }

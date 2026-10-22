@@ -18,7 +18,7 @@ Plain C++ entities, no framework dependencies:
 * `FileNode` — a file or directory: path, size, dates, type, identity hash (§8), and an optional
   `displayName` override used only by synthetic entries (e.g. "This PC" drives, §14.15).
 * `Tag` — id, name, hex color.
-* `MediaMetadata` — resolution, duration, codec.
+* `MediaMetadata` — resolution, duration, codec, page count (Pdf previews only, §14.101).
 * `FileTagAssociation` — maps a `FileNode`'s hash/path to a `Tag`'s id; path is the primary key,
   hash is the fallback used to relocate a row after a rename/move (§7 "Path resolution").
 
@@ -34,7 +34,7 @@ instance safely serves concurrent callers from every tab/pane (§14.2).
 * `TagManagementUseCase` — create/update/delete/assign tags; resolves broken paths via file hash;
   aggregates tags for the tag panel and ranks tag search results.
 * `MediaProcessingUseCase` — thumbnail/metadata extraction for images and video.
-* `FilePreviewUseCase` — classifies a target as folder/text/image/video/unsupported and builds a
+* `FilePreviewUseCase` — classifies a target as folder/text/image/video/pdf/unsupported and builds a
   `FilePreview` for the right panel's Preview tab (§14.26): folder listing (directories first),
   capped text-prefix read, or a decoded thumbnail via `IMediaDecoder`. Stateless, depends only on
   `IFileSystemRepository`/`IMediaDecoder` — never on another use case, same posture as the rest of
@@ -195,8 +195,9 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
   can be added without touching Domain/Application.
 * **Qt 6** (Widgets + Quick/QML hybrid, §2.4).
 * **vcpkg** manifest mode (`vcpkg.json`) for all third-party dependencies (Qt6, SQLite3, FFmpeg,
-  spdlog, GoogleTest/GoogleMock, xxHash, libarchive per §14.29, libgit2 per §14.32), consumed via
-  `find_package`; `CMakePresets.json` pins the vcpkg toolchain.
+  spdlog, GoogleTest/GoogleMock, xxHash, libarchive per §14.29, libgit2 per §14.32, poppler per
+  §14.101), consumed via `find_package` (pkgconf for the handful with no CMake config package, e.g.
+  libvips/FFmpeg/poppler); `CMakePresets.json` pins the vcpkg toolchain.
 * **Logging:** `spdlog`, wrapped behind a thin `Logging::log(...)` call site so it isn't referenced
   outside one adapter header.
 * **Dependency injection:** no framework — a single composition root
@@ -563,8 +564,7 @@ growing, and update both that file's intro and this index to match.
   Tag Manager dialog, tag panel keyboard-driven autocomplete.
 * **[features/05-preview-and-decoration.md](features/05-preview-and-decoration.md)** — the
   right-panel file Preview tab (and its later per-kind-widget/layout rework), text-preview syntax
-  highlighting, archive browsing/preview/extraction, per-file/folder font & color decoration, the
-  built-in Widgets video player.
+  highlighting, archive browsing/preview/extraction, the built-in Widgets video player, PDF preview.
 * **[features/06-status-and-monitoring.md](features/06-status-and-monitoring.md)** — per-pane and
   window-wide status bars, per-file git status badges, live directory update, recursive folder
   monitoring, git branch status/checkout.
@@ -582,4 +582,6 @@ growing, and update both that file's intro and this index to match.
 * **[features/10-text-editor.md](features/10-text-editor.md)** — the built-in text editor dialog
   (Tools > Text Editor): multi-cursor editing, the Find bar, Go to Line, and the Find bar's
   Replace addition.
+* **[features/11-decoration.md](features/11-decoration.md)** — per-file/folder font & color
+  decoration (split out of features/05 once that file approached the 1000-line cap).
 

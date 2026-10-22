@@ -66,3 +66,34 @@ TEST_F(MediaDecoderTest, GenerateThumbnailDispatchesGifToGifDecoder)
     ASSERT_TRUE(result.hasValue());
     EXPECT_EQ(result.value().metadata.codec(), "gif");
 }
+
+// Confirms MediaDecoder checks isPdfExtension and actually dispatches to PopplerPdfDecoder
+// (Architecture.md §14.101) rather than failing with "Unsupported media extension".
+TEST_F(MediaDecoderTest, GenerateThumbnailDispatchesPdfToPdfDecoder)
+{
+    const char* kMinimalSinglePagePdf =
+        "%PDF-1.1\n"
+        "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+        "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+        "3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources << /Font << /F1 4 0 R >> >> "
+        "/Contents 5 0 R >>\nendobj\n"
+        "4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n"
+        "5 0 obj\n<< /Length 44 >>\nstream\n"
+        "BT /F1 18 Tf 10 50 Td (Hello, world!) Tj ET\n"
+        "endstream\nendobj\n"
+        "xref\n0 6\n0000000000 65535 f \n"
+        "trailer\n<< /Size 6 /Root 1 0 R >>\n"
+        "startxref\n0\n"
+        "%%EOF";
+
+    const fs::path pdfFile = m_tempDir / "doc.pdf";
+    std::ofstream stream(pdfFile, std::ios::binary);
+    stream << kMinimalSinglePagePdf;
+    stream.close();
+
+    MediaDecoder decoder;
+    auto result = decoder.generateThumbnail(pdfFile, 64, 64);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().metadata.codec(), "pdf");
+}

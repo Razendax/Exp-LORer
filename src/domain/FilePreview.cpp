@@ -38,6 +38,17 @@ FilePreview FilePreview::video(std::vector<std::byte> encodedPosterBytes, std::f
     return preview;
 }
 
+FilePreview FilePreview::pdf(std::vector<std::byte> encodedBytes, std::filesystem::path path, MediaMetadata metadata,
+                              std::uintmax_t fileSizeBytes)
+{
+    FilePreview preview(FilePreviewKind::Pdf);
+    preview.m_imageBytes = std::move(encodedBytes);
+    preview.m_path = std::move(path);
+    preview.m_metadata = std::move(metadata);
+    preview.m_fileSizeBytes = fileSizeBytes;
+    return preview;
+}
+
 FilePreview FilePreview::unsupported()
 {
     return FilePreview(FilePreviewKind::Unsupported);

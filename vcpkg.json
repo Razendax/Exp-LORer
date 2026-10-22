@@ -37,6 +37,7 @@
       "features": ["bzip2", "lz4", "lzma", "zstd"]
     },
     "libgit2",
+    "poppler",
     {
       "name": "pkgconf",
       "host": true

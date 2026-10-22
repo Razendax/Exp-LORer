@@ -107,6 +107,19 @@ Result<FilePreview> FilePreviewUseCase::generatePreview(const FileNode& target, 
             FilePreview::video(std::move(decoded.bytes), target.path(), decoded.metadata, target.size()));
     }
 
+    if (MediaExtensions::isPdfExtension(extension))
+    {
+        auto thumbnail = m_mediaDecoder.generateThumbnail(readablePath, maxImageWidth, maxImageHeight);
+        if (!thumbnail)
+        {
+            return Result<FilePreview>::failure(thumbnail.error());
+        }
+
+        MediaThumbnail decoded = std::move(thumbnail).value();
+        return Result<FilePreview>::success(
+            FilePreview::pdf(std::move(decoded.bytes), target.path(), decoded.metadata, target.size()));
+    }
+
     if (isTextExtension(extension))
     {
         auto prefix = m_fileSystemRepository.readFilePrefix(readablePath, maxTextBytes);

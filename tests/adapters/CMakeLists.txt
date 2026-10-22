@@ -19,6 +19,7 @@ add_executable(explorer_adapters_tests
     QtGifImageDecoderTest.cpp
     MediaDecoderTest.cpp
     FFmpegMediaDecoderTest.cpp
+    PopplerPdfDecoderTest.cpp
     SyntaxHighlightEngineTest.cpp
     HighlightThemeTest.cpp
     ArchivePathResolverTest.cpp

@@ -5,19 +5,20 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.26–14.27, §14.29–14.30, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81, §14.84–14.85, §14.98, §14.100 — the right-panel file Preview tab, its
+Covers §14.26–14.27, §14.29, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81, §14.84–14.85, §14.98, §14.100–14.101 — the right-panel file Preview tab, its
 text-preview syntax highlighting (plus its later expansion to YAML/PowerShell/Markdown, §14.100),
-archive browsing/preview/extraction, per-file/folder font &
-color decoration, the Preview panel's dedicated per-kind widgets and media-layout rework, the
+archive browsing/preview/extraction, the Preview panel's dedicated per-kind widgets and media-layout rework, the
 built-in Widgets video player (first used here, before Media Viewer mode reused it), real
 image/video previews in the main browser's Extra Large Icons view, the mouse-hover preview
 popup, GIF animation / SVG rendering support across both, a GIF-thumbnail-decode bug fix, a
 checkerboard background fix for transparent SVG/GIF previews in both of those surfaces, a
-content-only mode-switch/collapsible-properties rework of the Preview tab's media chrome, and
-replacing the text page's bare read-only view with the built-in text editor (Edit/Revert/Save).
-Section numbers are **not** contiguous with this file's neighbors — they were assigned chronologically as
+content-only mode-switch/collapsible-properties rework of the Preview tab's media chrome,
+replacing the text page's bare read-only view with the built-in text editor (Edit/Revert/Save),
+and PDF preview support (§14.101). Per-file/folder font & color decoration, formerly also covered
+here, moved to [features/11-decoration.md](11-decoration.md) once this file approached §14's
+1000-line-per-file cap. Section numbers are **not** contiguous with this file's neighbors — they were assigned chronologically as
 each feature was built and are kept stable since code comments cite them directly. See
-[Architecture.md](../Architecture.md) §14 for the full topic index across all nine files.
+[Architecture.md](../Architecture.md) §14 for the full topic index across all files.
 
 ---
 ### 14.26 Right-Panel File Preview (Preview Tab)
@@ -243,136 +244,6 @@ archive creation or in-archive editing in v1.
   archive-aware `StandardFileSystemRepository`/`FilePreviewUseCase` paths) are GTest-covered per
   §11; the UI-layer changes above fall under the existing UI/ViewModel-glue carve-out, smoke-tested
   manually.
-
-### 14.30 Per-File/Folder Font & Color Customization (Pattern-Based)
-
-Lets the user define an ordered list of **decoration rules** — each a comma-separated set of
-wildcard name patterns plus a style (color, font family override, bold/italic/underline/strikeout)
-— edited from a new `Settings → General → Colors` page. Every row in every file listing (normal
-browsing, quick search §14.18, advanced search §14.19 — all seven view modes) is checked against the
-rule list; the first rule whose pattern list matches wins and its style is applied to the whole row.
-Like syntax highlighting (§14.27) and the terminal (§14.24), this is a pure presentation concern:
-**no Domain/Application change, no new Port, no `CompositionRoot` use-case wiring** — only new
-adapter-layer pure logic plus Qt-facing config/ViewModel/UI, mirroring the
-`HighlightTheme`/`HighlightThemeStore`/`HighlightThemeViewModel` stack.
-
-* **Pattern syntax:** `*` (any run of characters), `?` (exactly one character), `"..."` (a quoted
-  span is taken literally, so a comma inside it doesn't split the pattern list; a doubled `""`
-  inside one is a literal `"`), and a leading `#` on an individual pattern (stripped before
-  matching) which marks that pattern as applying to **folders** instead of the default **files
-  only**. Multiple patterns for one rule are comma-separated with OR semantics (any one matching is
-  enough). Matching is against `FileNode::name()` (the last path component, not the full path),
-  case-insensitive on ASCII only (non-ASCII case-folding is out of scope). Worked examples: `*.exe`
-  (files only), `Image_?.png` matches `Image_1.png`/`Image_2.png` but not `Image_2121.png`, `#.git`
-  (a folder named exactly `.git`), `"Image, file.png"` (one pattern containing a literal comma).
-* **`src/adapters/decoration`** (new module, `explorer_adapters_decoration`, pure C++ — no Qt, same
-  posture as `adapters/highlighting`'s `LanguageRegistry`): `FileNamePattern` (parses/strips the `#`
-  marker, glob-matches `*`/`?` against a UTF-8 name decoded to codepoints so `?` matches one
-  *character*, not one UTF-8 byte); `FileDecorationRule` (a pattern list plus style fields —
-  `std::optional<std::string> hexColor`/`fontFamily`, `std::optional<int> fontPointSize`,
-  `bool bold/italic/underline/strikeout` — `create()` returns a `Result` so an unterminated `"` is a
-  reportable parse error, not a crash);
-  `FileDecorationRules` (an ordered `std::vector<FileDecorationRule>`,
-  `resolve(nameUtf8, isDirectory)` returns the first match or `nullptr` — **first-match-wins, not
-  merged**, so rule order is priority and the Settings page exposes Up/Down reordering). GTest-
-  covered like `LanguageRegistry`/`SyntaxHighlightEngine`.
-* **Built-in Hidden Files/Hidden Folders rows (§14.22):** `FileDecorationRules` additionally holds
-  two always-present `FileDecorationRule` members — `hiddenFilesRule()`/`hiddenFoldersRule()`
-  (read) and `setHiddenFilesRule()`/`setHiddenFoldersRule()` (write), selected by
-  `hiddenStyle(isDirectory)` — that are **structurally excluded from `resolve()`**: they're stored
-  outside `m_rules` and never participate in name-pattern matching or Up/Down priority. They start
-  with no color/font override (both fields unset, same "(Default)" starting point `Add Rule`
-  produces) until the user sets one — there is deliberately no hardcoded hidden-dim fallback
-  anymore. `FileDecorationRulesStore` persists them as two optional top-level JSON keys,
-  `hiddenFiles`/`hiddenFolders`, holding the same `color`/`fontFamily`/`fontSize`/`bold`/`italic`/
-  `underline`/`strikeout` fields as a rule object but no `patterns` key; missing or malformed keys
-  (old-format file, hand-edited JSON) fall back to the same no-override default, matching the
-  store's tolerant-load posture. `FileDecorationsViewModel` exposes matching
-  `hiddenFilesRule()`/`hiddenFoldersRule()`/`setHiddenFilesRule()`/`setHiddenFoldersRule()`, each
-  broadcasting `rulesChanged()` and queuing a save exactly like `setRules()`.
-* **`src/adapters/config`** gains `FileDecorationRulesStore` (own `file_decorations.json`, same
-  tolerant-load/atomic-save shape as `HighlightThemeStore`), an `AsyncSaveDispatcher<FileDecorationRules>`
-  member (the shared background-thread-save helper every `*ViewModel` in this directory uses — see
-  the `AsyncSaveDispatcher`/`AsyncSaveWorker` note below), and `FileDecorationsViewModel` (the
-  live `QObject` wrapper — `rules()`/`setRules()`, `rulesChanged()` — owned once by
-  `CompositionRoot`/`MainWindow` like `HighlightThemeViewModel` so
-  `SettingsDialog` and every `FileListModel` observe the same live rule set).
-* **Threading into every `FileListModel` — deliberately *not* a `FileDecorationsViewModel&`:**
-  `src/adapters/config` already depends on `src/adapters/viewmodels` (`AppConfig` needs
-  `FileListModel::ColumnCount`), so a `FileDecorationsViewModel&` constructor parameter on
-  `FileListModel`/`TabViewModel`/`WorkspacePaneViewModel`/`WorkspaceController` (all in
-  `src/adapters/viewmodels`) would create a build-graph cycle. Instead, the same
-  `CompositionRoot::createWorkspaceController()`/`createTabViewModel()` →
-  `WorkspaceController` → `WorkspacePaneViewModel` → `TabViewModel` → each of its three
-  `FileListModel` instances (main/quick-search/advanced-search) chain §14.20 used for
-  `TagManagementUseCase&` threads **two** plain parameters instead: `const FileDecorationRules&`
-  (from `src/adapters/decoration`, which has no such dependency, for the actual name matching) and
-  a bare `QObject&` — the same `FileDecorationsViewModel` instance, referenced only as its `QObject`
-  base. `FileListModel` connects to that `QObject&`'s `rulesChanged()` signal via the string-based
-  `SIGNAL`/`SLOT` overload of `connect()`, which needs no compile-time knowledge of
-  `FileDecorationsViewModel` and so pulls in no dependency on `src/adapters/config`. On that signal,
-  it re-emits `dataChanged()` across `Qt::ForegroundRole`/`Qt::FontRole` for every row, so
-  already-open listings and search results restyle live the moment a rule is added/edited/removed/
-  reordered — the same immediate-apply posture every other Settings page uses.
-  `explorer_adapters_viewmodels` links `explorer_adapters_decoration` directly for this.
-* **`FileListModel::data()`:** resolves a decoration via a single `resolveDecoration(entry)` point
-  that first tries `m_fileDecorationRules.resolve(PathUtf8::toUtf8(entry.name()),
-  entry.isDirectory())` — **never `path::string()`**, per §6 — skipped for synthetic rows
-  (`entry.displayName()` set, e.g. "This PC"'s drives, §14.15), since they have no real on-disk
-  filename to match against. If no pattern rule matches and `entry.isHidden()`, it falls back to
-  `m_fileDecorationRules.hiddenStyle(entry.isDirectory())` — so a matching name-pattern rule always
-  wins over the built-in hidden style for a hidden entry, and an entry that is neither matched nor
-  hidden resolves to nothing. A resolved `hexColor` becomes the `Qt::ForegroundRole` (unset when
-  nothing resolves or the resolved rule has no color override); a resolved font override/style bits
-  produce a new `Qt::FontRole` value (unset otherwise). Neither role is column-scoped — a match
-  styles the whole row across every Details-view column, not just Name.
-* **Delegates:** `FileIconDelegate`/`FileTileDelegate`/`SearchResultDelegate` already read
-  `Qt::ForegroundRole` off the model for their hand-painted text pen color (§14.22); each gains the
-  symmetric `Qt::FontRole` read to `painter->setFont(...)`, with `SearchResultDelegate` layering its
-  existing match-highlight bold *on top of* the resolved font rather than replacing it. List/Details
-  view modes need no change — Qt's stock delegate already honors both roles.
-* **UI:** `SettingsDialog` gains a `General → Colors` tree item (sibling of the existing
-  `General → UI` item) and a `FileDecorationsViewModel&` constructor parameter (same posture as its
-  existing `HighlightThemeViewModel&`), threaded from `MainWindow` the same way. Its page is a
-  `QTableWidget` (Patterns / live style Sample / ↑ / ↓ / Remove, one row per rule) plus "Add Rule".
-  Patterns/Sample columns are `Interactive`-resized (user-draggable, with sane default widths) and
-  the ↑/↓/Remove columns are `ResizeToContents`-sized `QToolButton`s with standard icons
-  (`SP_ArrowUp`/`SP_ArrowDown`/`SP_TrashIcon`) rather than text buttons, so the action columns stay
-  compact instead of dominating the row. Reordering and removal call `setRules()` immediately (no
-  confirmation — cheap, reversible). The table's first two rows are always the built-in "Hidden
-  Files"/"Hidden Folders" rows (a fixed label in the Patterns column instead of pattern text,
-  editing their live style Sample the same way as any rule) — they have no ↑/↓/Remove buttons (not
-  reorderable relative to pattern rules, not removable) and sit above the pattern-rule rows, which
-  render starting at table row 2 keyed by their vector index for Up/Down/Remove. A new
-  `FileDecorationRuleDialog` (`src/ui/widgets`) edits one rule: a pattern `QLineEdit` (with a syntax
-  hint covering the four worked examples above) — disabled and showing a fixed placeholder instead
-  (with the syntax hint hidden) when editing one of the two built-in hidden rows, whose `Kind`
-  constructor parameter (`PatternRule`/`HiddenFiles`/`HiddenFolders`) selects this mode and skips
-  pattern parsing on accept (`FileDecorationRule::create("", ...)`, always valid); a color
-  row whose button *is* the swatch (background = the chosen color, text = its hex code or
-  "(Default)", click opens `QColorDialog`) with a "Reset" button to unset it; and a "Font" group box
-  replacing the old `QFontDialog` picker (whose Bold/Italic/Underline/Strikeout never actually
-  applied — only `family()` was read from it, which confused users seeing effects in that dialog
-  that had no effect). The group box's left column stacks an editable `QLineEdit` (a quick-selection
-  filter: typing jumps/highlights the first matching row in the list below without altering what was
-  typed) above a `QListWidget` of every `QFontDatabase::families()` entry, with no "(Default)" row —
-  picking a list row fills the edit field, and the edit field's own (possibly empty) text is the
-  single source of truth read on OK, empty meaning "no family override". To its right, a `QListWidget`
-  of `QFontDatabase::standardSizes()` (plus the rule's existing size if it's non-standard) serves as
-  the size selector, again with no "(Default)" row — no selection means "no size override". Below the
-  family column sit the independent Bold/Italic/Underline/Strikeout checkboxes (the single source of
-  truth for style bits — no competing dialog-level style control), with a live preview label to their
-  right (next to the size list) showing the combined family/size/effects/color. OK validates via
-  `FileDecorationRule::create()` and shows an inline error on an unterminated quote rather than
-  closing.
-* **Not built:** per-folder/per-tab rule scoping (rules are global app-wide, matching every other
-  Settings preference in this app); merging multiple matching rules' styles; theme import/export or
-  preset packs; a live-regex pattern language beyond the specified `*`/`?`/`"`/`#` mini-glob;
-  non-ASCII case folding; decorating synthetic entries ("This PC", drives, quick-access folders).
-  No automated coverage for the UI pieces (`SettingsDialog`'s new page, `FileDecorationRuleDialog`,
-  `FileListModel`'s new role branches, the delegates' `FontRole` handling) beyond the existing §11
-  UI/ViewModel-glue carve-out; the pure `FileNamePattern`/`FileDecorationRule`/`FileDecorationRules`
-  logic and `FileDecorationRulesStore`'s round trip are GTest-covered.
 
 ### 14.58 Preview Panel: Dedicated Per-Kind Widgets
 
@@ -972,4 +843,96 @@ no `SyntaxHighlightEngine`/`HighlightTheme` architecture change, no Domain/Appli
   extended for the six new/sibling extensions; the now-stale `.md`/`.yaml` cases dropped from
   `ReturnsNulloptForExtensionsOutOfScope`; one new `Highlights<Lang>KeywordAndComment`-style test per
   new language, same `hasSpanCovering` helper the existing nine languages' tests already use.
+
+---
+### 14.101 PDF Preview (Static First Page)
+
+Extends the Preview tab (§14.26) to `.pdf` files: selecting a PDF shows its first page rendered as
+a static raster image through the existing `MediaPreviewWidget`, the same composite (filename +
+image + collapsible Properties + zoom label) image/video previews already use — deliberately scoped
+like image/video preview's own original pass, which shipped a static poster frame with "no inline
+playback" as an explicit follow-up (§14.26); page navigation for a multi-page PDF is the equivalent
+follow-up here and is **not built** in this pass (see below). `.pdf` is a new, standalone extension
+classification — it does **not** join `MediaExtensions::isImageExtension`, so Media Viewer mode,
+Extra Large Icons (§14.71), and the hover-preview popup (§14.76) — all gated on
+`isImageExtension`/`isVideoExtension` — do not pick up PDFs in this pass; only the Preview tab does.
+
+* **`poppler` (new vcpkg dependency)**, consumed via `poppler-cpp` exactly the way `libvips`/FFmpeg
+  already are (§6) — `pkg_check_modules(POPPLER_CPP REQUIRED IMPORTED_TARGET poppler-cpp)` in
+  `src/adapters/media/CMakeLists.txt`, no CMake-config package exists for it. No extra vcpkg
+  features requested (`poppler`'s own default features are sufficient; its `qt`/`cairo`/`glib`
+  features are for consumers that want Poppler's own Qt/Cairo/GLib wrappers, not needed here since
+  rendering is encoded to PNG via Qt directly, the same finishing step `QtSvgImageDecoder`/
+  `QtGifImageDecoder` already use). Chosen over `libmupdf` (also available in this project's vcpkg
+  registry) since `poppler-cpp`'s page-render API is simpler for this single-page-raster use case
+  and its license (GPL-2.0-or-later) is no stricter than dependencies already in this project
+  (`libgit2`, and `ffmpeg` depending on build config).
+* **`MediaExtensions`** (`src/application/media`) gains `isPdfExtension(extension)` (`.pdf` only) —
+  its own predicate, not folded into `isImageExtension`, the same "not a raster image" posture
+  already taken for video.
+* **`MediaMetadata`** (Domain) gains a `pageCount` field (`int pageCount() const`, default/unknown
+  value `0`) — same "0 = unknown/not applicable" graceful-degradation posture already established
+  for `bitRateBps` (§14.26). `create()` gains a trailing default parameter so every other caller is
+  unaffected. Used only by the Pdf preview kind below; zero for Image/Video.
+* **`CachingMediaDecoder`'s on-disk blob format** (`MetadataHeader`/`serialize`/`deserialize`,
+  §8/§14.63) gains the new `pageCount` field **and a format-version tag** — the first time a field
+  has been added to this already-shipped, already-populated on-disk cache format. Without a version
+  check, an old (smaller) cached Image/Video entry would be misparsed by the grown struct (the fixed
+  byte offsets `deserialize()` reads `codecLength`/the codec string/the trailing image bytes from
+  would all shift), silently corrupting already-cached thumbnails rather than cleanly missing and
+  regenerating. The version tag makes any pre-existing cache entry fail `deserialize()`'s existing
+  "doesn't parse as a well-formed blob → treat as a cache miss, regenerate" path (same path already
+  used for truncated/corrupted entries) instead of being misread as the new layout.
+* **`FilePreview`** (Domain) gains `FilePreviewKind::Pdf` and a `static FilePreview pdf(...)` factory
+  — identical shape to `image()`/`video()` (encoded raster bytes, path, `MediaMetadata`,
+  `fileSizeBytes`). Doc comments on `path()`/`imageBytes()`/`metadata()`/`fileSizeBytes()` extended
+  to mention Pdf alongside Image/Video.
+* **`PopplerPdfDecoder`** (new, `src/adapters/media`, implements `IMediaDecoder`) — self-contained,
+  not cross-calling any other decoder (the established posture, §14.26/§14.79). Reads the whole file
+  via the same `WindowsLongPath`-safe `std::ifstream` helper every other decoder duplicates locally,
+  then opens it with poppler-cpp's `document::load_from_raw_data()` (a memory-buffer API, not
+  `load_from_file()`'s narrow-filename one) — never hands poppler-cpp a raw path string, the same
+  non-ASCII-safety rule §6 requires. `previewIndex` is honored as a page index (clamped to
+  `[0, pageCount - 1]`) purely for forward compatibility with a future page-navigation feature at
+  zero extra cost — `FilePreviewUseCase` below always calls with the default (page 0) in this pass,
+  so nothing yet exercises a non-zero value. Renders directly at the DPI needed to fit the requested
+  `maxWidth`/`maxHeight` box (computed analytically from the page's point size, no "decode large then
+  downscale" pass needed since a PDF page is vector content — same reasoning `QtSvgImageDecoder`
+  already uses), via `poppler::page_renderer`, then wraps the resulting `poppler::image`'s raw buffer
+  in a `QImage` and PNG-encodes it (preserves alpha, matches the SVG/GIF decoders' encode step).
+  Metadata: page's rendered width/height, codec `"pdf"`, and `pageCount` from `document::pages()`.
+* **`MediaDecoder::generateThumbnail()`** gains an `isPdfExtension` branch dispatching to a new
+  `m_pdfDecoder` member, alongside the existing SVG/GIF/image/video branches — order doesn't matter
+  against those since `.pdf` is disjoint from all of them.
+* **`FilePreviewUseCase::generatePreview()`** gains a branch after the existing video branch:
+  `isPdfExtension` → `m_mediaDecoder.generateThumbnail(readablePath, maxImageWidth, maxImageHeight)`
+  (page 0 implicit) → `FilePreview::pdf(...)`. Materialization for an archive-nested PDF (§14.29)
+  is already handled generically before this branch, same as Image/Video.
+* **Preview tab UI**: no new widget. `MediaPreviewWidget::showStaticImage()`/`rescaleImage()`/
+  `updateZoomLabel()` already work off raw `imageBytes()`/resolution regardless of kind, so a PDF's
+  rendered page displays through the exact same path a raster image does. Two small, targeted
+  changes only: `MediaPreviewWidget::setMetadata()` gains a `kind() == Pdf && pageCount() > 0` branch
+  adding a "Pages: %1" row to the Properties block (parallel to Video's existing Length/Bitrate
+  rows); `PreviewPanelWidget::onPreviewReady()` gains a `case FilePreviewKind::Pdf:` calling
+  `setMetadata()` + `showStaticImage()` and switching to `m_mediaPreviewWidget` (falling back to the
+  unsupported label on a decode failure, same as Image) — no mode combo shown, since there is no
+  alternate rendering mode for Pdf in this pass.
+* **Not built**: page navigation (Previous/Next through a multi-page PDF) — deferred to a later pass,
+  the same way the inline video player (§14.67) followed well after the original static poster-frame
+  pass; `previewIndex` is wired through the decoder for exactly this reason, so that follow-up needs
+  no adapter/use-case rework, only a `FilePreviewViewModel`/`FilePreviewWorker` "current page" request
+  path and Preview-tab UI. Also not built: password-protected PDF handling (fails like any other
+  decode error); text extraction/selection/search within the preview; Extra Large Icons, Media Viewer
+  grid, and hover-popup support (all gated on `isImageExtension`/`isVideoExtension`, which `.pdf`
+  deliberately doesn't join); thumbnailing any page beyond the first.
+* **Testing**: `MediaMetadataTest` gains `pageCount` default/round-trip coverage;
+  `CachingMediaDecoderTest` gains a case asserting a stale-format cached blob is treated as a miss
+  (not misparsed); `PopplerPdfDecoderTest` (new, mirrors `QtSvgImageDecoderTest`'s shape — missing
+  file, garbage bytes, and a minimal hand-written single-page PDF literal embedded in the test, the
+  same "write the fixture content directly in the test, no binary fixture file" convention
+  `QtSvgImageDecoderTest`/`QtGifImageDecoderTest` already use) covers page count, rendered
+  dimensions, and the PNG signature; `MediaDecoderTest` gains a `.pdf`-dispatches-to-PopplerPdfDecoder
+  case; `FilePreviewUseCaseTest`/`tests/domain/FilePreviewTest.cpp` gain Pdf-kind coverage mirroring
+  their existing Image/Video cases. UI changes fall under the existing UI/ViewModel-glue carve-out
+  (§11) — no new GTest coverage there, consistent with every other Preview-tab UI change above.
 

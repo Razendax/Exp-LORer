@@ -13,12 +13,19 @@ namespace
     // cache (Architecture.md §8) -- this (de)serialization is CachingMediaDecoder's own concern,
     // needed because a cache hit must be able to return MediaMetadata without re-decoding the
     // source file (Architecture.md §14.63).
+    // Bumped whenever MetadataHeader's shape changes, so deserialize() can reject a blob written
+    // by an older binary as unparsable (-> treated as a cache miss, regenerates) instead of
+    // misreading its bytes at the new, larger fixed offsets.
+    constexpr std::uint32_t kCurrentFormatVersion = 2;
+
     struct MetadataHeader
     {
+        std::uint32_t formatVersion = kCurrentFormatVersion;
         std::int32_t width = 0;
         std::int32_t height = 0;
         std::int64_t durationMs = 0;
         std::int64_t bitRateBps = 0;
+        std::int32_t pageCount = 0;
         std::uint32_t codecLength = 0;
     };
 
@@ -28,10 +35,12 @@ namespace
         const std::string& codec = metadata.codec();
 
         MetadataHeader header;
+        header.formatVersion = kCurrentFormatVersion;
         header.width = metadata.width();
         header.height = metadata.height();
         header.durationMs = metadata.duration().count();
         header.bitRateBps = metadata.bitRateBps();
+        header.pageCount = metadata.pageCount();
         header.codecLength = static_cast<std::uint32_t>(codec.size());
 
         std::vector<std::byte> blob(sizeof(MetadataHeader) + codec.size() + thumbnail.bytes.size());
@@ -58,6 +67,11 @@ namespace
         MetadataHeader header;
         std::memcpy(&header, blob.data(), sizeof(MetadataHeader));
 
+        if (header.formatVersion != kCurrentFormatVersion)
+        {
+            return std::nullopt;
+        }
+
         const std::size_t headerAndCodecSize = sizeof(MetadataHeader) + header.codecLength;
         if (headerAndCodecSize > blob.size())
         {
@@ -68,7 +82,7 @@ namespace
 
         auto createdMetadata =
             MediaMetadata::create(header.width, header.height, std::chrono::milliseconds(header.durationMs),
-                                   std::move(codec), header.bitRateBps);
+                                   std::move(codec), header.bitRateBps, header.pageCount);
         if (!createdMetadata)
         {
             return std::nullopt;

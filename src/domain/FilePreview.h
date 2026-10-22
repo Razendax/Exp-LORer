@@ -14,6 +14,7 @@ enum class FilePreviewKind
     Text,
     Image,
     Video,
+    Pdf,
     Unsupported,
 };
 
@@ -31,6 +32,8 @@ public:
                               std::uintmax_t fileSizeBytes);
     static FilePreview video(std::vector<std::byte> encodedPosterBytes, std::filesystem::path path, MediaMetadata metadata,
                               std::uintmax_t fileSizeBytes);
+    static FilePreview pdf(std::vector<std::byte> encodedBytes, std::filesystem::path path, MediaMetadata metadata,
+                            std::uintmax_t fileSizeBytes);
     static FilePreview unsupported();
 
     FilePreviewKind kind() const noexcept { return m_kind; }
@@ -44,16 +47,16 @@ public:
     // Text only; false for every other kind.
     bool textTruncated() const noexcept { return m_textTruncated; }
 
-    // Text, Image, or Video only; empty for every other kind.
+    // Text, Image, Video, or Pdf only; empty for every other kind.
     const std::filesystem::path& path() const noexcept { return m_path; }
 
-    // Image or Video only (the encoded thumbnail/poster-frame bytes); empty for every other kind.
+    // Image, Video, or Pdf only (the encoded thumbnail/poster-frame bytes); empty for every other kind.
     const std::vector<std::byte>& imageBytes() const noexcept { return m_imageBytes; }
 
-    // Image or Video only; default-valued (width/height 0) for every other kind.
+    // Image, Video, or Pdf only; default-valued (width/height 0) for every other kind.
     const MediaMetadata& metadata() const noexcept { return m_metadata; }
 
-    // Image or Video only; 0 for every other kind.
+    // Image, Video, or Pdf only; 0 for every other kind.
     std::uintmax_t fileSizeBytes() const noexcept { return m_fileSizeBytes; }
 
 private:

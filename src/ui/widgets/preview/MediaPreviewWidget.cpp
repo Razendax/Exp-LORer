@@ -113,6 +113,10 @@ void MediaPreviewWidget::setMetadata(const FilePreview& preview)
     {
         properties << tr("Bitrate: %1 kbps").arg(metadata.bitRateBps() / 1000);
     }
+    if (preview.kind() == FilePreviewKind::Pdf && metadata.pageCount() > 0)
+    {
+        properties << tr("Pages: %1").arg(metadata.pageCount());
+    }
     if (preview.fileSizeBytes() > 0)
     {
         properties << tr("Size: %1").arg(QLocale().formattedDataSize(static_cast<qint64>(preview.fileSizeBytes())));

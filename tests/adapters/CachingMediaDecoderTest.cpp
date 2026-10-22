@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cstring>
 #include <fstream>
 
 #include <gmock/gmock.h>
@@ -214,6 +215,52 @@ TEST_F(CachingMediaDecoderTest, GenerateThumbnailsWithMixedHitAndMissCallsInnerB
     EXPECT_EQ(results[0].value().bytes, frame0.bytes);
     EXPECT_EQ(results[1].value().bytes, frame2.bytes);
     EXPECT_EQ(results[2].value().bytes, frame4.bytes);
+}
+
+// A blob written by a pre-pageCount binary (old MetadataHeader shape: no formatVersion/pageCount
+// fields) must be treated as a cache miss and regenerated, not misread at the new, larger fixed
+// offsets (Architecture.md §14.101).
+TEST_F(CachingMediaDecoderTest, GenerateThumbnailWithOldFormatBlobTreatsItAsCacheMissAndRegenerates)
+{
+    struct OldMetadataHeader
+    {
+        std::int32_t width = 0;
+        std::int32_t height = 0;
+        std::int64_t durationMs = 0;
+        std::int64_t bitRateBps = 0;
+        std::uint32_t codecLength = 0;
+    };
+
+    MockInnerDecoder inner;
+    ThumbnailCache cache(m_tempDir / "cache");
+    const MediaThumbnail thumbnail = makeThumbnail({ std::byte{ 0xAA }, std::byte{ 0xBB } }, 640, 480);
+
+    std::error_code ec;
+    const std::uintmax_t size = fs::file_size(m_filePath, ec);
+    const auto mtime = fs::last_write_time(m_filePath, ec);
+    const ThumbnailCache::Key key{ m_filePath, size, mtime.time_since_epoch().count(), 128, 128, 0 };
+
+    const std::string codec = "image";
+    OldMetadataHeader oldHeader;
+    oldHeader.width = 1920;
+    oldHeader.height = 1080;
+    oldHeader.codecLength = static_cast<std::uint32_t>(codec.size());
+
+    std::vector<std::byte> oldBlob(sizeof(OldMetadataHeader) + codec.size());
+    std::memcpy(oldBlob.data(), &oldHeader, sizeof(OldMetadataHeader));
+    std::memcpy(oldBlob.data() + sizeof(OldMetadataHeader), codec.data(), codec.size());
+    cache.put(key, oldBlob);
+
+    EXPECT_CALL(inner, generateThumbnail(m_filePath, 128, 128, 0))
+        .Times(1)
+        .WillOnce(Return(Result<MediaThumbnail>::success(thumbnail)));
+
+    CachingMediaDecoder decorator(inner, cache);
+    auto result = decorator.generateThumbnail(m_filePath, 128, 128);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().bytes, thumbnail.bytes);
+    EXPECT_EQ(result.value().metadata.width(), 640);
 }
 
 TEST_F(CachingMediaDecoderTest, GenerateThumbnailsWithAllCacheHitsNeverCallsInnerBatch)

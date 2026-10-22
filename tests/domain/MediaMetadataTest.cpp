@@ -22,6 +22,22 @@ TEST(MediaMetadata, CreateSucceedsWithExplicitBitRate)
     EXPECT_EQ(result.value().bitRateBps(), 5'000'000);
 }
 
+TEST(MediaMetadata, CreateDefaultsPageCountToZero)
+{
+    auto result = MediaMetadata::create(1920, 1080, std::chrono::milliseconds(60000), "h264");
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().pageCount(), 0);
+}
+
+TEST(MediaMetadata, CreateSucceedsWithExplicitPageCount)
+{
+    auto result = MediaMetadata::create(800, 1200, std::chrono::milliseconds(0), "pdf", 0, 12);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().pageCount(), 12);
+}
+
 TEST(MediaMetadata, DefaultConstructedIsZeroValued)
 {
     MediaMetadata metadata;
@@ -31,6 +47,7 @@ TEST(MediaMetadata, DefaultConstructedIsZeroValued)
     EXPECT_EQ(metadata.duration(), std::chrono::milliseconds(0));
     EXPECT_TRUE(metadata.codec().empty());
     EXPECT_EQ(metadata.bitRateBps(), 0);
+    EXPECT_EQ(metadata.pageCount(), 0);
 }
 
 TEST(MediaMetadata, CreateSucceedsWithZeroDurationForStillImage)
