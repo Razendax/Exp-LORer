@@ -214,26 +214,18 @@ Result<void> FileNavigationUseCase::extractArchive(const std::filesystem::path& 
     return m_fileSystemRepository.extractArchive(archiveFile, destinationDirectory);
 }
 
-Result<std::vector<ContextMenuEntry>> FileNavigationUseCase::buildItemContextMenu(
-    const std::vector<std::filesystem::path>& paths, ContextMenuSourceMode mode)
+Result<ContextMenuResult> FileNavigationUseCase::showItemContextMenu(const std::vector<std::filesystem::path>& paths,
+                                                                        const NativeMenuLayout& layout,
+                                                                        NativeWindowHandle ownerWindow, NativeMenuPoint screenPos)
 {
-    return m_contextMenuProvider.buildItemMenu(paths, mode);
+    return m_contextMenuProvider.showItemMenu(paths, layout, ownerWindow, screenPos);
 }
 
-Result<std::vector<ContextMenuEntry>> FileNavigationUseCase::buildBackgroundContextMenu(const std::filesystem::path& folder,
-                                                                                          ContextMenuSourceMode mode)
+Result<ContextMenuResult> FileNavigationUseCase::showBackgroundContextMenu(const std::filesystem::path& folder,
+                                                                             const NativeMenuLayout& layout,
+                                                                             NativeWindowHandle ownerWindow, NativeMenuPoint screenPos)
 {
-    return m_contextMenuProvider.buildBackgroundMenu(folder, mode);
-}
-
-Result<void> FileNavigationUseCase::invokeContextMenuEntry(std::uint32_t entryId, NativeWindowHandle ownerWindow)
-{
-    return m_contextMenuProvider.invoke(entryId, ownerWindow);
-}
-
-void FileNavigationUseCase::discardContextMenu()
-{
-    m_contextMenuProvider.discardMenu();
+    return m_contextMenuProvider.showBackgroundMenu(folder, layout, ownerWindow, screenPos);
 }
 
 Result<void> FileNavigationUseCase::createFolder(const std::filesystem::path& directory)

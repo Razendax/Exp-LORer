@@ -425,36 +425,29 @@ void FileOperationsController::bulkRename(const std::vector<std::pair<std::files
     }
 }
 
-Result<std::vector<ContextMenuEntry>> FileOperationsController::buildContextMenuForSelection(
-    const std::vector<std::filesystem::path>& paths, ContextMenuSourceMode mode)
+Result<ContextMenuResult> FileOperationsController::showItemContextMenu(const std::vector<std::filesystem::path>& paths,
+                                                                           const NativeMenuLayout& layout,
+                                                                           NativeWindowHandle ownerWindow, NativeMenuPoint screenPos)
 {
-    return m_fileNavigationUseCase.buildItemContextMenu(paths, mode);
-}
-
-Result<std::vector<ContextMenuEntry>> FileOperationsController::buildContextMenuForFolder(const std::filesystem::path& folder,
-                                                                                            ContextMenuSourceMode mode)
-{
-    return m_fileNavigationUseCase.buildBackgroundContextMenu(folder, mode);
-}
-
-void FileOperationsController::invokeContextMenuEntry(std::uint32_t entryId, const std::filesystem::path& directory,
-                                                        NativeWindowHandle ownerWindow)
-{
-    auto result = m_fileNavigationUseCase.invokeContextMenuEntry(entryId, ownerWindow);
-    if (result.hasError())
+    auto result = m_fileNavigationUseCase.showItemContextMenu(paths, layout, ownerWindow, screenPos);
+    if (result.hasValue() && result.value().outcome != ContextMenuOutcome::Cancelled)
     {
-        emit operationFailed(QString::fromStdString(result.error().message));
-        return;
+        emit directoryContentsMayHaveChanged(paths.front().parent_path());
     }
-
-    // The invoked entry may be registry/COM-sourced, so we can't know what it did to disk —
-    // refresh-on-any-success is the simple correct default, same posture as paste/delete.
-    emit directoryContentsMayHaveChanged(directory);
+    return result;
 }
 
-void FileOperationsController::discardContextMenu()
+Result<ContextMenuResult> FileOperationsController::showBackgroundContextMenu(const std::filesystem::path& folder,
+                                                                                 const NativeMenuLayout& layout,
+                                                                                 NativeWindowHandle ownerWindow,
+                                                                                 NativeMenuPoint screenPos)
 {
-    m_fileNavigationUseCase.discardContextMenu();
+    auto result = m_fileNavigationUseCase.showBackgroundContextMenu(folder, layout, ownerWindow, screenPos);
+    if (result.hasValue() && result.value().outcome != ContextMenuOutcome::Cancelled)
+    {
+        emit directoryContentsMayHaveChanged(folder);
+    }
+    return result;
 }
 
 std::optional<std::filesystem::path> FileOperationsController::createFolder(const std::filesystem::path& parentDirectory)

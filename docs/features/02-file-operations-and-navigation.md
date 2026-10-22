@@ -5,9 +5,10 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.10–14.13, §14.15–14.16, §14.21–14.22, §14.47, §14.54 — clipboard file operations,
-opening files, the custom context menu, "This PC", multi-selection, address bar autocomplete and
-environment-variable expansion, hidden files, and custom copy/move with progress notifications.
+Covers §14.10–14.13, §14.15–14.16, §14.21–14.22, §14.47, §14.54, §14.102 — clipboard file
+operations, opening files, the context menu (registry-sourced, then redesigned to the native shell
+popup), "This PC", multi-selection, address bar autocomplete and environment-variable expansion,
+hidden files, and custom copy/move with progress notifications.
 Section numbers are **not** contiguous with this file's neighbors — they were assigned
 chronologically as each feature was built and are kept stable since code comments cite them
 directly. See [Architecture.md](../Architecture.md) §14 for the full topic index across all nine
@@ -45,6 +46,10 @@ tab via `WorkspaceController::focusedTabChanged`, the same pattern §14.9 establ
 at the default (Name, ascending). Persisting the choice across restarts is covered by §14.8/§14.14.
 
 ### 14.13 Custom Context Menu (Registry-Sourced, Files/Folders/Background Differ)
+
+**Superseded by §14.102**: the registry-walking approach this section describes was replaced by a
+native-shell-popup redesign; this section is kept as the historical record of what motivated it and
+what the `IContextMenuProvider` Port/`ShellContextMenuProvider` adapter looked like before.
 
 Right-click shows a custom, Qt-drawn `QMenu` — not the native shell popup — but its *content* still
 comes from the Windows Registry (and, optionally, COM shell-extension `IContextMenu` handlers), so
@@ -304,4 +309,79 @@ the §11 "no assertable return" carve-out) in `tests/adapters/StandardFileSystem
 known variable substituted, unknown variable left literal, two variables in one string, plain text
 unchanged. No new CTest coverage for the `WorkspacePaneWidget` wiring itself — UI/ViewModel glue,
 same posture as §14.21/§14.22; verified by manual smoke test instead.
+
+### 14.102 Native Context Menu (Real Shell Popup, Replacing §14.13's Registry Walker)
+
+Replaces §14.13's hand-rolled registry/COM walker entirely. The old approach could only ever show
+what it knew how to enumerate (static `shell\<verb>` subkeys, a hand-built "Open with"/"New", and,
+only in the slower opt-in mode, a manual `CoCreateInstance`-per-handler walk of each
+`shellex\ContextMenuHandlers` entry's `QueryContextMenu()` output) — it structurally couldn't
+produce anything that depends on lazy population (`WM_INITMENUPOPUP`), owner-drawn icons,
+`IContextMenu3`, or newer unified-menu items (Share, Give access to, Open Terminal here), because
+Explorer gets those from the shell's own aggregation, not from re-deriving it. The fix calls the
+same shell entry points Explorer itself calls to *build* the menu, instead of reimplementing them,
+and shows the resulting real `HMENU` directly instead of re-rendering its contents as a `QMenu`.
+
+* **14.102.1 Port redesign** — `IContextMenuProvider` no longer returns a serializable
+  `ContextMenuEntry` tree for the UI layer to render later; building, merging the app's own actions
+  in, showing, and dispatching a live `HMENU` is one blocking call (same "synchronous on the UI
+  thread" posture §14.13.6 already established). Two methods remain: `showItemMenu`/
+  `showBackgroundMenu(..., const NativeMenuLayout& layout, NativeWindowHandle ownerWindow,
+  NativeMenuPoint screenPos)`, returning `Result<ContextMenuResult>` where `ContextMenuResult` is an
+  outcome (`Cancelled` / `ShellCommandInvoked` / `AppAction`) plus, for `AppAction`, which fixed id
+  from `layout` was picked. `ContextMenuEntry`/`ContextMenuIcon`/`ContextMenuSourceMode` are gone —
+  there's no data tree to marshal, and no "static vs. shell-extensions" mode anymore (see §14.102.4).
+* **14.102.2 `ShellContextMenuProvider`** — for an item selection, resolves the parent folder's
+  `IShellFolder` and calls `GetUIObjectOf(ownerHwnd, ..., IID_IContextMenu, ...)` on the child PIDLs
+  — the exact call Explorer makes for a selection right-click. For the background, calls
+  `IShellFolder::CreateViewObject(ownerHwnd, IID_IShellView, ...)` on the folder itself and then
+  `IShellView::GetItemObject(SVGIO_BACKGROUND, IID_IContextMenu, ...)` — the distinct, documented
+  call Explorer uses for empty-space (kept over the undocumented `CreateViewObject(...,
+  IID_IContextMenu, ...)` shortcut on correctness grounds, though both were observed to enumerate
+  the same items). Either way, `QueryContextMenu()` populates a real `HMENU`; this one call is what
+  the old per-handler `CoCreateInstance` loop (and its `idFirst = handlerIndex*1000+1` offset
+  bookkeeping) existed to approximate, and the shell already multiplexes every contributing
+  extension correctly, so none of that bookkeeping is needed anymore.
+  Top-level items whose canonical verb (`GetCommandString(..., GCS_VERBW, ...)`) matches the existing
+  `suppressedVerbNames()` set (open/cut/copy/paste/delete/rename/properties — reused unchanged from
+  §14.13.3) are removed from the real menu so the app's own equivalents from `layout` aren't
+  duplicated; nested cascade items are never suppressed, same as Explorer itself never touches them.
+  Invoking a shell command (`dispatchChosenId`) sets `CMINVOKECOMMANDINFOEX::lpDirectoryW` to the
+  item's parent folder (item menu) or the folder itself (background menu) — confirmed, by a
+  standalone repro outside Qt, to be *required* for registry-registered verbs whose command line
+  uses the `%V` placeholder (observed with "Open with VS Code"/"Open in Zed"-style background
+  commands, though not folder-background-specific — item-menu static verbs can use `%V` too):
+  without it, `%V` resolves to nothing, which several handlers then treat as "open this (empty)
+  target with its default app", surfacing Windows' own "This file does not have an app associated
+  with it" dialog instead of actually launching anything.
+* **14.102.3 Showing the real menu** — `TrackPopupMenuEx` replaces `QMenu::exec()`. While it's
+  tracking, `ownerWindow` is temporarily subclassed (`SetWindowSubclass`/`RemoveWindowSubclass`, an
+  RAII guard removes it on every exit path) to forward `WM_INITMENUPOPUP`/`WM_MEASUREITEM`/
+  `WM_DRAWITEM`/`WM_MENUCHAR`/`WM_UNINITMENUPOPUP` to the live `IContextMenu3::HandleMenuMsg2`
+  (falling back to `IContextMenu2::HandleMenuMsg`) — this is what makes lazily-populated cascades
+  (Send to, Open with, Give access to) and owner-drawn icons render correctly, which the old
+  single-shot `QueryContextMenu`-then-walk approach could not do regardless of which mode it ran in.
+  A returned id in the app's own reserved range (`0x7001+`, clear of the shell's `[1, 0x7000]`)
+  yields `ContextMenuOutcome::AppAction`; any other non-zero id is dispatched via
+  `InvokeCommand`/`InvokeCommandEx` on the shell's `IContextMenu` exactly as §14.13.3's dynamic mode
+  already did, yielding `ShellCommandInvoked`; `0` (dismissed) yields `Cancelled`.
+* **14.102.4 Removed: the static/shell-extensions mode toggle** — deleted outright
+  (`WorkspacePaneWidget::kShowShellExtensionsSettingsKey`, both copies of
+  `extendedShellExtensionsEnabled()`, `MainWindow::createContextMenuModeAction()`), not repurposed.
+  The toggle existed because the old hand-rolled COM-activation loop had a real cost/stability
+  tradeoff; the native call is exactly what Explorer itself makes unconditionally on every
+  right-click, so there's no cheaper "static-only" mode left to offer as an alternative.
+  `ContextMenuSourceMode` is gone from the Port along with it.
+* **14.102.5 UI wiring** — `ContextMenuBuilder` (the Qt-rendering/tree-walk helper) is deleted
+  outright; interleaving the app's fixed actions now happens inside the adapter against the real
+  `HMENU`, not against a `QMenu`. `FileItemContextMenu::show`'s public signature and every existing
+  business rule (single-target gating, archive-browsing gating, the rename/delete/bulk-rename/open
+  callback hooks) are unchanged — only the wiring mechanics change: each fixed action gets a plain
+  numeric id instead of a `QAction`, packed into a `NativeMenuLayout` and dispatched on the returned
+  `appActionId` instead of a `QAction::triggered` connection.
+* **14.102.6 Icons and not built here** — the app's own spliced-in actions (Open/Cut/Copy/Paste/
+  Delete/Rename/Bulk Rename/Properties/Extract) render text-only in the native menu for now; no
+  `HBMMENU_CALLBACK`/owner-draw icon support for them yet (clean follow-up work, not a silent gap —
+  several of Explorer's own non-file-type items are text-only too). Not built: a Linux
+  `IContextMenuProvider`; icons on the app-native entries.
 

@@ -10,11 +10,10 @@
 class QWidget;
 class FileOperationsController;
 
-// The file/folder *item* context menu (Open/Cut/Copy/Paste/Delete/Rename/Properties/Extract plus
-// the registry-sourced entries, Architecture.md §14.13/§14.28) and the confirm-then-delete flow,
-// shared by the main file view (WorkspacePaneWidget) and the left panel's folder tree
-// (Architecture.md §14.41). Same widget-construction-helper posture as ContextMenuBuilder: static
-// functions only, no state of its own.
+// The file/folder *item* context menu (Open/Cut/Copy/Paste/Delete/Rename/Properties/Extract spliced
+// into the real native shell popup, Architecture.md §14.102/§14.28) and the confirm-then-delete
+// flow, shared by the main file view (WorkspacePaneWidget) and the left panel's folder tree
+// (Architecture.md §14.41). Static functions only, no state of its own.
 class FileItemContextMenu
 {
 public:

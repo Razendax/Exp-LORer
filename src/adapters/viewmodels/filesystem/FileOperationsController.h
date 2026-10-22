@@ -66,17 +66,15 @@ public slots:
     // operationFailed (naming the count and the first failure's message) is emitted at the end.
     void bulkRename(const std::vector<std::pair<std::filesystem::path, std::filesystem::path>>& renames);
 
-    // Builds the registry-sourced entries for a custom QMenu (Architecture.md §14.13); does not
-    // touch QMenu/QAction itself — src/ui/widgets/ContextMenuBuilder does that.
-    Result<std::vector<ContextMenuEntry>> buildContextMenuForSelection(const std::vector<std::filesystem::path>& paths,
-                                                                        ContextMenuSourceMode mode);
-    Result<std::vector<ContextMenuEntry>> buildContextMenuForFolder(const std::filesystem::path& folder, ContextMenuSourceMode mode);
-
-    // Invokes the chosen registry-sourced entry and, on success, unconditionally refreshes
-    // directory — we can't know what a registry/COM-invoked entry did to disk, so refresh-on-any-
-    // success is the simple correct default, same posture the paste/delete slots already use.
-    void invokeContextMenuEntry(std::uint32_t entryId, const std::filesystem::path& directory, NativeWindowHandle ownerWindow);
-    void discardContextMenu();
+    // Shows the real native shell popup (Architecture.md §14.102) for `paths`/the folder background,
+    // merged with the app's own fixed actions from `layout`, and refreshes `directory` afterwards
+    // whenever outcome != Cancelled — a shell/registry-invoked command or a dispatched app action
+    // may have changed disk state, so refresh-on-any-non-cancel is the simple correct default, same
+    // posture the paste/delete slots already use.
+    Result<ContextMenuResult> showItemContextMenu(const std::vector<std::filesystem::path>& paths, const NativeMenuLayout& layout,
+                                                    NativeWindowHandle ownerWindow, NativeMenuPoint screenPos);
+    Result<ContextMenuResult> showBackgroundContextMenu(const std::filesystem::path& folder, const NativeMenuLayout& layout,
+                                                          NativeWindowHandle ownerWindow, NativeMenuPoint screenPos);
 
     // Returns the created folder's path (a de-duplicated "New folder", "New folder (2)", ...) on
     // success so the caller can immediately follow up with the Rename dialog — the practical

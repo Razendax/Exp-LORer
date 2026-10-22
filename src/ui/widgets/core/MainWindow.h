@@ -96,7 +96,6 @@ protected:
 private:
     void createLayoutActions();
     void createSortByActions();
-    void createContextMenuModeAction();
     void createShowHiddenFilesAction();
     void createMediaViewerModeAction();
     void createHoverPreviewAction();
@@ -238,16 +237,10 @@ private:
     QAction* m_ascendingAction = nullptr;
     QAction* m_descendingAction = nullptr;
 
-    // Context-menu resolution mode toggle (Architecture.md §14.13), persisted via QSettings under
-    // WorkspacePaneWidget::kShowShellExtensionsSettingsKey — WorkspacePaneWidget reads the same
-    // key independently at build-menu time, so no direct wiring exists between this action and
-    // any pane.
-    QAction* m_extendedContextMenuAction = nullptr;
-
     // Hidden files/folders visibility toggle (Architecture.md §14.21), persisted via QSettings
-    // under FileListModel::kShowHiddenFilesSettingsKey. Unlike the context-menu toggle above, this
-    // one is live-broadcast to every already-open tab's models on toggle, since hidden state
-    // affects an already-populated model rather than something read fresh at next use.
+    // under FileListModel::kShowHiddenFilesSettingsKey. Live-broadcast to every already-open tab's
+    // models on toggle, since hidden state affects an already-populated model rather than something
+    // read fresh at next use.
     QAction* m_showHiddenFilesAction = nullptr;
 
     // Media Viewer mode toggle (Architecture.md §14.61): created here since it must exist before
@@ -258,8 +251,8 @@ private:
     QAction* m_mediaViewerModeAction = nullptr;
 
     // Hover preview popup toggle (Architecture.md §14.76), persisted via QSettings under
-    // FileBrowserView::kHoverPreviewEnabledSettingsKey -- same "read fresh at next use" posture as
-    // m_extendedContextMenuAction, not m_showHiddenFilesAction's live-broadcast one.
+    // FileBrowserView::kHoverPreviewEnabledSettingsKey -- read fresh at next use, unlike
+    // m_showHiddenFilesAction's live-broadcast posture above.
     QAction* m_hoverPreviewEnabledAction = nullptr;
 
     // Details-view column widths (Architecture.md §14.14): loaded from AppConfig, handed to

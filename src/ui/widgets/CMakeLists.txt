@@ -54,8 +54,6 @@ add_library(explorer_ui_widgets STATIC
     navigation/PercentCellDelegate.cpp
     navigation/TagsCellDelegate.h
     navigation/TagsCellDelegate.cpp
-    navigation/ContextMenuBuilder.h
-    navigation/ContextMenuBuilder.cpp
     navigation/FileItemContextMenu.h
     navigation/FileItemContextMenu.cpp
     navigation/BulkRenameDialog.h

@@ -27,7 +27,6 @@
 #include "ArchiveExtensions.h"
 #include "BottomPanelWidget.h"
 #include "ColumnVisibilitySettingsViewModel.h"
-#include "ContextMenuBuilder.h"
 #include "FileBrowserView.h"
 #include "FileItemContextMenu.h"
 #include "FileOperationsController.h"
@@ -1302,12 +1301,6 @@ void WorkspacePaneWidget::onQuickSelectTextChanged(const QString& text)
     }
 }
 
-bool WorkspacePaneWidget::extendedShellExtensionsEnabled()
-{
-    QSettings settings;
-    return settings.value(QLatin1String(kShowShellExtensionsSettingsKey), false).toBool();
-}
-
 bool WorkspacePaneWidget::tabCloseButtonsEnabled()
 {
     QSettings settings;
@@ -1383,65 +1376,66 @@ void WorkspacePaneWidget::showBackgroundContextMenu(TabViewModel* tab, FileBrows
         return;
     }
 
+    // Fixed ids for this menu's app-native actions (Architecture.md §14.102) -- valid only for the
+    // one showBackgroundContextMenu call below, clear of the shell's own [1, 0x7000] id range.
+    constexpr std::uint32_t kPasteActionId = 0x7001;
+    constexpr std::uint32_t kNewFolderActionId = 0x7002;
+    constexpr std::uint32_t kPropertiesActionId = 0x7003;
+
     const auto ownerWindow = reinterpret_cast<NativeWindowHandle>(window()->winId());
     const bool browsingInsideArchive = ArchiveExtensions::archiveAncestorInPath(directory).has_value();
 
-    auto* pasteAction = new QAction(tr("Paste"));
-    auto* newFolderAction = new QAction(tr("New Folder"));
-    auto* propertiesAction = new QAction(tr("Properties"));
-
-    connect(pasteAction, &QAction::triggered, this, [this, directory]() { m_fileOperationsController->pasteInto(directory); });
-    connect(newFolderAction, &QAction::triggered, this, [this, directory, browserView]() {
-        if (auto createdPath = m_fileOperationsController->createFolder(directory))
-        {
-            browserView->beginRename(*createdPath);
-        }
-    });
-    connect(propertiesAction, &QAction::triggered, this, [this, directory, ownerWindow]() {
-        m_fileOperationsController->showProperties(directory, ownerWindow);
-    });
-
     // Read-only, virtual archive location (Architecture.md §14.28): none of these are meaningful
     // there, same posture as the item-selection context menu.
-    pasteAction->setEnabled(!browsingInsideArchive);
-    newFolderAction->setEnabled(!browsingInsideArchive);
-    propertiesAction->setEnabled(!browsingInsideArchive);
+    NativeMenuAction pasteAction;
+    pasteAction.id = kPasteActionId;
+    pasteAction.label = tr("Paste").toStdString();
+    pasteAction.enabled = !browsingInsideArchive;
 
-    ContextMenuBuilder::NativeActions actions;
-    actions.paste = pasteAction;
-    actions.newFolder = newFolderAction;
-    actions.properties = propertiesAction;
+    NativeMenuAction newFolderAction;
+    newFolderAction.id = kNewFolderActionId;
+    newFolderAction.label = tr("New Folder").toStdString();
+    newFolderAction.enabled = !browsingInsideArchive;
 
-    const ContextMenuSourceMode mode =
-        extendedShellExtensionsEnabled() ? ContextMenuSourceMode::StaticAndShellExtensions : ContextMenuSourceMode::StaticVerbsOnly;
-    auto buildResult = m_fileOperationsController->buildContextMenuForFolder(directory, mode);
+    NativeMenuAction propertiesAction;
+    propertiesAction.id = kPropertiesActionId;
+    propertiesAction.label = tr("Properties").toStdString();
+    propertiesAction.enabled = !browsingInsideArchive;
 
-    std::vector<ContextMenuEntry> entries;
-    if (buildResult.hasValue())
+    NativeMenuLayout layout;
+    layout.clipboardActions = { pasteAction, newFolderAction };
+    layout.finalActions = { propertiesAction };
+
+    const NativeMenuPoint screenPos{ globalPos.x(), globalPos.y() };
+    auto showResult = m_fileOperationsController->showBackgroundContextMenu(directory, layout, ownerWindow, screenPos);
+
+    if (showResult.hasError())
     {
-        entries = std::move(buildResult).value();
-    }
-    else
-    {
-        emit navigationFailed(QString::fromStdString(buildResult.error().message));
-    }
-
-    QMenu* menu = ContextMenuBuilder::buildBackgroundMenu(entries, actions, this);
-    QAction* chosen = menu->exec(globalPos);
-
-    const auto entryId = chosen ? ContextMenuBuilder::entryIdForAction(chosen) : std::nullopt;
-    if (entryId)
-    {
-        m_fileOperationsController->invokeContextMenuEntry(*entryId, directory, ownerWindow);
-    }
-    else
-    {
-        m_fileOperationsController->discardContextMenu();
+        emit navigationFailed(QString::fromStdString(showResult.error().message));
+        return;
     }
 
-    menu->deleteLater();
-    for (QAction* action : { pasteAction, newFolderAction, propertiesAction })
+    const ContextMenuResult& result = showResult.value();
+    if (result.outcome != ContextMenuOutcome::AppAction || !result.appActionId)
     {
-        action->deleteLater();
+        return;
+    }
+
+    switch (*result.appActionId)
+    {
+        case kPasteActionId:
+            m_fileOperationsController->pasteInto(directory);
+            break;
+        case kNewFolderActionId:
+            if (auto createdPath = m_fileOperationsController->createFolder(directory))
+            {
+                browserView->beginRename(*createdPath);
+            }
+            break;
+        case kPropertiesActionId:
+            m_fileOperationsController->showProperties(directory, ownerWindow);
+            break;
+        default:
+            break;
     }
 }

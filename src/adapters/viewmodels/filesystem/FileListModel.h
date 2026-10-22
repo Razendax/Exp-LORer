@@ -133,7 +133,7 @@ public:
     static int columnForCriterion(SortCriterion criterion);
 
     // Settings key backing the global "show hidden files/folders" preference, mirroring
-    // WorkspacePaneWidget::kShowShellExtensionsSettingsKey's QSettings-based-toggle pattern
+    // WorkspacePaneWidget::kShowTabCloseButtonsSettingsKey's QSettings-based-toggle pattern
     // (Architecture.md §14.14).
     static constexpr const char* kShowHiddenFilesSettingsKey = "View/ShowHiddenFiles";
     static bool showHiddenFilesEnabled();

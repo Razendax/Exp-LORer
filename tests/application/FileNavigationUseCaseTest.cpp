@@ -599,61 +599,45 @@ TEST(FileNavigationUseCase, ExtractArchiveDelegatesToRepository)
     EXPECT_TRUE(result.hasValue());
 }
 
-TEST(FileNavigationUseCase, BuildItemContextMenuDelegatesToProvider)
+TEST(FileNavigationUseCase, ShowItemContextMenuDelegatesToProvider)
 {
     MockFileSystemRepository repository;
     MockContextMenuProvider contextMenuProvider;
     const std::vector<std::filesystem::path> paths{ "C:/data/a.txt" };
+    const NativeMenuLayout layout;
+    NativeWindowHandle ownerWindow = reinterpret_cast<NativeWindowHandle>(0x1234);
+    const NativeMenuPoint screenPos{ 10, 20 };
 
-    std::vector<ContextMenuEntry> entries{ ContextMenuEntry{ 1, "Open", false, true, {}, {} } };
-    EXPECT_CALL(contextMenuProvider, buildItemMenu(paths, ContextMenuSourceMode::StaticVerbsOnly))
-        .WillOnce(Return(Result<std::vector<ContextMenuEntry>>::success(entries)));
+    const ContextMenuResult menuResult{ ContextMenuOutcome::AppAction, 0x7001u };
+    EXPECT_CALL(contextMenuProvider, showItemMenu(paths, _, ownerWindow, _))
+        .WillOnce(Return(Result<ContextMenuResult>::success(menuResult)));
 
     FileNavigationUseCase useCase(repository, contextMenuProvider);
-    auto result = useCase.buildItemContextMenu(paths, ContextMenuSourceMode::StaticVerbsOnly);
+    auto result = useCase.showItemContextMenu(paths, layout, ownerWindow, screenPos);
 
     ASSERT_TRUE(result.hasValue());
-    EXPECT_EQ(result.value().size(), 1u);
+    EXPECT_EQ(result.value().outcome, ContextMenuOutcome::AppAction);
+    EXPECT_EQ(result.value().appActionId, 0x7001u);
 }
 
-TEST(FileNavigationUseCase, BuildBackgroundContextMenuDelegatesToProvider)
+TEST(FileNavigationUseCase, ShowBackgroundContextMenuDelegatesToProvider)
 {
     MockFileSystemRepository repository;
     MockContextMenuProvider contextMenuProvider;
     const std::filesystem::path folder = "C:/data";
-
-    EXPECT_CALL(contextMenuProvider, buildBackgroundMenu(folder, ContextMenuSourceMode::StaticAndShellExtensions))
-        .WillOnce(Return(Result<std::vector<ContextMenuEntry>>::success(std::vector<ContextMenuEntry>{})));
-
-    FileNavigationUseCase useCase(repository, contextMenuProvider);
-    auto result = useCase.buildBackgroundContextMenu(folder, ContextMenuSourceMode::StaticAndShellExtensions);
-
-    EXPECT_TRUE(result.hasValue());
-}
-
-TEST(FileNavigationUseCase, InvokeContextMenuEntryDelegatesToProvider)
-{
-    MockFileSystemRepository repository;
-    MockContextMenuProvider contextMenuProvider;
+    const NativeMenuLayout layout;
     NativeWindowHandle ownerWindow = reinterpret_cast<NativeWindowHandle>(0x1234);
+    const NativeMenuPoint screenPos{ 10, 20 };
 
-    EXPECT_CALL(contextMenuProvider, invoke(42u, ownerWindow)).WillOnce(Return(Result<void>::success()));
-
-    FileNavigationUseCase useCase(repository, contextMenuProvider);
-    auto result = useCase.invokeContextMenuEntry(42u, ownerWindow);
-
-    EXPECT_TRUE(result.hasValue());
-}
-
-TEST(FileNavigationUseCase, DiscardContextMenuDelegatesToProvider)
-{
-    MockFileSystemRepository repository;
-    MockContextMenuProvider contextMenuProvider;
-
-    EXPECT_CALL(contextMenuProvider, discardMenu()).Times(1);
+    const ContextMenuResult menuResult{ ContextMenuOutcome::Cancelled, std::nullopt };
+    EXPECT_CALL(contextMenuProvider, showBackgroundMenu(folder, _, ownerWindow, _))
+        .WillOnce(Return(Result<ContextMenuResult>::success(menuResult)));
 
     FileNavigationUseCase useCase(repository, contextMenuProvider);
-    useCase.discardContextMenu();
+    auto result = useCase.showBackgroundContextMenu(folder, layout, ownerWindow, screenPos);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().outcome, ContextMenuOutcome::Cancelled);
 }
 
 TEST(FileNavigationUseCase, CreateFolderDelegatesToRepository)

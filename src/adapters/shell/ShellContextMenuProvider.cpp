@@ -2,8 +2,6 @@
 
 #include <algorithm>
 #include <cwctype>
-#include <fstream>
-#include <iterator>
 #include <set>
 #include <string>
 
@@ -14,8 +12,9 @@
 
 #include <Shellapi.h>
 #include <shlobj.h>
-#include <shlwapi.h>
-#include <shobjidl.h>
+#include <Shlwapi.h>
+#include <Shobjidl.h>
+#include <Commctrl.h>
 #endif
 
 namespace
@@ -23,968 +22,448 @@ namespace
     namespace fs = std::filesystem;
 
 #ifdef _WIN32
-    ContextMenuEntry makeSeparator()
+    // The app's own spliced-in actions live at [kAppActionIdFirst, kAppActionIdLast] -- clear of
+    // the shell's own idCmdFirst/idCmdLast range ([1, 0x7000]) passed to QueryContextMenu below.
+    constexpr UINT kShellIdFirst = 1;
+    constexpr UINT kShellIdLast = 0x7000;
+    constexpr std::uint32_t kAppActionIdFirst = 0x7001;
+
+    // Every call below hands control to arbitrary shell-extension code running in-process -- not
+    // just third-party installs, but Windows' own: a right-click on any ordinary NTFS folder was
+    // observed (via a WER minidump) to crash inside cscui.dll's Offline Files/Client-Side-Caching
+    // IContextMenu handler (cscui!_CmdIDToMap -> an out-of-bounds KERNELBASE!StrCmpICW read) the
+    // moment GetCommandString asked it about an idCmd it didn't expect. Explorer itself guards
+    // every one of these entry points the same way for exactly this reason -- a single misbehaving
+    // (or, as here, buggy-but-built-in) handler must not be able to take the whole app down. Each
+    // wrapper below is its own function (not inlined into a caller holding RAII members) because
+    // MSVC forbids __try in a function that also needs C++ object unwinding (C2712).
+    HRESULT guardedQueryContextMenu(IContextMenu* contextMenu, HMENU menu, UINT indexMenu, UINT idCmdFirst, UINT idCmdLast,
+                                     UINT flags)
     {
-        ContextMenuEntry entry;
-        entry.isSeparator = true;
-        return entry;
+        __try
+        {
+            return contextMenu->QueryContextMenu(menu, indexMenu, idCmdFirst, idCmdLast, flags);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return E_FAIL;
+        }
     }
 
-    std::string utf8FromWide(const std::wstring& wide)
+    HRESULT guardedGetCommandString(IContextMenu* contextMenu, UINT_PTR idCmd, UINT uType, LPSTR name, UINT cchMax)
     {
-        if (wide.empty())
+        __try
+        {
+            return contextMenu->GetCommandString(idCmd, uType, nullptr, name, cchMax);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return E_FAIL;
+        }
+    }
+
+    HRESULT guardedInvokeCommand(IContextMenu* contextMenu, CMINVOKECOMMANDINFOEX* info)
+    {
+        __try
+        {
+            return contextMenu->InvokeCommand(reinterpret_cast<LPCMINVOKECOMMANDINFO>(info));
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return E_FAIL;
+        }
+    }
+
+    HRESULT guardedGetUIObjectOf(IShellFolder* folder, HWND ownerHwnd, UINT count, LPCITEMIDLIST* pidls, REFIID riid, void** ppv)
+    {
+        __try
+        {
+            return folder->GetUIObjectOf(ownerHwnd, count, pidls, riid, nullptr, ppv);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return E_FAIL;
+        }
+    }
+
+    HRESULT guardedCreateViewObject(IShellFolder* folder, HWND ownerHwnd, REFIID riid, void** ppv)
+    {
+        __try
+        {
+            return folder->CreateViewObject(ownerHwnd, riid, ppv);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return E_FAIL;
+        }
+    }
+
+    HRESULT guardedGetItemObject(IShellView* shellView, UINT itemFlags, REFIID riid, void** ppv)
+    {
+        __try
+        {
+            return shellView->GetItemObject(itemFlags, riid, ppv);
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return E_FAIL;
+        }
+    }
+
+    std::wstring wideFromUtf8(const std::string& utf8)
+    {
+        if (utf8.empty())
         {
             return {};
         }
-        const int size = WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), static_cast<int>(wide.size()), nullptr, 0, nullptr, nullptr);
-        std::string result(static_cast<std::size_t>(size), '\0');
-        WideCharToMultiByte(CP_UTF8, 0, wide.c_str(), static_cast<int>(wide.size()), result.data(), size, nullptr, nullptr);
+        const int size = MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), static_cast<int>(utf8.size()), nullptr, 0);
+        std::wstring result(static_cast<std::size_t>(size), L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), static_cast<int>(utf8.size()), result.data(), size);
         return result;
     }
 
-    std::wstring toLowerExtensionOf(const fs::path& path)
-    {
-        std::wstring ext = path.extension().wstring();
-        std::transform(ext.begin(), ext.end(), ext.begin(), [](wchar_t c) { return static_cast<wchar_t>(towlower(c)); });
-        return ext;
-    }
-
-    std::wstring titleCaseVerb(const std::wstring& verbName)
-    {
-        if (verbName.empty())
-        {
-            return verbName;
-        }
-        std::wstring result = verbName;
-        result[0] = static_cast<wchar_t>(towupper(result[0]));
-        return result;
-    }
-
-    // ---- Registry helpers -------------------------------------------------------------------
-
-    std::optional<std::wstring> readStringValue(HKEY key, const wchar_t* valueName)
-    {
-        DWORD size = 0;
-        LONG rc = RegGetValueW(key, nullptr, valueName, RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ, nullptr, nullptr, &size);
-        if (rc != ERROR_SUCCESS || size == 0)
-        {
-            return std::nullopt;
-        }
-
-        std::wstring value(size / sizeof(wchar_t), L'\0');
-        rc = RegGetValueW(key, nullptr, valueName, RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ, nullptr, value.data(), &size);
-        if (rc != ERROR_SUCCESS)
-        {
-            return std::nullopt;
-        }
-        while (!value.empty() && value.back() == L'\0')
-        {
-            value.pop_back();
-        }
-        return value;
-    }
-
-    bool hasValue(HKEY key, const wchar_t* valueName)
-    {
-        return RegQueryValueExW(key, valueName, nullptr, nullptr, nullptr, nullptr) == ERROR_SUCCESS;
-    }
-
-    std::vector<std::wstring> enumerateSubkeyNames(HKEY key)
-    {
-        std::vector<std::wstring> names;
-        for (DWORD index = 0;; ++index)
-        {
-            wchar_t nameBuf[256];
-            DWORD nameLen = static_cast<DWORD>(std::size(nameBuf));
-            const LONG rc = RegEnumKeyExW(key, index, nameBuf, &nameLen, nullptr, nullptr, nullptr, nullptr);
-            if (rc == ERROR_NO_MORE_ITEMS)
-            {
-                break;
-            }
-            if (rc != ERROR_SUCCESS)
-            {
-                break;
-            }
-            names.emplace_back(nameBuf, nameLen);
-        }
-        return names;
-    }
-
-    std::vector<std::wstring> enumerateValueNames(HKEY key)
-    {
-        std::vector<std::wstring> names;
-        for (DWORD index = 0;; ++index)
-        {
-            wchar_t nameBuf[256];
-            DWORD nameLen = static_cast<DWORD>(std::size(nameBuf));
-            const LONG rc = RegEnumValueW(key, index, nameBuf, &nameLen, nullptr, nullptr, nullptr, nullptr);
-            if (rc == ERROR_NO_MORE_ITEMS)
-            {
-                break;
-            }
-            if (rc != ERROR_SUCCESS)
-            {
-                break;
-            }
-            names.emplace_back(nameBuf, nameLen);
-        }
-        return names;
-    }
-
-    std::optional<std::wstring> readHkcrStringValue(const std::wstring& subKeyPath, const wchar_t* valueName)
-    {
-        HKEY key = nullptr;
-        if (RegOpenKeyExW(HKEY_CLASSES_ROOT, subKeyPath.c_str(), 0, KEY_READ, &key) != ERROR_SUCCESS)
-        {
-            return std::nullopt;
-        }
-        auto value = readStringValue(key, valueName);
-        RegCloseKey(key);
-        return value;
-    }
-
-    std::optional<std::wstring> readHkcrDefaultValue(const std::wstring& subKeyPath)
-    {
-        return readHkcrStringValue(subKeyPath, nullptr);
-    }
-
-    // ---- Label / icon resolution -------------------------------------------------------------
-
-    std::wstring resolveIndirectString(const std::wstring& reference)
-    {
-        wchar_t buffer[1024] = {};
-        if (SUCCEEDED(SHLoadIndirectString(reference.c_str(), buffer, static_cast<UINT>(std::size(buffer)), nullptr)))
-        {
-            return buffer;
-        }
-        return {};
-    }
-
-    std::wstring resolveIndirectOrLiteral(const std::wstring& text)
-    {
-        if (!text.empty() && text.front() == L'@')
-        {
-            const std::wstring resolved = resolveIndirectString(text);
-            if (!resolved.empty())
-            {
-                return resolved;
-            }
-        }
-        return text;
-    }
-
-    std::wstring resolveVerbLabel(HKEY verbKey, const std::wstring& verbName)
-    {
-        if (auto muiVerb = readStringValue(verbKey, L"MUIVerb"); muiVerb && !muiVerb->empty())
-        {
-            const std::wstring resolved = resolveIndirectOrLiteral(*muiVerb);
-            if (!resolved.empty())
-            {
-                return resolved;
-            }
-        }
-        if (auto def = readStringValue(verbKey, nullptr); def && !def->empty())
-        {
-            return *def;
-        }
-        return titleCaseVerb(verbName);
-    }
-
-    std::wstring extractExecutableIconRefFromCommand(const std::wstring& commandTemplate)
-    {
-        if (commandTemplate.empty())
-        {
-            return {};
-        }
-        std::wstring exe;
-        if (commandTemplate.front() == L'"')
-        {
-            const auto endQuote = commandTemplate.find(L'"', 1);
-            exe = endQuote == std::wstring::npos ? commandTemplate.substr(1) : commandTemplate.substr(1, endQuote - 1);
-        }
-        else
-        {
-            const auto spacePos = commandTemplate.find(L' ');
-            exe = spacePos == std::wstring::npos ? commandTemplate : commandTemplate.substr(0, spacePos);
-        }
-        if (exe.empty())
-        {
-            return {};
-        }
-        return exe + L",0";
-    }
-
-    ContextMenuIcon iconFromHBitmap(HBITMAP bitmap)
-    {
-        ContextMenuIcon icon;
-        if (!bitmap)
-        {
-            return icon;
-        }
-
-        BITMAP bmp{};
-        if (GetObjectW(bitmap, sizeof(bmp), &bmp) == 0)
-        {
-            return icon;
-        }
-
-        const int width = bmp.bmWidth;
-        const int height = bmp.bmHeight;
-        if (width <= 0 || height <= 0)
-        {
-            return icon;
-        }
-
-        BITMAPINFO bmi{};
-        bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-        bmi.bmiHeader.biWidth = width;
-        bmi.bmiHeader.biHeight = -height; // request top-down rows
-        bmi.bmiHeader.biPlanes = 1;
-        bmi.bmiHeader.biBitCount = 32;
-        bmi.bmiHeader.biCompression = BI_RGB;
-
-        std::vector<std::uint8_t> pixels(static_cast<std::size_t>(width) * static_cast<std::size_t>(height) * 4);
-        HDC screenDc = GetDC(nullptr);
-        const int scanLines = GetDIBits(screenDc, bitmap, 0, static_cast<UINT>(height), pixels.data(), &bmi, DIB_RGB_COLORS);
-        ReleaseDC(nullptr, screenDc);
-
-        if (scanLines == 0)
-        {
-            return icon;
-        }
-
-        // GetDIBits with BI_RGB fills BGRA; swap to RGBA for QImage::Format_RGBA8888 on the UI side.
-        for (std::size_t i = 0; i + 3 < pixels.size(); i += 4)
-        {
-            std::swap(pixels[i], pixels[i + 2]);
-        }
-
-        icon.width = width;
-        icon.height = height;
-        icon.rgba = std::move(pixels);
-        return icon;
-    }
-
-    ContextMenuIcon iconFromHIcon(HICON hIcon)
-    {
-        ContextMenuIcon icon;
-        if (!hIcon)
-        {
-            return icon;
-        }
-
-        ICONINFO info{};
-        if (!GetIconInfo(hIcon, &info))
-        {
-            return icon;
-        }
-
-        icon = iconFromHBitmap(info.hbmColor);
-
-        if (info.hbmColor)
-        {
-            DeleteObject(info.hbmColor);
-        }
-        if (info.hbmMask)
-        {
-            DeleteObject(info.hbmMask);
-        }
-        return icon;
-    }
-
-    // iconRef is "<path>,<index>" (index may be negative for a resource id) or a bare path.
-    ContextMenuIcon extractIconForReference(const std::wstring& iconRef)
-    {
-        if (iconRef.empty())
-        {
-            return {};
-        }
-
-        std::wstring path = iconRef;
-        int index = 0;
-        const auto commaPos = iconRef.find_last_of(L',');
-        if (commaPos != std::wstring::npos)
-        {
-            path = iconRef.substr(0, commaPos);
-            try
-            {
-                index = std::stoi(iconRef.substr(commaPos + 1));
-            }
-            catch (...)
-            {
-                index = 0;
-            }
-        }
-        if (path.size() >= 2 && path.front() == L'"' && path.back() == L'"')
-        {
-            path = path.substr(1, path.size() - 2);
-        }
-        if (path.empty())
-        {
-            return {};
-        }
-
-        HICON hIcon = nullptr;
-        const UINT extracted = ExtractIconExW(path.c_str(), index, nullptr, &hIcon, 1);
-        if (extracted == 0 || !hIcon)
-        {
-            return {};
-        }
-
-        ContextMenuIcon icon = iconFromHIcon(hIcon);
-        DestroyIcon(hIcon);
-        return icon;
-    }
-
-    // ---- Static verb enumeration ------------------------------------------------------------
-
+    // Cut/Copy/Paste/Delete/Rename/Properties/default-Open have app-native equivalents supplied via
+    // NativeMenuLayout -- shell-contributed top-level items with these canonical verbs are removed
+    // so they're not shown twice (Architecture.md §14.102, reused unchanged from §14.13.3's
+    // suppressedVerbNames()). Nested cascade items are never suppressed, same as Explorer itself
+    // never touches them.
     const std::set<std::wstring>& suppressedVerbNames()
     {
-        // Cut/Copy/Paste/Delete/Rename/Properties/default-Open have app-native equivalents that
-        // the UI layer places at fixed positions instead (Architecture.md §14.13).
         static const std::set<std::wstring> names = { L"open", L"cut", L"copy", L"paste", L"delete", L"rename", L"properties" };
         return names;
     }
 
-    void collectVerbsFromShellKey(HKEY shellKey, const std::vector<fs::path>& targetPaths, std::vector<ContextMenuEntry>& outEntries,
-                                   std::map<std::uint32_t, ShellContextMenuProvider::StaticCommand>& outCommands, std::uint32_t& nextId)
+    std::wstring toLowerCopy(std::wstring text)
     {
-        for (const std::wstring& verbName : enumerateSubkeyNames(shellKey))
-        {
-            std::wstring lowerVerb = verbName;
-            std::transform(lowerVerb.begin(), lowerVerb.end(), lowerVerb.begin(),
-                            [](wchar_t c) { return static_cast<wchar_t>(towlower(c)); });
-            if (suppressedVerbNames().count(lowerVerb) != 0)
-            {
-                continue;
-            }
-
-            HKEY verbKey = nullptr;
-            if (RegOpenKeyExW(shellKey, verbName.c_str(), 0, KEY_READ, &verbKey) != ERROR_SUCCESS)
-            {
-                continue;
-            }
-            if (hasValue(verbKey, L"LegacyDisable") || hasValue(verbKey, L"ProgrammaticAccessOnly")
-                || hasValue(verbKey, L"Extended"))
-            {
-                RegCloseKey(verbKey);
-                continue;
-            }
-
-            ContextMenuEntry entry;
-            entry.label = utf8FromWide(resolveVerbLabel(verbKey, verbName));
-            entry.id = nextId++;
-
-            std::wstring iconRef = readStringValue(verbKey, L"Icon").value_or(std::wstring());
-
-            HKEY subShellKey = nullptr;
-            bool isSubmenu = false;
-            if (RegOpenKeyExW(verbKey, L"shell", 0, KEY_READ, &subShellKey) == ERROR_SUCCESS)
-            {
-                isSubmenu = true;
-                collectVerbsFromShellKey(subShellKey, targetPaths, entry.submenu, outCommands, nextId);
-                RegCloseKey(subShellKey);
-            }
-
-            bool hasCommand = false;
-            if (!isSubmenu)
-            {
-                HKEY commandKey = nullptr;
-                if (RegOpenKeyExW(verbKey, L"command", 0, KEY_READ, &commandKey) == ERROR_SUCCESS)
-                {
-                    std::wstring commandTemplate = readStringValue(commandKey, nullptr).value_or(std::wstring());
-                    RegCloseKey(commandKey);
-                    if (!commandTemplate.empty())
-                    {
-                        hasCommand = true;
-                        if (iconRef.empty())
-                        {
-                            iconRef = extractExecutableIconRefFromCommand(commandTemplate);
-                        }
-                        outCommands[entry.id] = ShellContextMenuProvider::StaticCommand{ commandTemplate, targetPaths };
-                    }
-                }
-            }
-            RegCloseKey(verbKey);
-
-            if (!isSubmenu && !hasCommand)
-            {
-                // Nothing to invoke and no submenu — not a usable entry (e.g. a DDEExec-only verb).
-                continue;
-            }
-
-            if (!iconRef.empty())
-            {
-                entry.icon = extractIconForReference(iconRef);
-            }
-
-            outEntries.push_back(std::move(entry));
-        }
+        std::transform(text.begin(), text.end(), text.begin(), [](wchar_t c) { return static_cast<wchar_t>(towlower(c)); });
+        return text;
     }
 
-    void collectStaticVerbsForRoot(const std::wstring& base, const std::vector<fs::path>& targetPaths,
-                                    std::vector<ContextMenuEntry>& outEntries,
-                                    std::map<std::uint32_t, ShellContextMenuProvider::StaticCommand>& outCommands,
-                                    std::uint32_t& nextId)
+    // Removes every top-level item whose canonical verb (GCS_VERBW) is in suppressedVerbNames().
+    // Walks backwards since RemoveMenu shifts subsequent indices down.
+    void suppressDuplicatedVerbs(HMENU menu, IContextMenu* contextMenu)
     {
-        HKEY shellKey = nullptr;
-        if (RegOpenKeyExW(HKEY_CLASSES_ROOT, (base + L"\\shell").c_str(), 0, KEY_READ, &shellKey) != ERROR_SUCCESS)
+        for (int i = GetMenuItemCount(menu) - 1; i >= 0; --i)
         {
-            return;
-        }
-        collectVerbsFromShellKey(shellKey, targetPaths, outEntries, outCommands, nextId);
-        RegCloseKey(shellKey);
-    }
-
-    // Shared by buildItemMenu/buildBackgroundMenu: static (registry-verb) entries are collected
-    // the same way regardless of which HKCR roots apply to the selection.
-    void collectStaticVerbsForRoots(const std::vector<std::wstring>& rootBases, const std::vector<fs::path>& targetPaths,
-                                     std::vector<ContextMenuEntry>& outEntries,
-                                     std::map<std::uint32_t, ShellContextMenuProvider::StaticCommand>& outCommands,
-                                     std::uint32_t& nextId)
-    {
-        for (const std::wstring& base : rootBases)
-        {
-            collectStaticVerbsForRoot(base, targetPaths, outEntries, outCommands, nextId);
-        }
-    }
-
-    // ---- "Open with" submenu -----------------------------------------------------------------
-
-    void appendOpenWithAppEntry(const std::wstring& exeName, const std::vector<fs::path>& targetPaths,
-                                 std::vector<ContextMenuEntry>& appEntries,
-                                 std::map<std::uint32_t, ShellContextMenuProvider::StaticCommand>& outCommands, std::uint32_t& nextId)
-    {
-        const std::wstring applicationsKey = L"Applications\\" + exeName;
-
-        std::wstring friendlyName = readHkcrStringValue(applicationsKey, L"FriendlyAppName").value_or(std::wstring());
-        friendlyName = resolveIndirectOrLiteral(friendlyName);
-        if (friendlyName.empty())
-        {
-            friendlyName = exeName;
-        }
-
-        const std::wstring commandTemplate =
-            readHkcrStringValue(applicationsKey + L"\\shell\\open\\command", nullptr).value_or(L"\"" + exeName + L"\" \"%1\"");
-
-        ContextMenuEntry entry;
-        entry.label = utf8FromWide(friendlyName);
-        entry.id = nextId++;
-
-        const std::wstring iconRef = readHkcrStringValue(applicationsKey, L"DefaultIcon").value_or(exeName + L",0");
-        entry.icon = extractIconForReference(iconRef);
-
-        outCommands[entry.id] = ShellContextMenuProvider::StaticCommand{ commandTemplate, targetPaths };
-        appEntries.push_back(std::move(entry));
-    }
-
-    void collectOpenWithSubmenu(const std::wstring& ext, const std::vector<fs::path>& targetPaths,
-                                 std::vector<ContextMenuEntry>& outEntries,
-                                 std::map<std::uint32_t, ShellContextMenuProvider::StaticCommand>& outCommands, std::uint32_t& nextId)
-    {
-        std::vector<ContextMenuEntry> appEntries;
-        std::set<std::wstring> seenExe;
-
-        HKEY progIdsKey = nullptr;
-        if (RegOpenKeyExW(HKEY_CLASSES_ROOT, (ext + L"\\OpenWithProgIds").c_str(), 0, KEY_READ, &progIdsKey) == ERROR_SUCCESS)
-        {
-            for (const std::wstring& progId : enumerateValueNames(progIdsKey))
-            {
-                const std::wstring commandTemplate = readHkcrStringValue(progId + L"\\shell\\open\\command", nullptr).value_or(std::wstring());
-                if (commandTemplate.empty())
-                {
-                    continue;
-                }
-                std::wstring friendlyName = resolveIndirectOrLiteral(readHkcrStringValue(progId, L"FriendlyTypeName").value_or(std::wstring()));
-                if (friendlyName.empty())
-                {
-                    friendlyName = readHkcrDefaultValue(progId).value_or(progId);
-                }
-
-                ContextMenuEntry entry;
-                entry.label = utf8FromWide(friendlyName);
-                entry.id = nextId++;
-                outCommands[entry.id] = ShellContextMenuProvider::StaticCommand{ commandTemplate, targetPaths };
-                appEntries.push_back(std::move(entry));
-            }
-            RegCloseKey(progIdsKey);
-        }
-
-        HKEY listKey = nullptr;
-        if (RegOpenKeyExW(HKEY_CLASSES_ROOT, (ext + L"\\OpenWithList").c_str(), 0, KEY_READ, &listKey) == ERROR_SUCCESS)
-        {
-            for (const std::wstring& exeName : enumerateSubkeyNames(listKey))
-            {
-                if (seenExe.insert(exeName).second)
-                {
-                    appendOpenWithAppEntry(exeName, targetPaths, appEntries, outCommands, nextId);
-                }
-            }
-            RegCloseKey(listKey);
-        }
-
-        HKEY mruKey = nullptr;
-        const std::wstring mruPath = L"Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\FileExts\\" + ext + L"\\OpenWithList";
-        if (RegOpenKeyExW(HKEY_CURRENT_USER, mruPath.c_str(), 0, KEY_READ, &mruKey) == ERROR_SUCCESS)
-        {
-            for (const std::wstring& valueName : enumerateValueNames(mruKey))
-            {
-                if (valueName == L"MRUList")
-                {
-                    continue;
-                }
-                auto exeName = readStringValue(mruKey, valueName.c_str());
-                if (exeName && !exeName->empty() && seenExe.insert(*exeName).second)
-                {
-                    appendOpenWithAppEntry(*exeName, targetPaths, appEntries, outCommands, nextId);
-                }
-            }
-            RegCloseKey(mruKey);
-        }
-
-        if (!appEntries.empty())
-        {
-            ContextMenuEntry submenu;
-            submenu.label = "Open with";
-            submenu.id = nextId++;
-            submenu.submenu = std::move(appEntries);
-            outEntries.push_back(std::move(submenu));
-        }
-    }
-
-    // ---- "New" submenu (background only) -----------------------------------------------------
-
-    struct ShellNewTypeInfo
-    {
-        std::wstring label;
-        std::wstring newBaseName;
-        std::wstring extension;
-        std::optional<fs::path> templateFile;
-        std::wstring iconRef;
-    };
-
-    std::vector<ShellNewTypeInfo> buildShellNewTypeCache()
-    {
-        std::vector<ShellNewTypeInfo> result;
-
-        for (DWORD index = 0;; ++index)
-        {
-            wchar_t nameBuf[256];
-            DWORD nameLen = static_cast<DWORD>(std::size(nameBuf));
-            const LONG rc = RegEnumKeyExW(HKEY_CLASSES_ROOT, index, nameBuf, &nameLen, nullptr, nullptr, nullptr, nullptr);
-            if (rc == ERROR_NO_MORE_ITEMS)
-            {
-                break;
-            }
-            if (rc != ERROR_SUCCESS)
-            {
-                continue;
-            }
-
-            const std::wstring ext(nameBuf, nameLen);
-            if (ext.empty() || ext.front() != L'.')
-            {
-                continue;
-            }
-
-            HKEY shellNewKey = nullptr;
-            if (RegOpenKeyExW(HKEY_CLASSES_ROOT, (ext + L"\\ShellNew").c_str(), 0, KEY_READ, &shellNewKey) != ERROR_SUCCESS)
-            {
-                continue;
-            }
-            const bool isNullFile = hasValue(shellNewKey, L"NullFile");
-            const auto fileName = readStringValue(shellNewKey, L"FileName");
-            RegCloseKey(shellNewKey);
-
-            if (!isNullFile && !fileName)
-            {
-                // ShellNew's Command/binary-Data mechanisms are out of scope (Architecture.md §14.13).
-                continue;
-            }
-
-            std::wstring label = ext;
-            if (auto progId = readHkcrDefaultValue(ext); progId && !progId->empty())
-            {
-                if (auto friendly = readHkcrDefaultValue(*progId); friendly && !friendly->empty())
-                {
-                    label = *friendly;
-                }
-            }
-
-            ShellNewTypeInfo info;
-            info.extension = ext;
-            info.label = label;
-            info.newBaseName = L"New " + label;
-
-            if (fileName && !fileName->empty())
-            {
-                fs::path templatePath(*fileName);
-                if (templatePath.is_relative())
-                {
-                    wchar_t windowsDir[MAX_PATH];
-                    if (GetWindowsDirectoryW(windowsDir, static_cast<UINT>(std::size(windowsDir))) != 0)
-                    {
-                        templatePath = fs::path(windowsDir) / L"ShellNew" / templatePath;
-                    }
-                }
-                info.templateFile = templatePath;
-            }
-
-            auto iconRef = readHkcrStringValue(ext, L"DefaultIcon");
-            if (!iconRef)
-            {
-                if (auto progId = readHkcrDefaultValue(ext); progId && !progId->empty())
-                {
-                    iconRef = readHkcrStringValue(*progId, L"DefaultIcon");
-                }
-            }
-            info.iconRef = iconRef.value_or(std::wstring());
-
-            result.push_back(std::move(info));
-        }
-
-        return result;
-    }
-
-    // Registry-sourced ShellNew entries only. "New Folder" itself is a native QAction the UI
-    // layer places ahead of this submenu (FileOperationsController::createFolder), not duplicated
-    // here — see Architecture.md §14.13's IFileSystemRepository::createDirectory addition.
-    void collectShellNewSubmenu(const fs::path& backgroundFolder, std::vector<ContextMenuEntry>& outEntries,
-                                 std::map<std::uint32_t, ShellContextMenuProvider::ShellNewCommand>& outCommands, std::uint32_t& nextId)
-    {
-        static const std::vector<ShellNewTypeInfo> cachedTypes = buildShellNewTypeCache();
-        if (cachedTypes.empty())
-        {
-            return;
-        }
-
-        std::vector<ContextMenuEntry> typeEntries;
-        for (const ShellNewTypeInfo& info : cachedTypes)
-        {
-            ContextMenuEntry entry;
-            entry.label = utf8FromWide(info.label);
-            entry.id = nextId++;
-            if (!info.iconRef.empty())
-            {
-                entry.icon = extractIconForReference(info.iconRef);
-            }
-
-            ShellContextMenuProvider::ShellNewCommand command;
-            command.targetDirectory = backgroundFolder;
-            command.templateFile = info.templateFile;
-            command.baseName = info.newBaseName;
-            command.extension = info.extension;
-            outCommands[entry.id] = std::move(command);
-
-            typeEntries.push_back(std::move(entry));
-        }
-
-        ContextMenuEntry newSubmenu;
-        newSubmenu.label = "New";
-        newSubmenu.id = nextId++;
-        newSubmenu.submenu = std::move(typeEntries);
-        outEntries.push_back(std::move(newSubmenu));
-    }
-
-    // ---- Dynamic shell-extension (COM) resolution ---------------------------------------------
-
-    void walkDynamicMenu(HMENU menu, UINT idFirst, IContextMenu* handler, std::vector<ContextMenuEntry>& outEntries,
-                          std::map<std::uint32_t, ShellContextMenuProvider::DynamicCommand>& outCommands, std::uint32_t& nextId)
-    {
-        const int count = GetMenuItemCount(menu);
-        for (int i = 0; i < count; ++i)
-        {
-            wchar_t textBuf[512] = {};
             MENUITEMINFOW info{};
             info.cbSize = sizeof(info);
-            info.fMask = MIIM_STRING | MIIM_SUBMENU | MIIM_ID | MIIM_FTYPE | MIIM_STATE | MIIM_BITMAP;
-            info.dwTypeData = textBuf;
-            info.cch = static_cast<UINT>(std::size(textBuf));
-            if (!GetMenuItemInfoW(menu, static_cast<UINT>(i), TRUE, &info))
+            info.fMask = MIIM_ID | MIIM_FTYPE;
+            if (!GetMenuItemInfoW(menu, static_cast<UINT>(i), TRUE, &info) || (info.fType & MFT_SEPARATOR) || info.wID == 0)
             {
                 continue;
             }
 
-            if (info.fType & MFT_SEPARATOR)
-            {
-                outEntries.push_back(makeSeparator());
-                continue;
-            }
-
-            ContextMenuEntry entry;
-            entry.label = utf8FromWide(textBuf);
-            entry.enabled = (info.fState & MFS_DISABLED) == 0;
-            if (info.hbmpItem)
-            {
-                entry.icon = iconFromHBitmap(info.hbmpItem);
-            }
-
-            if (info.hSubMenu)
-            {
-                walkDynamicMenu(info.hSubMenu, idFirst, handler, entry.submenu, outCommands, nextId);
-                entry.id = nextId++;
-            }
-            else if (info.wID != 0)
-            {
-                entry.id = nextId++;
-                outCommands[entry.id] = ShellContextMenuProvider::DynamicCommand{ handler, info.wID - idFirst };
-            }
-            else
+            wchar_t verb[256] = {};
+            if (FAILED(guardedGetCommandString(contextMenu, info.wID - kShellIdFirst, GCS_VERBW, reinterpret_cast<char*>(verb),
+                                                 static_cast<UINT>(std::size(verb)))))
             {
                 continue;
             }
 
-            outEntries.push_back(std::move(entry));
+            if (suppressedVerbNames().count(toLowerCopy(verb)) != 0)
+            {
+                RemoveMenu(menu, static_cast<UINT>(i), MF_BYPOSITION);
+            }
         }
     }
 
-    std::optional<CLSID> resolveClsid(const std::wstring& text)
+    // Inserts one NativeMenuAction (or a plain separator) at `position`. MIIM_ID|MIIM_STATE|
+    // MIIM_STRING|MIIM_FTYPE only -- no icon for these, a deliberate v1 cut (Architecture.md
+    // §14.102.6).
+    void insertActionAt(HMENU menu, UINT position, const NativeMenuAction& action, std::wstring& labelStorage)
     {
-        CLSID clsid{};
-        if (SUCCEEDED(CLSIDFromString(text.c_str(), &clsid)))
+        MENUITEMINFOW item{};
+        item.cbSize = sizeof(item);
+
+        if (action.isSeparator)
         {
-            return clsid;
+            item.fMask = MIIM_FTYPE;
+            item.fType = MFT_SEPARATOR;
         }
-        if (SUCCEEDED(CLSIDFromProgID(text.c_str(), &clsid)))
+        else
         {
-            return clsid;
+            labelStorage = wideFromUtf8(action.label);
+            item.fMask = MIIM_ID | MIIM_STATE | MIIM_FTYPE | MIIM_STRING;
+            item.fType = MFT_STRING;
+            item.fState = action.enabled ? MFS_ENABLED : MFS_DISABLED;
+            item.wID = action.id;
+            item.dwTypeData = labelStorage.data();
+            item.cch = static_cast<UINT>(labelStorage.size());
         }
-        return std::nullopt;
+
+        InsertMenuItemW(menu, position, TRUE, &item);
     }
 
-    // Enumerates shellex\ContextMenuHandlers under HKCR\<base>, initializes each handler, and
-    // queries its menu content into a per-handler id subrange (handler N -> [N*1000, N*1000+999),
-    // mirroring how Explorer offsets each handler's idCmdFirst). Contributing handlers are kept
-    // alive in pendingHandlers (released by ShellContextMenuProvider::discardMenu()).
-    void collectHandlersFromRoot(const std::wstring& base, PCIDLIST_ABSOLUTE pidlFolder, IDataObject* dataObject,
-                                  std::vector<ContextMenuEntry>& outEntries, int& handlerIndex, std::set<std::wstring>& seenClsid,
-                                  std::map<std::uint32_t, ShellContextMenuProvider::DynamicCommand>& outCommands,
-                                  std::uint32_t& nextId, std::vector<IContextMenu*>& pendingHandlers, bool isBackground)
+    // Splices `layout`'s groups into the already-shell-populated `menu`: top/clipboard groups go in
+    // ahead of the shell's own items (each followed by one separator), bottom/final groups are
+    // appended at the end (each preceded by one separator) -- the same conventional positions
+    // ContextMenuBuilder hardcoded before §14.102.
+    void mergeNativeLayout(HMENU menu, const NativeMenuLayout& layout)
     {
-        HKEY shellexKey = nullptr;
-        if (RegOpenKeyExW(HKEY_CLASSES_ROOT, (base + L"\\shellex\\ContextMenuHandlers").c_str(), 0, KEY_READ, &shellexKey)
-            != ERROR_SUCCESS)
-        {
-            return;
-        }
+        // Backing storage for every inserted label -- MENUITEMINFOW::dwTypeData must stay valid
+        // only for the duration of each InsertMenuItemW call, but keeping one slot per inserted
+        // action alive until mergeNativeLayout returns is simplest and cheap (menu sizes are small).
+        std::vector<std::wstring> labelStorage;
+        labelStorage.reserve(layout.topActions.size() + layout.clipboardActions.size() + layout.bottomActions.size() +
+                              layout.finalActions.size());
 
-        for (const std::wstring& subkeyName : enumerateSubkeyNames(shellexKey))
-        {
-            HKEY subkey = nullptr;
-            if (RegOpenKeyExW(shellexKey, subkeyName.c_str(), 0, KEY_READ, &subkey) != ERROR_SUCCESS)
+        UINT position = 0;
+        const auto insertFront = [&](const std::vector<NativeMenuAction>& group) {
+            if (group.empty())
             {
-                continue;
+                return;
             }
-            std::wstring clsidText = readStringValue(subkey, nullptr).value_or(subkeyName);
-            RegCloseKey(subkey);
-
-            if (clsidText.empty() || !seenClsid.insert(clsidText).second)
+            for (const NativeMenuAction& action : group)
             {
-                continue;
+                labelStorage.emplace_back();
+                insertActionAt(menu, position++, action, labelStorage.back());
             }
+            NativeMenuAction separator;
+            separator.isSeparator = true;
+            labelStorage.emplace_back();
+            insertActionAt(menu, position++, separator, labelStorage.back());
+        };
 
-            const auto clsid = resolveClsid(clsidText);
-            if (!clsid)
+        insertFront(layout.topActions);
+        insertFront(layout.clipboardActions);
+
+        const auto appendBack = [&](const std::vector<NativeMenuAction>& group) {
+            if (group.empty())
             {
-                continue;
+                return;
             }
-
-            IShellExtInit* shellExtInit = nullptr;
-            if (FAILED(CoCreateInstance(*clsid, nullptr, CLSCTX_INPROC_SERVER, IID_IShellExtInit,
-                                         reinterpret_cast<void**>(&shellExtInit)))
-                || !shellExtInit)
+            UINT tail = static_cast<UINT>(GetMenuItemCount(menu));
+            NativeMenuAction separator;
+            separator.isSeparator = true;
+            labelStorage.emplace_back();
+            insertActionAt(menu, tail++, separator, labelStorage.back());
+            for (const NativeMenuAction& action : group)
             {
-                continue;
+                labelStorage.emplace_back();
+                insertActionAt(menu, tail++, action, labelStorage.back());
             }
+        };
 
-            if (FAILED(shellExtInit->Initialize(pidlFolder, dataObject, nullptr)))
-            {
-                shellExtInit->Release();
-                continue;
-            }
-
-            IContextMenu* contextMenu = nullptr;
-            const HRESULT queryResult = shellExtInit->QueryInterface(IID_IContextMenu, reinterpret_cast<void**>(&contextMenu));
-            shellExtInit->Release();
-            if (FAILED(queryResult) || !contextMenu)
-            {
-                continue;
-            }
-
-            const UINT idFirst = static_cast<UINT>(handlerIndex * 1000 + 1);
-            const UINT idLast = idFirst + 998;
-            HMENU scratch = CreatePopupMenu();
-            if (!scratch)
-            {
-                contextMenu->Release();
-                continue;
-            }
-
-            const UINT flags = CMF_NORMAL | (isBackground ? static_cast<UINT>(CMF_EXPLORE) : 0u);
-            const HRESULT queryMenuResult = contextMenu->QueryContextMenu(scratch, 0, idFirst, idLast, flags);
-            ++handlerIndex;
-
-            if (FAILED(queryMenuResult) || GetMenuItemCount(scratch) <= 0)
-            {
-                DestroyMenu(scratch);
-                contextMenu->Release();
-                continue;
-            }
-
-            std::vector<ContextMenuEntry> handlerEntries;
-            walkDynamicMenu(scratch, idFirst, contextMenu, handlerEntries, outCommands, nextId);
-            DestroyMenu(scratch);
-
-            if (handlerEntries.empty())
-            {
-                contextMenu->Release();
-                continue;
-            }
-
-            outEntries.insert(outEntries.end(), std::make_move_iterator(handlerEntries.begin()),
-                               std::make_move_iterator(handlerEntries.end()));
-            pendingHandlers.push_back(contextMenu);
-        }
-
-        RegCloseKey(shellexKey);
+        appendBack(layout.bottomActions);
+        appendBack(layout.finalActions);
     }
 
-    // Shared by buildItemMenu/buildBackgroundMenu: queries every applicable HKCR root's COM
-    // shell-extension handlers into one flat entry list, in the same per-handler id-subrange
-    // scheme collectHandlersFromRoot documents. `dataObject`/`isBackground` still vary by caller
-    // (an item selection carries an IDataObject describing it; a folder background has none).
-    void collectHandlersFromRoots(const std::vector<std::wstring>& rootBases, PCIDLIST_ABSOLUTE pidlFolder, IDataObject* dataObject,
-                                   std::vector<ContextMenuEntry>& outEntries,
-                                   std::map<std::uint32_t, ShellContextMenuProvider::DynamicCommand>& outCommands,
-                                   std::uint32_t& nextId, std::vector<IContextMenu*>& pendingHandlers, bool isBackground)
+    // ---- Message forwarding while the popup is tracking (Architecture.md §14.102.3) -------------
+
+    struct MenuMsgForwarder
     {
-        int handlerIndex = 0;
-        std::set<std::wstring> seenClsid;
-        for (const std::wstring& base : rootBases)
-        {
-            collectHandlersFromRoot(base, pidlFolder, dataObject, outEntries, handlerIndex, seenClsid, outCommands, nextId,
-                                     pendingHandlers, isBackground);
-        }
-    }
+        IContextMenu2* contextMenu2 = nullptr;
+        IContextMenu3* contextMenu3 = nullptr;
+    };
 
-    // Shared tail of buildItemMenu/buildBackgroundMenu's shell-extension block: a leading
-    // separator ahead of whatever dynamic entries were found, so they're visually set off from
-    // the static verbs above them.
-    void appendDynamicEntries(std::vector<ContextMenuEntry>& entries, std::vector<ContextMenuEntry>&& dynamicEntries)
+    constexpr UINT_PTR kMenuMsgSubclassId = 1;
+
+    LRESULT CALLBACK menuMsgSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, UINT_PTR /*subclassId*/,
+                                          DWORD_PTR refData)
     {
-        if (dynamicEntries.empty())
+        auto* forwarder = reinterpret_cast<MenuMsgForwarder*>(refData);
+        switch (msg)
         {
-            return;
-        }
-        entries.push_back(makeSeparator());
-        entries.insert(entries.end(), std::make_move_iterator(dynamicEntries.begin()), std::make_move_iterator(dynamicEntries.end()));
-    }
-
-    // Shared logging tail of buildItemMenu/buildBackgroundMenu.
-    void logMenuBuilt(const char* kind, std::size_t staticVerbCount, std::size_t dynamicCommandCount)
-    {
-        Logging::debug(std::string("ShellContextMenuProvider: ") + kind + " context menu built (" +
-                        std::to_string(staticVerbCount) + " static verb(s), " + std::to_string(dynamicCommandCount) +
-                        " dynamic shell extension entr" + (dynamicCommandCount == 1 ? "y" : "ies") + ")");
-    }
-
-    // ---- Command-line expansion / launch (invoke-time only) ------------------------------------
-
-    std::wstring expandCommandArguments(const std::wstring& commandTemplate, const std::vector<fs::path>& targetPaths)
-    {
-        if (targetPaths.empty())
-        {
-            return commandTemplate;
-        }
-
-        std::wstring result;
-        result.reserve(commandTemplate.size());
-        bool substituted = false;
-
-        for (std::size_t i = 0; i < commandTemplate.size(); ++i)
-        {
-            const wchar_t c = commandTemplate[i];
-            if (c == L'%' && i + 1 < commandTemplate.size())
+            case WM_INITMENUPOPUP:
+            case WM_MEASUREITEM:
+            case WM_DRAWITEM:
+            case WM_MENUCHAR:
+            case WM_UNINITMENUPOPUP:
             {
-                const wchar_t next = commandTemplate[i + 1];
-                if (next == L'1' || next == L'L' || next == L'l')
+                LRESULT result = 0;
+                HRESULT hr = E_FAIL;
+                if (forwarder->contextMenu3)
                 {
-                    result += L'"' + targetPaths.front().wstring() + L'"';
-                    ++i;
-                    substituted = true;
-                    continue;
-                }
-                if (next == L'*')
-                {
-                    for (std::size_t j = 0; j < targetPaths.size(); ++j)
+                    __try
                     {
-                        if (j != 0)
-                        {
-                            result += L' ';
-                        }
-                        result += L'"' + targetPaths[j].wstring() + L'"';
+                        hr = forwarder->contextMenu3->HandleMenuMsg2(msg, wParam, lParam, &result);
                     }
-                    ++i;
-                    substituted = true;
-                    continue;
+                    __except (EXCEPTION_EXECUTE_HANDLER)
+                    {
+                        hr = E_FAIL;
+                    }
+                    if (SUCCEEDED(hr))
+                    {
+                        return result;
+                    }
                 }
+                if (forwarder->contextMenu2)
+                {
+                    __try
+                    {
+                        hr = forwarder->contextMenu2->HandleMenuMsg(msg, wParam, lParam);
+                    }
+                    __except (EXCEPTION_EXECUTE_HANDLER)
+                    {
+                        hr = E_FAIL;
+                    }
+                    if (SUCCEEDED(hr))
+                    {
+                        return 0;
+                    }
+                }
+                break;
             }
-            result += c;
+            default:
+                break;
         }
-
-        if (!substituted)
-        {
-            result += L" \"" + targetPaths.front().wstring() + L'"';
-        }
-        return result;
+        return DefSubclassProc(hwnd, msg, wParam, lParam);
     }
 
-    Result<void> launchCommandLine(std::wstring commandLine, NativeWindowHandle ownerWindow, const fs::path& fallbackTarget)
+    // RAII guard so the subclass comes off on every exit path (including an exception) -- installed
+    // only for the duration of TrackPopupMenuEx.
+    class MenuMsgSubclassGuard
     {
-        STARTUPINFOW startupInfo{};
-        startupInfo.cb = sizeof(startupInfo);
-        PROCESS_INFORMATION processInfo{};
-
-        commandLine.push_back(L'\0');
-        const BOOL created = CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr,
-                                             &startupInfo, &processInfo);
-        if (created)
+    public:
+        MenuMsgSubclassGuard(HWND hwnd, MenuMsgForwarder& forwarder) : m_hwnd(hwnd)
         {
-            CloseHandle(processInfo.hThread);
-            CloseHandle(processInfo.hProcess);
-            return Result<void>::success();
+            m_installed = SetWindowSubclass(hwnd, menuMsgSubclassProc, kMenuMsgSubclassId, reinterpret_cast<DWORD_PTR>(&forwarder));
         }
 
-        // Fall back to ShellExecuteW on the target itself for command templates that are bare
-        // verbs/documents rather than a directly-launchable executable.
-        const HINSTANCE result =
-            ShellExecuteW(static_cast<HWND>(ownerWindow), nullptr, fallbackTarget.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
-        if (reinterpret_cast<INT_PTR>(result) <= 32)
+        ~MenuMsgSubclassGuard()
         {
-            return Result<void>::failure(Error(ErrorCode::IoError, "Failed to invoke the context menu command"));
+            if (m_installed)
+            {
+                RemoveWindowSubclass(m_hwnd, menuMsgSubclassProc, kMenuMsgSubclassId);
+            }
         }
-        return Result<void>::success();
+
+        MenuMsgSubclassGuard(const MenuMsgSubclassGuard&) = delete;
+        MenuMsgSubclassGuard& operator=(const MenuMsgSubclassGuard&) = delete;
+
+    private:
+        HWND m_hwnd;
+        BOOL m_installed = FALSE;
+    };
+
+    // Shows `menu` at screenPos, forwarding the handful of window messages shell extensions need
+    // (lazily-populated cascades, owner-drawn icons) to contextMenu's IContextMenu2/3 while it's
+    // tracking, and returns the chosen command id (0 == dismissed without picking anything).
+    UINT trackMenu(HMENU menu, IContextMenu* contextMenu, HWND ownerHwnd, NativeMenuPoint screenPos)
+    {
+        MenuMsgForwarder forwarder;
+        contextMenu->QueryInterface(IID_IContextMenu3, reinterpret_cast<void**>(&forwarder.contextMenu3));
+        if (!forwarder.contextMenu3)
+        {
+            contextMenu->QueryInterface(IID_IContextMenu2, reinterpret_cast<void**>(&forwarder.contextMenu2));
+        }
+
+        {
+            MenuMsgSubclassGuard guard(ownerHwnd, forwarder);
+            const UINT chosen = static_cast<UINT>(TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON,
+                                                                      screenPos.x, screenPos.y, ownerHwnd, nullptr));
+            if (forwarder.contextMenu3)
+            {
+                forwarder.contextMenu3->Release();
+            }
+            if (forwarder.contextMenu2)
+            {
+                forwarder.contextMenu2->Release();
+            }
+            return chosen;
+        }
     }
+
+    // Dispatches the id TrackPopupMenuEx returned: 0 => Cancelled; within the app's own reserved
+    // range => AppAction; anything else => invoke it on the shell's IContextMenu and report
+    // ShellCommandInvoked. `workingDirectory` is the item's parent folder (item menu) or the
+    // folder itself (background menu).
+    Result<ContextMenuResult> dispatchChosenId(UINT chosenId, IContextMenu* contextMenu, HWND ownerHwnd, NativeMenuPoint screenPos,
+                                                 const fs::path& workingDirectory)
+    {
+        if (chosenId == 0)
+        {
+            return Result<ContextMenuResult>::success(ContextMenuResult{ ContextMenuOutcome::Cancelled, std::nullopt });
+        }
+
+        if (chosenId >= kAppActionIdFirst)
+        {
+            return Result<ContextMenuResult>::success(
+                ContextMenuResult{ ContextMenuOutcome::AppAction, static_cast<std::uint32_t>(chosenId) });
+        }
+
+        CMINVOKECOMMANDINFOEX info{};
+        info.cbSize = sizeof(info);
+        info.fMask = CMIC_MASK_UNICODE | CMIC_MASK_PTINVOKE;
+        info.hwnd = ownerHwnd;
+        info.lpVerb = MAKEINTRESOURCEA(chosenId - kShellIdFirst);
+        info.lpVerbW = MAKEINTRESOURCEW(chosenId - kShellIdFirst);
+        info.nShow = SW_SHOWNORMAL;
+        info.ptInvoke = { screenPos.x, screenPos.y };
+
+        // Registry-registered static verbs commonly use "%V" in their command line to mean "the
+        // current folder" (observed with "Open with VS Code"/"Open in Zed"-style folder commands,
+        // but also e.g. the built-in "Open PowerShell window here"). That substitution is resolved
+        // from this field, not from whatever PIDL(s) the IContextMenu itself was built against --
+        // leaving it unset collapses %V to nothing, which several handlers then treat as "open this
+        // (empty) target with its default app", surfacing Windows' own "This file does not have an
+        // app associated with it" dialog instead of actually launching anything.
+        const std::wstring workingDirectoryWide = workingDirectory.wstring();
+        info.lpDirectoryW = workingDirectoryWide.c_str();
+
+        // Never log which command was invoked -- id alone doesn't leak paths, but keep the same
+        // logging posture as every other shell-invoke path in this adapter (Architecture.md §14.23).
+        Logging::debug("ShellContextMenuProvider: shell command invoked");
+        const HRESULT hr = guardedInvokeCommand(contextMenu, &info);
+        if (FAILED(hr))
+        {
+            Logging::warn("ShellContextMenuProvider: shell command invocation failed");
+            return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to invoke the shell command"));
+        }
+
+        return Result<ContextMenuResult>::success(ContextMenuResult{ ContextMenuOutcome::ShellCommandInvoked, std::nullopt });
+    }
+
+    // RAII for the handful of COM/GDI resources every build+show call acquires, so every early
+    // return (validation failure, failed bind, etc.) still releases them.
+    struct ComMenuScope
+    {
+        IShellFolder* desktop = nullptr;
+        IShellFolder* targetFolder = nullptr; // parent folder (item menu) or the folder itself (background menu).
+        IContextMenu* contextMenu = nullptr;
+        HMENU menu = nullptr;
+        PIDLIST_ABSOLUTE rootPidl = nullptr;       // parent (item menu) or folder (background menu) absolute PIDL.
+        std::vector<PITEMID_CHILD> childPidls;      // item menu only.
+
+        ~ComMenuScope()
+        {
+            if (menu)
+            {
+                DestroyMenu(menu);
+            }
+            if (contextMenu)
+            {
+                contextMenu->Release();
+            }
+            for (auto* pidl : childPidls)
+            {
+                CoTaskMemFree(pidl);
+            }
+            if (rootPidl)
+            {
+                CoTaskMemFree(rootPidl);
+            }
+            if (targetFolder)
+            {
+                targetFolder->Release();
+            }
+            if (desktop)
+            {
+                desktop->Release();
+            }
+        }
+    };
 #endif
 }
 
 #ifdef _WIN32
 
-ShellContextMenuProvider::ShellContextMenuProvider() = default;
-
-ShellContextMenuProvider::~ShellContextMenuProvider()
+Result<ContextMenuResult> ShellContextMenuProvider::showItemMenu(const std::vector<fs::path>& paths, const NativeMenuLayout& layout,
+                                                                    NativeWindowHandle ownerWindow, NativeMenuPoint screenPos)
 {
-    discardMenu();
-}
-
-Result<std::vector<ContextMenuEntry>> ShellContextMenuProvider::buildItemMenu(const std::vector<fs::path>& paths,
-                                                                                ContextMenuSourceMode mode)
-{
-    discardMenu();
-
     if (paths.empty())
     {
-        return Result<std::vector<ContextMenuEntry>>::failure(Error(ErrorCode::InvalidArgument, "No items to build a context menu for"));
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::InvalidArgument, "No items to build a context menu for"));
     }
 
     const fs::path parentDirectory = paths.front().parent_path();
@@ -992,253 +471,146 @@ Result<std::vector<ContextMenuEntry>> ShellContextMenuProvider::buildItemMenu(co
     {
         if (path.parent_path() != parentDirectory)
         {
-            return Result<std::vector<ContextMenuEntry>>::failure(
-                Error(ErrorCode::InvalidArgument, "All items must share one parent directory"));
+            return Result<ContextMenuResult>::failure(Error(ErrorCode::InvalidArgument, "All items must share one parent directory"));
         }
     }
 
-    std::error_code ec;
-    const bool isDirectorySelection = fs::is_directory(paths.front(), ec);
-
-    std::vector<std::wstring> rootBases;
-    std::wstring extLower;
-    if (isDirectorySelection)
+    ComMenuScope scope;
+    if (FAILED(SHGetDesktopFolder(&scope.desktop)) || !scope.desktop)
     {
-        rootBases = { L"AllFilesystemObjects", L"Directory", L"Folder" };
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to resolve the desktop shell folder"));
     }
-    else
+
+    if (FAILED(SHParseDisplayName(parentDirectory.c_str(), nullptr, &scope.rootPidl, 0, nullptr)) || !scope.rootPidl)
     {
-        extLower = toLowerExtensionOf(paths.front());
-        if (!extLower.empty())
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to resolve the item's parent folder"));
+    }
+
+    if (FAILED(scope.desktop->BindToObject(scope.rootPidl, nullptr, IID_IShellFolder, reinterpret_cast<void**>(&scope.targetFolder)))
+        || !scope.targetFolder)
+    {
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to bind the item's parent folder"));
+    }
+
+    for (const auto& path : paths)
+    {
+        std::wstring name = path.filename().wstring();
+        PIDLIST_RELATIVE childPidl = nullptr;
+        if (SUCCEEDED(scope.targetFolder->ParseDisplayName(nullptr, nullptr, name.data(), nullptr, &childPidl, nullptr)) && childPidl)
         {
-            if (auto progId = readHkcrDefaultValue(extLower); progId && !progId->empty())
-            {
-                rootBases.push_back(*progId);
-            }
-            rootBases.push_back(extLower);
-            rootBases.push_back(L"SystemFileAssociations\\" + extLower);
-            if (auto perceivedType = readHkcrStringValue(extLower, L"PerceivedType"); perceivedType && !perceivedType->empty())
-            {
-                rootBases.push_back(L"SystemFileAssociations\\" + *perceivedType);
-            }
-        }
-        rootBases.push_back(L"*");
-        rootBases.push_back(L"AllFilesystemObjects");
-    }
-
-    std::vector<ContextMenuEntry> entries;
-    collectStaticVerbsForRoots(rootBases, paths, entries, m_staticCommands, m_nextEntryId);
-
-    if (!isDirectorySelection && !extLower.empty())
-    {
-        collectOpenWithSubmenu(extLower, paths, entries, m_staticCommands, m_nextEntryId);
-    }
-
-    const std::size_t staticVerbCount = m_staticCommands.size();
-
-    if (mode == ContextMenuSourceMode::StaticAndShellExtensions)
-    {
-        IShellFolder* desktop = nullptr;
-        if (SUCCEEDED(SHGetDesktopFolder(&desktop)) && desktop)
-        {
-            PIDLIST_ABSOLUTE parentPidl = nullptr;
-            if (SUCCEEDED(SHParseDisplayName(parentDirectory.c_str(), nullptr, &parentPidl, 0, nullptr)) && parentPidl)
-            {
-                IShellFolder* parentFolder = nullptr;
-                if (SUCCEEDED(desktop->BindToObject(parentPidl, nullptr, IID_IShellFolder, reinterpret_cast<void**>(&parentFolder)))
-                    && parentFolder)
-                {
-                    std::vector<PITEMID_CHILD> childPidls;
-                    for (const auto& path : paths)
-                    {
-                        std::wstring name = path.filename().wstring();
-                        PIDLIST_RELATIVE childPidl = nullptr;
-                        if (SUCCEEDED(parentFolder->ParseDisplayName(nullptr, nullptr, name.data(), nullptr, &childPidl, nullptr))
-                            && childPidl)
-                        {
-                            childPidls.push_back(reinterpret_cast<PITEMID_CHILD>(childPidl));
-                        }
-                    }
-
-                    if (!childPidls.empty())
-                    {
-                        std::vector<LPCITEMIDLIST> constChildPidls(childPidls.begin(), childPidls.end());
-                        IDataObject* dataObject = nullptr;
-                        parentFolder->GetUIObjectOf(nullptr, static_cast<UINT>(constChildPidls.size()), constChildPidls.data(),
-                                                     IID_IDataObject, nullptr, reinterpret_cast<void**>(&dataObject));
-
-                        std::vector<ContextMenuEntry> dynamicEntries;
-                        collectHandlersFromRoots(rootBases, parentPidl, dataObject, dynamicEntries, m_dynamicCommands,
-                                                  m_nextEntryId, m_pendingHandlers, false);
-
-                        if (dataObject)
-                        {
-                            dataObject->Release();
-                        }
-                        appendDynamicEntries(entries, std::move(dynamicEntries));
-                    }
-
-                    for (auto* pidl : childPidls)
-                    {
-                        CoTaskMemFree(pidl);
-                    }
-                    parentFolder->Release();
-                }
-                CoTaskMemFree(parentPidl);
-            }
-            desktop->Release();
+            scope.childPidls.push_back(reinterpret_cast<PITEMID_CHILD>(childPidl));
         }
     }
 
-    logMenuBuilt("item", staticVerbCount, m_dynamicCommands.size());
-    return Result<std::vector<ContextMenuEntry>>::success(std::move(entries));
+    if (scope.childPidls.empty())
+    {
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to resolve the selected item(s)"));
+    }
+
+    std::vector<LPCITEMIDLIST> constChildPidls(scope.childPidls.begin(), scope.childPidls.end());
+    const auto ownerHwnd = static_cast<HWND>(ownerWindow);
+    if (FAILED(guardedGetUIObjectOf(scope.targetFolder, ownerHwnd, static_cast<UINT>(constChildPidls.size()), constChildPidls.data(),
+                                      IID_IContextMenu, reinterpret_cast<void**>(&scope.contextMenu)))
+        || !scope.contextMenu)
+    {
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to build the item's context menu"));
+    }
+
+    scope.menu = CreatePopupMenu();
+    if (!scope.menu)
+    {
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to create the popup menu"));
+    }
+
+    if (FAILED(guardedQueryContextMenu(scope.contextMenu, scope.menu, 0, kShellIdFirst, kShellIdLast, CMF_NORMAL)))
+    {
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to query the item's context menu"));
+    }
+
+    suppressDuplicatedVerbs(scope.menu, scope.contextMenu);
+    mergeNativeLayout(scope.menu, layout);
+
+    Logging::debug("ShellContextMenuProvider: item context menu shown");
+    const UINT chosenId = trackMenu(scope.menu, scope.contextMenu, ownerHwnd, screenPos);
+    return dispatchChosenId(chosenId, scope.contextMenu, ownerHwnd, screenPos, parentDirectory);
 }
 
-Result<std::vector<ContextMenuEntry>> ShellContextMenuProvider::buildBackgroundMenu(const fs::path& folder, ContextMenuSourceMode mode)
+Result<ContextMenuResult> ShellContextMenuProvider::showBackgroundMenu(const fs::path& folder, const NativeMenuLayout& layout,
+                                                                          NativeWindowHandle ownerWindow, NativeMenuPoint screenPos)
 {
-    discardMenu();
-
-    const std::vector<std::wstring> rootBases = { L"Directory\\Background" };
-
-    std::vector<ContextMenuEntry> entries;
-    collectStaticVerbsForRoots(rootBases, {}, entries, m_staticCommands, m_nextEntryId);
-
-    collectShellNewSubmenu(folder, entries, m_shellNewCommands, m_nextEntryId);
-
-    const std::size_t staticVerbCount = m_staticCommands.size();
-
-    if (mode == ContextMenuSourceMode::StaticAndShellExtensions)
+    ComMenuScope scope;
+    if (FAILED(SHGetDesktopFolder(&scope.desktop)) || !scope.desktop)
     {
-        PIDLIST_ABSOLUTE folderPidl = nullptr;
-        if (SUCCEEDED(SHParseDisplayName(folder.c_str(), nullptr, &folderPidl, 0, nullptr)) && folderPidl)
-        {
-            std::vector<ContextMenuEntry> dynamicEntries;
-            collectHandlersFromRoots(rootBases, folderPidl, nullptr, dynamicEntries, m_dynamicCommands, m_nextEntryId,
-                                      m_pendingHandlers, true);
-            appendDynamicEntries(entries, std::move(dynamicEntries));
-
-            CoTaskMemFree(folderPidl);
-        }
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to resolve the desktop shell folder"));
     }
 
-    logMenuBuilt("background", staticVerbCount, m_dynamicCommands.size());
-    return Result<std::vector<ContextMenuEntry>>::success(std::move(entries));
-}
-
-Result<void> ShellContextMenuProvider::invoke(std::uint32_t entryId, NativeWindowHandle ownerWindow)
-{
-    if (auto it = m_staticCommands.find(entryId); it != m_staticCommands.end())
+    if (FAILED(SHParseDisplayName(folder.c_str(), nullptr, &scope.rootPidl, 0, nullptr)) || !scope.rootPidl)
     {
-        const StaticCommand& command = it->second;
-        // Never log the expanded command line -- it contains the target path(s) (Architecture.md §14.23).
-        Logging::debug("ShellContextMenuProvider: command invoked (category=static)");
-        const std::wstring expanded = expandCommandArguments(command.commandTemplate, command.targetPaths);
-        const fs::path fallbackTarget = command.targetPaths.empty() ? fs::path() : command.targetPaths.front();
-        return launchCommandLine(expanded, ownerWindow, fallbackTarget);
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to resolve the folder"));
     }
 
-    if (auto it = m_dynamicCommands.find(entryId); it != m_dynamicCommands.end())
+    if (FAILED(scope.desktop->BindToObject(scope.rootPidl, nullptr, IID_IShellFolder, reinterpret_cast<void**>(&scope.targetFolder)))
+        || !scope.targetFolder)
     {
-        const DynamicCommand& command = it->second;
-        CMINVOKECOMMANDINFOEX info{};
-        info.cbSize = sizeof(info);
-        info.fMask = CMIC_MASK_UNICODE;
-        info.hwnd = static_cast<HWND>(ownerWindow);
-        info.lpVerb = MAKEINTRESOURCEA(command.commandOffset);
-        info.lpVerbW = MAKEINTRESOURCEW(command.commandOffset);
-        info.nShow = SW_SHOWNORMAL;
-
-        Logging::debug("ShellContextMenuProvider: command invoked (category=dynamic)");
-        const HRESULT hr = command.handler->InvokeCommand(reinterpret_cast<LPCMINVOKECOMMANDINFO>(&info));
-        if (FAILED(hr))
-        {
-            Logging::warn("ShellContextMenuProvider: dynamic command invocation failed: " + std::string(toLogString(ErrorCode::IoError)));
-            return Result<void>::failure(Error(ErrorCode::IoError, "Failed to invoke the shell extension command"));
-        }
-        return Result<void>::success();
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to bind the folder"));
     }
 
-    if (auto it = m_shellNewCommands.find(entryId); it != m_shellNewCommands.end())
+    const auto ownerHwnd = static_cast<HWND>(ownerWindow);
+
+    // Going through IShellView::GetItemObject(SVGIO_BACKGROUND, ...) -- rather than asking
+    // CreateViewObject for an IContextMenu directly -- is what Explorer itself does to build the
+    // folder's background popup. Functionally the two are interchangeable for every verb observed
+    // so far (the real fix for registry-registered "Open with VS Code"/"Open in Zed"-style
+    // commands misfiring is dispatchChosenId's lpDirectoryW, below), but this is still the
+    // documented/correct call for "the background of this folder", so it's kept as the more
+    // future-proof choice over the undocumented direct-IContextMenu shortcut.
+    IShellView* shellView = nullptr;
+    if (FAILED(guardedCreateViewObject(scope.targetFolder, ownerHwnd, IID_IShellView, reinterpret_cast<void**>(&shellView)))
+        || !shellView)
     {
-        const ShellNewCommand& command = it->second;
-
-        std::error_code ec;
-        int counter = 2;
-        fs::path candidate = command.targetDirectory / (command.baseName + command.extension);
-        while (fs::exists(candidate, ec))
-        {
-            candidate = command.targetDirectory / (command.baseName + L" (" + std::to_wstring(counter) + L")" + command.extension);
-            ++counter;
-        }
-
-        try
-        {
-            if (command.templateFile)
-            {
-                fs::copy_file(*command.templateFile, candidate);
-            }
-            else
-            {
-                std::ofstream stream(candidate, std::ios::binary);
-                if (!stream)
-                {
-                    return Result<void>::failure(Error(ErrorCode::IoError, "Failed to create new file"));
-                }
-            }
-        }
-        catch (const fs::filesystem_error& e)
-        {
-            // Never log e.what() -- it embeds both the source template and destination paths
-            // (Architecture.md §14.23).
-            Logging::warn("ShellContextMenuProvider: ShellNew file create failed: " + std::string(toLogString(ErrorCode::IoError)));
-            return Result<void>::failure(Error(ErrorCode::IoError, e.what()));
-        }
-
-        Logging::debug("ShellContextMenuProvider: command invoked (category=ShellNew)");
-        return Result<void>::success();
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to build the folder's background view"));
     }
 
-    return Result<void>::failure(Error(ErrorCode::InvalidArgument, "Unknown context menu entry"));
-}
+    const HRESULT getItemObjectResult =
+        guardedGetItemObject(shellView, SVGIO_BACKGROUND, IID_IContextMenu, reinterpret_cast<void**>(&scope.contextMenu));
+    shellView->Release();
 
-void ShellContextMenuProvider::discardMenu()
-{
-    for (IContextMenu* handler : m_pendingHandlers)
+    if (FAILED(getItemObjectResult) || !scope.contextMenu)
     {
-        if (handler)
-        {
-            handler->Release();
-        }
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to build the folder's background context menu"));
     }
-    m_pendingHandlers.clear();
-    m_dynamicCommands.clear();
-    m_staticCommands.clear();
-    m_shellNewCommands.clear();
-    m_nextEntryId = 1;
+
+    scope.menu = CreatePopupMenu();
+    if (!scope.menu)
+    {
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to create the popup menu"));
+    }
+
+    if (FAILED(guardedQueryContextMenu(scope.contextMenu, scope.menu, 0, kShellIdFirst, kShellIdLast, CMF_NORMAL | CMF_EXPLORE)))
+    {
+        return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Failed to query the folder's background context menu"));
+    }
+
+    suppressDuplicatedVerbs(scope.menu, scope.contextMenu);
+    mergeNativeLayout(scope.menu, layout);
+
+    Logging::debug("ShellContextMenuProvider: background context menu shown");
+    const UINT chosenId = trackMenu(scope.menu, scope.contextMenu, ownerHwnd, screenPos);
+    return dispatchChosenId(chosenId, scope.contextMenu, ownerHwnd, screenPos, folder);
 }
 
 #else
 
-ShellContextMenuProvider::ShellContextMenuProvider() = default;
-ShellContextMenuProvider::~ShellContextMenuProvider() = default;
-
-Result<std::vector<ContextMenuEntry>> ShellContextMenuProvider::buildItemMenu(const std::vector<fs::path>&, ContextMenuSourceMode)
+Result<ContextMenuResult> ShellContextMenuProvider::showItemMenu(const std::vector<fs::path>&, const NativeMenuLayout&,
+                                                                    NativeWindowHandle, NativeMenuPoint)
 {
-    return Result<std::vector<ContextMenuEntry>>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
+    return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
 }
 
-Result<std::vector<ContextMenuEntry>> ShellContextMenuProvider::buildBackgroundMenu(const fs::path&, ContextMenuSourceMode)
+Result<ContextMenuResult> ShellContextMenuProvider::showBackgroundMenu(const fs::path&, const NativeMenuLayout&, NativeWindowHandle,
+                                                                          NativeMenuPoint)
 {
-    return Result<std::vector<ContextMenuEntry>>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
-}
-
-Result<void> ShellContextMenuProvider::invoke(std::uint32_t, NativeWindowHandle)
-{
-    return Result<void>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
-}
-
-void ShellContextMenuProvider::discardMenu()
-{
+    return Result<ContextMenuResult>::failure(Error(ErrorCode::IoError, "Not supported on this platform"));
 }
 
 #endif

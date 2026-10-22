@@ -88,12 +88,10 @@ public:
     // destinationDirectory, preserving relative structure.
     Result<void> extractArchive(const std::filesystem::path& archiveFile, const std::filesystem::path& destinationDirectory);
 
-    Result<std::vector<ContextMenuEntry>> buildItemContextMenu(const std::vector<std::filesystem::path>& paths,
-                                                                 ContextMenuSourceMode mode);
-    Result<std::vector<ContextMenuEntry>> buildBackgroundContextMenu(const std::filesystem::path& folder,
-                                                                       ContextMenuSourceMode mode);
-    Result<void> invokeContextMenuEntry(std::uint32_t entryId, NativeWindowHandle ownerWindow);
-    void discardContextMenu();
+    Result<ContextMenuResult> showItemContextMenu(const std::vector<std::filesystem::path>& paths, const NativeMenuLayout& layout,
+                                                    NativeWindowHandle ownerWindow, NativeMenuPoint screenPos);
+    Result<ContextMenuResult> showBackgroundContextMenu(const std::filesystem::path& folder, const NativeMenuLayout& layout,
+                                                          NativeWindowHandle ownerWindow, NativeMenuPoint screenPos);
 
     Result<void> createFolder(const std::filesystem::path& directory);
     Result<FileNode> createFileFromTemplate(const std::filesystem::path& destinationFile,

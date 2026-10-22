@@ -2,18 +2,13 @@
 
 #include <algorithm>
 
-#include <QAction>
 #include <QFileDialog>
-#include <QMenu>
 #include <QMessageBox>
-#include <QSettings>
 #include <QWidget>
 
 #include "ArchiveExtensions.h"
-#include "ContextMenuBuilder.h"
 #include "FileOperationsController.h"
 #include "IContextMenuProvider.h"
-#include "WorkspacePaneWidget.h"
 
 namespace
 {
@@ -22,11 +17,18 @@ namespace
         return QString::fromStdWString(path.wstring());
     }
 
-    bool extendedShellExtensionsEnabled()
-    {
-        QSettings settings;
-        return settings.value(QLatin1String(WorkspacePaneWidget::kShowShellExtensionsSettingsKey), false).toBool();
-    }
+    // Fixed ids for this menu's app-native actions (Architecture.md §14.102) -- valid only for the
+    // one showItemContextMenu call below, clear of the shell's own [1, 0x7000] id range.
+    constexpr std::uint32_t kOpenActionId = 0x7001;
+    constexpr std::uint32_t kExtractHereActionId = 0x7002;
+    constexpr std::uint32_t kExtractToActionId = 0x7003;
+    constexpr std::uint32_t kCutActionId = 0x7004;
+    constexpr std::uint32_t kCopyActionId = 0x7005;
+    constexpr std::uint32_t kPasteActionId = 0x7006;
+    constexpr std::uint32_t kDeleteActionId = 0x7007;
+    constexpr std::uint32_t kRenameActionId = 0x7008;
+    constexpr std::uint32_t kBulkRenameActionId = 0x7009;
+    constexpr std::uint32_t kPropertiesActionId = 0x700A;
 }
 
 void FileItemContextMenu::show(QWidget* parent, FileOperationsController& fileOperationsController,
@@ -51,148 +53,183 @@ void FileItemContextMenu::show(QWidget* parent, FileOperationsController& fileOp
         std::all_of(paths.begin(), paths.end(),
                     [](const std::filesystem::path& p) { return ArchiveExtensions::archiveAncestorInPath(p) == p; });
 
-    auto* openAction = new QAction(QObject::tr("Open"));
-    auto* cutAction = new QAction(QObject::tr("Cut"));
-    auto* copyAction = new QAction(QObject::tr("Copy"));
-    auto* pasteAction = new QAction(QObject::tr("Paste"));
-    auto* deleteAction = new QAction(QObject::tr("Delete"));
-    auto* renameAction = new QAction(QObject::tr("Rename"));
-    auto* bulkRenameAction = new QAction(QObject::tr("Bulk Rename..."));
-    auto* propertiesAction = new QAction(QObject::tr("Properties"));
-    auto* extractHereAction = new QAction(QObject::tr("Extract Here"));
-    auto* extractToAction = new QAction(browsingInsideArchive ? QObject::tr("Extract...") : QObject::tr("Extract to..."));
-
-    QObject::connect(openAction, &QAction::triggered, parent, [controller, targetPath, open = callbacks.open]() {
-        if (open)
-        {
-            open(targetPath);
-        }
-        else
-        {
-            controller->openFile(targetPath);
-        }
-    });
-    QObject::connect(cutAction, &QAction::triggered, parent, [controller, paths]() { controller->cutToClipboard(paths); });
-    QObject::connect(copyAction, &QAction::triggered, parent, [controller, paths]() { controller->copyToClipboard(paths); });
-    QObject::connect(pasteAction, &QAction::triggered, parent, [controller, directory]() { controller->pasteInto(directory); });
-    if (callbacks.deleteItems)
-    {
-        QObject::connect(deleteAction, &QAction::triggered, parent, callbacks.deleteItems);
-    }
-    if (callbacks.rename)
-    {
-        QObject::connect(renameAction, &QAction::triggered, parent, callbacks.rename);
-    }
-    if (callbacks.bulkRename)
-    {
-        QObject::connect(bulkRenameAction, &QAction::triggered, parent, callbacks.bulkRename);
-    }
-    QObject::connect(propertiesAction, &QAction::triggered, parent, [controller, targetPath, ownerWindow]() {
-        controller->showProperties(targetPath, ownerWindow);
-    });
-    QObject::connect(extractHereAction, &QAction::triggered, parent, [controller, paths]() {
-        for (const std::filesystem::path& archiveFile : paths)
-        {
-            controller->extractArchive(archiveFile, archiveFile.parent_path() / archiveFile.stem());
-        }
-    });
-    QObject::connect(extractToAction, &QAction::triggered, parent, [parent, controller, paths]() {
-        const QString chosen = QFileDialog::getExistingDirectory(parent, QObject::tr("Extract to"));
-        if (chosen.isEmpty())
-        {
-            return;
-        }
-        const std::filesystem::path destination(chosen.toStdWString());
-
-        if (paths.size() == 1)
-        {
-            controller->extractArchive(paths.front(), destination);
-            return;
-        }
-
-        // Multiple sources sharing one destination: extract each into its own subfolder named
-        // after the source's own filename (unique -- paths are siblings from the same directory
-        // listing) instead of flattening them all directly into destination, where same-named
-        // entries from different sources would silently overwrite each other.
-        for (const std::filesystem::path& source : paths)
-        {
-            controller->extractArchive(source, destination / source.filename());
-        }
-    });
-
     // Rename/Properties/Open are single-target-only (rename-as-move, showProperties, and
     // openFile/itemActivated all take one path) — disable rather than guess a multi-item
     // behavior when more than one item is selected (Architecture.md §14.13.2/§14.13.6).
     const bool singleTarget = paths.size() == 1;
-    openAction->setEnabled(singleTarget);
-    renameAction->setEnabled(singleTarget && !browsingInsideArchive && callbacks.rename);
-    propertiesAction->setEnabled(singleTarget && !browsingInsideArchive);
 
     // Bulk Rename only makes sense for a multi-item selection (Architecture.md §14.55) -- single-
     // item rename stays F2/"Rename" above, same precedent as Cut/Copy/Delete already acting on the
     // whole selection.
-    bulkRenameAction->setEnabled(paths.size() > 1 && !browsingInsideArchive && callbacks.bulkRename);
+    const bool bulkRenameEnabled = paths.size() > 1 && !browsingInsideArchive && static_cast<bool>(callbacks.bulkRename);
+
+    NativeMenuLayout layout;
+
+    NativeMenuAction openAction;
+    openAction.id = kOpenActionId;
+    openAction.label = QObject::tr("Open").toStdString();
+    openAction.enabled = singleTarget;
+    layout.topActions.push_back(openAction);
+
+    NativeMenuAction topSeparator;
+    topSeparator.isSeparator = true;
+    layout.topActions.push_back(topSeparator);
+
+    if (selectionIsUnenteredArchives || browsingInsideArchive)
+    {
+        if (selectionIsUnenteredArchives)
+        {
+            NativeMenuAction extractHereAction;
+            extractHereAction.id = kExtractHereActionId;
+            extractHereAction.label = QObject::tr("Extract Here").toStdString();
+            layout.topActions.push_back(extractHereAction);
+        }
+
+        NativeMenuAction extractToAction;
+        extractToAction.id = kExtractToActionId;
+        extractToAction.label = (browsingInsideArchive ? QObject::tr("Extract...") : QObject::tr("Extract to...")).toStdString();
+        layout.topActions.push_back(extractToAction);
+    }
 
     // A read-only, virtual archive location has no real CF_HDROP paths for the OS clipboard, and
-    // Cut/Paste/Delete/New Folder/Properties aren't meaningful for it either (Architecture.md
-    // §14.28); the UI disables these proactively even though StandardFileSystemRepository also
-    // refuses them defensively.
-    cutAction->setEnabled(!browsingInsideArchive);
-    copyAction->setEnabled(!browsingInsideArchive);
-    pasteAction->setEnabled(!browsingInsideArchive);
-    deleteAction->setEnabled(!browsingInsideArchive && callbacks.deleteItems);
+    // Cut/Paste/Delete/Properties aren't meaningful for it either (Architecture.md §14.28); the UI
+    // disables these proactively even though StandardFileSystemRepository also refuses them
+    // defensively.
+    NativeMenuAction cutAction;
+    cutAction.id = kCutActionId;
+    cutAction.label = QObject::tr("Cut").toStdString();
+    cutAction.enabled = !browsingInsideArchive;
+    layout.clipboardActions.push_back(cutAction);
 
-    ContextMenuBuilder::NativeActions actions;
-    actions.open = openAction;
-    actions.cut = cutAction;
-    actions.copy = copyAction;
-    actions.paste = pasteAction;
-    actions.deleteAction = deleteAction;
-    actions.rename = renameAction;
-    actions.bulkRename = bulkRenameAction;
-    actions.properties = propertiesAction;
-    if (selectionIsUnenteredArchives)
+    NativeMenuAction copyAction;
+    copyAction.id = kCopyActionId;
+    copyAction.label = QObject::tr("Copy").toStdString();
+    copyAction.enabled = !browsingInsideArchive;
+    layout.clipboardActions.push_back(copyAction);
+
+    NativeMenuAction pasteAction;
+    pasteAction.id = kPasteActionId;
+    pasteAction.label = QObject::tr("Paste").toStdString();
+    pasteAction.enabled = !browsingInsideArchive;
+    layout.clipboardActions.push_back(pasteAction);
+
+    NativeMenuAction deleteAction;
+    deleteAction.id = kDeleteActionId;
+    deleteAction.label = QObject::tr("Delete").toStdString();
+    deleteAction.enabled = !browsingInsideArchive && static_cast<bool>(callbacks.deleteItems);
+    layout.bottomActions.push_back(deleteAction);
+
+    NativeMenuAction renameAction;
+    renameAction.id = kRenameActionId;
+    renameAction.label = QObject::tr("Rename").toStdString();
+    renameAction.enabled = singleTarget && !browsingInsideArchive && static_cast<bool>(callbacks.rename);
+    layout.bottomActions.push_back(renameAction);
+
+    NativeMenuAction bulkRenameAction;
+    bulkRenameAction.id = kBulkRenameActionId;
+    bulkRenameAction.label = QObject::tr("Bulk Rename...").toStdString();
+    bulkRenameAction.enabled = bulkRenameEnabled;
+    layout.bottomActions.push_back(bulkRenameAction);
+
+    NativeMenuAction propertiesAction;
+    propertiesAction.id = kPropertiesActionId;
+    propertiesAction.label = QObject::tr("Properties").toStdString();
+    propertiesAction.enabled = singleTarget && !browsingInsideArchive;
+    layout.finalActions.push_back(propertiesAction);
+
+    const NativeMenuPoint screenPos{ globalPos.x(), globalPos.y() };
+    auto showResult = controller->showItemContextMenu(paths, layout, ownerWindow, screenPos);
+
+    if (showResult.hasError())
     {
-        actions.extractHere = extractHereAction;
-        actions.extractTo = extractToAction;
-    }
-    else if (browsingInsideArchive)
-    {
-        actions.extractTo = extractToAction;
+        if (callbacks.reportError)
+        {
+            callbacks.reportError(QString::fromStdString(showResult.error().message));
+        }
+        return;
     }
 
-    const ContextMenuSourceMode mode =
-        extendedShellExtensionsEnabled() ? ContextMenuSourceMode::StaticAndShellExtensions : ContextMenuSourceMode::StaticVerbsOnly;
-    auto buildResult = controller->buildContextMenuForSelection(paths, mode);
-
-    std::vector<ContextMenuEntry> entries;
-    if (buildResult.hasValue())
+    const ContextMenuResult& result = showResult.value();
+    if (result.outcome != ContextMenuOutcome::AppAction || !result.appActionId)
     {
-        entries = std::move(buildResult).value();
-    }
-    else if (callbacks.reportError)
-    {
-        callbacks.reportError(QString::fromStdString(buildResult.error().message));
+        return;
     }
 
-    QMenu* menu = ContextMenuBuilder::buildItemMenu(entries, actions, parent);
-    QAction* chosen = menu->exec(globalPos);
+    switch (*result.appActionId)
+    {
+        case kOpenActionId:
+            if (callbacks.open)
+            {
+                callbacks.open(targetPath);
+            }
+            else
+            {
+                controller->openFile(targetPath);
+            }
+            break;
+        case kCutActionId:
+            controller->cutToClipboard(paths);
+            break;
+        case kCopyActionId:
+            controller->copyToClipboard(paths);
+            break;
+        case kPasteActionId:
+            controller->pasteInto(directory);
+            break;
+        case kDeleteActionId:
+            if (callbacks.deleteItems)
+            {
+                callbacks.deleteItems();
+            }
+            break;
+        case kRenameActionId:
+            if (callbacks.rename)
+            {
+                callbacks.rename();
+            }
+            break;
+        case kBulkRenameActionId:
+            if (callbacks.bulkRename)
+            {
+                callbacks.bulkRename();
+            }
+            break;
+        case kPropertiesActionId:
+            controller->showProperties(targetPath, ownerWindow);
+            break;
+        case kExtractHereActionId:
+            for (const std::filesystem::path& archiveFile : paths)
+            {
+                controller->extractArchive(archiveFile, archiveFile.parent_path() / archiveFile.stem());
+            }
+            break;
+        case kExtractToActionId:
+        {
+            const QString chosen = QFileDialog::getExistingDirectory(parent, QObject::tr("Extract to"));
+            if (chosen.isEmpty())
+            {
+                break;
+            }
+            const std::filesystem::path destination(chosen.toStdWString());
 
-    const auto entryId = chosen ? ContextMenuBuilder::entryIdForAction(chosen) : std::nullopt;
-    if (entryId)
-    {
-        controller->invokeContextMenuEntry(*entryId, directory, ownerWindow);
-    }
-    else
-    {
-        controller->discardContextMenu();
-    }
+            if (paths.size() == 1)
+            {
+                controller->extractArchive(paths.front(), destination);
+                break;
+            }
 
-    menu->deleteLater();
-    for (QAction* action : { openAction, cutAction, copyAction, pasteAction, deleteAction, renameAction, bulkRenameAction,
-                              propertiesAction, extractHereAction, extractToAction })
-    {
-        action->deleteLater();
+            // Multiple sources sharing one destination: extract each into its own subfolder named
+            // after the source's own filename (unique -- paths are siblings from the same directory
+            // listing) instead of flattening them all directly into destination, where same-named
+            // entries from different sources would silently overwrite each other.
+            for (const std::filesystem::path& source : paths)
+            {
+                controller->extractArchive(source, destination / source.filename());
+            }
+            break;
+        }
+        default:
+            break;
     }
 }
 

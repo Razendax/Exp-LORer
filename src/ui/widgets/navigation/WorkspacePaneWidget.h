@@ -77,12 +77,6 @@ public:
     // Details-view column order counterpart of currentColumnWidths() above (Architecture.md §14.14).
     std::array<int, FileListModel::ColumnCount> currentColumnOrder() const;
 
-    // Shared with MainWindow's View-menu "Show shell extensions in context menu" QSettings-backed
-    // toggle (Architecture.md §14.13) — read independently by each pane at build-menu time rather
-    // than wired directly to that QAction, so the Application layer stays agnostic of where the
-    // preference is stored.
-    static constexpr const char* kShowShellExtensionsSettingsKey = "ContextMenu/ShowShellExtensions";
-
     // General > UI "Show close button on tabs" toggle (SettingsDialog), persisted via QSettings and
     // propagated live to every open pane by MainWindow::showSettingsDialog() -- same posture as the
     // hidden-files toggle in MainWindow::createShowHiddenFilesAction.
@@ -205,7 +199,6 @@ private:
     void showItemContextMenu(TabViewModel* tab, FileBrowserView* browserView, const std::vector<std::filesystem::path>& paths,
                               const QPoint& globalPos);
     void showBackgroundContextMenu(TabViewModel* tab, FileBrowserView* browserView, const QPoint& globalPos);
-    static bool extendedShellExtensionsEnabled();
 
     WorkspacePaneViewModel* m_pane = nullptr;
     FileOperationsController* m_fileOperationsController = nullptr;

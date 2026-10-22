@@ -62,9 +62,10 @@ instance safely serves concurrent callers from every tab/pane (§14.2).
   `copy()` above stays a one-shot, non-cancellable call for every other existing caller.
 * `ITagRepository` — persists tags and file/tag associations.
 * `IMediaDecoder` — decodes media streams, extracts thumbnails.
-* `IContextMenuProvider` — builds a registry/COM-sourced context menu as plain data
-  (`ContextMenuEntry`) and invokes the chosen entry — it hands back data, it doesn't show the OS's
-  own popup (§14.13).
+* `IContextMenuProvider` — builds, merges the app's own fixed actions into, shows, and dispatches
+  the real native shell popup (the same `IContextMenu`/`QueryContextMenu`/`TrackPopupMenuEx` calls
+  Explorer itself makes) for an item selection or the background, returning which app-native action
+  (if any) the user picked (§14.102; originally a registry/COM-sourced plain-data builder, §14.13).
 * `IGitStatusProvider` — resolves a directory's working-tree git status (per-immediate-child
   `GitFileStatus`, or an empty result when the directory isn't inside a repository), §14.32; also
   `ignoredPaths(root)`, every ignored path under a subtree (files and wholly-ignored directories each
@@ -99,7 +100,8 @@ Converts between Domain/Application types and framework types.
   `IFileSystemRepository` via `std::filesystem`; Windows long-path (`\\?\`) handling; UTF-8
   conversion for paths happens only at the SQLite boundary, not here (§6).
 * **Shell** (`adapters/shell`) — `ShellContextMenuProvider`, implements `IContextMenuProvider` by
-  reading Windows Registry verbs and optional COM shell-extension handlers (§14.13).
+  calling the shell's own `IContextMenu`/`QueryContextMenu` (the real native popup, §14.102;
+  originally a Windows Registry/COM-handler walker, §14.13).
 * **Config** (`adapters/config`) — `AppConfigStore`, JSON session/window-geometry persistence
   (§14.14).
 * **Media** (`adapters/media`) — `MediaDecoder`, the concrete `IMediaDecoder` registered in
@@ -154,7 +156,7 @@ relevant use case/Port/adapter (e.g. tagging a file goes through `TagManagementU
 | Domain | `FileNode`, `Tag`, `MediaMetadata`, `FileTagAssociation` |
 | Application | `FileNavigationUseCase`, `TagManagementUseCase`, `MediaProcessingUseCase`, `DiskUsageUseCase` (§14.40), `FileTransferUseCase` (§14.47), `DuplicateFinderUseCase` (§14.51), `FragmentationUseCase` (§14.52), `BulkRenameUseCase` (§14.55), and their Ports (§2.2) |
 | Adapters | `SQLiteTagRepository`, `StandardFileSystemRepository`, `ShellContextMenuProvider`, `AppConfigStore`, `WorkspaceStore` (§14.60), `WindowsDiskUsageScanner`/`SQLiteDiskUsageRepository` (§14.40), `StandardDuplicateFileScanner` (§14.51), `WindowsFragmentationScanner` (§14.52), plus the ViewModels listed in §2.3 |
-| UI (Widgets) | `MainWindow`, `WorkspaceLayoutWidget`, `WorkspacePaneWidget`, `FileBrowserView`, `SidePanelWidget` (left/right panels), `FolderTreeView`, `TagPanelWidget`, `ContextMenuBuilder`/`FileItemContextMenu`, `WorkspaceManagerDialog` (§14.60), `VideoPlayerWidget` (reusable inline video player, first used in the Preview tab, §14.67), dialogs |
+| UI (Widgets) | `MainWindow`, `WorkspaceLayoutWidget`, `WorkspacePaneWidget`, `FileBrowserView`, `SidePanelWidget` (left/right panels), `FolderTreeView`, `TagPanelWidget`, `FileItemContextMenu` (§14.102), `WorkspaceManagerDialog` (§14.60), `VideoPlayerWidget` (reusable inline video player, first used in the Preview tab, §14.67), dialogs |
 
 ## 5. Concurrency and Threading Model
 
