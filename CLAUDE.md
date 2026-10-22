@@ -38,20 +38,29 @@ loosely-related one, and add it to `Architecture.md` §14's index.
 This project is developed feature-by-feature via a plan/review/implement cycle (except bug fixes which can be done directly).
 Follow it automatically, without being asked each time:
 
+This repo has a `graphify-out/` knowledge graph (see the `graphify` skill). Use it as a first-pass
+research tool for both planning and implementing — querying it (architecture, file relationships,
+callers/call paths of a symbol, affected areas) is faster and more complete than grepping cold. Treat
+it as a supplement to `docs/Architecture.md`/`docs/Specification.md`, not a replacement — the docs
+remain the source of truth for intended design; the graph reflects current code structure.
+
 **Planning a feature** (when asked to plan a new feature, not yet to implement it):
-1. Produce the plan (use plan mode as normal).
-2. Save the plan to `.claude/active_work/plan.md` (create the directory if it doesn't exist;
+1. Query graphify for the areas/files/symbols the feature will touch before producing the plan.
+2. Produce the plan (use plan mode as normal).
+3. Save the plan to `.claude/active_work/plan.md` (create the directory if it doesn't exist;
    overwrite any existing `plan.md`). This directory is gitignored — it's local scratch state, not
    committed.
-3. In the same turn, update `Architecture.md` and/or `Specification.md` if the feature changes the
+4. In the same turn, update `Architecture.md` and/or `Specification.md` if the feature changes the
    layering, Ports, schema, or requirements they describe — don't wait to be asked. If nothing in
    the feature affects them, leave them untouched.
-4. Stop there. The user reviews/edits the plan and doc changes (and may clear context) before
+5. Stop there. The user reviews/edits the plan and doc changes (and may clear context) before
    implementation starts — do not start implementing in the same turn a plan was just written.
 
 **Implementing a feature** (when asked to implement from `.claude/active_work/plan.md`):
-1. Follow the plan.
-2. When implementation is complete, rename `.claude/active_work/plan.md` to
+1. Query graphify as needed while working through the plan to locate exact call sites, affected
+   callers, and related code before editing.
+2. Follow the plan.
+3. When implementation is complete, rename `.claude/active_work/plan.md` to
    `.claude/active_work/prev_plan.md` (overwrite any existing `prev_plan.md`).
 
 Do not smoke test — don't launch the app yourself to click through or verify a feature/fix after
