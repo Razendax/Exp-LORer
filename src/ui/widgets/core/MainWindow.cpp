@@ -35,6 +35,7 @@
 #include "FavoritesMenuController.h"
 #include "FavoritesViewModel.h"
 #include "FileBrowserView.h"
+#include "FilePreviewViewModel.h"
 #include "FileDecorationsViewModel.h"
 #include "FileItemContextMenu.h"
 #include "FileOperationsController.h"
@@ -448,6 +449,32 @@ void MainWindow::createWorkspace()
     m_previewPanelWidget->setObjectName(QStringLiteral("previewPanelWidget"));
     m_rightPanelWidget->addPanelTab(tr("Preview"), m_previewPanelWidget, QStringLiteral("rightPanelPreviewButton"));
 
+    // Find-in-Files line jump (Architecture.md §14.104): added after PreviewPanelWidget's own ctor
+    // has already connected its onPreviewReady handler to the same signal, so Qt's direct-connection
+    // ordering guarantees that handler runs first -- the editor/content is already populated by the
+    // time this one fires.
+    connect(m_workspaceController->filePreviewViewModel(), &FilePreviewViewModel::previewReady, this,
+            [this](const FilePreview& preview) {
+                if (!m_pendingContentSearchLineJump)
+                {
+                    return;
+                }
+                const auto& [path, oneBasedLine] = *m_pendingContentSearchLineJump;
+                if (preview.kind() != FilePreviewKind::Text || preview.path() != path)
+                {
+                    return;
+                }
+                m_previewPanelWidget->goToLine(path, oneBasedLine);
+                m_pendingContentSearchLineJump.reset();
+            });
+    // previewLoading() only fires when the resolved target actually changes (not for a
+    // directory-watch refresh of the same target -- see FilePreviewViewModel's own comment), and
+    // onContentSearchLineActivated sets the pending jump only after the navigation that triggers
+    // its own previewLoading() has already fired. So any previewLoading() tick seen while a jump is
+    // still pending is necessarily from a further, different navigation that supersedes it.
+    connect(m_workspaceController->filePreviewViewModel(), &FilePreviewViewModel::previewLoading, this,
+            [this]() { m_pendingContentSearchLineJump.reset(); });
+
     m_monitoringPanelWidget =
         new MonitoringPanelWidget(m_workspaceController->monitoringPanelViewModel(), m_uiThemeChangeNotifier, m_rightPanelWidget);
     m_monitoringPanelWidget->setObjectName(QStringLiteral("monitoringPanelWidget"));
@@ -704,10 +731,10 @@ void MainWindow::onContentSearchLineActivated(const std::filesystem::path& path,
 {
     onContentSearchResultActivated(path, /*isDirectory=*/false);
 
-    // Scrolling the preview panel's editor to oneBasedLine once its preview for `path` lands is
-    // Milestone 4's job (a pending-line-jump member consumed off FilePreviewViewModel::previewReady)
-    // -- not yet implemented, so oneBasedLine is unused here for now.
-    Q_UNUSED(oneBasedLine);
+    // Set after navigateAndSelect() above, which is what triggers FilePreviewViewModel to
+    // re-resolve and eventually emit previewReady() for `path` -- see the connections set up in
+    // createWorkspace().
+    m_pendingContentSearchLineJump = std::make_pair(path, oneBasedLine);
 }
 
 void MainWindow::navigateFocusedPaneTo(const std::filesystem::path& path)

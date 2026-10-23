@@ -5,13 +5,13 @@ layers only — **no Domain or Application layer redesign**, aside from a couple
 — and is recorded as a decision log per feature, not an implementation walkthrough; see git
 history and the code's own comments (many cite these subsection numbers directly) for the detail.
 
-Covers §14.18–14.20, §14.38, §14.42–14.46, §14.56, §14.87 — per-tab filename/advanced/tag-integrated
-search, the unified left-panel Search tab, async advanced search, quick-search match-mode/
-skip-git-ignored toggles, debounced quick search, advanced-search match-mode toggles, and
-hierarchical-tag search matching. Section numbers are **not** contiguous with this file's
-neighbors — they were assigned chronologically as each feature was built and are kept stable since
-code comments cite them directly. See [Architecture.md](../Architecture.md) §14 for the full topic
-index across all nine files.
+Covers §14.18–14.20, §14.38, §14.42–14.46, §14.56, §14.87, §14.104 — per-tab filename/advanced/
+tag-integrated search, the unified left-panel Search tab, async advanced search, quick-search
+match-mode/skip-git-ignored toggles, debounced quick search, advanced-search match-mode toggles,
+hierarchical-tag search matching, and content ("Find in Files") search. Section numbers are **not**
+contiguous with this file's neighbors — they were assigned chronologically as each feature was
+built and are kept stable since code comments cite them directly. See
+[Architecture.md](../Architecture.md) §14 for the full topic index across all nine files.
 
 ---
 ### 14.18 Filename Search (Per-Tab, Recursive)
@@ -673,4 +673,81 @@ UI/Adapters.
   `tests/adapters/SQLiteTagRepositoryTest.cpp` (new `findFilesWithAnyOfTagGroups` cases). The
   `TabViewModel`/`SearchCriteriaPanel` toggle wiring stays under the existing §11 UI/ViewModel-glue
   carve-out — manual verification only.
+
+### 14.104 Content Search ("Find in Files")
+
+A new sibling to the existing filename Search tab, following the exact same layering shape end to
+end — stateless Application use case → dedicated-thread Worker/Service pair → per-tab ViewModel
+with generation-fenced async dispatch → a new left-panel tab widget → `MainWindow` focus-retargeting
+glue — but as an independent, parallel pipeline: nothing about `TabQuickSearchViewModel`/
+`AdvancedSearchWorker`/`SearchPanelWidget` changed.
+
+* **Domain/Application** (`src/domain/SubstringMatch.h`/`.cpp`, `src/domain/BinaryContentDetector.h`/
+  `.cpp`, `src/domain/ContentSearchMatch.h`, `src/application/search/ContentSearchOptions.h`,
+  `src/application/search/ContentSearchUseCase.h`/`.cpp`): `SubstringMatch` is the one matcher mode
+  that had no named symbol yet (`GlobMatch`/`WholeWordMatch`/`RegexMatch` each already had one) —
+  `UnicodeCaseFold`-folded substring search, backing both the main query's plain "Contains" mode and
+  the Include/Exclude fields' plain mode (`*`/`?` are literal here, no glob expansion).
+  `BinaryContentDetector::containsNulByte` extracts the heuristic `FilePreviewUseCase::generatePreview`
+  used to inline, now shared by both call sites. `ContentSearchUseCase` is stateless (one shared
+  instance, constructed with `FileNavigationUseCase&` + `IFileSystemRepository&`):
+  `collectSearchableContent` is the I/O-bound half (recursive listing, per-entry hidden/archive/
+  Include/Exclude filtering, a capped `kMaxContentSearchBytes` (1 MiB) prefix read per file, binary
+  skip, line splitting); `filterLines` is the pure, cheap, no-I/O half that applies the main query to
+  already-collected lines; both share the private `textMatches` mode-dispatch helper (Contains/
+  WholeWord/Regex, an invalid Regex pattern treated as "no match").
+* **Adapters** (`src/adapters/git/GitIgnorePrunePredicateBuilder.h`/`.cpp`,
+  `src/adapters/viewmodels/search/ContentSearchWorker.h`/`.cpp`,
+  `ContentSearchService.h`/`.cpp`, `ContentSearchResultsModel.h`/`.cpp`,
+  `TabContentSearchViewModel.h`/`.cpp`): `AdvancedSearchWorker::buildGitIgnorePrunePredicate`'s body
+  was extracted into a free function so `ContentSearchWorker` reuses it instead of a second
+  hand-copy. `ContentSearchWorker`/`ContentSearchService` mirror `AdvancedSearchWorker`/
+  `AdvancedSearchService`'s shape (dedicated `QThread`, lazy worker-thread-owned
+  `LibGit2StatusProvider`/`GitStatusUseCase` pair for the prune predicate) minus the tag-repository
+  dependency, since content search has no tag integration. `ContentSearchResultsModel` is a 2-level
+  `QAbstractItemModel` (file-header rows, each with child line rows) — deliberately simpler than
+  `SearchResultsTreeModel`, since content search's spec calls for a flat "grouped by file" list, not
+  a folder-hierarchy tree. **The one deliberate behavioral difference from filename search**, per
+  spec: `TabContentSearchViewModel::updateQuery` always dispatches a fresh disk+content scan on every
+  settled query-text edit — never a cached re-filter — because content search is "heavier." The only
+  in-memory-only re-filter path is toggling Match Case/Whole Word/Regex on the main query with the
+  query text unchanged (`setOptions` re-runs `ContentSearchUseCase::filterLines` over the last scan's
+  cached `m_lastScanFiles` with no dispatch); changing `skipGitIgnored`/Include/Exclude always forces
+  a fresh scan instead, since those change what gets *read*.
+* **UI** (`src/ui/widgets/search/ContentSearchResultDelegate.h`/`.cpp`,
+  `ContentSearchPanelWidget.h`/`.cpp`, `MainWindow::createContentSearchPanel`): a new "Find in Files"
+  left-panel tab alongside Tree/Search. The delegate re-derives highlight spans at paint time
+  (`QRegularExpression::globalMatch` for Regex mode) rather than consuming spans from a matcher —
+  the same precedent `SearchResultDelegate` already set — and, unlike filename search's accepted
+  "regex highlighting is a literal-substring approximation" gap (§14.44), does the
+  `QRegularExpression` scan properly since this is new code with no legacy behavior to preserve.
+* **Milestone 4 — preview-panel line jump**: double-clicking a line row
+  (`ContentSearchPanelWidget::lineActivated` → `MainWindow::onContentSearchLineActivated`) navigates/
+  selects the file (reusing `onContentSearchResultActivated`'s body) and records
+  `{path, oneBasedLine}` in `MainWindow::m_pendingContentSearchLineJump`. `TextEditorWidget::goToLine`
+  already existed (clamps/centers/moves the cursor); `TextEditPreviewWidget::goToLine` forwards to it;
+  `PreviewPanelWidget::goToLine(path, oneBasedLine)` forwards further, but only when `path` matches
+  `m_currentTextPath` (a new member set in `onPreviewReady` whenever the preview kind is Text, cleared
+  for every other kind/state) — a stale request for a target the panel has since navigated away from
+  is a silent no-op. `MainWindow` connects to `FilePreviewViewModel::previewReady` (added in
+  `createWorkspace()` right after `PreviewPanelWidget`'s own constructor already connected its
+  handler to the same signal — Qt's direct-connection ordering guarantees that handler runs first, so
+  the editor is already populated by the time this one fires): if the pending jump's path/kind match
+  the delivered preview, it calls `goToLine` and clears the pending jump. A second connection to
+  `previewLoading()` (which only fires when the resolved target actually *changes*, never for a
+  same-target directory-watch refresh) unconditionally clears any still-pending jump, since
+  `onContentSearchLineActivated` always sets the pending jump *after* the navigation that triggers its
+  own `previewLoading()` — so any further tick seen while a jump is still pending is necessarily a
+  newer, different navigation superseding it.
+* **Non-Goals carried from spec/plan**: no in-place replace, no archive search, no multi-pattern
+  Include/Exclude, no persistence of query/options across restarts, no true scan cancellation (only
+  generation-fenced discard of a stale reply), no pagination beyond the per-file
+  `kMaxContentSearchBytes` prefix cap. Include/Exclude filtering happens on complete file candidates
+  only, not as a directory-walk prune. Hidden-file exclusion is per-entry (`FileNode::isHidden()`),
+  not a recursive ancestor check.
+* **Testing**: `tests/domain/SubstringMatchTest.cpp`, `tests/domain/BinaryContentDetectorTest.cpp`,
+  `tests/application/ContentSearchUseCaseTest.cpp` cover the pure pieces (`filterLines`'s three
+  modes, `textMatches` against lines and relative paths, binary-skip, hidden-file skip, Include-AND-
+  Exclude composition). `collectSearchableContent`/`ContentSearchWorker::scan` and all UI/ViewModel
+  glue stay under the existing §11 carve-out — manual verification only.
 

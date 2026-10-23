@@ -139,6 +139,16 @@ void TextEditPreviewWidget::setPreview(const FilePreview& preview)
     m_saveButton->setEnabled(false);
 }
 
+void TextEditPreviewWidget::goToLine(int oneBasedLine)
+{
+    if (!m_editorPanel)
+    {
+        return;
+    }
+
+    m_editorPanel->editor()->goToLine(oneBasedLine);
+}
+
 void TextEditPreviewWidget::prepareForTargetChange()
 {
     if (!m_editorPanel || !m_editorPanel->editor()->document()->isModified())

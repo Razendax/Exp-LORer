@@ -2,6 +2,8 @@
 
 #include <array>
 #include <filesystem>
+#include <optional>
+#include <utility>
 #include <vector>
 
 #include <QList>
@@ -162,9 +164,10 @@ private:
     // shared navigate+select body is reused verbatim via this call.
     void onContentSearchResultActivated(const std::filesystem::path& path, bool isDirectory);
 
-    // Line-row double-click: navigates/selects like onContentSearchResultActivated, then will
-    // additionally scroll the preview panel's editor to that line once Milestone 4 lands -- not
-    // yet implemented here.
+    // Line-row double-click: navigates/selects like onContentSearchResultActivated, then records
+    // {path, oneBasedLine} as a pending line jump -- consumed by the previewReady/previewLoading
+    // connections below once the right panel's Preview tab actually displays `path` (Architecture.md
+    // §14.104).
     void onContentSearchLineActivated(const std::filesystem::path& path, int oneBasedLine);
 
     // Bubbled up from WorkspacePaneWidget::bulkRenameRequested (Architecture.md §14.55) -- resolves
@@ -212,6 +215,13 @@ private:
     TabViewModel* m_searchTrackedTab = nullptr;
     TabViewModel* m_contentSearchTrackedTab = nullptr;
     TabViewModel* m_driveInfoTrackedTab = nullptr;
+
+    // Set by onContentSearchLineActivated, consumed by the FilePreviewViewModel::previewReady
+    // connection set up in createWorkspace() (Architecture.md §14.104): once the right panel's
+    // Preview tab actually shows this path, it is scrolled to this line and the pending jump is
+    // cleared. Also cleared by the previewLoading connection if a further navigation supersedes it
+    // before that preview arrives.
+    std::optional<std::pair<std::filesystem::path, int>> m_pendingContentSearchLineJump;
     MainStatusBarWidget* m_mainStatusBarWidget = nullptr;
 
     // Favorites menu (Architecture.md §14.35), extracted into its own owned sub-object

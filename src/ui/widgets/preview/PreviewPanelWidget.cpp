@@ -75,6 +75,16 @@ PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHi
     connect(m_gifModeCombo, &QComboBox::currentIndexChanged, this, &PreviewPanelWidget::onGifModeChanged);
 }
 
+void PreviewPanelWidget::goToLine(const std::filesystem::path& path, int oneBasedLine)
+{
+    if (path != m_currentTextPath)
+    {
+        return;
+    }
+
+    m_textPreviewWidget->goToLine(oneBasedLine);
+}
+
 void PreviewPanelWidget::showEvent(QShowEvent* event)
 {
     QWidget::showEvent(event);
@@ -114,6 +124,8 @@ void PreviewPanelWidget::onPreviewReady(const FilePreview& preview)
     {
         resetGifState();
     }
+
+    m_currentTextPath = preview.kind() == FilePreviewKind::Text ? preview.path() : std::filesystem::path();
 
     switch (preview.kind())
     {
@@ -161,6 +173,7 @@ void PreviewPanelWidget::onPreviewFailed(const QString& message)
 {
     resetVideoState();
     resetGifState();
+    m_currentTextPath.clear();
     m_errorLabel->setText(message);
     m_stack->setCurrentWidget(m_errorLabel);
 }
@@ -175,6 +188,7 @@ void PreviewPanelWidget::onPreviewCleared()
 
     resetVideoState();
     resetGifState();
+    m_currentTextPath.clear();
     m_stack->setCurrentWidget(m_unsupportedLabel);
 }
 

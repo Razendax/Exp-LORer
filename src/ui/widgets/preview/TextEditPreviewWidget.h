@@ -44,6 +44,12 @@ public:
     // then torn down the next time setPreview() rebuilds it.
     void prepareForTargetChange();
 
+    // Scrolls the editor to `oneBasedLine` and parks the cursor there (Architecture.md §14.104's
+    // Find-in-Files line jump). No-op if `m_editorPanel` doesn't exist yet (e.g. preview still
+    // loading) -- PreviewPanelWidget::goToLine already only calls this once the target path matches
+    // what's on screen, but construction order within setPreview() is not this widget's concern.
+    void goToLine(int oneBasedLine);
+
     // Settings > General > Preview (Architecture.md §14.98): the default TextEditorOptions feature
     // set every freshly-opened preview editor is built with. Read fresh on every setPreview() call
     // rather than cached, matching every other Settings page's "takes effect on next use" posture.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <optional>
 
 #include <QWidget>
@@ -39,6 +40,11 @@ public:
     PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHighlightEngine& syntaxHighlightEngine,
                         HighlightThemeViewModel& highlightThemeViewModel, TextFileEditViewModel& textFileEditViewModel,
                         QWidget* parent = nullptr);
+
+    // Find-in-Files line jump (Architecture.md §14.104): forwards to the text preview's editor only
+    // when `path` matches whatever Text preview is currently on screen -- a stale/mismatched request
+    // (the user navigated elsewhere again before this fired) is a silent no-op.
+    void goToLine(const std::filesystem::path& path, int oneBasedLine);
 
 protected:
     void showEvent(QShowEvent* event) override;
@@ -80,4 +86,9 @@ private:
     // Same idea for an animated-GIF preview (Architecture.md §14.79) -- a GIF is still kind
     // Image, so it's tracked independently from m_currentVideoPreview rather than reusing it.
     std::optional<FilePreview> m_currentGifPreview;
+
+    // The path of whatever Text preview is currently on screen, if any -- lets goToLine() reject a
+    // stale request for a target this panel has since navigated away from. Empty for every other
+    // preview kind.
+    std::filesystem::path m_currentTextPath;
 };
