@@ -10,6 +10,16 @@ add_executable(Exp-LORer WIN32
     WorkspaceInstanceGuard.cpp
 )
 
+if(WIN32)
+    target_sources(Exp-LORer PRIVATE ExpLorer.rc)
+    target_compile_definitions(Exp-LORer PRIVATE
+        PROJECT_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
+        PROJECT_VERSION_MINOR=${PROJECT_VERSION_MINOR}
+        PROJECT_VERSION_PATCH=${PROJECT_VERSION_PATCH}
+        PROJECT_VERSION_STR="${PROJECT_VERSION}"
+    )
+endif()
+
 target_link_libraries(Exp-LORer PRIVATE
     explorer_ui_widgets
     explorer_adapters_filesystem
@@ -91,3 +101,11 @@ foreach(multimediaPlugin IN ITEMS Qt6::QFFmpegMediaPlugin Qt6::QWindowsMediaPlug
         )
     endif()
 endforeach()
+
+# Packaging (docs/features/09-app-infrastructure.md): the runtime output directory above is
+# already a fully self-contained, flat deployment tree (vcpkg applocal DLL copy + the POST_BUILD
+# plugin deployment commands above), so "install the exe, its PDB, and every *.dll beneath its
+# output directory" is sufficient -- no manual DLL bookkeeping needed.
+install(TARGETS Exp-LORer RUNTIME DESTINATION .)
+install(FILES "$<TARGET_PDB_FILE:Exp-LORer>" DESTINATION . OPTIONAL)
+install(DIRECTORY "$<TARGET_FILE_DIR:Exp-LORer>/" DESTINATION . FILES_MATCHING PATTERN "*.dll")

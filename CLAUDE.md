@@ -72,7 +72,8 @@ feature/fix unless explicitly asked to.
 ## Build
 
 Requires `VCPKG_ROOT` set to a vcpkg checkout, and either a Visual Studio Developer PowerShell or MSVC
-discoverable via `vswhere`.
+discoverable via `vswhere`. Building the optional Windows installer (`-Package` below) additionally
+requires NSIS's `makensis.exe` on PATH.
 
 Before building, ensure that the application is not running, if it is, kill it.
 
@@ -80,6 +81,7 @@ Before building, ensure that the application is not running, if it is, kill it.
 .\build.ps1                    # configure (if needed) + build the Release preset
 .\build.ps1 -Reconfigure        # force a fresh CMake configure
 .\build.ps1 -Target Exp-LORer   # build a specific target
+.\build.ps1 -Package            # also build the per-user Windows installer (.exe) via CPack/NSIS
 ```
 
 `build.ps1` auto-imports the MSVC environment via `vswhere`/`vcvarsall.bat` if `cl.exe` isn't already on

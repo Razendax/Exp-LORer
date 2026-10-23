@@ -10,12 +10,17 @@
 
 .PARAMETER Target
     Optional CMake build target (defaults to building everything).
+
+.PARAMETER Package
+    After building, also runs cpack to produce the Windows installer (.exe) via NSIS. Requires
+    makensis.exe on PATH (install NSIS: https://nsis.sourceforge.io/).
 #>
 param(
     [ValidateSet("windows", "release", "debug")]
     [string]$Preset = "release",
     [switch]$Reconfigure,
-    [string]$Target
+    [string]$Target,
+    [switch]$Package
 )
 
 $ErrorActionPreference = "Stop"
@@ -70,4 +75,15 @@ $buildArgs = @("--build", $BinaryDir)
 if ($Target) { $buildArgs += @("--target", $Target) }
 
 cmake @buildArgs
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+if ($Package) {
+    if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+        Write-Error "makensis.exe not found on PATH. Install NSIS (https://nsis.sourceforge.io/) and ensure makensis.exe is on PATH."
+        exit 1
+    }
+    cpack --config (Join-Path $BinaryDir "CPackConfig.cmake")
+    exit $LASTEXITCODE
+}
+
 exit $LASTEXITCODE

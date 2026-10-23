@@ -377,6 +377,11 @@ CREATE TABLE file_fragmentation (
   (`SHFileOperation`/`FOF_ALLOWUNDO` on Windows; deferred to the freedesktop.org spec on Linux). A
   separate "Delete Permanently" action bypasses trash. Both go through the same Port so the
   Application layer is unaware of the OS-specific mechanism.
+* **Install location vs. this data directory (§14.103):** the optional local Windows installer
+  (`.\build.ps1 -Package`) installs the program binaries to `%LOCALAPPDATA%\Programs\Exp-LORer` —
+  same `%LOCALAPPDATA%` root as this section's data directory, but a different, unrelated subtree
+  (`Programs\Exp-LORer` vs. `Exp-LORer`). Uninstalling the program leaves this data directory in
+  place by default.
 
 ## 10. Project Directory Structure
 
@@ -580,7 +585,7 @@ growing, and update both that file's intro and this index to match.
   fragmentation viewer (+ Details-view fragments column), bulk/batch rename.
 * **[features/09-app-infrastructure.md](features/09-app-infrastructure.md)** — startup/exit
   logging & fatal exception handling, favorites, notification system, Light/Dark theme, per-process
-  environment variables.
+  environment variables, Windows installer.
 * **[features/10-text-editor.md](features/10-text-editor.md)** — the built-in text editor dialog
   (Tools > Text Editor): multi-cursor editing, the Find bar, Go to Line, and the Find bar's
   Replace addition.

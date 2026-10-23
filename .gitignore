@@ -14,3 +14,6 @@ ui_tests/.venv/
 **/__pycache__/
 .pytest_cache/
 graphify-out/
+
+_CPack_Packages/
+Exp-LORer-*-win64.exe

@@ -5,8 +5,9 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.23, §14.36–14.37, §14.50, §14.57 — startup/exit logging and fatal exception handling,
-favorites, the notification system, Light/Dark theme, and per-process environment variables.
+Covers §14.23, §14.36–14.37, §14.50, §14.57, §14.103 — startup/exit logging and fatal exception
+handling, favorites, the notification system, Light/Dark theme, per-process environment variables,
+and the Windows installer.
 Section numbers are **not** contiguous with this file's neighbors — they were assigned
 chronologically as each feature was built and are kept stable since code comments cite them
 directly. See [Architecture.md](../Architecture.md) §14 for the full topic index across all nine
@@ -349,4 +350,67 @@ Each variable has a name plus an ordered list of values joined with `;` for disp
   helper exercising already-tested `EnvironmentVariablesStore`/`EnvironmentVariableApplier` calls,
   the rest are UI/ViewModel glue, same carve-out already applied to
   `FavoritesViewModel`/`ManageFavoritesDialog`; verified by manual smoke test instead.
+
+### 14.103 Windows Installer (CPack + NSIS, Per-User, No Admin)
+
+A local, opt-in `.\build.ps1 -Package` step produces a Windows installer (`.exe` setup) via CMake's
+CPack NSIS generator, installing per-user (no UAC/admin prompt) to
+`%LOCALAPPDATA%\Programs\Exp-LORer` — distinct from the app-data location under
+`%LOCALAPPDATA%\Exp-LORer` (§9); same root, different subtree, not to be confused. CI integration,
+code signing, and auto-update are explicitly out of scope for this pass.
+
+* **Why CPack+NSIS over MSI/WiX or Inno Setup**: CPack is already bundled with the CMake toolchain
+  this project requires, needing only `makensis.exe` (NSIS) as one additional local prerequisite —
+  the same category as `VCPKG_ROOT`/Visual Studio today, fail-fast-checked by `build.ps1 -Package`
+  the same way `cl.exe`/`vswhere` already are. WiX/MSI's per-machine-oriented tooling and Inno
+  Setup's non-CMake build step both would have added more friction for less benefit at this stage.
+* **Why a patched NSIS template for per-user install**: CMake 4.4's stock
+  `Modules/Internal/CPack/NSIS.template.in` hardcodes `RequestExecutionLevel admin`, and separately
+  its `.onInit`/`un.onInit` admin-detection logic always resolves to the "AllUsers" branch (every
+  code path through `UserInfo::GetAccountType`, including a plain non-admin account, sets
+  `$SV_ALLUSERS` to `"AllUsers"`) and calls `SetShellVarContext all`, relying on that
+  `RequestExecutionLevel admin` elevation for permission to write to the all-users Start
+  Menu/`HKLM`. A straight `admin` → `user` edit alone would leave that logic trying (and, for an
+  admin-type Windows account, failing without elevation) to write there. `cmake/packaging/
+  NSIS.template.in` is a repo-owned fork of the stock template with: `RequestExecutionLevel user`;
+  `.onInit`/`un.onInit`'s admin-detection replaced with an unconditional `"JustMe"` and no
+  `SetShellVarContext all` call, so `$INSTDIR` stays at `CPACK_NSIS_INSTALL_ROOT` (set to
+  `$LOCALAPPDATA\Programs` in `cmake/packaging/Packaging.cmake`) and every registry/shortcut write
+  stays in the current-user context (`HKCU`, per-user Start Menu) for both install and uninstall.
+  The template's header comment documents these diffs so a future CMake upgrade's stock template
+  can be diffed against it to re-apply them.
+* **Packaged contents**: `install()` rules in `src/app/CMakeLists.txt` (co-located with the
+  `Exp-LORer` target, matching its own `POST_BUILD` plugin-deployment commands) install the `.exe`,
+  its `.pdb` (`OPTIONAL`, so a PDB-less build still packages), and every `*.dll` recursively beneath
+  the target's output directory — which already is a fully self-contained, flat deployment tree
+  (vcpkg `VCPKG_APPLOCAL_DEPS` plus the existing `platforms/`/`sqldrivers/`/`imageformats/`/
+  `multimedia/` plugin-deployment commands), so no manual DLL bookkeeping is needed. The PDB is
+  shipped deliberately: `ExceptionHandler` (§14.23) calls `SymInitialize` with a null search path,
+  which checks the executable's own directory for a matching `.pdb` to symbolicate fatal-exception
+  stack traces — bundling it trades a larger installer for readable crash reports from real
+  installs with no separate symbol server.
+* **App icon + version resource**: `src/app/resources/AppIcon.ico` (16/32/48/256px; a placeholder
+  square glyph pending a real logo — swapping the file later needs no CMake/NSIS change) and
+  `src/app/ExpLorer.rc` (icon block + `VERSIONINFO`, versioned from the root `project(... VERSION
+  0.1.0 ...)` call via `PROJECT_VERSION_MAJOR`/`MINOR`/`PATCH` compile definitions) give the `.exe`,
+  Start Menu shortcut, and installer a non-generic icon plus proper file/product version metadata.
+* **Uninstall leaves app data by default**: the default NSIS uninstaller only removes `$INSTDIR`
+  (program files) and its own Start Menu/registry entries — matching standard Windows uninstaller
+  convention and avoiding silent data loss of `explorer.db`/workspaces/thumbnail cache/logs under
+  `%LOCALAPPDATA%\Exp-LORer`. An unchecked-by-default checkbox on a custom uninstall page ("Also
+  delete my Exp-LORer settings, tags, and cache", implemented via `nsDialogs` in the patched
+  template) opts into an additional `RMDir /r` on that directory.
+* **No "app is running" detection**: `WorkspaceInstanceGuard`'s single-instance mutex (§14.60) is
+  named from a hash of the resolved data directory plus workspace id, not a fixed/predictable name,
+  so neither the installer nor uninstaller can cheaply detect "is Exp-LORer running." Relies instead
+  on NSIS's normal locked-`.exe` install/overwrite failure, which already prompts the user to close
+  the app and retry — the same expectation `build.ps1`'s own header already sets for building.
+* **No shell-integration registry cleanup needed**: the native context menu (§14.102) uses a real
+  `IContextMenu` shell popup and never registers `HKCR`/`HKCU\...\shell` keys of its own, so the
+  uninstaller has nothing beyond the install directory, Start Menu shortcut, and the installer's own
+  uninstall-registry entry to remove.
+* **Not built**: CI workflow to build/publish the installer (local-only for this pass); code signing
+  (no certificate exists yet — the installer shows the standard "unknown publisher" SmartScreen
+  prompt, a follow-up for later, not blocking); an auto-update mechanism; Linux packaging
+  (Windows-first per `CLAUDE.md`); MSI/WiX or Inno Setup alternatives.
 
