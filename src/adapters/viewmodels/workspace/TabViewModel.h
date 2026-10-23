@@ -26,6 +26,7 @@
 #include "SearchCriteria.h"
 #include "Tag.h"
 #include "TabAdvancedSearchViewModel.h"
+#include "TabContentSearchViewModel.h"
 #include "TabMediaViewerViewModel.h"
 #include "TabMonitoringViewModel.h"
 #include "TabQuickSearchViewModel.h"
@@ -38,6 +39,7 @@ class FileListModel;
 class FileDecorationRules;
 class GitStatusService;
 class AdvancedSearchService;
+class ContentSearchService;
 class FileTagsService;
 class TagChangeNotifier;
 class DiskUsageService;
@@ -60,8 +62,9 @@ public:
     TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                  const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                  GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
-                 AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
-                 DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
+                 AdvancedSearchService& advancedSearchService, ContentSearchService& contentSearchService,
+                 FileTagsService& fileTagsService, DiskUsageService& diskUsageService,
+                 FragmentationService& fragmentationService,
                  IconLoadingService& iconLoadingService, MediaThumbnailLoadingService& mediaThumbnailLoadingService,
                  TagChangeNotifier& tagChangeNotifier, NotificationCenter& notificationCenter, QObject* parent = nullptr);
 
@@ -93,6 +96,11 @@ public:
     // sub-object (Architecture.md §14.96) -- callers call its methods and connect to its signals
     // directly rather than through TabViewModel forwarders.
     TabAdvancedSearchViewModel* advancedSearch() const noexcept { return m_advancedSearch; }
+
+    // "Find in Files" state (Architecture.md §14.104), extracted into its own owned sub-object
+    // (Architecture.md §14.96) -- callers call its methods and connect to its signals directly
+    // rather than through TabViewModel forwarders.
+    TabContentSearchViewModel* contentSearch() const noexcept { return m_contentSearch; }
 
     // Media Viewer mode (Architecture.md §14.61), extracted into its own owned sub-object
     // (Architecture.md §14.96) -- callers call its methods and connect to its signals directly
@@ -356,6 +364,7 @@ private:
     TagManagementUseCase& m_tagManagementUseCase;
     GitStatusService& m_gitStatusService;
     AdvancedSearchService& m_advancedSearchService;
+    ContentSearchService& m_contentSearchService;
     FileTagsService& m_fileTagsService;
     DiskUsageService& m_diskUsageService;
     FragmentationService& m_fragmentationService;
@@ -377,6 +386,10 @@ private:
     // Advanced (criteria) search pane state, extracted into its own owned sub-object (Architecture.
     // md §14.96) -- exposed via advancedSearch() above.
     TabAdvancedSearchViewModel* m_advancedSearch;
+
+    // "Find in Files" state, extracted into its own owned sub-object (Architecture.md §14.96) --
+    // exposed via contentSearch() above.
+    TabContentSearchViewModel* m_contentSearch;
 
     // Media Viewer mode (Architecture.md §14.61), extracted into its own owned sub-object
     // (Architecture.md §14.96) -- exposed via mediaViewer() above.

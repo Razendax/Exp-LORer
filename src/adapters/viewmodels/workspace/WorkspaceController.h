@@ -27,6 +27,7 @@ class FolderMonitorUseCase;
 class MonitoringPanelViewModel;
 class NotificationCenter;
 class AdvancedSearchService;
+class ContentSearchService;
 class FileTransferService;
 class FileTagsService;
 class DiskUsageService;
@@ -53,8 +54,9 @@ public:
                          const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                          GitStatusService& gitStatusService, DirectoryWatchUseCase& directoryWatchUseCase,
                          FolderMonitorUseCase& folderMonitorUseCase, NotificationCenter& notificationCenter,
-                         AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
-                         DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
+                         AdvancedSearchService& advancedSearchService, ContentSearchService& contentSearchService,
+                         FileTagsService& fileTagsService, DiskUsageService& diskUsageService,
+                         FragmentationService& fragmentationService,
                          IconLoadingService& iconLoadingService, MediaThumbnailLoadingService& mediaThumbnailLoadingService,
                          TagChangeNotifier& tagChangeNotifier, FileTransferService& fileTransferService,
                          QObject* parent = nullptr);

@@ -87,14 +87,6 @@ private:
     // stays const to match its own pre-existing signature.
     void ensureGitStatusUseCase() const;
 
-    // Builds the shouldPrune predicate scanRecursive passes to
-    // FileNavigationUseCase::listDirectoryRecursive: every path ignoredPaths(root) reports, plus
-    // root/".git" itself (git's own status machinery never reports ".git" as "ignored" since it
-    // isn't part of the working tree at all, but a user skipping ignored content clearly doesn't
-    // want ".git"'s internals in results either). Tolerates ignoredPaths() failure/empty (not a
-    // repository) by returning an always-false predicate, i.e. an unrestricted scan.
-    std::function<bool(const std::filesystem::path&)> buildGitIgnorePrunePredicate(const std::filesystem::path& root) const;
-
     FileNavigationUseCase& m_fileNavigationUseCase;
     IFileSystemRepository& m_fileSystemRepository;
     std::filesystem::path m_databasePath;

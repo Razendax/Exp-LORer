@@ -3,6 +3,8 @@
 #include <fstream>
 
 #include "AdvancedSearchService.h"
+#include "ContentSearchService.h"
+#include "ContentSearchUseCase.h"
 #include "DirectoryWatchUseCase.h"
 #include "DiskUsageService.h"
 #include "FileDecorationRules.h"
@@ -88,6 +90,8 @@ namespace
         NotificationSettings m_notificationSettings;
         NotificationCenter m_notificationCenter{ m_notificationSettings };
         AdvancedSearchService m_advancedSearchService{ m_fileNavigationUseCase, m_fileSystemRepository, fs::path(":memory:") };
+        ContentSearchUseCase m_contentSearchUseCase{ m_fileNavigationUseCase, m_fileSystemRepository };
+        ContentSearchService m_contentSearchService{ m_fileNavigationUseCase, m_fileSystemRepository, m_contentSearchUseCase };
         FileTagsService m_fileTagsService{ m_fileSystemRepository, fs::path(":memory:") };
         WindowsDiskUsageScanner m_diskUsageScanner;
         DiskUsageService m_diskUsageService{ m_diskUsageScanner, fs::path(":memory:") };
@@ -101,9 +105,10 @@ namespace
         WorkspaceController m_controller{ m_fileNavigationUseCase,  m_tagManagementUseCase,     m_filePreviewUseCase,
                                            m_fileSystemRepository, m_fileDecorationRules,      m_fileDecorationsViewModel,
                                            m_gitStatusService,     m_directoryWatchUseCase,    m_folderMonitorUseCase,
-                                           m_notificationCenter,   m_advancedSearchService,    m_fileTagsService,
-                                           m_diskUsageService,     m_fragmentationService,     m_iconLoadingService,
-                                           m_mediaThumbnailLoadingService, m_tagChangeNotifier, m_fileTransferService };
+                                           m_notificationCenter,   m_advancedSearchService,    m_contentSearchService,
+                                           m_fileTagsService,      m_diskUsageService,         m_fragmentationService,
+                                           m_iconLoadingService,   m_mediaThumbnailLoadingService, m_tagChangeNotifier,
+                                           m_fileTransferService };
     };
 }
 
@@ -138,9 +143,10 @@ TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsThroughRestoreFromConfig)
     WorkspaceController restoredController{ m_fileNavigationUseCase,  restoredTagManagementUseCase, m_filePreviewUseCase,
                                              m_fileSystemRepository, m_fileDecorationRules,        m_fileDecorationsViewModel,
                                              m_gitStatusService,     m_directoryWatchUseCase,      m_folderMonitorUseCase,
-                                             m_notificationCenter,   m_advancedSearchService,      m_fileTagsService,
-                                             m_diskUsageService,     m_fragmentationService,       m_iconLoadingService,
-                                             m_mediaThumbnailLoadingService, m_tagChangeNotifier,  m_fileTransferService };
+                                             m_notificationCenter,   m_advancedSearchService,      m_contentSearchService,
+                                             m_fileTagsService,      m_diskUsageService,           m_fragmentationService,
+                                             m_iconLoadingService,   m_mediaThumbnailLoadingService, m_tagChangeNotifier,
+                                             m_fileTransferService };
 
     const bool restored = restoredController.restoreFromConfig(captured);
     ASSERT_TRUE(restored);
@@ -184,9 +190,10 @@ TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsHiddenColumnsThroughResto
     WorkspaceController restoredController{ m_fileNavigationUseCase,  restoredTagManagementUseCase, m_filePreviewUseCase,
                                              m_fileSystemRepository, m_fileDecorationRules,        m_fileDecorationsViewModel,
                                              m_gitStatusService,     m_directoryWatchUseCase,      m_folderMonitorUseCase,
-                                             m_notificationCenter,   m_advancedSearchService,      m_fileTagsService,
-                                             m_diskUsageService,     m_fragmentationService,       m_iconLoadingService,
-                                             m_mediaThumbnailLoadingService, m_tagChangeNotifier,  m_fileTransferService };
+                                             m_notificationCenter,   m_advancedSearchService,      m_contentSearchService,
+                                             m_fileTagsService,      m_diskUsageService,           m_fragmentationService,
+                                             m_iconLoadingService,   m_mediaThumbnailLoadingService, m_tagChangeNotifier,
+                                             m_fileTransferService };
 
     ASSERT_TRUE(restoredController.restoreFromConfig(captured));
 

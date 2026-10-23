@@ -13,6 +13,7 @@ class FileDecorationRules;
 class GitStatusService;
 class FolderMonitorUseCase;
 class AdvancedSearchService;
+class ContentSearchService;
 class FileTagsService;
 class DiskUsageService;
 class FragmentationService;
@@ -33,8 +34,9 @@ public:
     WorkspacePaneViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                             const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                             GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
-                            AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
-                            DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
+                            AdvancedSearchService& advancedSearchService, ContentSearchService& contentSearchService,
+                            FileTagsService& fileTagsService, DiskUsageService& diskUsageService,
+                            FragmentationService& fragmentationService,
                             IconLoadingService& iconLoadingService, MediaThumbnailLoadingService& mediaThumbnailLoadingService,
                             TagChangeNotifier& tagChangeNotifier, NotificationCenter& notificationCenter, WorkspacePaneId id,
                             QObject* parent = nullptr);
@@ -70,6 +72,7 @@ private:
     GitStatusService& m_gitStatusService;
     FolderMonitorUseCase& m_folderMonitorUseCase;
     AdvancedSearchService& m_advancedSearchService;
+    ContentSearchService& m_contentSearchService;
     FileTagsService& m_fileTagsService;
     DiskUsageService& m_diskUsageService;
     FragmentationService& m_fragmentationService;

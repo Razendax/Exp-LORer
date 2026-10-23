@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "AdvancedSearchService.h"
+#include "ContentSearchService.h"
 #include "DiskUsageNode.h"
 #include "DiskUsageService.h"
 #include "FileFragmentationInfo.h"
@@ -28,8 +29,9 @@
 TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagManagementUseCase& tagManagementUseCase,
                            const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
                            GitStatusService& gitStatusService, FolderMonitorUseCase& folderMonitorUseCase,
-                           AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
-                           DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
+                           AdvancedSearchService& advancedSearchService, ContentSearchService& contentSearchService,
+                           FileTagsService& fileTagsService, DiskUsageService& diskUsageService,
+                           FragmentationService& fragmentationService,
                            IconLoadingService& iconLoadingService, MediaThumbnailLoadingService& mediaThumbnailLoadingService,
                            TagChangeNotifier& tagChangeNotifier, NotificationCenter& notificationCenter, QObject* parent)
     : QObject(parent)
@@ -37,6 +39,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     , m_tagManagementUseCase(tagManagementUseCase)
     , m_gitStatusService(gitStatusService)
     , m_advancedSearchService(advancedSearchService)
+    , m_contentSearchService(contentSearchService)
     , m_fileTagsService(fileTagsService)
     , m_diskUsageService(diskUsageService)
     , m_fragmentationService(fragmentationService)
@@ -49,6 +52,7 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     , m_advancedSearch(new TabAdvancedSearchViewModel(fileNavigationUseCase, advancedSearchService, tagManagementUseCase,
                                                        fileTagsService, iconLoadingService, tagChangeNotifier, fileDecorationRules,
                                                        fileDecorationsChangeSource, this))
+    , m_contentSearch(new TabContentSearchViewModel(contentSearchService, this))
     , m_mediaViewer(new TabMediaViewerViewModel(advancedSearchService, tagManagementUseCase, fileTagsService, iconLoadingService,
                                                  mediaThumbnailLoadingService, tagChangeNotifier, notificationCenter,
                                                  fileDecorationRules, fileDecorationsChangeSource, this))
@@ -81,11 +85,12 @@ TabViewModel::TabViewModel(FileNavigationUseCase& fileNavigationUseCase, TagMana
     // to the same event on their own, via their own TagChangeNotifier connections.
     connect(&m_tagChangeNotifier, &TagChangeNotifier::tagsChanged, this, [this]() { requestFileTags(currentPath(), m_fileListModel->entries()); });
 
-    // Clearing the selection on a Quick/Advanced Search activation/deactivation edge mirrors what
-    // applyFilter()/exit() did inline before extraction (Architecture.md §14.96) -- kept here,
-    // rather than giving the sub-objects a back-reference, since selection is Selection-group
-    // (TabViewModel's own) state.
+    // Clearing the selection on a Quick/Advanced/Content Search activation/deactivation edge
+    // mirrors what applyFilter()/exit() did inline before extraction (Architecture.md §14.96) --
+    // kept here, rather than giving the sub-objects a back-reference, since selection is
+    // Selection-group (TabViewModel's own) state.
     connect(m_quickSearch, &TabQuickSearchViewModel::modeChanged, this, [this](bool) { setSelectedEntries({}); });
+    connect(m_contentSearch, &TabContentSearchViewModel::modeChanged, this, [this](bool) { setSelectedEntries({}); });
     connect(m_advancedSearch, &TabAdvancedSearchViewModel::modeChanged, this, [this](bool) { setSelectedEntries({}); });
     connect(m_mediaViewer, &TabMediaViewerViewModel::modeChanged, this, [this](bool) { setSelectedEntries({}); });
 }

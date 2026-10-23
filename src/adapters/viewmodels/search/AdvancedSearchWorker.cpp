@@ -1,13 +1,11 @@
 #include "AdvancedSearchWorker.h"
 
-#include <unordered_set>
-
 #include "FileNavigationUseCase.h"
 #include "FileTagAssociation.h"
+#include "GitIgnorePrunePredicateBuilder.h"
 #include "GitStatusUseCase.h"
 #include "LibGit2StatusProvider.h"
 #include "PathContainment.h"
-#include "PathHash.h"
 #include "SQLiteTagRepository.h"
 #include "TagManagementUseCase.h"
 
@@ -44,31 +42,16 @@ void AdvancedSearchWorker::ensureGitStatusUseCase() const
     m_gitStatusUseCase = std::make_unique<GitStatusUseCase>(*m_gitStatusProvider);
 }
 
-std::function<bool(const std::filesystem::path&)> AdvancedSearchWorker::buildGitIgnorePrunePredicate(
-    const std::filesystem::path& root) const
-{
-    ensureGitStatusUseCase();
-
-    auto ignoredResult = m_gitStatusUseCase->ignoredPaths(root);
-    auto ignoredSet = std::make_shared<std::unordered_set<std::filesystem::path, PathHash>>();
-    if (ignoredResult.hasValue())
-    {
-        ignoredSet->insert(ignoredResult.value().begin(), ignoredResult.value().end());
-    }
-    // Not reported as "ignored" by git's own status machinery (it isn't part of the working tree
-    // at all), but a user skipping git-ignored content clearly doesn't want ".git"'s internals in
-    // results either.
-    ignoredSet->insert(root / ".git");
-
-    return [ignoredSet](const std::filesystem::path& path) { return ignoredSet->count(path) != 0; };
-}
-
 Result<std::vector<FileNode>> AdvancedSearchWorker::scanRecursive(
     const std::filesystem::path& root, const std::function<void(const std::vector<FileNode>&)>& onProgress,
     bool skipGitIgnored) const
 {
-    const std::function<bool(const std::filesystem::path&)> shouldPrune =
-        skipGitIgnored ? buildGitIgnorePrunePredicate(root) : nullptr;
+    std::function<bool(const std::filesystem::path&)> shouldPrune;
+    if (skipGitIgnored)
+    {
+        ensureGitStatusUseCase();
+        shouldPrune = buildGitIgnorePrunePredicate(*m_gitStatusUseCase, root);
+    }
 
     return m_fileNavigationUseCase.listDirectoryRecursive(root, onProgress, shouldPrune);
 }

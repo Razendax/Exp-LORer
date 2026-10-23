@@ -13,6 +13,8 @@
 #include "ColumnVisibilitySettings.h"
 #include "ColumnVisibilitySettingsStore.h"
 #include "ColumnVisibilitySettingsViewModel.h"
+#include "ContentSearchService.h"
+#include "ContentSearchUseCase.h"
 #include "DirectoryWatchUseCase.h"
 #include "DiskUsageService.h"
 #include "DuplicateFinderService.h"
@@ -110,6 +112,7 @@ public:
     FileNavigationUseCase& fileNavigationUseCase() noexcept { return m_fileNavigationUseCase; }
     BulkRenameUseCase& bulkRenameUseCase() noexcept { return m_bulkRenameUseCase; }
     AdvancedSearchService& advancedSearchService() noexcept { return m_advancedSearchService; }
+    ContentSearchService& contentSearchService() noexcept { return m_contentSearchService; }
     FileTagsService& fileTagsService() noexcept { return m_fileTagsService; }
     TextFileEditViewModel& textFileEditViewModel() noexcept { return m_textFileEditViewModel; }
 
@@ -161,6 +164,13 @@ private:
     // and m_fileSystemRepository (needs both); grouped here with the other shared background-work
     // services.
     AdvancedSearchService m_advancedSearchService;
+
+    // Architecture.md §14.104: "Find in Files" (content search) scan requests, off the Qt UI
+    // thread. Use case before service (construction order matches declaration order); stateless
+    // (no database path needed -- content search has no tag integration), same posture as
+    // m_filePreviewUseCase.
+    ContentSearchUseCase m_contentSearchUseCase;
+    ContentSearchService m_contentSearchService;
 
     // Architecture.md §14.47: custom copy/move pipeline (estimate -> free-space-check -> copy,
     // cancellable mid-transfer) backing the paste/cut-paste progress notification, off the Qt UI

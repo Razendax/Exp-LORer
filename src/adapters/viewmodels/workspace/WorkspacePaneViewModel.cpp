@@ -7,7 +7,8 @@ WorkspacePaneViewModel::WorkspacePaneViewModel(FileNavigationUseCase& fileNaviga
                                                 const FileDecorationRules& fileDecorationRules,
                                                 QObject& fileDecorationsChangeSource, GitStatusService& gitStatusService,
                                                 FolderMonitorUseCase& folderMonitorUseCase,
-                                                AdvancedSearchService& advancedSearchService, FileTagsService& fileTagsService,
+                                                AdvancedSearchService& advancedSearchService,
+                                                ContentSearchService& contentSearchService, FileTagsService& fileTagsService,
                                                 DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
                                                 IconLoadingService& iconLoadingService,
                                                 MediaThumbnailLoadingService& mediaThumbnailLoadingService,
@@ -21,6 +22,7 @@ WorkspacePaneViewModel::WorkspacePaneViewModel(FileNavigationUseCase& fileNaviga
     , m_gitStatusService(gitStatusService)
     , m_folderMonitorUseCase(folderMonitorUseCase)
     , m_advancedSearchService(advancedSearchService)
+    , m_contentSearchService(contentSearchService)
     , m_fileTagsService(fileTagsService)
     , m_diskUsageService(diskUsageService)
     , m_fragmentationService(fragmentationService)
@@ -51,9 +53,9 @@ TabViewModel* WorkspacePaneViewModel::addTab()
 {
     auto* tab = new TabViewModel(m_fileNavigationUseCase, m_tagManagementUseCase, m_fileDecorationRules,
                                   m_fileDecorationsChangeSource, m_gitStatusService, m_folderMonitorUseCase,
-                                  m_advancedSearchService, m_fileTagsService, m_diskUsageService, m_fragmentationService,
-                                  m_iconLoadingService, m_mediaThumbnailLoadingService, m_tagChangeNotifier,
-                                  m_notificationCenter, this);
+                                  m_advancedSearchService, m_contentSearchService, m_fileTagsService, m_diskUsageService,
+                                  m_fragmentationService, m_iconLoadingService, m_mediaThumbnailLoadingService,
+                                  m_tagChangeNotifier, m_notificationCenter, this);
     m_tabs.push_back(tab);
 
     const int index = static_cast<int>(m_tabs.size()) - 1;
