@@ -686,16 +686,21 @@ glue — but as an independent, parallel pipeline: nothing about `TabQuickSearch
   `.cpp`, `src/domain/ContentSearchMatch.h`, `src/application/search/ContentSearchOptions.h`,
   `src/application/search/ContentSearchUseCase.h`/`.cpp`): `SubstringMatch` is the one matcher mode
   that had no named symbol yet (`GlobMatch`/`WholeWordMatch`/`RegexMatch` each already had one) —
-  `UnicodeCaseFold`-folded substring search, backing both the main query's plain "Contains" mode and
-  the Include/Exclude fields' plain mode (`*`/`?` are literal here, no glob expansion).
+  `UnicodeCaseFold`-folded substring search, backing the main query's plain "Contains" mode (matched
+  against file *content*, where `*`/`?` are literal). The Include/Exclude fields match file *paths*
+  instead: their plain mode goes through `GlobMatch` (same `*`/`?` wildcard convention as filename
+  search's own Contains mode — a wildcard-free pattern is expanded to `*pattern*`) rather than
+  `SubstringMatch`, so e.g. `*.cpp` in Include behaves as expected.
   `BinaryContentDetector::containsNulByte` extracts the heuristic `FilePreviewUseCase::generatePreview`
   used to inline, now shared by both call sites. `ContentSearchUseCase` is stateless (one shared
   instance, constructed with `FileNavigationUseCase&` + `IFileSystemRepository&`):
   `collectSearchableContent` is the I/O-bound half (recursive listing, per-entry hidden/archive/
   Include/Exclude filtering, a capped `kMaxContentSearchBytes` (1 MiB) prefix read per file, binary
   skip, line splitting); `filterLines` is the pure, cheap, no-I/O half that applies the main query to
-  already-collected lines; both share the private `textMatches` mode-dispatch helper (Contains/
-  WholeWord/Regex, an invalid Regex pattern treated as "no match").
+  already-collected lines; the two share the same Contains/WholeWord/Regex mode shape but through
+  separate dispatch helpers — `textMatches` for the main query (content), `pathMatches` for
+  Include/Exclude (paths) — since only the latter's Contains mode glob-expands. Both treat an
+  invalid Regex pattern as "no match".
 * **Adapters** (`src/adapters/git/GitIgnorePrunePredicateBuilder.h`/`.cpp`,
   `src/adapters/viewmodels/search/ContentSearchWorker.h`/`.cpp`,
   `ContentSearchService.h`/`.cpp`, `ContentSearchResultsModel.h`/`.cpp`,
@@ -739,6 +744,33 @@ glue — but as an independent, parallel pipeline: nothing about `TabQuickSearch
   `onContentSearchLineActivated` always sets the pending jump *after* the navigation that triggers its
   own `previewLoading()` — so any further tick seen while a jump is still pending is necessarily a
   newer, different navigation superseding it.
+* **Bugfix — double-click's own leading click defeating the jump**: a Qt double-click is physically
+  a single click followed by a second one. The first click already selects the row, which can
+  already drive `FilePreviewViewModel` through a synchronous `previewLoading()`/`previewReady()`
+  cycle before `onContentSearchLineActivated` ever runs. When that happens, `navigateAndSelect()`'s
+  re-selection resolves to a `FileNode` equal (via `operator==`) to the one just selected, so
+  `TabViewModel::setSelectedEntries()`'s same-selection dedup guard swallows it — no further
+  `previewReady()` ever arrives for that path, leaving the pending jump dangling forever.
+  `onContentSearchLineActivated` now calls `PreviewPanelWidget::goToLine` immediately (it returns a
+  `bool`) against whatever the panel is already showing before falling back to recording the
+  pending jump; the fallback still covers a genuinely new navigation where the preview is still
+  loading asynchronously.
+* **Bugfix — double-clicking a second line match of an already-selected file**: the immediate-jump
+  fix above still failed for a double-click on a *different* line of a file that was already
+  selected/previewed (e.g. single-clicked first, or already the target of a prior line jump) when
+  its directory is the one already open: `onContentSearchResultActivated`'s
+  `WorkspacePaneWidget::navigateAndSelect()` unconditionally called `TabViewModel::navigateTo()`,
+  whose `loadAndApply()` unconditionally clears the selection before reloading the (unchanged)
+  directory listing, then immediately reselects the file. That clear-then-reselect round trip
+  transiently re-resolves `FilePreviewViewModel`'s target to "no selection" (which previews the
+  *folder*) before resolving back to the file — and because both resolutions can each hit or miss
+  `FilePreviewViewModel`'s small-result cache independently, whichever one's `previewReady()`
+  settles last (folder or file) can win, leaving the folder preview on screen with
+  `PreviewPanelWidget::m_currentTextPath` cleared, so the immediate `goToLine()` call fails and the
+  jump never completes. `navigateAndSelect()` now skips the `navigateTo()` call entirely when
+  already showing the target directory (checked case-insensitively) and just re-selects the entry
+  directly — eliminating the clear/reselect round trip (and the race) for this case rather than
+  racing it. A genuinely new directory still navigates normally.
 * **Non-Goals carried from spec/plan**: no in-place replace, no archive search, no multi-pattern
   Include/Exclude, no persistence of query/options across restarts, no true scan cancellation (only
   generation-fenced discard of a stale reply), no pagination beyond the per-file

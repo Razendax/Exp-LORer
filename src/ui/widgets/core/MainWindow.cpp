@@ -695,6 +695,8 @@ void MainWindow::createContentSearchPanel()
             });
     connect(m_contentSearchPanelWidget, &ContentSearchPanelWidget::resultActivated, this, &MainWindow::onContentSearchResultActivated);
     connect(m_contentSearchPanelWidget, &ContentSearchPanelWidget::lineActivated, this, &MainWindow::onContentSearchLineActivated);
+    connect(m_contentSearchPanelWidget, &ContentSearchPanelWidget::linePreviewRequested, this,
+            &MainWindow::onContentSearchLinePreviewRequested);
     connect(m_contentSearchPanelWidget, &ContentSearchPanelWidget::selectionChanged, this,
             [this](const std::vector<FileNode>& entries) {
                 if (TabViewModel* tab = m_workspaceController->focusedTab())
@@ -731,9 +733,32 @@ void MainWindow::onContentSearchLineActivated(const std::filesystem::path& path,
 {
     onContentSearchResultActivated(path, /*isDirectory=*/false);
 
-    // Set after navigateAndSelect() above, which is what triggers FilePreviewViewModel to
-    // re-resolve and eventually emit previewReady() for `path` -- see the connections set up in
-    // createWorkspace().
+    // A double-click is physically a single click followed by a second one: the leading click
+    // already selected this file, which may have already driven FilePreviewViewModel through a
+    // synchronous previewLoading()/previewReady() cycle before this handler ever runs. If so, the
+    // navigateAndSelect() above resolves to a FileNode equal to the one already selected and
+    // TabViewModel::setSelectedEntries()'s dedup guard swallows it -- no further previewReady()
+    // will ever arrive for `path`, so a pending jump would dangle forever. Try the jump immediately
+    // against whatever the preview panel is already showing; only fall back to the pending-jump
+    // path (consumed by the previewReady() connection in createWorkspace()) when the preview is
+    // still catching up to a genuinely new navigation.
+    if (m_previewPanelWidget->goToLine(path, oneBasedLine))
+    {
+        m_pendingContentSearchLineJump.reset();
+        return;
+    }
+
+    m_pendingContentSearchLineJump = std::make_pair(path, oneBasedLine);
+}
+
+void MainWindow::onContentSearchLinePreviewRequested(const std::filesystem::path& path, int oneBasedLine)
+{
+    if (m_previewPanelWidget->goToLine(path, oneBasedLine))
+    {
+        m_pendingContentSearchLineJump.reset();
+        return;
+    }
+
     m_pendingContentSearchLineJump = std::make_pair(path, oneBasedLine);
 }
 

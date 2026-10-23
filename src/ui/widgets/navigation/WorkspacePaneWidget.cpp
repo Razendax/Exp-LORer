@@ -1056,7 +1056,19 @@ void WorkspacePaneWidget::navigateAndSelect(const std::filesystem::path& directo
         return;
     }
 
-    m_boundTab->navigateTo(directory);
+    // Skip the navigation when we're already showing `directory` -- TabViewModel::navigateTo()
+    // always goes through loadAndApply(), which unconditionally clears the selection before
+    // reloading (Architecture.md §14.104's bugfix note). For a result that's already selected
+    // (e.g. double-clicking a second content-search line match for a file that's already open),
+    // that clear-then-reselect round trip briefly resolves FilePreviewViewModel's target to "no
+    // selection" (the folder) and races the reselect's own re-resolution to the file -- if the
+    // folder's preview is cached and the file's isn't (or vice versa with timing), whichever
+    // settles last can leave the wrong preview on screen instead of just re-selecting the entry
+    // the caller already asked for in the directory we're already in.
+    if (!pathsEqualCaseInsensitive(m_boundTab->currentPath(), directory))
+    {
+        m_boundTab->navigateTo(directory);
+    }
 
     if (entryToSelect && m_boundTab->currentPath() == directory)
     {

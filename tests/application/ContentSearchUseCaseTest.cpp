@@ -57,10 +57,37 @@ TEST(ContentSearchUseCase, TextMatchesTreatsInvalidRegexAsNoMatch)
     EXPECT_FALSE(ContentSearchUseCase::textMatches("value", "(unclosed", TextMatchOptions{ TextMatchMode::Regex, false }));
 }
 
-TEST(ContentSearchUseCase, TextMatchesWorksAgainstRelativePathsForIncludeExclude)
+// --- pathMatches (Include/Exclude) ----------------------------------------
+
+TEST(ContentSearchUseCase, PathMatchesContainsModeWithoutWildcardsIsSubstring)
 {
-    EXPECT_TRUE(ContentSearchUseCase::textMatches("src/Foo.cpp", ".cpp", TextMatchOptions{}));
-    EXPECT_FALSE(ContentSearchUseCase::textMatches("src/Foo.h", ".cpp", TextMatchOptions{}));
+    EXPECT_TRUE(ContentSearchUseCase::pathMatches("src/Foo.cpp", ".cpp", TextMatchOptions{}));
+    EXPECT_FALSE(ContentSearchUseCase::pathMatches("src/Foo.h", ".cpp", TextMatchOptions{}));
+}
+
+TEST(ContentSearchUseCase, PathMatchesContainsModeSupportsStarWildcard)
+{
+    EXPECT_TRUE(ContentSearchUseCase::pathMatches("src/Foo.cpp", "*.cpp", TextMatchOptions{}));
+    EXPECT_FALSE(ContentSearchUseCase::pathMatches("src/Foo.h", "*.cpp", TextMatchOptions{}));
+    EXPECT_TRUE(ContentSearchUseCase::pathMatches("src/tests/Foo.cpp", "src/*.cpp", TextMatchOptions{}));
+}
+
+TEST(ContentSearchUseCase, PathMatchesContainsModeSupportsQuestionMarkWildcard)
+{
+    EXPECT_TRUE(ContentSearchUseCase::pathMatches("src/a.txt", "src/?.txt", TextMatchOptions{}));
+    EXPECT_FALSE(ContentSearchUseCase::pathMatches("src/ab.txt", "src/?.txt", TextMatchOptions{}));
+}
+
+TEST(ContentSearchUseCase, PathMatchesWholeWordMode)
+{
+    EXPECT_TRUE(ContentSearchUseCase::pathMatches("src/foo/bar.cpp", "foo", TextMatchOptions{ TextMatchMode::WholeWord, false }));
+    EXPECT_FALSE(ContentSearchUseCase::pathMatches("src/foobar/baz.cpp", "foo", TextMatchOptions{ TextMatchMode::WholeWord, false }));
+}
+
+TEST(ContentSearchUseCase, PathMatchesRegexMode)
+{
+    EXPECT_TRUE(ContentSearchUseCase::pathMatches("src/Foo123.cpp", R"(\d+)", TextMatchOptions{ TextMatchMode::Regex, false }));
+    EXPECT_FALSE(ContentSearchUseCase::pathMatches("src/Foo.cpp", R"(\d+)", TextMatchOptions{ TextMatchMode::Regex, false }));
 }
 
 // --- filterLines ----------------------------------------------------------
@@ -184,6 +211,30 @@ TEST(ContentSearchUseCase, CollectSearchableContentAppliesIncludeAndExcludePatte
         .WillOnce(Return(Result<std::vector<std::byte>>::success(toBytes("content"))));
 
     auto result = useCase.collectSearchableContent("C:/data", nullptr, /*showHidden=*/false, ".cpp", TextMatchOptions{}, "tests",
+                                                      TextMatchOptions{});
+
+    ASSERT_TRUE(result.hasValue());
+    ASSERT_EQ(result.value().size(), 1u);
+    EXPECT_EQ(result.value()[0].node.path(), std::filesystem::path("C:/data/src/keep.cpp"));
+}
+
+TEST(ContentSearchUseCase, CollectSearchableContentIncludePatternSupportsWildcards)
+{
+    MockFileSystemRepository fileSystemRepository;
+    MockContextMenuProvider contextMenuProvider;
+    FileNavigationUseCase fileNavigationUseCase(fileSystemRepository, contextMenuProvider);
+    ContentSearchUseCase useCase(fileNavigationUseCase, fileSystemRepository);
+
+    std::vector<FileNode> listing{
+        makeFile("C:/data/src/keep.cpp"),
+        makeFile("C:/data/src/skip.h"),
+    };
+    EXPECT_CALL(fileSystemRepository, listDirectoryRecursive(std::filesystem::path("C:/data"), _, _))
+        .WillOnce(Return(Result<std::vector<FileNode>>::success(listing)));
+    EXPECT_CALL(fileSystemRepository, readFilePrefix(std::filesystem::path("C:/data/src/keep.cpp"), _))
+        .WillOnce(Return(Result<std::vector<std::byte>>::success(toBytes("content"))));
+
+    auto result = useCase.collectSearchableContent("C:/data", nullptr, /*showHidden=*/false, "*.cpp", TextMatchOptions{}, "",
                                                       TextMatchOptions{});
 
     ASSERT_TRUE(result.hasValue());

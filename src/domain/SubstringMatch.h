@@ -2,10 +2,11 @@
 
 #include <string>
 
-// Plain "Contains" substring matcher for Content Search's main query and its Include/Exclude
-// fields (Architecture.md §14.104) -- the one matcher mode GlobMatch/WholeWordMatch/RegexMatch
-// didn't already name, since filename search's "Contains" mode is folded into GlobMatch's
-// wildcard expansion instead. No glob/wildcard expansion here: '*'/'?' are literal.
+// Plain "Contains" substring matcher for Content Search's main query, matched against file
+// *content* (Architecture.md §14.104) -- the one matcher mode GlobMatch/WholeWordMatch/RegexMatch
+// didn't already name. No glob/wildcard expansion here: '*'/'?' are literal. Content Search's
+// Include/Exclude fields match file *paths* instead and go through GlobMatch's wildcard expansion
+// (see ContentSearchUseCase::pathMatches), same as filename search's own "Contains" mode.
 namespace SubstringMatch
 {
     // True if queryUtf8 occurs anywhere in textUtf8. Both arguments are UTF-8. caseSensitive=false

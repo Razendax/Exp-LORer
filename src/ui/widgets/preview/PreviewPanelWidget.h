@@ -43,8 +43,10 @@ public:
 
     // Find-in-Files line jump (Architecture.md §14.104): forwards to the text preview's editor only
     // when `path` matches whatever Text preview is currently on screen -- a stale/mismatched request
-    // (the user navigated elsewhere again before this fired) is a silent no-op.
-    void goToLine(const std::filesystem::path& path, int oneBasedLine);
+    // (the user navigated elsewhere again before this fired) is a no-op. Returns whether the jump
+    // was actually performed, so a caller can tell a same-preview immediate jump apart from one that
+    // still needs to wait for a future previewReady().
+    bool goToLine(const std::filesystem::path& path, int oneBasedLine);
 
 protected:
     void showEvent(QShowEvent* event) override;

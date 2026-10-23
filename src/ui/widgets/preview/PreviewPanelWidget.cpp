@@ -75,14 +75,15 @@ PreviewPanelWidget::PreviewPanelWidget(FilePreviewViewModel* viewModel, SyntaxHi
     connect(m_gifModeCombo, &QComboBox::currentIndexChanged, this, &PreviewPanelWidget::onGifModeChanged);
 }
 
-void PreviewPanelWidget::goToLine(const std::filesystem::path& path, int oneBasedLine)
+bool PreviewPanelWidget::goToLine(const std::filesystem::path& path, int oneBasedLine)
 {
     if (path != m_currentTextPath)
     {
-        return;
+        return false;
     }
 
     m_textPreviewWidget->goToLine(oneBasedLine);
+    return true;
 }
 
 void PreviewPanelWidget::showEvent(QShowEvent* event)

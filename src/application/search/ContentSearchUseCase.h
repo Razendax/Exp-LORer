@@ -47,11 +47,20 @@ public:
     static std::vector<FileContentMatch> filterLines(const std::vector<RawFileLines>& rawFiles,
                                                        const std::string& queryUtf8, const TextMatchOptions& queryOptions);
 
-    // The one mode-dispatch function reused for (a) a line against the main query and (b) a
-    // relative path against Include/Exclude. An invalid Regex pattern is treated as "no match"
-    // rather than propagated -- same accepted posture NameSearchOptions's own Regex mode already
-    // documents. Declared here (not file-local) so it can be unit-tested directly.
+    // Mode-dispatch function for matching a line of file *content* against the main query. Contains
+    // mode is a literal substring match -- '*'/'?' have no special meaning in file content. An
+    // invalid Regex pattern is treated as "no match" rather than propagated -- same accepted posture
+    // NameSearchOptions's own Regex mode already documents. Declared here (not file-local) so it can
+    // be unit-tested directly.
     static bool textMatches(const std::string& candidateUtf8, const std::string& patternUtf8, const TextMatchOptions& options);
+
+    // Mode-dispatch function for matching a relative *path* against an Include/Exclude pattern.
+    // Same WholeWord/Regex handling as textMatches, but Contains mode treats '*'/'?' as glob
+    // wildcards (expanding a wildcard-free pattern to "*pattern*") -- the same convention
+    // FileNavigationUseCase::filterByName's own Contains mode already uses for filenames, since
+    // Include/Exclude patterns name files too (the UI's "e.g. *.cpp" hint only makes sense with this
+    // behavior). Declared here (not file-local) so it can be unit-tested directly.
+    static bool pathMatches(const std::string& candidateUtf8, const std::string& patternUtf8, const TextMatchOptions& options);
 
 private:
     FileNavigationUseCase& m_fileNavigationUseCase;

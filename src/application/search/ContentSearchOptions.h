@@ -34,7 +34,10 @@ struct ContentSearchOptions
     // real project with no included/explicit opt-out.
     bool skipGitIgnored = true;
 
-    // Empty = unset (no filtering by this field).
+    // Empty = unset (no filtering by this field). Matched against each candidate's path relative to
+    // the search root; in the default Contains mode, '*'/'?' are glob wildcards (same convention as
+    // filename search's own Contains mode) rather than literal characters -- see
+    // ContentSearchUseCase::pathMatches.
     std::string includePattern;
     TextMatchOptions includeOptions;
     std::string excludePattern;

@@ -170,6 +170,14 @@ private:
     // §14.104).
     void onContentSearchLineActivated(const std::filesystem::path& path, int oneBasedLine);
 
+    // Line-row single-click (selection): unlike onContentSearchLineActivated, this does NOT
+    // navigate/select the file in the active pane's tree -- a single click through a results list
+    // is just "preview this line", not "jump the file tree to this file". The Preview tab already
+    // picks up the file via ContentSearchPanelWidget::selectionChanged -> TabViewModel's selected
+    // entries, so this only needs to scroll it to the matched line (same pending-jump fallback as
+    // onContentSearchLineActivated for when that preview load is still in flight).
+    void onContentSearchLinePreviewRequested(const std::filesystem::path& path, int oneBasedLine);
+
     // Bubbled up from WorkspacePaneWidget::bulkRenameRequested (Architecture.md §14.55) -- resolves
     // `paths` back to FileNode via tab->selectedEntries() (the exact list they were built from) and
     // calls showBulkRenameDialogFor directly, no fallback needed since the context-menu entry is

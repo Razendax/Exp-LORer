@@ -462,6 +462,12 @@ void ContentSearchPanelWidget::onTreeSelectionChanged()
     }
 
     emit selectionChanged({ it->node });
+
+    const QVariant lineNumber = selected.first().data(ContentSearchResultsModel::LineNumberRole);
+    if (lineNumber.isValid())
+    {
+        emit linePreviewRequested(path, lineNumber.toInt());
+    }
 }
 
 void ContentSearchPanelWidget::setLoading(bool loading)

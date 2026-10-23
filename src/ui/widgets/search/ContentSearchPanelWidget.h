@@ -68,6 +68,11 @@ signals:
     // Bubbled from a single-click on either row kind, resolved against m_lastResults.
     void selectionChanged(const std::vector<FileNode>& entries);
 
+    // Line row single-click (selection), bubbled alongside selectionChanged above -- unlike
+    // lineActivated (double-click), this must not drive active-pane/tree navigation, only a
+    // preview-side line jump.
+    void linePreviewRequested(const std::filesystem::path& path, int oneBasedLine);
+
 private:
     void onTreeDoubleClicked(const QModelIndex& index);
     void onTreeSelectionChanged();

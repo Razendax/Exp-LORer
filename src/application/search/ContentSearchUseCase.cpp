@@ -3,6 +3,7 @@
 #include "ArchiveExtensions.h"
 #include "BinaryContentDetector.h"
 #include "FileNavigationUseCase.h"
+#include "GlobMatch.h"
 #include "IFileSystemRepository.h"
 #include "PathUtf8.h"
 #include "RegexMatch.h"
@@ -74,11 +75,11 @@ Result<std::vector<RawFileLines>> ContentSearchUseCase::collectSearchableContent
         }
 
         const std::string relative = PathUtf8::toUtf8(std::filesystem::relative(node.path(), root));
-        if (!includePattern.empty() && !textMatches(relative, includePattern, includeOptions))
+        if (!includePattern.empty() && !pathMatches(relative, includePattern, includeOptions))
         {
             continue;
         }
-        if (!excludePattern.empty() && textMatches(relative, excludePattern, excludeOptions))
+        if (!excludePattern.empty() && pathMatches(relative, excludePattern, excludeOptions))
         {
             continue;
         }
@@ -149,5 +150,29 @@ bool ContentSearchUseCase::textMatches(const std::string& candidateUtf8, const s
         case TextMatchMode::Contains:
         default:
             return SubstringMatch::matches(patternUtf8, candidateUtf8, options.caseSensitive);
+    }
+}
+
+bool ContentSearchUseCase::pathMatches(const std::string& candidateUtf8, const std::string& patternUtf8,
+                                         const TextMatchOptions& options)
+{
+    switch (options.mode)
+    {
+        case TextMatchMode::WholeWord:
+            return WholeWordMatch::matches(patternUtf8, candidateUtf8, options.caseSensitive);
+
+        case TextMatchMode::Regex:
+        {
+            const Result<bool> matched = RegexMatch::matches(patternUtf8, candidateUtf8, options.caseSensitive);
+            return matched.hasValue() && matched.value();
+        }
+
+        case TextMatchMode::Contains:
+        default:
+        {
+            const bool hasWildcard = patternUtf8.find('*') != std::string::npos || patternUtf8.find('?') != std::string::npos;
+            const std::string globPattern = hasWildcard ? patternUtf8 : "*" + patternUtf8 + "*";
+            return GlobMatch::matches(globPattern, candidateUtf8, options.caseSensitive);
+        }
     }
 }
