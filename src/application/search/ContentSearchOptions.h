@@ -26,7 +26,13 @@ struct ContentSearchOptions
     // candidate list is filtered -- same orthogonality NameSearchOptions::skipGitIgnored already
     // documents; see TabContentSearchViewModel::setOptions, which forces a rescan specifically
     // when this changes.
-    bool skipGitIgnored = false;
+    //
+    // Defaults to true (unlike NameSearchOptions::skipGitIgnored): content search reads every
+    // surviving candidate's bytes off disk, not just its name, so an unfiltered scan over a typical
+    // repo (build output, vcpkg_installed, etc., all usually git-ignored) is drastically more
+    // expensive than the equivalent filename-only scan -- enough to make the feature look hung on a
+    // real project with no included/explicit opt-out.
+    bool skipGitIgnored = true;
 
     // Empty = unset (no filtering by this field).
     std::string includePattern;
