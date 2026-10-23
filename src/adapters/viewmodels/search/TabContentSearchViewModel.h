@@ -31,7 +31,18 @@ public:
     ContentSearchResultsModel* resultsModel() const noexcept { return m_resultsModel; }
     bool isActive() const noexcept { return m_active; }
     QString query() const noexcept { return m_query; }
+    // The most recent scan's root -- ContentSearchResultsModel itself exposes no such accessor
+    // (unlike FileListModel::currentDirectory()), since it only ever needs root as a one-shot
+    // setResults() parameter for computing each header row's path-disambiguation text, not as
+    // ongoing state. MainWindow needs it anyway, to re-hand it to ContentSearchPanelWidget's own
+    // (separate) results model on every resultsChanged -- same "widget owns its own copy" posture
+    // SearchPanelWidget's m_listModel/m_treeModel already have relative to TabQuickSearchViewModel.
+    const std::filesystem::path& root() const noexcept { return m_root; }
     ContentSearchOptions options() const noexcept { return m_options; }
+    // The exact matches last pushed into m_resultsModel/resultsChanged -- MainWindow needs the raw
+    // vector (not just the model) to re-seed ContentSearchPanelWidget's own results model when a
+    // tab regains focus, same reason TabQuickSearchViewModel::resultsModel() exposes entries().
+    const std::vector<FileContentMatch>& matches() const noexcept { return m_lastMatches; }
 
 public slots:
     // Empty/whitespace-only query exits (no-op if already inactive). Otherwise always dispatches a
@@ -95,4 +106,6 @@ private:
     // Bumped on every scan dispatch and on exit(); onScanReady discards any reply whose generation
     // no longer matches.
     int m_generation = 0;
+    // The exact matches last pushed into m_resultsModel -- see matches() above.
+    std::vector<FileContentMatch> m_lastMatches;
 };

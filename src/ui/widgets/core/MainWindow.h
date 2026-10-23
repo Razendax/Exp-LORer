@@ -46,6 +46,7 @@ class TagPanelWidget;
 class SidePanelWidget;
 class FolderTreeView;
 class SearchPanelWidget;
+class ContentSearchPanelWidget;
 class MediaViewerSearchPanelWidget;
 class PreviewPanelWidget;
 class MonitoringPanelWidget;
@@ -106,6 +107,7 @@ private:
     void createWorkspace();
     void createFolderTree();
     void createSearchPanel();
+    void createContentSearchPanel();
     void createMainStatusBar();
     void showTagManagerDialog();
     void showSettingsDialog();
@@ -154,6 +156,17 @@ private:
     // entry point.
     void onSearchResultActivated(const std::filesystem::path& path, bool isDirectory);
 
+    // Content Search ("Find in Files") tab result activation (Architecture.md §14.104): same
+    // navigate-to-parent-with-file-selected / navigate-into-folder split as onSearchResultActivated
+    // -- content search never matches a directory, so isDirectory is always false here, but the
+    // shared navigate+select body is reused verbatim via this call.
+    void onContentSearchResultActivated(const std::filesystem::path& path, bool isDirectory);
+
+    // Line-row double-click: navigates/selects like onContentSearchResultActivated, then will
+    // additionally scroll the preview panel's editor to that line once Milestone 4 lands -- not
+    // yet implemented here.
+    void onContentSearchLineActivated(const std::filesystem::path& path, int oneBasedLine);
+
     // Bubbled up from WorkspacePaneWidget::bulkRenameRequested (Architecture.md §14.55) -- resolves
     // `paths` back to FileNode via tab->selectedEntries() (the exact list they were built from) and
     // calls showBulkRenameDialogFor directly, no fallback needed since the context-menu entry is
@@ -193,9 +206,11 @@ private:
     SidePanelWidget* m_leftPanelWidget = nullptr;
     FolderTreeView* m_folderTreeView = nullptr;
     SearchPanelWidget* m_searchPanelWidget = nullptr;
+    ContentSearchPanelWidget* m_contentSearchPanelWidget = nullptr;
     MediaViewerSearchPanelWidget* m_mediaViewerSearchPanelWidget = nullptr;
     TabViewModel* m_sortTrackedTab = nullptr;
     TabViewModel* m_searchTrackedTab = nullptr;
+    TabViewModel* m_contentSearchTrackedTab = nullptr;
     TabViewModel* m_driveInfoTrackedTab = nullptr;
     MainStatusBarWidget* m_mainStatusBarWidget = nullptr;
 

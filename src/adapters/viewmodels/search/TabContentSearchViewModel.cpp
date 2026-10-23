@@ -86,8 +86,8 @@ void TabContentSearchViewModel::onScanReady(int generation, Result<std::vector<R
 
 void TabContentSearchViewModel::applyFilter()
 {
-    std::vector<FileContentMatch> filtered = ContentSearchUseCase::filterLines(m_lastScanFiles, m_query.toStdString(), m_options.queryOptions);
-    m_resultsModel->setResults(filtered, m_root);
+    m_lastMatches = ContentSearchUseCase::filterLines(m_lastScanFiles, m_query.toStdString(), m_options.queryOptions);
+    m_resultsModel->setResults(m_lastMatches, m_root);
 
     if (!m_active)
     {
@@ -95,7 +95,7 @@ void TabContentSearchViewModel::applyFilter()
         emit modeChanged(true);
     }
 
-    emit resultsChanged(filtered);
+    emit resultsChanged(m_lastMatches);
 }
 
 void TabContentSearchViewModel::setOptions(const ContentSearchOptions& options, const std::filesystem::path& root)
@@ -146,6 +146,7 @@ void TabContentSearchViewModel::exit()
     m_query.clear();
     m_options = ContentSearchOptions{};
     m_lastScanFiles.clear();
+    m_lastMatches.clear();
     m_resultsModel->setResults({}, m_root);
     m_root.clear();
     ++m_generation;

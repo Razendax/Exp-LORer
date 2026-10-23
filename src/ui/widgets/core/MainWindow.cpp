@@ -28,6 +28,7 @@
 #include "BulkRenameDialog.h"
 #include "BulkRenameUseCase.h"
 #include "BulkRenameViewModel.h"
+#include "ContentSearchPanelWidget.h"
 #include "DriveSpaceInfoWorker.h"
 #include "DuplicateFinderDialog.h"
 #include "EnvironmentVariablesDialog.h"
@@ -47,6 +48,7 @@
 #include "NotificationOverlayWidget.h"
 #include "SettingsDialog.h"
 #include "TabAdvancedSearchViewModel.h"
+#include "TabContentSearchViewModel.h"
 #include "TabMonitoringViewModel.h"
 #include "TabQuickSearchViewModel.h"
 #include "TabViewModel.h"
@@ -300,6 +302,13 @@ void MainWindow::createShowHiddenFilesAction()
                 tab->fileListModel()->setShowHiddenFiles(checked);
                 tab->quickSearch()->resultsModel()->setShowHiddenFiles(checked);
                 tab->advancedSearch()->resultsModel()->setShowHiddenFiles(checked);
+                // Content search excludes hidden content from the scan itself (not just from
+                // display) per spec, so a model-level visibility flip isn't enough here -- an
+                // active tab needs a full rescan instead.
+                if (tab->contentSearch()->isActive())
+                {
+                    tab->contentSearch()->refresh(tab->contentSearch()->query(), tab->currentPath());
+                }
             }
         }
         m_workspaceController->folderTreeModel()->setShowHiddenFiles(checked);
@@ -461,6 +470,8 @@ void MainWindow::createWorkspace()
     m_leftPanelWidget->addPanelTab(tr("Tree"), m_folderTreeView, QStringLiteral("leftPanelTreeButton"));
     createSearchPanel();
     m_leftPanelWidget->addPanelTab(tr("Search"), m_searchPanelWidget, QStringLiteral("leftPanelSearchButton"));
+    createContentSearchPanel();
+    m_leftPanelWidget->addPanelTab(tr("Find in Files"), m_contentSearchPanelWidget, QStringLiteral("leftPanelContentSearchButton"));
 
     auto* splitter = new QSplitter(Qt::Horizontal, this);
     splitter->setObjectName(QStringLiteral("mainSplitter"));
@@ -503,7 +514,7 @@ void MainWindow::createWorkspace()
     // -- activateTab() goes through the same logic as a real tab-button click, including emitting
     // expansionChanged(true), which the resizeSidePanel lambdas above pick up to resize the
     // splitter using the width just set here.
-    constexpr int kLeftPanelTabCount = 2;
+    constexpr int kLeftPanelTabCount = 3;
     constexpr int kRightPanelTabCount = 4;
     if (m_initialLeftPanelState.width > 0)
     {
@@ -626,6 +637,46 @@ void MainWindow::createSearchPanel()
     });
 }
 
+void MainWindow::createContentSearchPanel()
+{
+    m_contentSearchPanelWidget = new ContentSearchPanelWidget(m_leftPanelWidget);
+
+    connect(m_contentSearchPanelWidget, &ContentSearchPanelWidget::queryChanged, this, [this](const QString& query) {
+        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        {
+            tab->contentSearch()->updateQuery(query, tab->currentPath());
+        }
+    });
+    connect(m_contentSearchPanelWidget, &ContentSearchPanelWidget::refreshRequested, this, [this](const QString& query) {
+        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        {
+            tab->contentSearch()->refresh(query, tab->currentPath());
+        }
+    });
+    connect(m_contentSearchPanelWidget, &ContentSearchPanelWidget::clearRequested, this, [this]() {
+        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        {
+            tab->contentSearch()->exit();
+        }
+    });
+    connect(m_contentSearchPanelWidget, &ContentSearchPanelWidget::searchOptionsChanged, this,
+            [this](const ContentSearchOptions& options) {
+                if (TabViewModel* tab = m_workspaceController->focusedTab())
+                {
+                    tab->contentSearch()->setOptions(options, tab->currentPath());
+                }
+            });
+    connect(m_contentSearchPanelWidget, &ContentSearchPanelWidget::resultActivated, this, &MainWindow::onContentSearchResultActivated);
+    connect(m_contentSearchPanelWidget, &ContentSearchPanelWidget::lineActivated, this, &MainWindow::onContentSearchLineActivated);
+    connect(m_contentSearchPanelWidget, &ContentSearchPanelWidget::selectionChanged, this,
+            [this](const std::vector<FileNode>& entries) {
+                if (TabViewModel* tab = m_workspaceController->focusedTab())
+                {
+                    tab->setSelectedEntries(entries);
+                }
+            });
+}
+
 void MainWindow::onSearchResultActivated(const std::filesystem::path& path, bool isDirectory)
 {
     WorkspacePaneWidget* paneWidget = m_workspaceLayoutWidget->paneWidget(m_workspaceController->focusedPane());
@@ -642,6 +693,21 @@ void MainWindow::onSearchResultActivated(const std::filesystem::path& path, bool
     {
         paneWidget->navigateAndSelect(path.parent_path(), path);
     }
+}
+
+void MainWindow::onContentSearchResultActivated(const std::filesystem::path& path, bool isDirectory)
+{
+    onSearchResultActivated(path, isDirectory);
+}
+
+void MainWindow::onContentSearchLineActivated(const std::filesystem::path& path, int oneBasedLine)
+{
+    onContentSearchResultActivated(path, /*isDirectory=*/false);
+
+    // Scrolling the preview panel's editor to oneBasedLine once its preview for `path` lands is
+    // Milestone 4's job (a pending-line-jump member consumed off FilePreviewViewModel::previewReady)
+    // -- not yet implemented, so oneBasedLine is unused here for now.
+    Q_UNUSED(oneBasedLine);
 }
 
 void MainWindow::navigateFocusedPaneTo(const std::filesystem::path& path)
@@ -911,6 +977,14 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     }
     m_searchTrackedTab = tab;
 
+    if (m_contentSearchTrackedTab)
+    {
+        disconnect(m_contentSearchTrackedTab->contentSearch(), &TabContentSearchViewModel::failed, this, &MainWindow::onStatusMessage);
+        // Same by-receiver disconnect posture as m_searchTrackedTab's block just above.
+        disconnect(m_contentSearchTrackedTab->contentSearch(), nullptr, m_contentSearchPanelWidget, nullptr);
+    }
+    m_contentSearchTrackedTab = tab;
+
     // Media Viewer mode's tracked-tab dispatch and enabled state live entirely in
     // MediaViewerModeController now (Architecture.md §14.96) -- it handles both branches below
     // (tab == nullptr included) internally.
@@ -926,6 +1000,7 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     {
         m_sortByMenu->setEnabled(false);
         m_searchPanelWidget->clearForNoTab();
+        m_contentSearchPanelWidget->clearForNoTab();
         onActiveTabPathChanged({});
         m_favoritesMenuController->setFocusedTab(nullptr);
         return;
@@ -968,6 +1043,37 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     else
     {
         m_searchPanelWidget->setResults({}, {});
+    }
+
+    TabContentSearchViewModel* contentSearch = tab->contentSearch();
+    connect(contentSearch, &TabContentSearchViewModel::failed, this, &MainWindow::onStatusMessage);
+
+    connect(contentSearch, &TabContentSearchViewModel::resultsChanged, m_contentSearchPanelWidget,
+            [this, contentSearch](const std::vector<FileContentMatch>& matches) {
+                m_contentSearchPanelWidget->setResults(matches, contentSearch->root());
+            });
+    connect(contentSearch, &TabContentSearchViewModel::modeChanged, m_contentSearchPanelWidget, [this](bool active) {
+        if (!active)
+        {
+            m_contentSearchPanelWidget->setResults({}, {});
+        }
+    });
+    connect(contentSearch, &TabContentSearchViewModel::loading, m_contentSearchPanelWidget,
+            [this]() { m_contentSearchPanelWidget->setLoading(true); });
+    connect(contentSearch, &TabContentSearchViewModel::loadingFinished, m_contentSearchPanelWidget,
+            [this]() { m_contentSearchPanelWidget->setLoading(false); });
+    connect(contentSearch, &TabContentSearchViewModel::failed, m_contentSearchPanelWidget,
+            [this]() { m_contentSearchPanelWidget->setLoading(false); });
+
+    m_contentSearchPanelWidget->setQuery(contentSearch->isActive() ? contentSearch->query() : QString());
+    m_contentSearchPanelWidget->setOptions(contentSearch->options());
+    if (contentSearch->isActive())
+    {
+        m_contentSearchPanelWidget->setResults(contentSearch->matches(), contentSearch->root());
+    }
+    else
+    {
+        m_contentSearchPanelWidget->setResults({}, {});
     }
 
     connect(tab, &TabViewModel::currentPathChanged, this, &MainWindow::onActiveTabPathChanged);
