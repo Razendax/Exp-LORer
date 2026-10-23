@@ -308,6 +308,23 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   (Architecture.md §14.87) controls how each applied tag is matched against nested tags (§2.2):
   exact (default) matches only that literal tag, while include-children also matches any tag
   nested under it.
+* **Content search ("Find in Files")**: a third left-panel tab, alongside "Tree" and "Search,"
+  that searches inside file contents (not just names) recursively under the focused pane/tab's
+  current folder. An icon toolbar (Refresh, Clear, Expand all/Collapse all) sits above a search
+  bar with its own Match Case / Match Whole Word / Match Regex (mutually exclusive, Match Case
+  independent) and Skip Git-Ignored toggles, searching live as the user types (debounced, no
+  Enter required — Enter/Refresh force an immediate re-scan). A collapsible "Search Details"
+  section, collapsed by default, adds Files to include / Files to exclude fields matched against
+  each candidate's path relative to the search root, each with its own Match Case/Whole Word/
+  Regex toggles; a file must satisfy Include (if set) and not match Exclude (if set) to be
+  scanned. Binary files are skipped; each file's scanned content is capped rather than read in
+  full. Results group by file, one row per matching line (all occurrences on that line
+  highlighted, not one row per occurrence); a row can be expanded/collapsed per file or via
+  Expand/Collapse all. Single-clicking a result selects that file (right-panel sync, as other
+  search results already do); double-clicking navigates to the file (selected, in its parent
+  folder) and additionally scrolls the Preview panel's text view to the matched line, reusing the
+  text editor's Go to Line. No replace-in-files, no archive-content search, and no persistence of
+  query/toggle state across restarts in v1.
 
 ### 2.2 Database-Backed File Tagging System
 

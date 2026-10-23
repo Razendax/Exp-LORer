@@ -5,6 +5,8 @@ add_executable(explorer_domain_tests
     GlobMatchTest.cpp
     WholeWordMatchTest.cpp
     RegexMatchTest.cpp
+    SubstringMatchTest.cpp
+    BinaryContentDetectorTest.cpp
     FileNodeTest.cpp
     TagTest.cpp
     TagHierarchyTest.cpp

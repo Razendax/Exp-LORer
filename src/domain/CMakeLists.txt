@@ -14,8 +14,13 @@ add_library(explorer_domain STATIC
     WholeWordMatch.cpp
     RegexMatch.h
     RegexMatch.cpp
+    SubstringMatch.h
+    SubstringMatch.cpp
+    BinaryContentDetector.h
+    BinaryContentDetector.cpp
     FileNode.h
     FileNode.cpp
+    ContentSearchMatch.h
     Tag.h
     Tag.cpp
     TagHierarchy.h

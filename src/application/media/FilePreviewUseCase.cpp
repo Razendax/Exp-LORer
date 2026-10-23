@@ -5,6 +5,7 @@
 #include <string>
 
 #include "ArchiveExtensions.h"
+#include "BinaryContentDetector.h"
 #include "IFileSystemRepository.h"
 #include "IMediaDecoder.h"
 #include "MediaExtensions.h"
@@ -129,8 +130,7 @@ Result<FilePreview> FilePreviewUseCase::generatePreview(const FileNode& target, 
         }
 
         const std::vector<std::byte>& bytes = prefix.value();
-        const bool containsNul = std::any_of(bytes.begin(), bytes.end(), [](std::byte b) { return b == std::byte{ 0 }; });
-        if (containsNul)
+        if (BinaryContentDetector::containsNulByte(bytes))
         {
             return Result<FilePreview>::success(FilePreview::unsupported());
         }
