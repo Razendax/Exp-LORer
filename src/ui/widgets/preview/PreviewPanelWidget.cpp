@@ -86,6 +86,11 @@ bool PreviewPanelWidget::goToLine(const std::filesystem::path& path, int oneBase
     return true;
 }
 
+void PreviewPanelWidget::setContentSearchHighlight(const QString& query, const TextMatchOptions& options)
+{
+    m_textPreviewWidget->setContentSearchHighlight(query, options);
+}
+
 void PreviewPanelWidget::showEvent(QShowEvent* event)
 {
     QWidget::showEvent(event);

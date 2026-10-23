@@ -475,6 +475,14 @@ void MainWindow::createWorkspace()
     connect(m_workspaceController->filePreviewViewModel(), &FilePreviewViewModel::previewLoading, this,
             [this]() { m_pendingContentSearchLineJump.reset(); });
 
+    // Preview's content-search highlight layer (Architecture.md §14.105): browsing to a different
+    // text file while content search stays active must also get highlighted. Relies on the same
+    // direct-connection ordering as the line-jump lambda above -- PreviewPanelWidget's own
+    // onPreviewReady handler (connected in its ctor, which runs before this one) has already loaded
+    // the new text by the time this fires.
+    connect(m_workspaceController->filePreviewViewModel(), &FilePreviewViewModel::previewReady, this,
+            [this](const FilePreview&) { refreshPreviewContentSearchHighlight(); });
+
     m_monitoringPanelWidget =
         new MonitoringPanelWidget(m_workspaceController->monitoringPanelViewModel(), m_uiThemeChangeNotifier, m_rightPanelWidget);
     m_monitoringPanelWidget->setObjectName(QStringLiteral("monitoringPanelWidget"));
@@ -1034,8 +1042,12 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
         disconnect(m_contentSearchTrackedTab->contentSearch(), &TabContentSearchViewModel::failed, this, &MainWindow::onStatusMessage);
         // Same by-receiver disconnect posture as m_searchTrackedTab's block just above.
         disconnect(m_contentSearchTrackedTab->contentSearch(), nullptr, m_contentSearchPanelWidget, nullptr);
+        // Preview's content-search highlight layer (Architecture.md §14.105): its own
+        // resultsChanged/modeChanged connections below, torn down the same by-receiver way.
+        disconnect(m_contentSearchTrackedTab->contentSearch(), nullptr, m_previewPanelWidget, nullptr);
     }
     m_contentSearchTrackedTab = tab;
+    refreshPreviewContentSearchHighlight();
 
     // Media Viewer mode's tracked-tab dispatch and enabled state live entirely in
     // MediaViewerModeController now (Architecture.md §14.96) -- it handles both branches below
@@ -1117,6 +1129,15 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     connect(contentSearch, &TabContentSearchViewModel::failed, m_contentSearchPanelWidget,
             [this]() { m_contentSearchPanelWidget->setLoading(false); });
 
+    // Preview's content-search highlight layer (Architecture.md §14.105): every settled query edit
+    // and every Match-Case/Whole-Word/Regex toggle re-fires resultsChanged/modeChanged (see
+    // TabContentSearchViewModel's own class comment), so re-pushing the highlight on both keeps it
+    // live-tracking the search state without opening/activating the Find bar.
+    connect(contentSearch, &TabContentSearchViewModel::resultsChanged, m_previewPanelWidget,
+            [this]() { refreshPreviewContentSearchHighlight(); });
+    connect(contentSearch, &TabContentSearchViewModel::modeChanged, m_previewPanelWidget,
+            [this]() { refreshPreviewContentSearchHighlight(); });
+
     m_contentSearchPanelWidget->setQuery(contentSearch->isActive() ? contentSearch->query() : QString());
     m_contentSearchPanelWidget->setOptions(contentSearch->options());
     if (contentSearch->isActive())
@@ -1132,6 +1153,18 @@ void MainWindow::onFocusedTabChanged(TabViewModel* tab)
     onActiveTabPathChanged(tab->currentPath());
 
     m_favoritesMenuController->setFocusedTab(tab);
+}
+
+void MainWindow::refreshPreviewContentSearchHighlight()
+{
+    if (!m_contentSearchTrackedTab || !m_contentSearchTrackedTab->contentSearch()->isActive())
+    {
+        m_previewPanelWidget->setContentSearchHighlight(QString(), {});
+        return;
+    }
+
+    TabContentSearchViewModel* contentSearch = m_contentSearchTrackedTab->contentSearch();
+    m_previewPanelWidget->setContentSearchHighlight(contentSearch->query(), contentSearch->options().queryOptions);
 }
 
 void MainWindow::onActiveTabPathChanged(const std::filesystem::path& path)

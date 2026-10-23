@@ -323,8 +323,13 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   Expand/Collapse all. Single-clicking a result selects that file (right-panel sync, as other
   search results already do); double-clicking navigates to the file (selected, in its parent
   folder) and additionally scrolls the Preview panel's text view to the matched line, reusing the
-  text editor's Go to Line. No replace-in-files, no archive-content search, and no persistence of
-  query/toggle state across restarts in v1.
+  text editor's Go to Line. Whenever the Preview panel's text view shows a file while the tab's
+  content search is active with a non-empty query — whether reached by single-click, double-click,
+  or ordinary browsing — every occurrence of that query in the loaded text is highlighted (same
+  match options as the results list), independent of the single matched line a double-click
+  scrolls to; this is a visual-only highlight (no Find-bar activation) that live-tracks the search
+  state and clears once the query is cleared/exited. No replace-in-files, no archive-content
+  search, and no persistence of query/toggle state across restarts in v1.
 
 ### 2.2 Database-Backed File Tagging System
 

@@ -133,10 +133,28 @@ void TextEditPreviewWidget::setPreview(const FilePreview& preview)
         content += tr("\n\n[...truncated...]");
     }
     m_editorPanel->editor()->setPlainText(content);
+    reapplyContentSearchHighlight();
 
     m_editButton->setEnabled(true);
     m_revertButton->setEnabled(false);
     m_saveButton->setEnabled(false);
+}
+
+void TextEditPreviewWidget::setContentSearchHighlight(const QString& query, const TextMatchOptions& options)
+{
+    m_contentSearchQuery = query;
+    m_contentSearchOptions = options;
+    reapplyContentSearchHighlight();
+}
+
+void TextEditPreviewWidget::reapplyContentSearchHighlight()
+{
+    if (!m_editorPanel)
+    {
+        return;
+    }
+
+    m_editorPanel->editor()->setContentSearchHighlight(m_contentSearchQuery, m_contentSearchOptions);
 }
 
 void TextEditPreviewWidget::goToLine(int oneBasedLine)
@@ -196,6 +214,7 @@ void TextEditPreviewWidget::onRevertClicked()
     // setPlainText() also clears the document's modified flag, which fires
     // modificationChanged(false) -- onDocumentModificationChanged disables m_saveButton for free.
     m_editorPanel->editor()->setPlainText(m_lastLoadedContent);
+    reapplyContentSearchHighlight();
 }
 
 void TextEditPreviewWidget::onSaveClicked()
@@ -225,6 +244,7 @@ void TextEditPreviewWidget::onLoadReady(const std::filesystem::path& path, const
     m_requestInFlight = false;
     m_lastLoadedContent = content;
     m_editorPanel->editor()->setPlainText(content);
+    reapplyContentSearchHighlight();
     m_editorPanel->setReadOnly(false);
     connect(m_editorPanel->editor()->document(), &QTextDocument::modificationChanged, this,
             &TextEditPreviewWidget::onDocumentModificationChanged, Qt::UniqueConnection);

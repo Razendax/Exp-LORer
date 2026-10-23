@@ -70,6 +70,8 @@ add_library(explorer_ui_widgets STATIC
     search/ContentSearchPanelWidget.cpp
     search/ContentSearchResultDelegate.h
     search/ContentSearchResultDelegate.cpp
+    search/ContentSearchTextMatching.h
+    search/ContentSearchTextMatching.cpp
     tags/TagChipColor.h
     tags/TagChipColor.cpp
     tags/TagChipWidget.h

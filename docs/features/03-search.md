@@ -5,10 +5,11 @@ layers only — **no Domain or Application layer redesign**, aside from a couple
 — and is recorded as a decision log per feature, not an implementation walkthrough; see git
 history and the code's own comments (many cite these subsection numbers directly) for the detail.
 
-Covers §14.18–14.20, §14.38, §14.42–14.46, §14.56, §14.87, §14.104 — per-tab filename/advanced/
-tag-integrated search, the unified left-panel Search tab, async advanced search, quick-search
-match-mode/skip-git-ignored toggles, debounced quick search, advanced-search match-mode toggles,
-hierarchical-tag search matching, and content ("Find in Files") search. Section numbers are **not**
+Covers §14.18–14.20, §14.38, §14.42–14.46, §14.56, §14.87, §14.104–14.105 — per-tab filename/
+advanced/tag-integrated search, the unified left-panel Search tab, async advanced search,
+quick-search match-mode/skip-git-ignored toggles, debounced quick search, advanced-search
+match-mode toggles, hierarchical-tag search matching, content ("Find in Files") search, and its
+Preview-panel match highlighting. Section numbers are **not**
 contiguous with this file's neighbors — they were assigned chronologically as each feature was
 built and are kept stable since code comments cite them directly. See
 [Architecture.md](../Architecture.md) §14 for the full topic index across all nine files.
@@ -782,4 +783,52 @@ glue — but as an independent, parallel pipeline: nothing about `TabQuickSearch
   modes, `textMatches` against lines and relative paths, binary-skip, hidden-file skip, Include-AND-
   Exclude composition). `collectSearchableContent`/`ContentSearchWorker::scan` and all UI/ViewModel
   glue stay under the existing §11 carve-out — manual verification only.
+
+### 14.105 Preview Panel — Highlight Content-Search Matches
+
+Closes a gap §14.104 left open: double-clicking/clicking a match line jumped the Preview panel's
+text view to that line, but nothing highlighted the matched text itself. Adds a background
+highlight layer, live-tracking the focused tab's active content-search query/options, that does
+not open or activate the Find bar.
+
+* **Shared matcher extraction** (`src/ui/widgets/search/ContentSearchTextMatching.h`/`.cpp`):
+  `ContentSearchResultDelegate::findHighlightSpans`'s body (Contains/WholeWord via looped
+  `QString::indexOf` with a `QChar::isLetterOrNumber` boundary check for WholeWord, Regex via
+  `QRegularExpression::globalMatch`, skipping zero-length matches) moved verbatim into a free
+  function `findMatches(text, query, options) -> std::vector<MatchSpan>`. `ContentSearchResultDelegate`
+  now calls it instead of its own removed private `HighlightSpan`/`findHighlightSpans` — no behavior
+  change there, but the results list's highlight and Preview's highlight are now provably the same
+  code path.
+* **`TextEditorWidget`** (`src/ui/widgets/texteditor/TextEditorWidget.h`/`.cpp`): a new
+  `setContentSearchHighlight(query, options)` computes highlight spans per `QTextBlock` (not over
+  the whole document as one string) via `findMatches`, mapping each span's local offset to
+  `block.position() + span.start` — content search is inherently line-based, so this guarantees
+  agreement with the results list's own per-line highlighting, including Whole Word's boundary rule
+  and Regex never matching across a line break. Stored in a new, independent `m_contentSearchSelections`
+  `ExtraSelection` layer merged into `applyExtraSelections()` alongside the existing four
+  (`m_findSelections`, `m_secondarySelections`, `m_currentLineSelections`, `m_occurrenceSelections`),
+  so the Find bar's own `setExtraFindSelections({})` (e.g. on an emptied Find term) can never
+  silently wipe this highlight, and vice versa.
+* **`TextEditPreviewWidget`/`PreviewPanelWidget`** (`src/ui/widgets/preview/TextEditPreviewWidget.h`/
+  `.cpp`, `PreviewPanelWidget.h`/`.cpp`): `TextEditPreviewWidget::setContentSearchHighlight` caches
+  the last `(query, options)` pair and a `reapplyContentSearchHighlight()` helper re-invokes the
+  editor call right after each of the widget's three `setPlainText()` call sites (`setPreview`,
+  `onLoadReady`, `onRevertClicked`) — this is what makes the highlight track a new Preview target,
+  Edit's full-content swap, and Revert, while deliberately *not* recomputing on live user edits
+  (same "goes stale on edit" posture as the Find bar's own highlights).
+  `PreviewPanelWidget::setContentSearchHighlight` forwards unconditionally to the text preview
+  widget (always alive as a stack child regardless of which preview kind is on screen) — unlike
+  `goToLine`, no path-matching guard is needed since there is no async race here.
+* **`MainWindow` wiring**: a new `refreshPreviewContentSearchHighlight()` reads the tracked tab's
+  `contentSearch()` (empty query if no tab or inactive) and pushes it into
+  `PreviewPanelWidget::setContentSearchHighlight`. Called from `onFocusedTabChanged` right after
+  `m_contentSearchTrackedTab = tab;` (covers both tab-switch and the no-tab clear case uniformly);
+  from two new `resultsChanged`/`modeChanged` connections on the tracked tab's `contentSearch()`
+  (receiver `m_previewPanelWidget`, torn down via the same by-receiver `disconnect(..., nullptr,
+  m_previewPanelWidget, nullptr)` idiom already used for `m_contentSearchPanelWidget`); and from a
+  new `FilePreviewViewModel::previewReady` connection (separate from §14.104's line-jump lambda),
+  relying on the same already-documented direct-connection ordering so the new text is already
+  loaded by the time it runs.
+* **Testing**: none — UI/ViewModel glue, same §11 carve-out §14.104 itself already documents.
+  Manual verification only.
 

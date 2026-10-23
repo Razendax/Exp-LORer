@@ -5,7 +5,6 @@
 #include <QFont>
 #include <QFontMetrics>
 #include <QPainter>
-#include <QRegularExpression>
 
 #include "ContentSearchResultsModel.h"
 
@@ -26,86 +25,6 @@ void ContentSearchResultDelegate::setHighlightQuery(const QString& query, const 
 {
     m_highlightQuery = query;
     m_highlightOptions = options;
-}
-
-std::vector<ContentSearchResultDelegate::HighlightSpan> ContentSearchResultDelegate::findHighlightSpans(const QString& text) const
-{
-    std::vector<HighlightSpan> spans;
-    if (m_highlightQuery.isEmpty())
-    {
-        return spans;
-    }
-
-    const Qt::CaseSensitivity caseSensitivity = m_highlightOptions.caseSensitive ? Qt::CaseSensitive : Qt::CaseInsensitive;
-
-    switch (m_highlightOptions.mode)
-    {
-        case TextMatchMode::Contains:
-        {
-            int from = 0;
-            while (true)
-            {
-                const int start = text.indexOf(m_highlightQuery, from, caseSensitivity);
-                if (start < 0)
-                {
-                    break;
-                }
-                spans.push_back({ start, static_cast<int>(m_highlightQuery.length()) });
-                from = start + m_highlightQuery.length();
-            }
-            break;
-        }
-        case TextMatchMode::WholeWord:
-        {
-            int from = 0;
-            while (true)
-            {
-                const int start = text.indexOf(m_highlightQuery, from, caseSensitivity);
-                if (start < 0)
-                {
-                    break;
-                }
-                const int end = start + static_cast<int>(m_highlightQuery.length());
-                const bool boundaryBefore = start == 0 || !text.at(start - 1).isLetterOrNumber();
-                const bool boundaryAfter = end >= text.length() || !text.at(end).isLetterOrNumber();
-                if (boundaryBefore && boundaryAfter)
-                {
-                    spans.push_back({ start, static_cast<int>(m_highlightQuery.length()) });
-                    from = end;
-                }
-                else
-                {
-                    from = start + 1;
-                }
-            }
-            break;
-        }
-        case TextMatchMode::Regex:
-        {
-            const QRegularExpression::PatternOptions patternOptions =
-                m_highlightOptions.caseSensitive ? QRegularExpression::NoPatternOption : QRegularExpression::CaseInsensitiveOption;
-            const QRegularExpression regex(m_highlightQuery, patternOptions);
-            if (!regex.isValid())
-            {
-                break;
-            }
-            QRegularExpressionMatchIterator it = regex.globalMatch(text);
-            while (it.hasNext())
-            {
-                const QRegularExpressionMatch match = it.next();
-                if (match.capturedLength() == 0)
-                {
-                    // Avoid an infinite/degenerate span from a pattern that can match empty
-                    // (e.g. "a*").
-                    continue;
-                }
-                spans.push_back({ static_cast<int>(match.capturedStart()), static_cast<int>(match.capturedLength()) });
-            }
-            break;
-        }
-    }
-
-    return spans;
 }
 
 void ContentSearchResultDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const
@@ -206,10 +125,10 @@ void ContentSearchResultDelegate::paintLineRow(QPainter* painter, const QStyleOp
     }
     x += metrics.horizontalAdvance(prefix);
 
-    const std::vector<HighlightSpan> spans = findHighlightSpans(lineText);
+    const std::vector<MatchSpan> spans = findMatches(lineText, m_highlightQuery, m_highlightOptions);
     int cursor = 0;
 
-    for (const HighlightSpan& span : spans)
+    for (const MatchSpan& span : spans)
     {
         if (x > textRect.right())
         {

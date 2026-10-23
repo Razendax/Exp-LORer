@@ -4,6 +4,8 @@
 
 #include "SyntaxHighlighter.h"
 
+#include "ContentSearchTextMatching.h"
+
 #include <QApplication>
 #include <QClipboard>
 #include <QColor>
@@ -269,6 +271,40 @@ void TextEditorWidget::setExtraFindSelections(const QList<QTextEdit::ExtraSelect
     applyExtraSelections();
 }
 
+void TextEditorWidget::setContentSearchHighlight(const QString& query, const TextMatchOptions& options)
+{
+    QList<QTextEdit::ExtraSelection> selections;
+
+    if (!query.isEmpty())
+    {
+        QColor color = palette().color(QPalette::Highlight);
+        color.setAlpha(70);
+
+        // Per-QTextBlock, not over the whole document as one string: content search is inherently
+        // line-based, so this guarantees agreement with ContentSearchResultDelegate's own
+        // per-line findMatches() calls -- including Whole Word's boundary rule and Regex mode
+        // never matching across a line break.
+        for (QTextBlock block = document()->firstBlock(); block.isValid(); block = block.next())
+        {
+            const std::vector<MatchSpan> spans = findMatches(block.text(), query, options);
+            for (const MatchSpan& span : spans)
+            {
+                QTextCursor cursor(block);
+                cursor.setPosition(block.position() + span.start);
+                cursor.setPosition(block.position() + span.start + span.length, QTextCursor::KeepAnchor);
+
+                QTextEdit::ExtraSelection selection;
+                selection.cursor = cursor;
+                selection.format.setBackground(color);
+                selections.append(selection);
+            }
+        }
+    }
+
+    m_contentSearchSelections = selections;
+    applyExtraSelections();
+}
+
 void TextEditorWidget::updateOccurrenceHighlights()
 {
     const QTextCursor primary = textCursor();
@@ -309,7 +345,8 @@ void TextEditorWidget::updateOccurrenceHighlights()
 
 void TextEditorWidget::applyExtraSelections()
 {
-    setExtraSelections(m_currentLineSelections + m_occurrenceSelections + m_findSelections + m_secondarySelections);
+    setExtraSelections(m_currentLineSelections + m_occurrenceSelections + m_contentSearchSelections + m_findSelections
+                        + m_secondarySelections);
 }
 
 void TextEditorWidget::insertAtAllCursors(const QString& text)

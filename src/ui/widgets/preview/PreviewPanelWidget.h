@@ -3,8 +3,10 @@
 #include <filesystem>
 #include <optional>
 
+#include <QString>
 #include <QWidget>
 
+#include "ContentSearchOptions.h"
 #include "FilePreview.h"
 
 class FilePreviewViewModel;
@@ -47,6 +49,13 @@ public:
     // was actually performed, so a caller can tell a same-preview immediate jump apart from one that
     // still needs to wait for a future previewReady().
     bool goToLine(const std::filesystem::path& path, int oneBasedLine);
+
+    // Preview's content-search highlight layer (Architecture.md §14.105): unconditionally forwards
+    // to the text preview widget (always alive as a stack child regardless of which preview kind is
+    // currently visible) -- unlike goToLine, there is no path-matching guard needed here, since
+    // there is no async race: the highlight state is simply cached and reapplied on every future
+    // text-change point, same as TextEditPreviewWidget::setContentSearchHighlight documents.
+    void setContentSearchHighlight(const QString& query, const TextMatchOptions& options);
 
 protected:
     void showEvent(QShowEvent* event) override;

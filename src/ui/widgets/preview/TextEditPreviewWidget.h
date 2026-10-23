@@ -5,6 +5,7 @@
 #include <QString>
 #include <QWidget>
 
+#include "ContentSearchOptions.h"
 #include "TextEditorOptions.h"
 
 class FilePreview;
@@ -50,6 +51,11 @@ public:
     // what's on screen, but construction order within setPreview() is not this widget's concern.
     void goToLine(int oneBasedLine);
 
+    // Preview's content-search highlight layer (Architecture.md §14.105): caches `query`/`options`
+    // and reapplies them to whatever editor is currently shown. An empty `query` clears the
+    // highlight (used both when content search is inactive and when there is no focused tab).
+    void setContentSearchHighlight(const QString& query, const TextMatchOptions& options);
+
     // Settings > General > Preview (Architecture.md §14.98): the default TextEditorOptions feature
     // set every freshly-opened preview editor is built with. Read fresh on every setPreview() call
     // rather than cached, matching every other Settings page's "takes effect on next use" posture.
@@ -78,6 +84,12 @@ private:
     void onSaveFailed(const std::filesystem::path& path, const QString& message);
     void onDocumentModificationChanged(bool modified);
 
+    // Reapplies m_contentSearchQuery/m_contentSearchOptions to m_editorPanel's current editor --
+    // called right after every setPlainText() call site (setPreview, onLoadReady, onRevertClicked)
+    // so the highlight tracks the Preview's target file, Edit's full-content swap, and Revert, same
+    // as the cached-state design TextEditorWidget::setContentSearchHighlight itself documents.
+    void reapplyContentSearchHighlight();
+
     void showError(const QString& message);
     void clearError();
 
@@ -104,4 +116,9 @@ private:
     // of files that all share the same extension, paid a full editor/highlighter rebuild for
     // nothing.
     TextEditorOptions m_currentPanelOptions;
+
+    // Cached last-pushed content-search state (see setContentSearchHighlight), reapplied by
+    // reapplyContentSearchHighlight() after every setPlainText() call site.
+    QString m_contentSearchQuery;
+    TextMatchOptions m_contentSearchOptions;
 };

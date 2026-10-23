@@ -2,7 +2,10 @@
 
 #include "TextEditorOptions.h"
 
+#include "ContentSearchOptions.h"
+
 #include <QPlainTextEdit>
+#include <QString>
 #include <QTextCursor>
 #include <QVector>
 
@@ -39,6 +42,15 @@ public:
     // Set by TextEditorFindBar; merged with the secondary-cursor highlight list so neither
     // highlight source clobbers the other (see applyExtraSelections).
     void setExtraFindSelections(const QList<QTextEdit::ExtraSelection>& selections);
+
+    // Preview's content-search highlight layer (Architecture.md §14.105): highlights every
+    // occurrence of `query`/`options` (the focused tab's active "Find in Files" query) in the
+    // document, independently of the Find bar's own m_findSelections -- so clearing/changing one
+    // never affects the other. An empty `query` clears the highlight. Recomputes immediately
+    // against whatever text the document currently holds; does not track subsequent live edits
+    // (same "goes stale on edit" posture as the Find bar's own highlights) -- callers re-invoke
+    // this after any text-replacing operation (setPlainText, etc.) to keep it current.
+    void setContentSearchHighlight(const QString& query, const TextMatchOptions& options);
 
     // Called by TextEditorLineNumberArea (its sizeHint/paintEvent), same pattern as
     // TextEditorFindBar calling setExtraFindSelections above.
@@ -95,6 +107,7 @@ private:
     bool m_secondaryCaretVisible = true;
     bool m_extendingSecondarySelection = false;
     QList<QTextEdit::ExtraSelection> m_findSelections;
+    QList<QTextEdit::ExtraSelection> m_contentSearchSelections;
     QList<QTextEdit::ExtraSelection> m_secondarySelections;
     QList<QTextEdit::ExtraSelection> m_currentLineSelections;
     QList<QTextEdit::ExtraSelection> m_occurrenceSelections;

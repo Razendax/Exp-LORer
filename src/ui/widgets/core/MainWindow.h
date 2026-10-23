@@ -178,6 +178,14 @@ private:
     // onContentSearchLineActivated for when that preview load is still in flight).
     void onContentSearchLinePreviewRequested(const std::filesystem::path& path, int oneBasedLine);
 
+    // Preview's content-search highlight layer (Architecture.md §14.105): pushes
+    // m_contentSearchTrackedTab's contentSearch() query/options (empty query if no tab or
+    // inactive) into m_previewPanelWidget. Called from onFocusedTabChanged (tab switch), from the
+    // tracked tab's contentSearch() resultsChanged/modeChanged signals (query edits and
+    // Match-Case/Whole-Word/Regex toggles), and from a previewReady connection (browsing to a
+    // different text file while content search stays active).
+    void refreshPreviewContentSearchHighlight();
+
     // Bubbled up from WorkspacePaneWidget::bulkRenameRequested (Architecture.md §14.55) -- resolves
     // `paths` back to FileNode via tab->selectedEntries() (the exact list they were built from) and
     // calls showBulkRenameDialogFor directly, no fallback needed since the context-menu entry is
