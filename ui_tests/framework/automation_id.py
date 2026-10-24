@@ -73,6 +73,7 @@ class AutomationID:
     LEFT_PANEL_STACK = "leftPanelStack"
     LEFT_PANEL_TREE_BUTTON = "leftPanelTreeButton"
     LEFT_PANEL_SEARCH_BUTTON = "leftPanelSearchButton"
+    LEFT_PANEL_CONTENT_SEARCH_BUTTON = "leftPanelContentSearchButton"
     FOLDER_TREE_VIEW = "folderTreeView"
 
     # --- Search Panel (left SidePanelWidget's "Search" tab -- SearchPanelWidget.cpp,
@@ -90,6 +91,36 @@ class AutomationID:
     SEARCH_EXACT_NAME_BUTTON = "searchExactNameButton"
     SEARCH_REGEX_BUTTON = "searchRegexButton"
     SEARCH_SKIP_GIT_IGNORED_BUTTON = "searchSkipGitIgnoredButton"
+
+    # --- Content Search Panel (left SidePanelWidget's "Find in Files" tab --
+    #     ContentSearchPanelWidget.cpp, Architecture.md §14.104) ---
+    CONTENT_SEARCH_PANEL = "contentSearchPanelWidget"
+    CONTENT_SEARCH_SEARCH_BAR = "contentSearchSearchBar"
+    CONTENT_SEARCH_REFRESH_BUTTON = "contentSearchRefreshButton"
+    CONTENT_SEARCH_CLEAR_BUTTON = "contentSearchClearButton"
+    CONTENT_SEARCH_EXPAND_ALL_BUTTON = "contentSearchExpandAllButton"
+    CONTENT_SEARCH_COLLAPSE_ALL_BUTTON = "contentSearchCollapseAllButton"
+    # Match Case/Whole Word/Match Regex/Skip Git-Ignored toggles on the main query -- no Exact
+    # Name toggle here (unlike the filename Search tab's 5), since content, unlike a file name,
+    # has no "exact" mode.
+    CONTENT_SEARCH_MATCH_CASE_BUTTON = "contentSearchMatchCaseButton"
+    CONTENT_SEARCH_WHOLE_WORD_BUTTON = "contentSearchWholeWordButton"
+    CONTENT_SEARCH_REGEX_BUTTON = "contentSearchRegexButton"
+    CONTENT_SEARCH_SKIP_GIT_IGNORED_BUTTON = "contentSearchSkipGitIgnoredButton"
+    # Collapsible "Search Details" disclosure -- Include/Exclude path-matching fields, each with
+    # its own independent Match Case/Whole Word/Regex toggle trio.
+    CONTENT_SEARCH_DETAILS_DISCLOSURE_BUTTON = "contentSearchDetailsDisclosureButton"
+    CONTENT_SEARCH_INCLUDE_EDIT = "contentSearchIncludeEdit"
+    CONTENT_SEARCH_INCLUDE_MATCH_CASE_BUTTON = "contentSearchIncludeMatchCaseButton"
+    CONTENT_SEARCH_INCLUDE_WHOLE_WORD_BUTTON = "contentSearchIncludeWholeWordButton"
+    CONTENT_SEARCH_INCLUDE_REGEX_BUTTON = "contentSearchIncludeRegexButton"
+    CONTENT_SEARCH_EXCLUDE_EDIT = "contentSearchExcludeEdit"
+    CONTENT_SEARCH_EXCLUDE_MATCH_CASE_BUTTON = "contentSearchExcludeMatchCaseButton"
+    CONTENT_SEARCH_EXCLUDE_WHOLE_WORD_BUTTON = "contentSearchExcludeWholeWordButton"
+    CONTENT_SEARCH_EXCLUDE_REGEX_BUTTON = "contentSearchExcludeRegexButton"
+    CONTENT_SEARCH_HEADER_COUNT_LABEL = "contentSearchHeaderCountLabel"
+    CONTENT_SEARCH_RESULTS_VIEW = "contentSearchResultsView"
+
     TAG_PANEL = "tagPanelWidget"
     PREVIEW_PANEL = "previewPanelWidget"
     MONITORING_PANEL = "monitoringPanelWidget"

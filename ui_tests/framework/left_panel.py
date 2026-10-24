@@ -1,10 +1,12 @@
 """Page objects for the left side panel (SidePanelWidget, Edge::Left) and its "Tree" tab --
-FolderTreeView over FolderTreeModel (Architecture.md §14.41) -- and "Search" tab --
-SearchPanelWidget (Architecture.md §14.42).
+FolderTreeView over FolderTreeModel (Architecture.md §14.41) -- "Search" tab --
+SearchPanelWidget (Architecture.md §14.42) -- and "Find in Files" tab -- ContentSearchPanelWidget
+(Architecture.md §14.104).
 """
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Callable, List, Optional
 
@@ -198,27 +200,180 @@ class SearchPanel:
         double_click_at((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
 
 
+class ContentSearchPanel:
+    """The "Find in Files" tab's content (ContentSearchPanelWidget, Architecture.md §14.104): an
+    async, content (not name) recursive search over the focused tab's current folder, rendered as
+    a 2-level (file -> line) grouped tree -- plus a collapsible "Search Details" disclosure with
+    Include/Exclude path-matching fields.
+
+    `ContentSearchResultsModel` rows render as plain text: a file-header row shows just the file
+    name (or `"name   —   relativeDir"` when nested under the search root), a line row shows
+    `"<1-based line number>:  <line text>"` -- `_LINE_ROW_PATTERN` is how row-reading methods tell
+    the two kinds apart.
+    """
+
+    _LINE_ROW_PATTERN = re.compile(r"^\d+:\s")
+
+    def __init__(self, container: Callable[[], object]):
+        self.search_bar = Element(container, AutomationID.CONTENT_SEARCH_SEARCH_BAR)
+        self.refresh_button = Element(container, AutomationID.CONTENT_SEARCH_REFRESH_BUTTON)
+        self.clear_button = Element(container, AutomationID.CONTENT_SEARCH_CLEAR_BUTTON)
+        self.expand_all_button = Element(container, AutomationID.CONTENT_SEARCH_EXPAND_ALL_BUTTON)
+        self.collapse_all_button = Element(container, AutomationID.CONTENT_SEARCH_COLLAPSE_ALL_BUTTON)
+        self.match_case_button = Element(container, AutomationID.CONTENT_SEARCH_MATCH_CASE_BUTTON)
+        self.whole_word_button = Element(container, AutomationID.CONTENT_SEARCH_WHOLE_WORD_BUTTON)
+        self.regex_button = Element(container, AutomationID.CONTENT_SEARCH_REGEX_BUTTON)
+        self.skip_git_ignored_button = Element(container, AutomationID.CONTENT_SEARCH_SKIP_GIT_IGNORED_BUTTON)
+        self.details_disclosure_button = Element(container, AutomationID.CONTENT_SEARCH_DETAILS_DISCLOSURE_BUTTON)
+        self.include_edit = Element(container, AutomationID.CONTENT_SEARCH_INCLUDE_EDIT)
+        self.include_match_case_button = Element(container, AutomationID.CONTENT_SEARCH_INCLUDE_MATCH_CASE_BUTTON)
+        self.include_whole_word_button = Element(container, AutomationID.CONTENT_SEARCH_INCLUDE_WHOLE_WORD_BUTTON)
+        self.include_regex_button = Element(container, AutomationID.CONTENT_SEARCH_INCLUDE_REGEX_BUTTON)
+        self.exclude_edit = Element(container, AutomationID.CONTENT_SEARCH_EXCLUDE_EDIT)
+        self.exclude_match_case_button = Element(container, AutomationID.CONTENT_SEARCH_EXCLUDE_MATCH_CASE_BUTTON)
+        self.exclude_whole_word_button = Element(container, AutomationID.CONTENT_SEARCH_EXCLUDE_WHOLE_WORD_BUTTON)
+        self.exclude_regex_button = Element(container, AutomationID.CONTENT_SEARCH_EXCLUDE_REGEX_BUTTON)
+        self.header_count_label = Element(container, AutomationID.CONTENT_SEARCH_HEADER_COUNT_LABEL)
+        self._results = Element(container, AutomationID.CONTENT_SEARCH_RESULTS_VIEW)
+
+    def type_query(self, text: str) -> None:
+        """Clicks the search bar and types `text` via real keystrokes -- see
+        `SearchPanel.type_query`'s docstring for why `type_keys` is required instead of
+        `Element.set_text`: `ContentSearchPanelWidget` also wires its live search (debounced 500ms,
+        same as the filename Search tab) to `QLineEdit::textEdited`, never `textChanged`.
+        """
+        self.search_bar.click()
+        self.search_bar.raw.type_keys(text, with_spaces=True)
+
+    def click_refresh(self) -> None:
+        self.refresh_button.click()
+
+    def press_enter(self) -> None:
+        """Presses Enter in the search bar -- forces a fresh scan (bypassing the debounce)
+        against the tab's current folder, same as clicking Refresh, regardless of whether the
+        query text itself changed.
+        """
+        self.search_bar.raw.type_keys("{ENTER}")
+
+    def click_clear(self) -> None:
+        self.clear_button.click()
+
+    def click_expand_all(self) -> None:
+        self.expand_all_button.click()
+
+    def click_collapse_all(self) -> None:
+        self.collapse_all_button.click()
+
+    def is_details_visible(self) -> bool:
+        return self.details_disclosure_button.is_checked()
+
+    def toggle_details(self) -> None:
+        self.details_disclosure_button.click()
+
+    def set_include(self, text: str) -> None:
+        """Clicks the Include field (opening "Search Details" first if needed) and types `text`
+        via real keystrokes -- it's wired to `textEdited` with no debounce, same reasoning as
+        `type_query`.
+        """
+        if not self.is_details_visible():
+            self.toggle_details()
+        self.include_edit.click()
+        self.include_edit.raw.type_keys(text, with_spaces=True)
+
+    def set_exclude(self, text: str) -> None:
+        if not self.is_details_visible():
+            self.toggle_details()
+        self.exclude_edit.click()
+        self.exclude_edit.raw.type_keys(text, with_spaces=True)
+
+    def _rows(self) -> List[Any]:
+        """Every currently visible row (file headers plus any non-collapsed line children),
+        top to bottom -- same "Qt's uia bridge flattens a QTreeView's visible rows" convention
+        `FolderTree`/`SearchPanel` already rely on.
+        """
+        return [child for child in self._results.raw.children() if child.element_info.control_type == "TreeItem"]
+
+    def visible_row_texts(self) -> List[str]:
+        return [item.window_text() for item in self._rows()]
+
+    def file_names(self) -> List[str]:
+        """Display name of every currently visible file-header row, top to bottom -- the
+        disambiguating `"   —   relativeDir"` suffix (shown only for a file outside the search
+        root's own folder) is stripped, so this is just the set of matched file names.
+        """
+        names = []
+        for text in self.visible_row_texts():
+            if self._LINE_ROW_PATTERN.match(text):
+                continue
+            names.append(text.split("   —   ")[0])
+        return names
+
+    def line_texts(self) -> List[str]:
+        """Every currently visible line row's raw `"<line number>:  <line text>"` text."""
+        return [text for text in self.visible_row_texts() if self._LINE_ROW_PATTERN.match(text)]
+
+    def header_texts(self) -> List[str]:
+        """Every currently visible file-header row's raw text, including the `"   —   relativeDir"`
+        disambiguation suffix when present -- use this (not `file_names()`) when the exact text is
+        needed to `select`/`double_click` a header row.
+        """
+        return [text for text in self.visible_row_texts() if not self._LINE_ROW_PATTERN.match(text)]
+
+    def _row_item(self, text: str) -> Any:
+        for item in self._rows():
+            if item.window_text() == text:
+                return item
+        raise LookupError(f"No content search result row with text {text!r} among {self.visible_row_texts()}")
+
+    def select(self, row_text: str) -> None:
+        """Single-clicks a row (header or line) by its exact displayed text -- bubbles
+        `ContentSearchPanelWidget::selectionChanged`, syncing the main pane's right panel (tags/
+        preview) to this result's file.
+        """
+        self._row_item(row_text).click_input()
+
+    def double_click(self, row_text: str) -> None:
+        """Double-clicks a row (header or line) by its exact displayed text -- navigates via
+        `ContentSearchPanelWidget::resultActivated`/`lineActivated`.
+
+        Uses a raw-Win32 double-click at the row's screen coordinates, after re-forcing the main
+        window to the foreground -- same fix, and same reason, as `SearchPanel.double_click`.
+        """
+        from .focus import bring_to_foreground, double_click_at
+
+        item = self._row_item(row_text)
+        bring_to_foreground(item)
+        rect = item.rectangle()
+        double_click_at((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
+
+
 class LeftPanel:
-    """SidePanelWidget on the window's left edge. `.tree`/`.search` make sure the matching button
-    is checked (panel expanded, that tab visible) before returning its page object -- same
-    idempotent "only click when unchecked" posture as `RightPanel`.
+    """SidePanelWidget on the window's left edge. `.tree`/`.search`/`.content_search` make sure
+    the matching button is checked (panel expanded, that tab visible) before returning its page
+    object -- same idempotent "only click when unchecked" posture as `RightPanel`.
     """
 
     def __init__(self, window_container: Callable[[], object]):
         self._panel = Element(window_container, AutomationID.LEFT_PANEL)
         self.tree_button = Element(window_container, AutomationID.LEFT_PANEL_TREE_BUTTON)
         self.search_button = Element(window_container, AutomationID.LEFT_PANEL_SEARCH_BUTTON)
+        self.content_search_button = Element(window_container, AutomationID.LEFT_PANEL_CONTENT_SEARCH_BUTTON)
         self._tree = FolderTree(self._container)
         self._search = SearchPanel(self._container)
+        self._content_search = ContentSearchPanel(self._container)
 
     def _container(self) -> Any:
         return self._panel.raw
 
     def is_expanded(self) -> bool:
-        """Whether the panel is currently expanded, regardless of which tab (Tree or Search) is
-        the active one.
+        """Whether the panel is currently expanded, regardless of which tab (Tree, Search, or
+        Find in Files) is the active one.
         """
-        return self.tree_button.is_checked() or self.search_button.is_checked()
+        return (
+            self.tree_button.is_checked()
+            or self.search_button.is_checked()
+            or self.content_search_button.is_checked()
+        )
 
     def is_visible(self) -> bool:
         """Whether the left SidePanelWidget itself is currently visible at all (`QWidget::
@@ -250,3 +405,9 @@ class LeftPanel:
         if not self.search_button.is_checked():
             self.search_button.click()
         return self._search
+
+    @property
+    def content_search(self) -> ContentSearchPanel:
+        if not self.content_search_button.is_checked():
+            self.content_search_button.click()
+        return self._content_search
