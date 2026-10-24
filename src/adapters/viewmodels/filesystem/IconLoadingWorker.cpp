@@ -4,6 +4,8 @@
 #include <filesystem>
 #include <system_error>
 
+#include <QMutex>
+#include <QMutexLocker>
 #include <QSet>
 
 #ifdef _WIN32
@@ -17,6 +19,20 @@
 
 namespace
 {
+#ifdef _WIN32
+    // SHGetFileInfoW (and SHGetImageList/IImageList::GetIcon, which shares the same underlying
+    // Shell icon cache) is documented by Microsoft as unsafe to call concurrently from multiple
+    // threads: a call can intermittently fail and hand back a null icon handle even though the
+    // file/extension is perfectly valid. IconLoadingService's worker pool (WorkerThreadPool.h)
+    // runs 2-4 IconLoadingWorker instances on separate QThreads specifically so per-item icon
+    // extraction parallelizes -- which is exactly the pattern that triggers this failure mode
+    // ("icons sometimes missing for no visible reason, even for files sharing an already-resolved
+    // extension"). Serialize every Shell icon-extraction call across the whole pool behind this one
+    // process-wide mutex; the pool still parallelizes everything else (cache lookups, GDI
+    // compositing into QImage), just not the SHGetFileInfoW/SHGetImageList calls themselves.
+    QMutex g_shellIconMutex;
+#endif
+
     QString toQString(const std::filesystem::path& path)
     {
         return QString::fromStdWString(path.wstring());
@@ -157,7 +173,12 @@ namespace
             attributes = FILE_ATTRIBUTE_DIRECTORY;
         }
 
-        if (!SHGetFileInfoW(reinterpret_cast<const wchar_t*>(path.utf16()), attributes, &info, sizeof(info), flags))
+        BOOL ok = FALSE;
+        {
+            QMutexLocker locker(&g_shellIconMutex);
+            ok = SHGetFileInfoW(reinterpret_cast<const wchar_t*>(path.utf16()), attributes, &info, sizeof(info), flags);
+        }
+        if (!ok)
         {
             return {};
         }
@@ -188,26 +209,30 @@ namespace
             attributes = FILE_ATTRIBUTE_DIRECTORY;
         }
 
-        if (!SHGetFileInfoW(reinterpret_cast<const wchar_t*>(path.utf16()), attributes, &info, sizeof(info), flags))
-        {
-            return {};
-        }
-        if (info.hIcon)
-        {
-            // Not documented as always empty alongside SHGFI_SYSICONINDEX, so destroy defensively
-            // rather than leak it -- this call only wants `info.iIcon`.
-            DestroyIcon(info.hIcon);
-        }
-
-        IImageList* imageList = nullptr;
-        if (FAILED(SHGetImageList(SHIL_JUMBO, IID_IImageList, reinterpret_cast<void**>(&imageList))) || !imageList)
-        {
-            return {};
-        }
-
         HICON jumboIcon = nullptr;
-        imageList->GetIcon(info.iIcon, ILD_TRANSPARENT, &jumboIcon);
-        imageList->Release();
+        {
+            QMutexLocker locker(&g_shellIconMutex);
+
+            if (!SHGetFileInfoW(reinterpret_cast<const wchar_t*>(path.utf16()), attributes, &info, sizeof(info), flags))
+            {
+                return {};
+            }
+            if (info.hIcon)
+            {
+                // Not documented as always empty alongside SHGFI_SYSICONINDEX, so destroy
+                // defensively rather than leak it -- this call only wants `info.iIcon`.
+                DestroyIcon(info.hIcon);
+            }
+
+            IImageList* imageList = nullptr;
+            if (FAILED(SHGetImageList(SHIL_JUMBO, IID_IImageList, reinterpret_cast<void**>(&imageList))) || !imageList)
+            {
+                return {};
+            }
+
+            imageList->GetIcon(info.iIcon, ILD_TRANSPARENT, &jumboIcon);
+            imageList->Release();
+        }
 
         return imageFromDetectedHIcon(jumboIcon);
     }
