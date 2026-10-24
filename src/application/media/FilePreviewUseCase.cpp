@@ -26,6 +26,18 @@ namespace
         return std::find(kTextExtensions.begin(), kTextExtensions.end(), extension) != kTextExtensions.end();
     }
 
+    bool isTextDotfile(const fs::path& path)
+    {
+        static const std::array<std::string, 11> kTextDotfiles{
+            ".gitignore", ".gitattributes", ".gitmodules", ".gitconfig", ".mailmap",
+            ".editorconfig", ".clang-format", ".clang-tidy", ".dockerignore", ".npmignore", ".npmrc",
+        };
+        std::string name = PathUtf8::toUtf8(path.filename());
+        std::transform(name.begin(), name.end(), name.begin(),
+                        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        return std::find(kTextDotfiles.begin(), kTextDotfiles.end(), name) != kTextDotfiles.end();
+    }
+
     bool caseInsensitiveLess(const FileNode& lhs, const FileNode& rhs)
     {
         return UnicodeCaseFold::foldUtf8(PathUtf8::toUtf8(lhs.name())) < UnicodeCaseFold::foldUtf8(PathUtf8::toUtf8(rhs.name()));
@@ -121,7 +133,7 @@ Result<FilePreview> FilePreviewUseCase::generatePreview(const FileNode& target, 
             FilePreview::pdf(std::move(decoded.bytes), target.path(), decoded.metadata, target.size()));
     }
 
-    if (isTextExtension(extension))
+    if (isTextExtension(extension) || isTextDotfile(target.path()))
     {
         auto prefix = m_fileSystemRepository.readFilePrefix(readablePath, maxTextBytes);
         if (!prefix)

@@ -232,6 +232,93 @@ TEST(FilePreviewUseCase, TextExtensionWithNulByteBecomesUnsupported)
     EXPECT_EQ(result.value().kind(), FilePreviewKind::Unsupported);
 }
 
+TEST(FilePreviewUseCase, RecognizedDotfileReadsPrefixAndReturnsText)
+{
+    MockFileSystemRepository fileSystemRepository;
+    MockMediaDecoder mediaDecoder;
+
+    EXPECT_CALL(fileSystemRepository, readFilePrefix(std::filesystem::path("C:/data/.gitignore"), 1024u))
+        .WillOnce(Return(Result<std::vector<std::byte>>::success(toBytes("*.obj\n"))));
+
+    FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
+    auto result = useCase.generatePreview(makeNode("C:/data/.gitignore", FileType::Regular), 200, 200, 1024);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().kind(), FilePreviewKind::Text);
+    EXPECT_EQ(result.value().text(), "*.obj\n");
+}
+
+TEST(FilePreviewUseCase, RecognizedDotfileMatchIsCaseInsensitive)
+{
+    MockFileSystemRepository fileSystemRepository;
+    MockMediaDecoder mediaDecoder;
+
+    EXPECT_CALL(fileSystemRepository, readFilePrefix(std::filesystem::path("C:/data/.GITIGNORE"), 1024u))
+        .WillOnce(Return(Result<std::vector<std::byte>>::success(toBytes("*.obj\n"))));
+
+    FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
+    auto result = useCase.generatePreview(makeNode("C:/data/.GITIGNORE", FileType::Regular), 200, 200, 1024);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().kind(), FilePreviewKind::Text);
+}
+
+TEST(FilePreviewUseCase, RecognizedDotfileWithNulByteBecomesUnsupported)
+{
+    MockFileSystemRepository fileSystemRepository;
+    MockMediaDecoder mediaDecoder;
+
+    std::vector<std::byte> withNul = toBytes("abc");
+    withNul.push_back(std::byte{ 0 });
+    withNul.push_back(std::byte{ 'd' });
+    EXPECT_CALL(fileSystemRepository, readFilePrefix(_, _))
+        .WillOnce(Return(Result<std::vector<std::byte>>::success(withNul)));
+
+    FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
+    auto result = useCase.generatePreview(makeNode("C:/data/.gitconfig", FileType::Regular), 200, 200, 1024);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().kind(), FilePreviewKind::Unsupported);
+}
+
+TEST(FilePreviewUseCase, UnrecognizedDotfileStaysUnsupported)
+{
+    MockFileSystemRepository fileSystemRepository;
+    MockMediaDecoder mediaDecoder;
+
+    EXPECT_CALL(fileSystemRepository, listDirectory(_)).Times(0);
+    EXPECT_CALL(fileSystemRepository, readFilePrefix(_, _)).Times(0);
+    EXPECT_CALL(mediaDecoder, generateThumbnail(_, _, _, _)).Times(0);
+
+    FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
+    auto result = useCase.generatePreview(makeNode("C:/data/.someunknownrc", FileType::Regular), 200, 200, 1024);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().kind(), FilePreviewKind::Unsupported);
+}
+
+TEST(FilePreviewUseCase, DotfileInsideArchiveIsMaterializedBeforeReading)
+{
+    MockFileSystemRepository fileSystemRepository;
+    MockMediaDecoder mediaDecoder;
+
+    const std::filesystem::path virtualPath("C:/data/project.zip/.gitignore");
+    const std::filesystem::path realPath("C:/temp/archive-preview/3/.gitignore");
+
+    EXPECT_CALL(fileSystemRepository, materializeForReading(virtualPath))
+        .WillOnce(Return(Result<std::filesystem::path>::success(realPath)));
+    EXPECT_CALL(fileSystemRepository, readFilePrefix(realPath, 1024u))
+        .WillOnce(Return(Result<std::vector<std::byte>>::success(toBytes("*.obj\n"))));
+
+    FilePreviewUseCase useCase(fileSystemRepository, mediaDecoder);
+    auto result = useCase.generatePreview(makeNode(virtualPath, FileType::Regular), 200, 200, 1024);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_EQ(result.value().kind(), FilePreviewKind::Text);
+    EXPECT_EQ(result.value().text(), "*.obj\n");
+    EXPECT_EQ(result.value().path(), virtualPath);
+}
+
 TEST(FilePreviewUseCase, UnknownExtensionReturnsUnsupportedWithoutTouchingPorts)
 {
     MockFileSystemRepository fileSystemRepository;

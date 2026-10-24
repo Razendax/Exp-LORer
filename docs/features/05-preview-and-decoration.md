@@ -5,7 +5,7 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.26–14.27, §14.29, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81, §14.84–14.85, §14.98, §14.100–14.101 — the right-panel file Preview tab, its
+Covers §14.26–14.27, §14.29, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81, §14.84–14.85, §14.98, §14.100–14.101, §14.106 — the right-panel file Preview tab, its
 text-preview syntax highlighting (plus its later expansion to YAML/PowerShell/Markdown, §14.100),
 archive browsing/preview/extraction, the Preview panel's dedicated per-kind widgets and media-layout rework, the
 built-in Widgets video player (first used here, before Media Viewer mode reused it), real
@@ -935,4 +935,19 @@ Extra Large Icons (§14.71), and the hover-preview popup (§14.76) — all gated
   case; `FilePreviewUseCaseTest`/`tests/domain/FilePreviewTest.cpp` gain Pdf-kind coverage mirroring
   their existing Image/Video cases. UI changes fall under the existing UI/ViewModel-glue carve-out
   (§11) — no new GTest coverage there, consistent with every other Preview-tab UI change above.
+
+### 14.106 Preview Tab: Extensionless Config Dotfiles Shown as Text
+
+Extensionless config dotfiles (`.gitignore`, `.gitattributes`, `.gitmodules`, `.gitconfig`,
+`.mailmap`, `.editorconfig`, `.clang-format`, `.clang-tidy`, `.dockerignore`, `.npmignore`,
+`.npmrc`) now preview as text instead of falling through to Unsupported.
+`FilePreviewUseCase::generatePreview()`'s existing text branch gains a second, filename-based
+entry condition — a new `isTextDotfile()` helper alongside `isTextExtension()` — checked only as
+a fallback when the extension-based lookup finds no match, so the curated list stays exact rather
+than treating every dotfile as text. The lookup matches on the target's own (possibly virtual,
+archive-nested per §14.29) path's filename, lowercased via `PathUtf8::toUtf8()` +
+ASCII `std::tolower` (these names are all-ASCII, so no `UnicodeCaseFold` is needed), so an
+archive-nested `.gitignore` matches the same way a top-level one does. No syntax highlighting is
+added or needed: `LanguageRegistry::languageForExtension()` keys on `path.extension()`, which is
+already empty for a lone leading-dot filename, so these fall back to plain text automatically.
 

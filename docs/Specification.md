@@ -388,7 +388,10 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
 * Shows a preview of whatever is selected in the currently focused pane/tab (or its browsed folder
   if nothing is selected): a folder's immediate contents (folders first, then files, both
   alphabetical); a text/source file's content (txt/html/xml/json/md/ini/log/yaml/csv, common
-  source extensions such as cs/cpp/h/hpp/c/py/js/ts/css); a scaled preview image for supported
+  source extensions such as cs/cpp/h/hpp/c/py/js/ts/css, plus a curated set of well-known
+  extensionless config dotfiles recognized by exact filename rather than extension — e.g.
+  `.gitignore`, `.gitattributes`, `.gitmodules`, `.editorconfig` (see Architecture.md §14 feature
+  log once implemented); a scaled preview image for supported
   image formats (2.3); for supported video formats (2.4), a static representative frame by
   default with a dropdown to switch to the inline built-in video player instead (Architecture.md
   §14.67); or, for a PDF file, its first page rendered as a static image (Architecture.md §14.101;
