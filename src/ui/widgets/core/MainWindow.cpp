@@ -908,6 +908,31 @@ void MainWindow::createHotkeyWindowDispatcher()
                                                 [this]() { m_workspaceController->setLayout(SplitLayout::TwoHorizontal); });
     m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::LayoutFourGrid,
                                                 [this]() { m_workspaceController->setLayout(SplitLayout::FourGrid); });
+
+    // Panels (spec §3.4, Milestone 5). Toggle left/right panel act directly on MainWindow's
+    // long-lived m_leftPanelWidget/m_rightPanelWidget singletons; toggle bottom panel resolves the
+    // currently-focused pane (same focusedPaneWidget lambda as the Tabs callbacks above) since the
+    // bottom panel is a per-tab widget, not a MainWindow-owned singleton (see
+    // WorkspacePaneWidget::toggleBottomPanel()).
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::ToggleLeftPanel, [this]() { m_leftPanelWidget->toggleExpanded(); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::ToggleRightPanel, [this]() { m_rightPanelWidget->toggleExpanded(); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::ToggleBottomPanel, [focusedPaneWidget]() {
+        if (WorkspacePaneWidget* pane = focusedPaneWidget())
+        {
+            pane->toggleBottomPanel();
+        }
+    });
+
+    // Show left/right panel's X tab: activateTab() already expands-if-collapsed and selects the
+    // given index (same method MainWindow's own startup-state-restore code calls, see
+    // kLeftPanelTabCount/kRightPanelTabCount above) -- left panel 0=Tree/1=Search/2=Find in Files,
+    // right panel 0=Tags/1=Preview (verified against the addPanelTab() call order above).
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::ShowLeftTreeTab, [this]() { m_leftPanelWidget->activateTab(0); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::ShowLeftSearchTab, [this]() { m_leftPanelWidget->activateTab(1); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::ShowLeftFindInFilesTab,
+                                                [this]() { m_leftPanelWidget->activateTab(2); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::ShowRightTagsTab, [this]() { m_rightPanelWidget->activateTab(0); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::ShowRightPreviewTab, [this]() { m_rightPanelWidget->activateTab(1); });
 }
 
 void MainWindow::showTagManagerDialog()

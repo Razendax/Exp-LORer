@@ -108,6 +108,13 @@ public:
     // tabs (currentBrowserView() returns nullptr).
     void focusBrowserView();
 
+    // Panels (spec §3.4, Milestone 5) -- public entry point for HotkeyWindowDispatcher's
+    // "Toggle bottom panel" callback. Unlike the left/right panels (MainWindow-owned singletons),
+    // the bottom panel is a per-tab BottomPanelWidget (one instance per tab, see addPageForTab), so
+    // this resolves and toggles whichever one belongs to this pane's *currently showing* tab. No-op
+    // if that can't be resolved (e.g. the pane has no tabs at all).
+    void toggleBottomPanel();
+
 signals:
     // Bubbled up so MainWindow (whose QMainWindow::statusBar() is a separate, transient,
     // window-wide message bar for navigation/search failures -- distinct from this pane's own
@@ -178,6 +185,12 @@ private:
     // QStackedWidget -> (FileBrowserView or SearchResultsPane::browserView()) unwrap also used by
     // currentColumnWidths(). Returns nullptr if it can't be resolved (e.g. no tabs at all).
     FileBrowserView* currentBrowserView() const;
+
+    // Panels (spec §3.4, Milestone 5) counterpart of currentBrowserView() above: resolves the
+    // BottomPanelWidget backing the current tab's page -- same splitter unwrap, but returns
+    // widget(1) (the bottom panel) instead of unwrapping widget(0)'s stack. Returns nullptr if it
+    // can't be resolved (e.g. no tabs at all).
+    BottomPanelWidget* currentBottomPanel() const;
 
     void onTabAdded(int index);
     void onTabClosed(int index);

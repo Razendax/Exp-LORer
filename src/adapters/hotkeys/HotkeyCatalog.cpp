@@ -115,6 +115,33 @@ namespace
                              hotkeyTr("Layout: four-pane grid"), HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_4)),
                              Scope::Window, false });
 
+        // Panels (spec §3.4) -- Milestone 5. Window-scoped like Tabs/PanesAndLayout above. None
+        // allow a bare rebind -- none are in spec §4's bare-key exception list.
+        entries.push_back({ HotkeyAction::ToggleLeftPanel, "panels.toggleLeft", Category::Panels,
+                             hotkeyTr("Toggle left panel (Tree/Search/Find in Files)"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::Key_B)), Scope::Window, false });
+        entries.push_back({ HotkeyAction::ToggleRightPanel, "panels.toggleRight", Category::Panels,
+                             hotkeyTr("Toggle right panel (Tags/Preview/Monitoring)"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_B)), Scope::Window, false });
+        entries.push_back({ HotkeyAction::ToggleBottomPanel, "panels.toggleBottom", Category::Panels,
+                             hotkeyTr("Toggle bottom panel (Terminal/Folder Size/Fragmentation)"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::Key_QuoteLeft)), Scope::Window, false });
+        entries.push_back({ HotkeyAction::ShowLeftTreeTab, "panels.showLeftTree", Category::Panels,
+                             hotkeyTr("Show left panel's Tree tab"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_E)), Scope::Window, false });
+        entries.push_back({ HotkeyAction::ShowLeftSearchTab, "panels.showLeftSearch", Category::Panels,
+                             hotkeyTr("Show left panel's Search tab"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::Key_F)), Scope::Window, false });
+        entries.push_back({ HotkeyAction::ShowLeftFindInFilesTab, "panels.showLeftFindInFiles", Category::Panels,
+                             hotkeyTr("Show left panel's Find in Files tab"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_F)), Scope::Window, false });
+        entries.push_back({ HotkeyAction::ShowRightTagsTab, "panels.showRightTags", Category::Panels,
+                             hotkeyTr("Show right panel's Tags tab"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_G)), Scope::Window, false });
+        entries.push_back({ HotkeyAction::ShowRightPreviewTab, "panels.showRightPreview", Category::Panels,
+                             hotkeyTr("Show right panel's Preview tab"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P)), Scope::Window, false });
+
         return entries;
     }
 }

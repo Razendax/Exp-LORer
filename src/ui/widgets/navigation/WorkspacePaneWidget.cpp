@@ -1325,6 +1325,23 @@ FileBrowserView* WorkspacePaneWidget::currentBrowserView() const
     return nullptr;
 }
 
+BottomPanelWidget* WorkspacePaneWidget::currentBottomPanel() const
+{
+    // Same splitter unwrap as currentBrowserView(), but widget(1) is the per-tab BottomPanelWidget
+    // itself (widget(0) is the browse/search stack currentBrowserView() unwraps) -- see
+    // addPageForTab, which builds this splitter.
+    auto* splitter = qobject_cast<QSplitter*>(m_tabWidget->currentWidget());
+    return splitter ? qobject_cast<BottomPanelWidget*>(splitter->widget(1)) : nullptr;
+}
+
+void WorkspacePaneWidget::toggleBottomPanel()
+{
+    if (BottomPanelWidget* bottomPanel = currentBottomPanel())
+    {
+        bottomPanel->toggleExpanded();
+    }
+}
+
 void WorkspacePaneWidget::refreshStatusCounts()
 {
     if (!m_boundTab)

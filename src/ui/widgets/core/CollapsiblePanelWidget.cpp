@@ -71,6 +71,25 @@ void CollapsiblePanelWidget::activateTab(int index)
     onPanelTabButtonClicked(index);
 }
 
+void CollapsiblePanelWidget::toggleExpanded()
+{
+    if (m_expanded && m_activeIndex >= 0)
+    {
+        // Same effect as clicking the already-active tab again: collapse.
+        onPanelTabButtonClicked(m_activeIndex);
+        return;
+    }
+
+    if (m_buttons.empty())
+    {
+        // No tabs registered at all -- nothing to expand onto.
+        return;
+    }
+
+    const int target = m_lastActiveIndex >= 0 ? m_lastActiveIndex : 0;
+    activateTab(target);
+}
+
 void CollapsiblePanelWidget::setPanelTabButtonVisible(int index, bool visible)
 {
     m_buttons[static_cast<std::size_t>(index)]->setVisible(visible);
@@ -97,6 +116,7 @@ void CollapsiblePanelWidget::onPanelTabButtonClicked(int index)
     }
 
     m_activeIndex = index;
+    m_lastActiveIndex = index;
     m_buttons[static_cast<std::size_t>(index)]->setChecked(true);
     m_stack->setCurrentIndex(index);
 

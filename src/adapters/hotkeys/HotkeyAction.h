@@ -53,4 +53,19 @@ enum class HotkeyAction
     LayoutTwoVertical,
     LayoutTwoHorizontal,
     LayoutFourGrid,
+
+    // Panels (spec §3.4) -- Milestone 5. Window-scoped, like Tabs/PanesAndLayout above.
+    // ToggleLeftPanel/ToggleRightPanel act on MainWindow's long-lived m_leftPanelWidget/
+    // m_rightPanelWidget singletons via CollapsiblePanelWidget::toggleExpanded();
+    // ToggleBottomPanel resolves the focused pane's current tab's own per-tab BottomPanelWidget
+    // (WorkspacePaneWidget::toggleBottomPanel(), no single window-wide bottom-panel widget exists).
+    // The five Show*Tab actions are plain CollapsiblePanelWidget::activateTab(index) calls.
+    ToggleLeftPanel,
+    ToggleRightPanel,
+    ToggleBottomPanel,
+    ShowLeftTreeTab,
+    ShowLeftSearchTab,
+    ShowLeftFindInFilesTab,
+    ShowRightTagsTab,
+    ShowRightPreviewTab,
 };

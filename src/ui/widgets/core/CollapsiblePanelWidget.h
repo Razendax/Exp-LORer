@@ -37,6 +37,12 @@ public:
     // through exactly the same expand/select/lazy-activate logic a real click uses.
     void activateTab(int index);
 
+    // Panels (spec §3.4, Milestone 5): collapse if currently expanded (same effect as clicking the
+    // active tab again); otherwise re-expand on whichever tab was last active (m_lastActiveIndex),
+    // or tab 0 if this panel has never been activated this session. No-op if this panel has no
+    // tabs registered at all.
+    void toggleExpanded();
+
 signals:
     // Fires whenever expansion state flips (collapsed <-> expanded), so the owning QSplitter can
     // resize itself.
@@ -99,6 +105,12 @@ private:
 
     bool m_expanded = false;
     int m_activeIndex = -1;
+
+    // Last tab index m_activeIndex held before being reset to -1 on collapse (Milestone 5,
+    // toggleExpanded()) -- lets re-expanding via toggleExpanded() restore the tab the user left
+    // the panel on, rather than always defaulting to tab 0. -1 ("never activated this session")
+    // falls back to tab 0 in toggleExpanded().
+    int m_lastActiveIndex = -1;
 
     // Last-seen extent (width for Axis::Horizontal, height for Axis::Vertical) of the owning
     // QSplitter (our parent), tracked across resizeEvent calls to tell an actual splitter-handle
