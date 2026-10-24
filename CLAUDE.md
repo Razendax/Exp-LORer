@@ -36,54 +36,20 @@ loosely-related one, and add it to `Architecture.md` §14's index.
 ## Development Workflow
 
 This project is developed feature-by-feature via a spec/plan/implement cycle (except bug fixes,
-which can be done directly). Follow it automatically, without being asked each time. All three
-stages write into `.claude/active_work/` (create it if it doesn't exist); that directory is
-gitignored — it's local scratch state, not committed.
+which can be done directly). Each stage is its own skill under `.claude/skills/` — invoke it by
+name or let it trigger automatically from the request's phrasing; follow the cycle without being
+asked each time. All three stages write into `.claude/active_work/` (create it if it doesn't
+exist); that directory is gitignored — it's local scratch state, not committed.
 
-This repo has a `graphify-out/` knowledge graph (see the `graphify` skill). Use it as a first-pass
-research tool for both the plan and implement stages — querying it (architecture, file
-relationships, callers/call paths of a symbol, affected areas) is faster and more complete than
-grepping cold. Treat it as a supplement to `docs/Architecture.md`/`docs/Specification.md`, not a
-replacement — the docs remain the source of truth for intended design; the graph reflects current
-code structure. Do not query it during the spec stage — that stage is scoped to docs-only (see below).
-
-**1. Spec a feature** (when asked to plan/spec a new feature, not yet to write an implementation plan):
-1. Read only `docs/Specification.md`, `docs/Architecture.md`, and `docs/features/*.md` — do not
-   read source code or query graphify at this stage. The spec stage defines *what* the feature is,
-   not *how* it's built.
-2. Use plan mode as normal. Ask the user whatever questions are needed to pin down a clear
-   definition, behavior, scope (including explicit non-goals), and any other information the
-   spec needs.
-3. Write the result to `.claude/active_work/spec.md` (overwrite any existing `spec.md`).
-4. If the feature changes a requirement described in `Specification.md`, update it in the same
-   turn — don't wait to be asked.
-5. Stop there. Do not produce an implementation plan or touch `plan.md` in this stage.
-
-**2. User reviews** `spec.md` and approves it or edits it directly. No action needed until the
-user asks for a plan.
-
-**3. Plan a feature** (when asked to turn the spec into a plan):
-1. Read `.claude/active_work/spec.md` fresh (don't rely on what's in conversation memory — the
-   user may have edited it).
-2. Query graphify for the areas/files/symbols the feature will touch before producing the plan.
-3. Produce the implementation plan (use plan mode as normal). If it's a big feature, divide it
-   into milestones with enough detail in each to implement it standalone.
-4. Save it to `.claude/active_work/plan.md` (overwrite any existing `plan.md`).
-5. If the feature changes the layering, Ports, schema, or other design described in
-   `Architecture.md`, update it in the same turn — don't wait to be asked.
-6. Rename `.claude/active_work/spec.md` to `.claude/active_work/prev_spec.md` (overwrite any
-   existing `prev_spec.md`).
-7. Stop there. The user reviews/edits the plan and doc changes before implementation starts.
-
-**4. Implement a feature** (when asked to implement from `.claude/active_work/plan.md`, in whole
-or by a specific milestone):
-1. Query graphify as needed while working through the plan to locate exact call sites, affected
-   callers, and related code before editing.
-2. Follow the plan (or just the requested milestone).
-3. Only once every milestone in the plan has been implemented, rename
-   `.claude/active_work/plan.md` to `.claude/active_work/prev_plan.md` (overwrite any existing
-   `prev_plan.md`). If only some milestones are done, leave `plan.md` in place and instead mark
-   the completed milestone(s) done within the file, so the remaining milestones aren't lost.
+1. **`spec-feature`** — turns a feature request into `.claude/active_work/spec.md` (docs-only; no
+   source code or graphify).
+2. **User reviews** `spec.md`, approving it or editing it directly — no agent action needed until
+   the user asks for a plan.
+3. **`plan-feature`** — turns the reviewed spec into `.claude/active_work/plan.md`, divided into
+   vertical-slice milestones; queries the `graphify-out/` knowledge graph first (see the
+   `graphify` skill).
+4. **`implement-feature`** — implements the plan (in whole or by milestone), querying graphify as
+   needed and tracking milestone progress in `plan.md`.
 
 Do not smoke test — don't launch the app yourself to click through or verify a feature/fix after
 implementing it. The user tests manually and will come back with whatever needs fixing. This is
