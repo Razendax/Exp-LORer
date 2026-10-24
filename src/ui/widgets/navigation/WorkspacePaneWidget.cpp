@@ -955,6 +955,36 @@ void WorkspacePaneWidget::onTabCloseRequested(int index)
     m_pane->closeTab(index);
 }
 
+void WorkspacePaneWidget::activateNewTab()
+{
+    onNewTabRequested();
+}
+
+void WorkspacePaneWidget::closeCurrentTab()
+{
+    onTabCloseRequested(m_tabWidget->currentIndex());
+}
+
+void WorkspacePaneWidget::activateNextTab()
+{
+    const int count = m_tabWidget->count();
+    if (count <= 1)
+    {
+        return;
+    }
+    m_tabWidget->setCurrentIndex((m_tabWidget->currentIndex() + 1) % count);
+}
+
+void WorkspacePaneWidget::activatePreviousTab()
+{
+    const int count = m_tabWidget->count();
+    if (count <= 1)
+    {
+        return;
+    }
+    m_tabWidget->setCurrentIndex((m_tabWidget->currentIndex() - 1 + count) % count);
+}
+
 void WorkspacePaneWidget::onUpRequested()
 {
     if (!m_boundTab)

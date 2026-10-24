@@ -29,6 +29,8 @@ add_library(explorer_adapters_config STATIC
     HotkeyStore.cpp
     HotkeyManager.h
     HotkeyManager.cpp
+    HotkeyWindowDispatcher.h
+    HotkeyWindowDispatcher.cpp
     NotificationSettingsStore.h
     NotificationSettingsStore.cpp
     NotificationSettingsViewModel.h

@@ -29,4 +29,12 @@ enum class HotkeyAction
     Refresh,
     GoToThisPC,
     FocusAddressBar,
+
+    // Tabs (spec §3.2) -- Milestone 3. First window-scoped category: these fire regardless of
+    // which widget inside the window currently has focus (HotkeyWindowDispatcher), unlike every
+    // enumerator above (all view-scoped, FileBrowserView::handleKeyPress).
+    NewTab,
+    CloseTab,
+    NextTab,
+    PreviousTab,
 };

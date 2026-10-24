@@ -5,6 +5,7 @@
 
 #include <QAction>
 #include <QActionGroup>
+#include <QApplication>
 #include <QCloseEvent>
 #include <QCoreApplication>
 #include <QInputDialog>
@@ -42,6 +43,7 @@
 #include "FolderTreeModel.h"
 #include "FolderTreeView.h"
 #include "HotkeyManager.h"
+#include "HotkeyWindowDispatcher.h"
 #include "ManageFavoritesDialog.h"
 #include "MainStatusBarWidget.h"
 #include "MediaViewerModeController.h"
@@ -199,6 +201,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     createLayoutToolBar();
     createWorkspace();
     createMainStatusBar();
+    createHotkeyWindowDispatcher();
 
     m_notificationOverlayWidget = new NotificationOverlayWidget(m_notificationCenter, this);
     m_notificationOverlayWidget->setObjectName(QStringLiteral("notificationOverlayWidget"));
@@ -800,6 +803,43 @@ void MainWindow::createMainStatusBar()
     m_mainStatusBarWidget = new MainStatusBarWidget(this);
     m_mainStatusBarWidget->setObjectName(QStringLiteral("mainStatusBarWidget"));
     statusBar()->addPermanentWidget(m_mainStatusBarWidget, 1);
+}
+
+void MainWindow::createHotkeyWindowDispatcher()
+{
+    m_hotkeyWindowDispatcher = new HotkeyWindowDispatcher(m_hotkeyManager, this);
+    qApp->installEventFilter(m_hotkeyWindowDispatcher);
+
+    // Resolved at invocation time (not here), since which pane is "focused" changes at runtime --
+    // avoids re-registering callbacks on every WorkspaceController::focusedPaneChanged.
+    auto focusedPaneWidget = [this]() -> WorkspacePaneWidget* {
+        return m_workspaceLayoutWidget->paneWidget(m_workspaceController->focusedPane());
+    };
+
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::NewTab, [focusedPaneWidget]() {
+        if (WorkspacePaneWidget* pane = focusedPaneWidget())
+        {
+            pane->activateNewTab();
+        }
+    });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::CloseTab, [focusedPaneWidget]() {
+        if (WorkspacePaneWidget* pane = focusedPaneWidget())
+        {
+            pane->closeCurrentTab();
+        }
+    });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::NextTab, [focusedPaneWidget]() {
+        if (WorkspacePaneWidget* pane = focusedPaneWidget())
+        {
+            pane->activateNextTab();
+        }
+    });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::PreviousTab, [focusedPaneWidget]() {
+        if (WorkspacePaneWidget* pane = focusedPaneWidget())
+        {
+            pane->activatePreviousTab();
+        }
+    });
 }
 
 void MainWindow::showTagManagerDialog()

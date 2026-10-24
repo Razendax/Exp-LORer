@@ -67,6 +67,19 @@ namespace
                              hotkeyTr("Focus/edit address bar"), HotkeyChord(QKeySequence(Qt::CTRL | Qt::Key_L)),
                              Scope::View, false });
 
+        // Tabs (spec §3.2) -- Milestone 3. First Window-scoped category: HotkeyWindowDispatcher
+        // resolves these regardless of which widget inside the window currently has focus, acting
+        // on whichever WorkspacePaneWidget is currently focused. None allow a bare rebind -- none
+        // are in spec §4's bare-key exception list.
+        entries.push_back({ HotkeyAction::NewTab, "tabs.new", Category::Tabs, hotkeyTr("New tab"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::Key_T)), Scope::Window, false });
+        entries.push_back({ HotkeyAction::CloseTab, "tabs.close", Category::Tabs, hotkeyTr("Close tab"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::Key_W)), Scope::Window, false });
+        entries.push_back({ HotkeyAction::NextTab, "tabs.next", Category::Tabs, hotkeyTr("Next tab"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::Key_Tab)), Scope::Window, false });
+        entries.push_back({ HotkeyAction::PreviousTab, "tabs.previous", Category::Tabs, hotkeyTr("Previous tab"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Tab)), Scope::Window, false });
+
         return entries;
     }
 }

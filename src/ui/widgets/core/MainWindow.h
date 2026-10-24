@@ -62,6 +62,7 @@ class DuplicateFinderDialog;
 class FragmentationService;
 class BulkRenameUseCase;
 class HotkeyManager;
+class HotkeyWindowDispatcher;
 
 // Application shell: menu bar (File/Edit/View/Favorites/Tools/Help), a small Layout toolbar, and
 // a WorkspaceLayoutWidget as central widget hosting up to 4 independent WorkspacePaneWidget
@@ -112,6 +113,15 @@ private:
     void createSearchPanel();
     void createContentSearchPanel();
     void createMainStatusBar();
+
+    // Tabs (spec §3.2, Milestone 3): builds m_hotkeyWindowDispatcher, installs it on qApp, and
+    // registers its 4 Tabs-category callbacks against whichever pane is currently focused
+    // (resolved at invocation time, not registration time, since focus moves at runtime) --
+    // Architecture.md §14.x's "Two dispatch paths", window-scoped half. First window-scoped
+    // category; M4-M6 register further callbacks the same way, against the same one dispatcher
+    // instance.
+    void createHotkeyWindowDispatcher();
+
     void showTagManagerDialog();
     void showSettingsDialog();
     void showManageFavoritesDialog();
@@ -254,6 +264,11 @@ private:
     // Workspaces submenu (Architecture.md §14.60): rebuilt lazily on QMenu::aboutToShow, same
     // posture FavoritesMenuController's own menu uses.
     QMenu* m_workspacesMenu = nullptr;
+
+    // Window-scoped hotkey dispatch (spec §3.2+, Milestone 3 onward), extracted into its own owned
+    // sub-object -- same posture as m_favoritesMenuController/m_mediaViewerModeController above.
+    // Installed as an event filter on qApp in createHotkeyWindowDispatcher().
+    HotkeyWindowDispatcher* m_hotkeyWindowDispatcher = nullptr;
 
     // Drive/volume info query (Architecture.md §14.30) runs on m_driveInfoThread rather than the
     // Qt UI thread -- GetVolumeInformationW/GetDiskFreeSpaceExW behind it are disk/volume I/O.

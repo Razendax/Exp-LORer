@@ -90,6 +90,15 @@ public:
     // toggles the "paneActive" dynamic property on this pane's toolbar and forces a restyle.
     void setActive(bool active);
 
+    // Tabs (spec §3.2, Milestone 3) -- public entry points for HotkeyWindowDispatcher's
+    // window-scoped callbacks (MainWindow resolves the currently-focused pane and calls straight
+    // through to these), reusing the exact bodies the tab strip's own UI already triggers rather
+    // than duplicating them.
+    void activateNewTab();
+    void closeCurrentTab();
+    void activateNextTab();
+    void activatePreviousTab();
+
 signals:
     // Bubbled up so MainWindow (whose QMainWindow::statusBar() is a separate, transient,
     // window-wide message bar for navigation/search failures -- distinct from this pane's own
