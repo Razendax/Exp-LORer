@@ -20,7 +20,7 @@ from typing import Any, List, Optional
 from .element import Element
 from .wait import wait_until
 
-_COLUMNS_PER_ROW = 8  # FileListModel::ColumnCount
+_COLUMNS_PER_ROW = 9  # FileListModel::ColumnCount
 
 # Every FileListModel::Column except Name, in FileListModel::Column enum order -- mirrors
 # SettingsDialog.cpp's kAllVisibilityColumns and FileBrowserView::showColumnMenu's own loop order
@@ -35,6 +35,7 @@ TOGGLEABLE_COLUMN_TITLES: List[str] = [
     "Tags",
     "Date created",
     "Percent",
+    "Fragments",
 ]
 
 
@@ -60,6 +61,7 @@ class DetailsRow:
     tags: str
     date_created: str
     percent: str
+    fragments: str
 
 
 def read_details_rows(tree_view: Element) -> List[DetailsRow]:
@@ -68,11 +70,11 @@ def read_details_rows(tree_view: Element) -> List[DetailsRow]:
 
     Starts a new row whenever a cell's on-screen horizontal position matches the Name header's
     (Name is always the first, always-visible column -- see `DetailsRow`'s docstring on hidden
-    columns), then pads that row with trailing "" up to `FileListModel::ColumnCount` (8) cells,
-    rather than assuming every row always contributes exactly 8 cells to the flat stream.
-    Confirmed against a real build that at some window sizes the tree is narrower than its own 8
-    columns' combined width, so trailing columns (commonly Date created/Percent) are scrolled out
-    of the current viewport and contribute no cell at all -- with a fixed 8-wide stride, that
+    columns), then pads that row with trailing "" up to `FileListModel::ColumnCount` (9) cells,
+    rather than assuming every row always contributes exactly 9 cells to the flat stream.
+    Confirmed against a real build that at some window sizes the tree is narrower than its own 9
+    columns' combined width, so trailing columns (commonly Percent/Fragments) are scrolled out
+    of the current viewport and contribute no cell at all -- with a fixed 9-wide stride, that
     silently drops every row as a short, incomplete trailing chunk instead of just leaving a
     couple of trailing fields blank. A column hidden *mid-row* (not merely scrolled out of view)
     still misaligns every field after it, same as before -- use `read_header_titles` instead once
@@ -115,15 +117,25 @@ def select_row(
     `extend=True` holds Shift instead (like a real shift-click), selecting the contiguous range
     from the previous anchor row to this one (Qt's own `ExtendedSelection` range-select, not
     anything this framework computes itself). Mutually exclusive with `additive`.
+
+    Waits for the selection to actually change (via `selected_names`) before returning --
+    otherwise a caller that immediately reads selection-dependent state (e.g. the Tag Panel's
+    "Tags on selection", which resolves off `TabViewModel::selectedEntries`) can race a selection
+    that was clicked but hasn't been delivered/processed yet, and transiently see the *previous*
+    selection's state instead. Compares against the selection from just before the click rather
+    than asserting `name` ends up selected -- an `additive` (Ctrl-click) click on an already-
+    selected row *removes* it instead, so `name` itself may not be part of the new selection.
     """
     modifier = "control" if additive else ("shift" if extend else "")
     deadline = time.monotonic() + timeout
     last_error: Optional[BaseException] = None
     while time.monotonic() < deadline:
         try:
+            before = selected_names(tree_view)
             for child in tree_view.raw.children():
                 if child.element_info.control_type == "TreeItem" and child.window_text() == name:
                     child.click_input(pressed=modifier)
+                    wait_until(lambda: selected_names(tree_view) != before, timeout=timeout)
                     return
         except Exception as exc:  # noqa: BLE001 -- transient UIA COM errors mid-rebuild
             last_error = exc

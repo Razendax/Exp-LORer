@@ -1,12 +1,13 @@
-"""Coverage for MainWindow::closeEvent persisting the live workspace state to config.json on exit
-(Architecture.md §14.14) -- layout, tab navigation, sort order, and Details-view column widths.
+"""Coverage for MainWindow::closeEvent persisting the live workspace state to the default
+workspace's config file on exit (Architecture.md §14.14/§14.60) -- layout, tab navigation, sort
+order, and Details-view column widths.
 
-Starts from an `ExpLorerConfig`-seeded config.json (rather than the `app` fixture) so each test
+Starts from an `ExpLorerConfig`-seeded config file (rather than the `app` fixture) so each test
 controls exactly what should/shouldn't have changed by the time the app closes and re-saves it.
 Uses the `start_app` fixture, which owns killing stray instances beforehand and closing the app
 (if a test hasn't already) afterwards -- each test below still calls `app.close()` itself, since
-closing is the very action under test and its save must happen *before* the test reads
-config.json back, not merely at teardown.
+closing is the very action under test and its save must happen *before* the test reads the config
+file back, not merely at teardown.
 """
 
 from __future__ import annotations
@@ -20,7 +21,7 @@ from framework import ExpLorerApp, ExpLorerConfig
 
 
 def _load_saved_config(data_dir: Path) -> dict[str, Any]:
-    return json.loads((data_dir / "config.json").read_text(encoding="utf-8"))
+    return json.loads(ExpLorerConfig(data_dir).path.read_text(encoding="utf-8"))
 
 
 def test_closing_saves_navigation_layout_and_sort_order(

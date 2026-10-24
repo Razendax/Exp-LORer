@@ -131,7 +131,14 @@ class TestMediaViewerModeTabIsolation(ExpLorerFreshAppTestCase):
         wait_until(lambda: self.app.right_panel.searcher.is_visible())
 
         assert self.app.panes.a.tabs.is_enabled(0)  # the tab that entered the mode stays usable
-        assert not self.app.panes.a.tabs.is_enabled(1)  # stranding its fixed grid root is avoided
+
+        # `setTabEnabled(1, false)` doesn't round-trip to the TabItem's UIA IsEnabled property
+        # (confirmed by hand: is_enabled(1) still reads True here) -- so disabledness is checked
+        # functionally instead: clicking it must do nothing, stranding its fixed grid root is
+        # avoided by it being genuinely unreachable, not just reported as such.
+        self.app.panes.a.tabs.select(1)
+        assert self.app.right_panel.searcher.is_visible()
+        assert self.app.navigation.address_bar.text == str(first)
 
         self.app.right_panel.searcher.exit()
         wait_until(lambda: self.app.navigation.address_bar.is_enabled())

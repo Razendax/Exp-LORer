@@ -138,6 +138,17 @@ int main(int argc, char* argv[])
     Logging::info("Exp-LORer starting");
     Logging::info(std::string("--data-dir override: ") + (dataDirOverride ? "true" : "false"));
 
+    // Every default-constructed QSettings (view-mode/sort/column/theme toggles scattered across
+    // the UI layer) resolves by organization/application name alone, ignoring appDataDir -- so
+    // without this, --data-dir still leaves them all pointed at the one real per-user ini file,
+    // leaking state across isolated ui_tests/ runs (and between them and a real install). Must
+    // happen before any QSettings object is constructed.
+    if (dataDirOverride)
+    {
+        QSettings::setPath(QSettings::IniFormat, QSettings::UserScope,
+                            QString::fromStdWString(appDataDir.wstring()));
+    }
+
     const QString workspaceId = resolveWorkspaceIdOverride(argc, argv);
     Logging::info("workspace: " + workspaceId.toStdString());
 

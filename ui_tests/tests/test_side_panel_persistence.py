@@ -17,12 +17,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-from framework import ExpLorerRestartableTestCase
+from framework import ExpLorerConfig, ExpLorerRestartableTestCase
 from framework.wait import wait_until
 
 
 def _load_config(data_dir: Path) -> dict[str, Any]:
-    return json.loads((data_dir / "config.json").read_text(encoding="utf-8"))
+    return json.loads(ExpLorerConfig(data_dir).path.read_text(encoding="utf-8"))
 
 
 class TestSidePanelPersistsAcrossRestart(ExpLorerRestartableTestCase):

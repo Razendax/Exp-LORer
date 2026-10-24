@@ -29,13 +29,20 @@ class FolderSizePanel:
         the button's text flips back from "Scanning..." to "Scan Folder" (FolderSizeWidget::
         onScanningChanged) once that completes.
 
-        Waits for the button to first show "Scanning..." before waiting for it to revert --
-        otherwise the completion check can pass immediately on the pre-click "Scan Folder" text,
-        before the cross-process UI Automation click has even reached the app, silently skipping
-        the wait for an actual scan.
+        Tries to first observe the button showing "Scanning..." -- otherwise the completion check
+        below could pass immediately on a pre-click "Scan Folder" read, before the cross-process
+        UI Automation click has even reached the app, silently skipping the wait for an actual
+        scan. But that observation is only best-effort (a short, separate timeout, swallowed
+        rather than propagated): for a handful of tiny test files, the scan -- worker-thread hop
+        included -- can finish faster than even one poll from this process, so "Scanning..." isn't
+        guaranteed to be *catchable*, only to have genuinely happened. The completion wait's own
+        timeout is what actually bounds this method.
         """
         self.scan_folder_button.click()
-        wait_until(lambda: self.scan_folder_button.text == "Scanning...", timeout=5, interval=0.02)
+        try:
+            wait_until(lambda: self.scan_folder_button.text == "Scanning...", timeout=0.5, interval=0.02)
+        except TimeoutError:
+            pass
         wait_until(lambda: self.scan_folder_button.text == "Scan Folder", timeout=timeout)
 
 

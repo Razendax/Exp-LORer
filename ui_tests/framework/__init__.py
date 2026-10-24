@@ -10,7 +10,7 @@ Typical use (see `conftest.py`'s `app` fixture for the common case):
         app.close()
 
 To boot a fresh instance straight into a specific workspace layout instead of driving the UI
-into that state by hand, write a config.json with `ExpLorerConfig` before starting it:
+into that state by hand, write its config file with `ExpLorerConfig` before starting it:
 
     config = ExpLorerConfig(data_dir)
     config.workspace.layout = SplitLayout.TWO_VERTICAL

@@ -1,8 +1,16 @@
-"""Fluent builder/writer for a test-owned `config.json`, so a test can pre-seed the workspace
-layout/panes/tabs a fresh Exp-LORer instance boots into, instead of driving the UI into that
-state by hand. Mirrors the JSON schema `AppConfigStore` reads/writes
+"""Fluent builder/writer for a test-owned workspace config file, so a test can pre-seed the
+workspace layout/panes/tabs a fresh Exp-LORer instance boots into, instead of driving the UI into
+that state by hand. Mirrors the JSON schema `AppConfigStore` reads/writes
 (src/adapters/config/AppConfigStore.cpp, plain-data shape in
 src/adapters/viewmodels/WorkspaceConfig.h) -- keep these in sync if that schema changes.
+
+Writes directly to `workspaces/default.json` under `data_dir` (Architecture.md §14.60) -- the
+default workspace's own config file, not the legacy top-level `config.json` (which only matters
+for a one-time migration of a pre-existing *real* install's config, and ui_tests/ always starts
+from an empty `data_dir`, so there's never anything there to migrate). `WorkspaceStore` self-heals
+`workspaces/index.json` to the single "default" entry on first launch without touching an
+already-written `workspaces/default.json`, so seeding it directly here still boots the app
+straight into it.
 
 Usage:
 
@@ -14,9 +22,9 @@ Usage:
 
     app = ExpLorerApp.start(data_dir=data_dir)  # boots straight into that layout
 
-`config.workspace.save()` is a shortcut for `config.save()` -- the whole config.json is written
+`config.workspace.save()` is a shortcut for `config.save()` -- the whole config file is written
 either way, since `workspace` is currently the only section worth building fluently. Must be
-written *before* `ExpLorerApp.start()` -- the app only reads config.json at startup.
+written *before* `ExpLorerApp.start()` -- the app only reads this file at startup.
 """
 
 from __future__ import annotations
@@ -47,8 +55,8 @@ class WorkspacePaneId(str, Enum):
     PANE_D = "PaneD"
 
 # Matches FileListModel::ColumnCount (Name/Size/Type/DateModified/GitStatus/Tags/DateCreated/
-# Percent) -- src/adapters/viewmodels/FileListModel.h.
-_DETAILS_COLUMN_COUNT = 8
+# Percent/Fragments) -- src/adapters/viewmodels/filesystem/FileListModel.h.
+_DETAILS_COLUMN_COUNT = 9
 
 _CONFIG_VERSION = 1
 
@@ -151,8 +159,8 @@ class WorkspaceConfig:
 
 
 class ExpLorerConfig:
-    """Root builder for a test-owned `config.json`, written under `data_dir` (the same directory
-    passed to `ExpLorerApp.start(data_dir=...)`/`--data-dir`).
+    """Root builder for a test-owned default-workspace config file, written under `data_dir` (the
+    same directory passed to `ExpLorerApp.start(data_dir=...)`/`--data-dir`).
     """
 
     def __init__(self, data_dir: PathLike):
@@ -163,8 +171,10 @@ class ExpLorerConfig:
 
     @property
     def path(self) -> Path:
-        """Full path to the config.json this builder writes."""
-        return self.data_dir / "config.json"
+        """Full path to the config file this builder writes -- `WorkspaceStore::configFilePath`
+        for the default workspace id (src/adapters/config/WorkspaceStore.cpp).
+        """
+        return self.data_dir / "workspaces" / "default.json"
 
     def to_json(self) -> dict:
         return {
@@ -175,9 +185,9 @@ class ExpLorerConfig:
         }
 
     def save(self) -> Path:
-        """Writes config.json into `data_dir`, creating the directory if needed. Returns the
-        written path.
+        """Writes the config file into `data_dir/workspaces`, creating the directory if needed.
+        Returns the written path.
         """
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(self.to_json(), indent=2), encoding="utf-8")
         return self.path

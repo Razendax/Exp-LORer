@@ -130,7 +130,10 @@ class TestApplyingAndCreatingTagsViaRightPanel(ExpLorerFreshAppTestCase):
         time.sleep(0.4)
         assert not tags_panel.create_tag_button.exists()
 
-    def test_tagging_with_multiple_items_selected_does_nothing(self, tmp_path: Path) -> None:
+    def test_tagging_with_multiple_items_selected_tags_every_item(self, tmp_path: Path) -> None:
+        """§14.9/§14.88: a multi-selection's tagging target resolves to every selected entry at
+        once, so creating/applying a tag here tags all of them -- not just the one item.
+        """
         target = tmp_path / "browse"
         target.mkdir()
         (target / "a.txt").write_text("a")
@@ -145,11 +148,13 @@ class TestApplyingAndCreatingTagsViaRightPanel(ExpLorerFreshAppTestCase):
 
         assert tags_panel.selected_item_tags() == []
 
-        tags_panel.create_and_apply_tag("NeverAssigned")
-        time.sleep(0.6)
+        tags_panel.create_and_apply_tag("BothAssigned")
+        wait_until(lambda: tags_panel.selected_item_tags() == ["BothAssigned"])
 
-        assert self.app.exists()
-        assert tags_panel.selected_item_tags() == []
+        select_row(self.app.panes.a.file_tree_view, "a.txt")
+        wait_until(lambda: tags_panel.selected_item_tags() == ["BothAssigned"])
+        select_row(self.app.panes.a.file_tree_view, "b.txt")
+        wait_until(lambda: tags_panel.selected_item_tags() == ["BothAssigned"])
 
     def test_tagging_at_this_pc_root_does_not_crash(self) -> None:
         assert self.app.navigation.address_bar.text == "This PC"

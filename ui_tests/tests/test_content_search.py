@@ -175,22 +175,26 @@ class TestContentSearchSkipGitIgnoredToggle(ExpLorerFreshAppTestCase):
         root.mkdir()
         subprocess.run(["git", "init"], cwd=root, check=True, capture_output=True)
         (root / ".gitignore").write_text("ignored.txt\n")
-        (root / "ignored.txt").write_text("match text")
-        (root / "kept.txt").write_text("match text")
+        (root / "ignored.txt").write_text("needle text")
+        (root / "kept.txt").write_text("needle text")
 
         self.app.navigation.navigate_to(str(root))
         content_search = self.app.left_panel.content_search
-        content_search.type_query("match")
+        content_search.type_query("needle")
 
-        wait_until(lambda: set(content_search.file_names()) == {"ignored.txt", "kept.txt"})
-
-        content_search.skip_git_ignored_button.click()
+        # ContentSearchOptions::skipGitIgnored defaults to true (an unfiltered content scan reads
+        # every candidate's bytes, not just its name, so it's drastically more expensive over a
+        # typical git-ignored build/vcpkg_installed tree) -- so "ignored.txt" starts excluded.
         wait_until(lambda: content_search.file_names() == ["kept.txt"])
         assert content_search.skip_git_ignored_button.is_checked()
 
         content_search.skip_git_ignored_button.click()
         wait_until(lambda: set(content_search.file_names()) == {"ignored.txt", "kept.txt"})
         assert not content_search.skip_git_ignored_button.is_checked()
+
+        content_search.skip_git_ignored_button.click()
+        wait_until(lambda: content_search.file_names() == ["kept.txt"])
+        assert content_search.skip_git_ignored_button.is_checked()
 
 
 class TestContentSearchDetailsDisclosure(ExpLorerFreshAppTestCase):

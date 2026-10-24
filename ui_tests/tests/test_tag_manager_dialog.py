@@ -292,8 +292,13 @@ class TestTagManagerDialogSorting(ExpLorerFreshAppTestCase):
     def test_sort_by_count_orders_chips_by_their_tagged_file_count(self, tmp_path: Path) -> None:
         folder = tmp_path / "docs"
         folder.mkdir()
+        # Distinct content per file -- same content/size (+ same-second mtime, plausible when
+        # created back-to-back like this) would collide on the file-identity hash (Architecture.md
+        # §8, an accepted trade-off for tagging), which makes a freshly-tagged file look like a
+        # *rename* of whichever other file it collided with and steal that file's tag row instead
+        # of getting its own (SQLiteTagRepository::findOrCreateFileRow's hash-fallback relocation).
         for name in ("one.txt", "two.txt", "three.txt"):
-            (folder / name).write_text("x")
+            (folder / name).write_text(name)
 
         self.app.navigation.navigate_to(str(folder))
         wait_until(lambda: self.app.navigation.address_bar.text == str(folder))
