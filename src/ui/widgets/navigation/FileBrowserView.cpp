@@ -476,6 +476,15 @@ bool FileBrowserView::handleKeyPress(QKeyEvent* event)
     if (action == HotkeyAction::NavigateToParent) { emit navigateUpRequested();   return true; }
     if (action == HotkeyAction::Properties)       { emit propertiesRequested();   return true; }
 
+    // Navigation (spec §3.1) -- Milestone 2. NavigateBack/NavigateForward reuse the same signals
+    // the mouse Back/Forward-button branch in eventFilter() above already emits, rather than
+    // adding duplicate ones.
+    if (action == HotkeyAction::NavigateBack)    { emit navigateBackRequested();     return true; }
+    if (action == HotkeyAction::NavigateForward) { emit navigateForwardRequested();  return true; }
+    if (action == HotkeyAction::Refresh)         { emit navigateRefreshRequested();  return true; }
+    if (action == HotkeyAction::GoToThisPC)      { emit navigateToThisPCRequested(); return true; }
+    if (action == HotkeyAction::FocusAddressBar) { emit focusAddressBarRequested();  return true; }
+
     // Select All (Ctrl+A) and Open/navigate-into-selection (Enter) are each also QAbstractItemView's
     // own built-in key handling (select-all, activate), not something this app ever routed through
     // a QShortcut/QAction -- so once SelectAll/OpenOrNavigateInto is rebound or Cleared away from

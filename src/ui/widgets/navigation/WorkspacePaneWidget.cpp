@@ -699,6 +699,17 @@ void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewM
     connect(browserView, &FileBrowserView::navigateBackRequested, this, &WorkspacePaneWidget::onBackRequested);
     connect(browserView, &FileBrowserView::navigateForwardRequested, this, &WorkspacePaneWidget::onForwardRequested);
 
+    // Navigation (spec §3.1) -- Milestone 2. Refresh/This-PC act on m_boundTab, same convention as
+    // the toolbar Up/Back/Forward slots above (toolbar-equivalent actions), not the `tab` this
+    // lambda was handed -- in practice the two are the same tab, since keyboard focus can only be on
+    // the currently-visible browser view.
+    connect(browserView, &FileBrowserView::navigateRefreshRequested, this, [this]() { if (m_boundTab) m_boundTab->refresh(); });
+    connect(browserView, &FileBrowserView::navigateToThisPCRequested, this, &WorkspacePaneWidget::onThisPCRequested);
+    connect(browserView, &FileBrowserView::focusAddressBarRequested, this, [this]() {
+        m_addressBar->setFocus();
+        m_addressBar->selectAll();
+    });
+
     connect(browserView, &FileBrowserView::renameRequested, tab,
             [this](const std::filesystem::path& source, const std::filesystem::path& destination) {
                 m_fileOperationsController->renamePath(source, destination);
@@ -1036,6 +1047,22 @@ void WorkspacePaneWidget::onForwardRequested()
     }
 
     m_boundTab->goForward();
+}
+
+void WorkspacePaneWidget::onThisPCRequested()
+{
+    if (!m_boundTab)
+    {
+        return;
+    }
+
+    // Same target-construction/guard as onAddressBarEdited's "this pc" literal-text case.
+    if (!confirmLeavingMonitoredScope(m_boundTab, VirtualPaths::ThisPC))
+    {
+        return;
+    }
+
+    m_boundTab->navigateTo(VirtualPaths::ThisPC);
 }
 
 bool WorkspacePaneWidget::confirmLeavingMonitoredScope(TabViewModel* tab, const std::filesystem::path& target)

@@ -20,4 +20,13 @@ enum class HotkeyAction
     OpenOrNavigateInto,
     SelectAll,
     Properties,
+
+    // Navigation (spec §3.1) -- Milestone 2. All five are net-new keyboard access; none of these
+    // chords collide with any Qt-internal QAbstractItemView default, so handleKeyPress just emits
+    // on resolve (no extra swallow-logic needed, unlike SelectAll/OpenOrNavigateInto above).
+    NavigateBack,
+    NavigateForward,
+    Refresh,
+    GoToThisPC,
+    FocusAddressBar,
 };

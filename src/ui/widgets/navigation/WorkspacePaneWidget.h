@@ -182,6 +182,11 @@ private:
     void onBackRequested();
     void onForwardRequested();
 
+    // FileBrowserView::navigateToThisPCRequested (Ctrl+Shift+Home by default, spec §3.1) -- same
+    // target-construction/guard as the address bar's "this pc" literal-text case
+    // (onAddressBarEdited), acting on m_boundTab like the three slots above.
+    void onThisPCRequested();
+
     // Returns true if the navigation should proceed (either it stays within the monitored
     // subtree, or the user confirmed stopping monitoring). Stops monitoring itself on a confirmed
     // "yes" before returning, so callers just need: if (!confirmLeavingMonitoredScope(tab,

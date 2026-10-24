@@ -180,8 +180,15 @@ signals:
     // Mouse side buttons, captured via the same viewport event filter as the empty-space
     // deselect handling below, rather than QAction shortcuts, so they only apply while the mouse
     // is over the file list (mirrors the keyboard hotkeys' focus scoping above).
-    void navigateBackRequested();           // Mouse XButton1 (Qt::BackButton)
-    void navigateForwardRequested();        // Mouse XButton2 (Qt::ForwardButton)
+    void navigateBackRequested();           // Mouse XButton1 (Qt::BackButton); also Alt+Left (Architecture.md §14.x, spec §3.1)
+    void navigateForwardRequested();        // Mouse XButton2 (Qt::ForwardButton); also Alt+Right
+
+    // Navigation hotkeys (Architecture.md §14.x, spec §3.1) -- Milestone 2, same view-scoped
+    // posture as the File Operations hotkeys above. No competing Qt-internal default for any of
+    // these three chords, so handleKeyPress just emits on resolve.
+    void navigateRefreshRequested();        // F5 by default
+    void navigateToThisPCRequested();       // Ctrl+Shift+Home by default
+    void focusAddressBarRequested();        // Ctrl+L by default
 
     // Right-click on a row (resolved via indexAt; the row is selected first, matching Explorer's
     // "right-click an unselected item selects it") vs. on empty space (Architecture.md §14.13).

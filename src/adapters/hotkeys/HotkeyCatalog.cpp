@@ -52,6 +52,21 @@ namespace
         entries.push_back({ HotkeyAction::Properties, "fileOps.properties", Category::FileOperations, hotkeyTr("Properties"),
                              HotkeyChord(QKeySequence(Qt::ALT | Qt::Key_Return)), Scope::View, true });
 
+        // Navigation (spec §3.1) -- Milestone 2. View-scoped like §3.6 above (spec §5): all five
+        // require the file browser view to have focus. None allow a bare rebind -- none of these
+        // are in spec §4's bare-key exception list.
+        entries.push_back({ HotkeyAction::NavigateBack, "nav.back", Category::Navigation, hotkeyTr("Navigate back"),
+                             HotkeyChord(QKeySequence(Qt::ALT | Qt::Key_Left)), Scope::View, false });
+        entries.push_back({ HotkeyAction::NavigateForward, "nav.forward", Category::Navigation, hotkeyTr("Navigate forward"),
+                             HotkeyChord(QKeySequence(Qt::ALT | Qt::Key_Right)), Scope::View, false });
+        entries.push_back({ HotkeyAction::Refresh, "nav.refresh", Category::Navigation, hotkeyTr("Refresh current folder"),
+                             HotkeyChord(QKeySequence(Qt::Key_F5)), Scope::View, false });
+        entries.push_back({ HotkeyAction::GoToThisPC, "nav.goToThisPC", Category::Navigation, hotkeyTr("Go to \"This PC\""),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Home)), Scope::View, false });
+        entries.push_back({ HotkeyAction::FocusAddressBar, "nav.focusAddressBar", Category::Navigation,
+                             hotkeyTr("Focus/edit address bar"), HotkeyChord(QKeySequence(Qt::CTRL | Qt::Key_L)),
+                             Scope::View, false });
+
         return entries;
     }
 }
