@@ -11,6 +11,7 @@ pywinauto WindowSpecification for anything the page objects don't cover yet.
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -30,6 +31,10 @@ from .status_bar import MainStatusBar
 from .view_menu import ViewMenu
 
 WINDOW_TITLE = "Exp-LORer"
+# MainWindow sets its title to "Exp-LORer — <workspace name>" (MainWindow.cpp's constructor)
+# since the workspaces feature shipped -- match by prefix since the workspace name (e.g.
+# "Default") is no longer a fixed string we can match exactly.
+WINDOW_TITLE_RE = f"^{re.escape(WINDOW_TITLE)}( —.*)?$"
 PROCESS_NAME = "Exp-LORer.exe"
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_EXE = REPO_ROOT / "build" / "Release" / "src" / "app" / PROCESS_NAME
@@ -95,7 +100,7 @@ class ExpLorerApp:
         application = Application(backend="uia").start(
             f'"{resolved_exe}" --data-dir "{data_dir}"', wait_for_idle=False
         )
-        window = application.window(title=WINDOW_TITLE)
+        window = application.window(title_re=WINDOW_TITLE_RE)
         window.wait("visible", timeout=timeout)
 
         # Force the new window to the OS foreground. Confirmed by hand that without this,
