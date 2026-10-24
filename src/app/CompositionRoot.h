@@ -40,6 +40,9 @@
 #include "HighlightTheme.h"
 #include "HighlightThemeStore.h"
 #include "HighlightThemeViewModel.h"
+#include "HotkeyCatalog.h"
+#include "HotkeyManager.h"
+#include "HotkeyStore.h"
 #include "IconLoadingService.h"
 #include "LibGit2BranchProvider.h"
 #include "LibGit2StatusProvider.h"
@@ -98,6 +101,7 @@ public:
     HighlightThemeViewModel& highlightThemeViewModel() noexcept { return m_highlightThemeViewModel; }
     FileDecorationsViewModel& fileDecorationsViewModel() noexcept { return m_fileDecorationsViewModel; }
     FavoritesViewModel& favoritesViewModel() noexcept { return m_favoritesViewModel; }
+    HotkeyManager& hotkeyManager() noexcept { return m_hotkeyManager; }
     EnvironmentVariablesViewModel& environmentVariablesViewModel() noexcept { return m_environmentVariablesViewModel; }
     NotificationCenter& notificationCenter() noexcept { return m_notificationCenter; }
     NotificationSettingsViewModel& notificationSettingsViewModel() noexcept { return m_notificationSettingsViewModel; }
@@ -213,6 +217,15 @@ private:
     FavoritesStore m_favoritesStore;
     Favorites m_favorites;
     FavoritesViewModel m_favoritesViewModel;
+
+    // Keyboard Navigation & Hotkey Customization (Architecture.md §14.x): user-rebindable
+    // shortcuts, shared across all workspaces (one hotkeys.json, same posture as favorites.json
+    // above) -- presentation-only, same "store + value + Qt-facing manager" shape as the favorites
+    // block above, except mutations go through HotkeyManager (a QObject) directly rather than a
+    // separate ViewModel wrapper, since there's no plain-C++ "live value" distinct from the manager
+    // itself here.
+    HotkeyStore m_hotkeysStore;
+    HotkeyManager m_hotkeyManager;
 
     // Architecture.md §14.57: custom per-process environment variables (Tools > Environment
     // Variables...), applied directly to the process environment on load/save -- presentation-only,

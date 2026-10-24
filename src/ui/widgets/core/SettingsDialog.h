@@ -13,6 +13,7 @@ class HighlightThemeViewModel;
 class FileDecorationsViewModel;
 class NotificationSettingsViewModel;
 class ColumnVisibilitySettingsViewModel;
+class HotkeyManager;
 class SyntaxHighlightEngine;
 class QCheckBox;
 class QPushButton;
@@ -39,7 +40,7 @@ class SettingsDialog : public QDialog
 public:
     SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeViewModel& themeViewModel,
                    FileDecorationsViewModel& fileDecorationsViewModel, NotificationSettingsViewModel& notificationSettingsViewModel,
-                   ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
+                   ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, HotkeyManager& hotkeyManager,
                    UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent = nullptr);
 
 signals:
@@ -97,6 +98,10 @@ private:
     // file is previewed rather than broadcast live.
     QWidget* buildGeneralPreviewPage();
 
+    // General -> Hotkeys page (Architecture.md §14.x, spec §4): delegates entirely to
+    // SettingsHotkeysPage, built once here the same way every other page above is.
+    QWidget* buildHotkeysPage();
+
     static constexpr int kHiddenRowCount = 2;
 
     SyntaxHighlightEngine& m_engine;
@@ -104,6 +109,7 @@ private:
     FileDecorationsViewModel& m_fileDecorationsViewModel;
     NotificationSettingsViewModel& m_notificationSettingsViewModel;
     ColumnVisibilitySettingsViewModel& m_columnVisibilitySettingsViewModel;
+    HotkeyManager& m_hotkeyManager;
     UiThemeChangeNotifier& m_uiThemeChangeNotifier;
     QTableWidget* m_decorationsTable = nullptr;
     std::vector<FileDecorationRule> m_decorationRules;

@@ -22,6 +22,10 @@ add_library(explorer_ui_widgets STATIC
     core/StatusBarWidget.cpp
     core/SettingsDialog.h
     core/SettingsDialog.cpp
+    core/SettingsHotkeysPage.h
+    core/SettingsHotkeysPage.cpp
+    core/HotkeyEditWidget.h
+    core/HotkeyEditWidget.cpp
     core/WorkspaceLaunchContext.h
     core/WorkspaceManagerDialog.h
     core/WorkspaceManagerDialog.cpp

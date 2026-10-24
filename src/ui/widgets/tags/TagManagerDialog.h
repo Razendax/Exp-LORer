@@ -25,6 +25,7 @@ class FileListModel;
 class FileBrowserView;
 class FileDecorationRules;
 class TagManagerViewModel;
+class HotkeyManager;
 
 // Standalone "Tag Manager" dialog (Architecture.md §14.17), opened from Edit > "Tag Edit...":
 // a search box, a flow of selectable tag chips, and Rename/Add/Delete buttons operating on the
@@ -41,7 +42,7 @@ public:
     // list's FileListModel constructor (same dependencies MainWindow already threads into
     // SearchPanelWidget) -- this dialog needs its own model/view since it isn't backed by any tab.
     TagManagerDialog(TagManagerViewModel* viewModel, const FileDecorationRules& fileDecorationRules,
-                      QObject& fileDecorationsChangeSource, QWidget* parent = nullptr);
+                      QObject& fileDecorationsChangeSource, HotkeyManager& hotkeyManager, QWidget* parent = nullptr);
 
 protected:
     // QDialog's single funnel point for accept/reject/Esc/the default closeEvent-triggered reject --

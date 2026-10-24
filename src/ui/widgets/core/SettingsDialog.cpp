@@ -30,8 +30,10 @@
 #include "FileDecorationsViewModel.h"
 #include "FileListModel.h"
 #include "HighlightThemeViewModel.h"
+#include "HotkeyManager.h"
 #include "LanguageRegistry.h"
 #include "NotificationSettingsViewModel.h"
+#include "SettingsHotkeysPage.h"
 #include "SyntaxHighlightEngine.h"
 #include "TextEditPreviewWidget.h"
 #include "UiTheme.h"
@@ -87,6 +89,7 @@ SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeView
                                FileDecorationsViewModel& fileDecorationsViewModel,
                                NotificationSettingsViewModel& notificationSettingsViewModel,
                                ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
+                               HotkeyManager& hotkeyManager,
                                UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent)
     : QDialog(parent)
     , m_engine(engine)
@@ -94,6 +97,7 @@ SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeView
     , m_fileDecorationsViewModel(fileDecorationsViewModel)
     , m_notificationSettingsViewModel(notificationSettingsViewModel)
     , m_columnVisibilitySettingsViewModel(columnVisibilitySettingsViewModel)
+    , m_hotkeyManager(hotkeyManager)
     , m_uiThemeChangeNotifier(uiThemeChangeNotifier)
     , m_decorationRules(fileDecorationsViewModel.rules())
     , m_hiddenFilesRule(fileDecorationsViewModel.hiddenFilesRule())
@@ -146,14 +150,17 @@ SettingsDialog::SettingsDialog(SyntaxHighlightEngine& engine, HighlightThemeView
     columnsItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()) + 3);
     auto* previewItem = new QTreeWidgetItem(generalRoot, QStringList{ tr("Preview") });
     previewItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()) + 4);
+    auto* hotkeysItem = new QTreeWidgetItem(generalRoot, QStringList{ tr("Hotkeys") });
+    hotkeysItem->setData(0, kLanguageIndexRole, static_cast<int>(kAllLanguages.size()) + 5);
 
-    // All five built eagerly (unlike the lazily-built language pages above) since they're cheap --
+    // All six built eagerly (unlike the lazily-built language pages above) since they're cheap --
     // no tree-sitter/query compilation involved.
     m_pageStack->addWidget(buildGeneralUiPage());
     m_pageStack->addWidget(buildFileDecorationsPage());
     m_pageStack->addWidget(buildNotificationsPage());
     m_pageStack->addWidget(buildColumnsPage());
     m_pageStack->addWidget(buildGeneralPreviewPage());
+    m_pageStack->addWidget(buildHotkeysPage());
 
     m_categoryTree->expandAll();
 
@@ -706,4 +713,9 @@ QWidget* SettingsDialog::buildGeneralPreviewPage()
     layout->addStretch(1);
 
     return page;
+}
+
+QWidget* SettingsDialog::buildHotkeysPage()
+{
+    return new SettingsHotkeysPage(m_hotkeyManager, m_pageStack);
 }

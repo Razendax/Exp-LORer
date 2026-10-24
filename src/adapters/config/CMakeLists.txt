@@ -25,6 +25,10 @@ add_library(explorer_adapters_config STATIC
     FavoritesStore.cpp
     FavoritesViewModel.h
     FavoritesViewModel.cpp
+    HotkeyStore.h
+    HotkeyStore.cpp
+    HotkeyManager.h
+    HotkeyManager.cpp
     NotificationSettingsStore.h
     NotificationSettingsStore.cpp
     NotificationSettingsViewModel.h
@@ -46,7 +50,7 @@ add_library(explorer_adapters_config STATIC
 target_include_directories(explorer_adapters_config PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # Qt6::Gui is needed for QColor (HighlightThemeViewModel's public API), on top of Qt6::Core for
 # QByteArray/QJsonDocument.
-target_link_libraries(explorer_adapters_config PUBLIC explorer_adapters_viewmodels explorer_adapters_highlighting explorer_adapters_decoration explorer_adapters_favorites explorer_adapters_notifications Qt6::Core Qt6::Gui)
+target_link_libraries(explorer_adapters_config PUBLIC explorer_adapters_viewmodels explorer_adapters_highlighting explorer_adapters_decoration explorer_adapters_favorites explorer_adapters_notifications explorer_adapters_hotkeys Qt6::Core Qt6::Gui)
 target_link_libraries(explorer_adapters_config PRIVATE explorer_adapters_logging)
 # Qt6::Network is needed for QLocalSocket (WorkspaceInstanceProbe's is-this-workspace-open check,
 # Architecture.md §14.60) -- PRIVATE since no public header here exposes a Qt Network type.

@@ -40,6 +40,7 @@ class TagsCellDelegate;
 class PercentCellDelegate;
 class MediaHoverPreviewPopup;
 class MediaViewerAnimationController;
+class HotkeyManager;
 
 // The tab's content widget: a QStackedWidget switching between a QListView (icon/list/tiles view
 // modes) and a QTreeView (details view mode), both bound to the same FileListModel
@@ -62,7 +63,11 @@ public:
         MediaViewerGrid,
     };
 
-    explicit FileBrowserView(FileListModel* model, QWidget* parent = nullptr, DisplayMode displayMode = DisplayMode::Normal);
+    // hotkeyManager: injected so handleKeyPress() can resolve every incoming chord through it
+    // instead of hardcoding Qt::Key_X/QKeySequence::Copy-style checks (Architecture.md §14.x) --
+    // every construction site ultimately sources this from CompositionRoot::hotkeyManager().
+    explicit FileBrowserView(FileListModel* model, QWidget* parent, HotkeyManager& hotkeyManager,
+                              DisplayMode displayMode = DisplayMode::Normal);
 
     void setViewMode(ViewMode mode);
 
@@ -167,6 +172,11 @@ signals:
     void deleteRequested(bool permanent);   // true for Shift+Delete
     void navigateUpRequested();             // Backspace, and ArrowLeft in Details view
 
+    // Properties hotkey (Architecture.md §14.x, spec §3.6): no path argument -- the caller
+    // resolves the selected paths itself (WorkspacePaneWidget reads them off the owning tab's
+    // selectedEntries(), the same source copyRequested/cutRequested above already use).
+    void propertiesRequested();
+
     // Mouse side buttons, captured via the same viewport event filter as the empty-space
     // deselect handling below, rather than QAction shortcuts, so they only apply while the mouse
     // is over the file list (mirrors the keyboard hotkeys' focus scoping above).
@@ -238,6 +248,7 @@ private:
     void clearHoverPreview();
 
     FileListModel* m_model = nullptr;
+    HotkeyManager& m_hotkeyManager;
     DisplayMode m_displayMode = DisplayMode::Normal;
     ViewMode m_viewMode = ViewMode::Details;
     MediaViewerViewMode m_mediaViewerViewMode = MediaViewerViewMode::Thumbnails;

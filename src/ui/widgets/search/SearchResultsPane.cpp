@@ -5,13 +5,14 @@
 #include "FileBrowserView.h"
 #include "SearchCriteriaPanel.h"
 
-SearchResultsPane::SearchResultsPane(FileListModel* resultsModel, UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent)
+SearchResultsPane::SearchResultsPane(FileListModel* resultsModel, UiThemeChangeNotifier& uiThemeChangeNotifier,
+                                      HotkeyManager& hotkeyManager, QWidget* parent)
     : QWidget(parent)
 {
     setObjectName(QStringLiteral("advancedSearchResultsPane"));
 
     m_criteriaPanel = new SearchCriteriaPanel(uiThemeChangeNotifier, this);
-    m_browserView = new FileBrowserView(resultsModel, this, FileBrowserView::DisplayMode::AdvancedSearchResults);
+    m_browserView = new FileBrowserView(resultsModel, this, hotkeyManager, FileBrowserView::DisplayMode::AdvancedSearchResults);
 
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);

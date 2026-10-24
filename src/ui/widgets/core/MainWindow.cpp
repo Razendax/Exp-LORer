@@ -41,6 +41,7 @@
 #include "FileOperationsController.h"
 #include "FolderTreeModel.h"
 #include "FolderTreeView.h"
+#include "HotkeyManager.h"
 #include "ManageFavoritesDialog.h"
 #include "MainStatusBarWidget.h"
 #include "MediaViewerModeController.h"
@@ -145,7 +146,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
                          ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, DiskUsageService& diskUsageService,
                          DuplicateFinderService& duplicateFinderService, FragmentationService& fragmentationService,
                          BulkRenameUseCase& bulkRenameUseCase, EnvironmentVariablesViewModel& environmentVariablesViewModel,
-                         WorkspaceStore& workspaceStore, const WorkspaceLaunchContext& launchContext,
+                         HotkeyManager& hotkeyManager, WorkspaceStore& workspaceStore, const WorkspaceLaunchContext& launchContext,
                          const AppConfig& initialConfig, QWidget* parent)
     : QMainWindow(parent)
     , m_workspaceController(workspaceController)
@@ -169,6 +170,7 @@ MainWindow::MainWindow(WorkspaceController* workspaceController, AppConfigStore&
     , m_fragmentationService(fragmentationService)
     , m_bulkRenameUseCase(bulkRenameUseCase)
     , m_environmentVariablesViewModel(environmentVariablesViewModel)
+    , m_hotkeyManager(hotkeyManager)
     , m_workspaceStore(workspaceStore)
     , m_launchContext(launchContext)
     , m_columnWidths(initialConfig.detailsColumnWidths)
@@ -434,7 +436,8 @@ void MainWindow::createWorkspace()
 {
     m_workspaceLayoutWidget = new WorkspaceLayoutWidget(m_workspaceController, m_columnVisibilitySettingsViewModel,
                                                           m_diskUsageService, m_fragmentationService, m_notificationCenter,
-                                                          m_uiThemeChangeNotifier, m_columnWidths, m_columnOrder, this);
+                                                          m_uiThemeChangeNotifier, m_hotkeyManager, m_columnWidths,
+                                                          m_columnOrder, this);
     m_workspaceLayoutWidget->setObjectName(QStringLiteral("workspaceLayoutWidget"));
 
     // Right panel (Architecture.md §14.25): a collapsible side-panel tab strip wrapping the tag UI,
@@ -631,7 +634,7 @@ void MainWindow::createFolderTree()
 void MainWindow::createSearchPanel()
 {
     m_searchPanelWidget = new SearchPanelWidget(m_fileDecorationsViewModel.decorationRules(), m_fileDecorationsViewModel,
-                                                 m_uiThemeChangeNotifier, m_leftPanelWidget);
+                                                 m_uiThemeChangeNotifier, m_hotkeyManager, m_leftPanelWidget);
 
     connect(m_searchPanelWidget, &SearchPanelWidget::queryChanged, this, [this](const QString& query) {
         if (TabViewModel* tab = m_workspaceController->focusedTab())
@@ -803,7 +806,8 @@ void MainWindow::showTagManagerDialog()
 {
     TagManagerViewModel viewModel(m_tagManagementUseCase, m_tagChangeNotifier, m_advancedSearchService,
                                   m_iconLoadingService, m_fileTagsService);
-    TagManagerDialog dialog(&viewModel, m_fileDecorationsViewModel.decorationRules(), m_fileDecorationsViewModel, this);
+    TagManagerDialog dialog(&viewModel, m_fileDecorationsViewModel.decorationRules(), m_fileDecorationsViewModel,
+                             m_hotkeyManager, this);
     dialog.exec();
 }
 
@@ -988,7 +992,8 @@ void MainWindow::onBulkRenameRequested(TabViewModel* tab, const std::vector<std:
 void MainWindow::showSettingsDialog()
 {
     SettingsDialog dialog(m_syntaxHighlightEngine, m_highlightThemeViewModel, m_fileDecorationsViewModel,
-                          m_notificationSettingsViewModel, m_columnVisibilitySettingsViewModel, m_uiThemeChangeNotifier, this);
+                          m_notificationSettingsViewModel, m_columnVisibilitySettingsViewModel, m_hotkeyManager,
+                          m_uiThemeChangeNotifier, this);
 
     connect(&dialog, &SettingsDialog::showTabCloseButtonsChanged, this, [this](bool visible) {
         for (WorkspacePaneId id : kAllPanes)

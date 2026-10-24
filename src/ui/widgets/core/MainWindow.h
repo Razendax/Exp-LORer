@@ -61,6 +61,7 @@ class DuplicateFinderService;
 class DuplicateFinderDialog;
 class FragmentationService;
 class BulkRenameUseCase;
+class HotkeyManager;
 
 // Application shell: menu bar (File/Edit/View/Favorites/Tools/Help), a small Layout toolbar, and
 // a WorkspaceLayoutWidget as central widget hosting up to 4 independent WorkspacePaneWidget
@@ -83,8 +84,8 @@ public:
                ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel, DiskUsageService& diskUsageService,
                DuplicateFinderService& duplicateFinderService, FragmentationService& fragmentationService,
                BulkRenameUseCase& bulkRenameUseCase, EnvironmentVariablesViewModel& environmentVariablesViewModel,
-               WorkspaceStore& workspaceStore, const WorkspaceLaunchContext& launchContext, const AppConfig& initialConfig,
-               QWidget* parent = nullptr);
+               HotkeyManager& hotkeyManager, WorkspaceStore& workspaceStore, const WorkspaceLaunchContext& launchContext,
+               const AppConfig& initialConfig, QWidget* parent = nullptr);
     ~MainWindow() override;
 
 protected:
@@ -213,6 +214,7 @@ private:
     FragmentationService& m_fragmentationService;
     BulkRenameUseCase& m_bulkRenameUseCase;
     EnvironmentVariablesViewModel& m_environmentVariablesViewModel;
+    HotkeyManager& m_hotkeyManager;
     WorkspaceStore& m_workspaceStore;
     WorkspaceLaunchContext m_launchContext;
     DuplicateFinderDialog* m_duplicateFinderDialog = nullptr;

@@ -18,6 +18,7 @@
 #include "ExclusiveToggleButtons.h"
 #include "FileBrowserView.h"
 #include "FileListModel.h"
+#include "HotkeyManager.h"
 #include "PathContainment.h"
 #include "SearchResultDelegate.h"
 #include "SearchResultsTreeModel.h"
@@ -32,7 +33,8 @@ namespace
 }
 
 SearchPanelWidget::SearchPanelWidget(const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
-                                      UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent)
+                                      UiThemeChangeNotifier& uiThemeChangeNotifier, HotkeyManager& hotkeyManager,
+                                      QWidget* parent)
     : QWidget(parent)
 {
     setObjectName(QStringLiteral("searchPanelWidget"));
@@ -177,7 +179,8 @@ SearchPanelWidget::SearchPanelWidget(const FileDecorationRules& fileDecorationRu
 
     m_resultsStack = new QStackedWidget(this);
 
-    m_listResultsView = new FileBrowserView(m_listModel, m_resultsStack, FileBrowserView::DisplayMode::AdvancedSearchResults);
+    m_listResultsView =
+        new FileBrowserView(m_listModel, m_resultsStack, hotkeyManager, FileBrowserView::DisplayMode::AdvancedSearchResults);
     m_listResultsView->setObjectName(QStringLiteral("searchListResultsView"));
     for (int column = FileListModel::NameColumn + 1; column < FileListModel::ColumnCount; ++column)
     {

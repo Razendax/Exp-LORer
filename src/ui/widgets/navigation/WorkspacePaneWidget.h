@@ -34,6 +34,7 @@ class DiskUsageService;
 class FragmentationService;
 class NotificationCenter;
 class UiThemeChangeNotifier;
+class HotkeyManager;
 
 // One pane's full self-contained UI: its own toolbar (back/forward/up/refresh QActions, address
 // QLineEdit, view-mode QToolButton+menu — the per-pane counterpart of MainWindow's former
@@ -52,6 +53,7 @@ public:
                                   ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
                                   DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
                                   NotificationCenter& notificationCenter, UiThemeChangeNotifier& uiThemeChangeNotifier,
+                                  HotkeyManager& hotkeyManager,
                                   const std::array<int, FileListModel::ColumnCount>& initialColumnWidths = {},
                                   const std::array<int, FileListModel::ColumnCount>& initialColumnOrder = {},
                                   QWidget* parent = nullptr);
@@ -207,6 +209,7 @@ private:
     FragmentationService& m_fragmentationService;
     NotificationCenter& m_notificationCenter;
     UiThemeChangeNotifier& m_uiThemeChangeNotifier;
+    HotkeyManager& m_hotkeyManager;
     TabViewModel* m_boundTab = nullptr;
     // Every connection bindToolBarToTab() makes to m_boundTab, so unbinding is just "disconnect
     // everything in this list" instead of a hand-maintained disconnect() call paired to each

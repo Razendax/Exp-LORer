@@ -32,6 +32,7 @@
 #include "FileOperationsController.h"
 #include "FolderSizeWidget.h"
 #include "FragmentationWidget.h"
+#include "HotkeyManager.h"
 #include "IContextMenuProvider.h"
 #include "MediaViewerSortViewBar.h"
 #include "PathContainment.h"
@@ -150,6 +151,7 @@ WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOpera
                                           ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
                                           DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
                                           NotificationCenter& notificationCenter, UiThemeChangeNotifier& uiThemeChangeNotifier,
+                                          HotkeyManager& hotkeyManager,
                                           const std::array<int, FileListModel::ColumnCount>& initialColumnWidths,
                                           const std::array<int, FileListModel::ColumnCount>& initialColumnOrder,
                                           QWidget* parent)
@@ -161,6 +163,7 @@ WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOpera
     , m_fragmentationService(fragmentationService)
     , m_notificationCenter(notificationCenter)
     , m_uiThemeChangeNotifier(uiThemeChangeNotifier)
+    , m_hotkeyManager(hotkeyManager)
     , m_initialColumnWidths(initialColumnWidths)
     , m_initialColumnOrder(initialColumnOrder)
 {
@@ -404,7 +407,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
 {
     auto* stack = new QStackedWidget(m_tabWidget);
 
-    auto* browserView = new FileBrowserView(tab->fileListModel(), stack);
+    auto* browserView = new FileBrowserView(tab->fileListModel(), stack, m_hotkeyManager);
     browserView->setViewMode(tab->viewMode());
     browserView->setColumnWidths(m_initialColumnWidths);
     browserView->setColumnOrder(m_initialColumnOrder);
@@ -414,7 +417,7 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     stack->addWidget(browserView); // page 0: normal browsing
 
     TabAdvancedSearchViewModel* advancedSearch = tab->advancedSearch();
-    auto* advancedSearchPane = new SearchResultsPane(advancedSearch->resultsModel(), m_uiThemeChangeNotifier, stack);
+    auto* advancedSearchPane = new SearchResultsPane(advancedSearch->resultsModel(), m_uiThemeChangeNotifier, m_hotkeyManager, stack);
     advancedSearchPane->setCriteria(advancedSearch->criteria(), advancedSearch->resolveTagCriteria());
     // Prepopulate with every tag (searchTagsForCriteria("") -> all tags, alphabetically) rather
     // than leaving the matching-tags row empty until the user types something, same reasoning as
@@ -431,7 +434,8 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     // rendering, bound to this tab's own media-viewer results model. Selection/activation/context
     // menu all come for free via the same wireBrowserView() every other page already goes through.
     TabMediaViewerViewModel* mediaViewer = tab->mediaViewer();
-    auto* mediaViewerBrowserView = new FileBrowserView(mediaViewer->resultsModel(), stack, FileBrowserView::DisplayMode::MediaViewerGrid);
+    auto* mediaViewerBrowserView =
+        new FileBrowserView(mediaViewer->resultsModel(), stack, m_hotkeyManager, FileBrowserView::DisplayMode::MediaViewerGrid);
     wireBrowserView(mediaViewerBrowserView, tab);
     stack->addWidget(mediaViewerBrowserView); // page 2: Media Viewer grid
 
@@ -679,6 +683,17 @@ void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewM
     });
     connect(browserView, &FileBrowserView::deleteRequested, tab, [this, tab](bool permanent) {
         onDeleteRequested(tab, permanent);
+    });
+    connect(browserView, &FileBrowserView::propertiesRequested, tab, [this, tab]() {
+        if (tab->selectedEntries().empty())
+        {
+            return;
+        }
+        // Single-target only (rename-as-move, showProperties, and openFile/itemActivated all take
+        // one path) -- same posture as F2/Rename above and FileItemContextMenu's own singleTarget
+        // guard; a multi-selection Properties press just shows the first selected item's.
+        const auto ownerWindow = reinterpret_cast<NativeWindowHandle>(window()->winId());
+        m_fileOperationsController->showProperties(tab->selectedEntries().front().path(), ownerWindow);
     });
     connect(browserView, &FileBrowserView::navigateUpRequested, this, &WorkspacePaneWidget::onUpRequested);
     connect(browserView, &FileBrowserView::navigateBackRequested, this, &WorkspacePaneWidget::onBackRequested);

@@ -68,6 +68,8 @@ CompositionRoot::CompositionRoot(const std::filesystem::path& appDataDir, const 
     , m_favoritesStore(appDataDir / "favorites.json")
     , m_favorites(m_favoritesStore.load())
     , m_favoritesViewModel(m_favorites, m_favoritesStore)
+    , m_hotkeysStore(appDataDir / "hotkeys.json")
+    , m_hotkeyManager(m_hotkeysStore, HotkeyCatalog::entries())
     , m_environmentVariablesStore(appDataDir / "environment_variables.json")
     , m_environmentVariables(loadOrSeedEnvironmentVariables(m_environmentVariablesStore))
     , m_environmentVariablesViewModel(m_environmentVariables, m_environmentVariablesStore)

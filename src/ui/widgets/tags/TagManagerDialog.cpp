@@ -26,6 +26,7 @@
 #include "FileBrowserView.h"
 #include "FileListModel.h"
 #include "FlowLayout.h"
+#include "HotkeyManager.h"
 #include "TagChipWidget.h"
 #include "TagManagerViewModel.h"
 
@@ -36,7 +37,7 @@ constexpr int kIsVirtualRole = Qt::UserRole + 1;
 } // namespace
 
 TagManagerDialog::TagManagerDialog(TagManagerViewModel* viewModel, const FileDecorationRules& fileDecorationRules,
-                                    QObject& fileDecorationsChangeSource, QWidget* parent)
+                                    QObject& fileDecorationsChangeSource, HotkeyManager& hotkeyManager, QWidget* parent)
     : QDialog(parent)
     , m_viewModel(viewModel)
 {
@@ -96,7 +97,7 @@ TagManagerDialog::TagManagerDialog(TagManagerViewModel* viewModel, const FileDec
     m_tagAreaStack->addWidget(m_tagTree);
 
     m_resultsModel = new FileListModel(fileDecorationRules, fileDecorationsChangeSource, this);
-    m_resultsView = new FileBrowserView(m_resultsModel, this, FileBrowserView::DisplayMode::AdvancedSearchResults);
+    m_resultsView = new FileBrowserView(m_resultsModel, this, hotkeyManager, FileBrowserView::DisplayMode::AdvancedSearchResults);
     m_resultsView->setObjectName(QStringLiteral("tagManagerResultsView"));
 
     bool storedShowCounts = false;

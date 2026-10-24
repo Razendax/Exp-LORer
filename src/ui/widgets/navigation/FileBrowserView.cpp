@@ -28,6 +28,9 @@
 #include "FileListModel.h"
 #include "FileNameEditDelegate.h"
 #include "FileTileDelegate.h"
+#include "HotkeyCatalogEntry.h"
+#include "HotkeyChord.h"
+#include "HotkeyManager.h"
 #include "MediaDetailsDelegate.h"
 #include "MediaExtensions.h"
 #include "MediaFilmstripDelegate.h"
@@ -123,9 +126,10 @@ namespace
     };
 }
 
-FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, DisplayMode displayMode)
+FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, HotkeyManager& hotkeyManager, DisplayMode displayMode)
     : QWidget(parent)
     , m_model(model)
+    , m_hotkeyManager(hotkeyManager)
     , m_displayMode(displayMode)
 {
     // Default id; overridden by the owner for a specific role (e.g. SearchPanelWidget renames its
@@ -458,30 +462,78 @@ bool FileBrowserView::eventFilter(QObject* watched, QEvent* event)
 
 bool FileBrowserView::handleKeyPress(QKeyEvent* event)
 {
-    // Must be checked before QKeySequence::Cut: Qt's standard Cut sequence on Windows includes
-    // "Shift+Del" as an alternate binding, which file managers repurpose for permanent delete.
-    if (event->key() == Qt::Key_Delete)
+    const QKeySequence chord = HotkeyChord::fromKeyEvent(event).sequence();
+    const std::optional<HotkeyAction> action = m_hotkeyManager.resolve(HotkeyCatalogEntry::Scope::View, chord);
+
+    // Independent actions: whichever HotkeyAction the physical chord currently resolves to (via
+    // rebind or catalog default) always wins, regardless of which physical key triggered it -- none
+    // of these seven have any competing Qt-internal default behavior to worry about suppressing.
+    if (action == HotkeyAction::Delete)            { emit deleteRequested(false); return true; }
+    if (action == HotkeyAction::DeletePermanently) { emit deleteRequested(true);  return true; }
+    if (action == HotkeyAction::Copy)  { emit copyRequested();  return true; }
+    if (action == HotkeyAction::Cut)   { emit cutRequested();   return true; }
+    if (action == HotkeyAction::Paste) { emit pasteRequested(); return true; }
+    if (action == HotkeyAction::NavigateToParent) { emit navigateUpRequested();   return true; }
+    if (action == HotkeyAction::Properties)       { emit propertiesRequested();   return true; }
+
+    // Select All (Ctrl+A) and Open/navigate-into-selection (Enter) are each also QAbstractItemView's
+    // own built-in key handling (select-all, activate), not something this app ever routed through
+    // a QShortcut/QAction -- so once SelectAll/OpenOrNavigateInto is rebound or Cleared away from
+    // these physical keys, the key itself must still be swallowed here, or Qt's built-in handling
+    // underneath would keep firing regardless of the rebind (defeating "Clear makes it unreachable
+    // by keyboard", spec §5). `event->matches(QKeySequence::SelectAll)`/the plain-Enter check below
+    // identify the *physical* key regardless of what (if anything) currently resolves to it.
+    const bool isSelectAllKey = event->matches(QKeySequence::SelectAll);
+    const bool isOpenKey =
+        (event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter) && event->modifiers() == Qt::NoModifier;
+
+    if (action == HotkeyAction::SelectAll || isSelectAllKey)
     {
-        emit deleteRequested(event->modifiers().testFlag(Qt::ShiftModifier));
+        if (action == HotkeyAction::SelectAll && m_model->rowCount() > 0)
+        {
+            const QModelIndex topLeft = m_model->index(0, 0);
+            const QModelIndex bottomRight = m_model->index(m_model->rowCount() - 1, 0);
+            m_selectionModel->select(QItemSelection(topLeft, bottomRight),
+                                      QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        }
         return true;
     }
-    if (event->matches(QKeySequence::Copy))  { emit copyRequested();  return true; }
-    if (event->matches(QKeySequence::Cut))   { emit cutRequested();   return true; }
-    if (event->matches(QKeySequence::Paste)) { emit pasteRequested(); return true; }
-    if (event->key() == Qt::Key_Backspace)   { emit navigateUpRequested(); return true; }
 
-    if (event->key() == Qt::Key_F2 && m_displayMode != DisplayMode::AdvancedSearchResults)
+    if (action == HotkeyAction::OpenOrNavigateInto || isOpenKey)
     {
-        const QModelIndexList selectedRows = m_selectionModel->selectedRows();
-        if (selectedRows.size() == 1 && (selectedRows.front().flags() & Qt::ItemIsEditable))
+        if (action == HotkeyAction::OpenOrNavigateInto)
         {
-            auto* view = (m_stack->currentWidget() == m_treeView) ? static_cast<QAbstractItemView*>(m_treeView)
-                                                                    : static_cast<QAbstractItemView*>(m_listView);
-            view->edit(selectedRows.front());
-            return true;
+            const QModelIndex current = m_selectionModel->currentIndex();
+            if (current.isValid())
+            {
+                emitActivated(current);
+            }
         }
+        return true;
     }
 
+    // Rename (F2) is the same story as Select All/Open above, EXCEPT in AdvancedSearchResults mode,
+    // where -- unchanged from before this feature -- F2 is deliberately left to Qt's own
+    // EditKeyPressed trigger rather than this guarded single-selection-editable check.
+    const bool isRenameKey = event->key() == Qt::Key_F2 && m_displayMode != DisplayMode::AdvancedSearchResults;
+    if (action == HotkeyAction::Rename || isRenameKey)
+    {
+        if (action == HotkeyAction::Rename)
+        {
+            const QModelIndexList selectedRows = m_selectionModel->selectedRows();
+            if (selectedRows.size() == 1 && (selectedRows.front().flags() & Qt::ItemIsEditable))
+            {
+                auto* view = (m_stack->currentWidget() == m_treeView) ? static_cast<QAbstractItemView*>(m_treeView)
+                                                                        : static_cast<QAbstractItemView*>(m_listView);
+                view->edit(selectedRows.front());
+            }
+        }
+        return true;
+    }
+
+    // Details-view ArrowLeft/ArrowRight (parent/open-folder navigation) stay fixed -- explicitly
+    // OUT of scope for hotkey customization (spec §6), untouched and independent of every chord/
+    // action resolution above.
     const bool isDetailsView = (m_stack->currentWidget() == m_treeView);
     if (isDetailsView && event->key() == Qt::Key_Left)
     {

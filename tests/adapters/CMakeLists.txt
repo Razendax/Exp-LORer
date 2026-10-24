@@ -31,6 +31,9 @@ add_executable(explorer_adapters_tests
     FileDecorationRulesStoreTest.cpp
     FavoritesTest.cpp
     FavoritesStoreTest.cpp
+    HotkeyBindingsTest.cpp
+    HotkeyStoreTest.cpp
+    HotkeyManagerTest.cpp
     NotificationSettingsTest.cpp
     NotificationSettingsStoreTest.cpp
     ColumnVisibilitySettingsStoreTest.cpp

@@ -24,6 +24,7 @@ class FileBrowserView;
 class SearchResultDelegate;
 class SearchResultsTreeModel;
 class UiThemeChangeNotifier;
+class HotkeyManager;
 
 // Content of the left panel's "Search" tab (Architecture.md §14.42): an async, name-only recursive
 // search over the focused tab's current folder, rendered as a list or (optionally) a folder tree,
@@ -38,7 +39,7 @@ class SearchPanelWidget : public QWidget
 
 public:
     SearchPanelWidget(const FileDecorationRules& fileDecorationRules, QObject& fileDecorationsChangeSource,
-                       UiThemeChangeNotifier& uiThemeChangeNotifier, QWidget* parent = nullptr);
+                       UiThemeChangeNotifier& uiThemeChangeNotifier, HotkeyManager& hotkeyManager, QWidget* parent = nullptr);
 
     // QSignalBlocker-guarded resync of the search bar's text (mirrors the old
     // m_searchBar->setText(...) in MainWindow::onFocusedTabChanged) -- also re-applies `query` as

@@ -18,6 +18,7 @@ class DiskUsageService;
 class FragmentationService;
 class NotificationCenter;
 class UiThemeChangeNotifier;
+class HotkeyManager;
 
 // Owns all 4 WorkspacePaneWidget instances up front, created once, never destroyed.
 // applyLayout(SplitLayout) tears down and rebuilds nested QSplitters from
@@ -35,6 +36,7 @@ public:
                                     ColumnVisibilitySettingsViewModel& columnVisibilitySettingsViewModel,
                                     DiskUsageService& diskUsageService, FragmentationService& fragmentationService,
                                     NotificationCenter& notificationCenter, UiThemeChangeNotifier& uiThemeChangeNotifier,
+                                    HotkeyManager& hotkeyManager,
                                     const std::array<int, FileListModel::ColumnCount>& initialColumnWidths = {},
                                     const std::array<int, FileListModel::ColumnCount>& initialColumnOrder = {},
                                     QWidget* parent = nullptr);

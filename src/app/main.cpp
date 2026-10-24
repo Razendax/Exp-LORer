@@ -191,7 +191,8 @@ int main(int argc, char* argv[])
                               compositionRoot.notificationSettingsViewModel(), compositionRoot.columnVisibilitySettingsViewModel(),
                               compositionRoot.diskUsageService(), compositionRoot.duplicateFinderService(),
                               compositionRoot.fragmentationService(), compositionRoot.bulkRenameUseCase(),
-                              compositionRoot.environmentVariablesViewModel(), compositionRoot.workspaceStore(),
+                              compositionRoot.environmentVariablesViewModel(), compositionRoot.hotkeyManager(),
+                              compositionRoot.workspaceStore(),
                               WorkspaceLaunchContext{ appDataDir, workspaceId }, initialConfig);
         mainWindow.show();
 
