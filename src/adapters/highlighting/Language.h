@@ -17,4 +17,5 @@ enum class Language
     Yaml,
     PowerShell,
     Markdown,
+    CMake,
 };

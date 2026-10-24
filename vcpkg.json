@@ -28,6 +28,7 @@
     "tree-sitter-yaml",
     "tree-sitter-powershell",
     "tree-sitter-markdown",
+    "tree-sitter-cmake",
     {
       "name": "libvips",
       "features": ["jpeg", "png", "webp"]

@@ -40,10 +40,10 @@
 
 namespace
 {
-    constexpr std::array<Language, 12> kAllLanguages = {
+    constexpr std::array<Language, 13> kAllLanguages = {
         Language::C,          Language::Cpp,        Language::CSharp,    Language::Python,     Language::JavaScript,
         Language::TypeScript, Language::Json,       Language::Html,      Language::Css,
-        Language::Yaml,       Language::PowerShell, Language::Markdown,
+        Language::Yaml,       Language::PowerShell, Language::Markdown,  Language::CMake,
     };
 
     constexpr int kLanguageIndexRole = Qt::UserRole;

@@ -5,8 +5,9 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.26–14.27, §14.29, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81, §14.84–14.85, §14.98, §14.100–14.101, §14.106 — the right-panel file Preview tab, its
-text-preview syntax highlighting (plus its later expansion to YAML/PowerShell/Markdown, §14.100),
+Covers §14.26–14.27, §14.29, §14.58–14.59, §14.67, §14.71, §14.76, §14.79, §14.81, §14.84–14.85, §14.98, §14.100–14.101, §14.106–14.107 — the right-panel file Preview tab, its
+text-preview syntax highlighting (plus its later expansion to YAML/PowerShell/Markdown, §14.100,
+and CMake, §14.107),
 archive browsing/preview/extraction, the Preview panel's dedicated per-kind widgets and media-layout rework, the
 built-in Widgets video player (first used here, before Media Viewer mode reused it), real
 image/video previews in the main browser's Extra Large Icons view, the mouse-hover preview
@@ -950,4 +951,68 @@ ASCII `std::tolower` (these names are all-ASCII, so no `UnicodeCaseFold` is need
 archive-nested `.gitignore` matches the same way a top-level one does. No syntax highlighting is
 added or needed: `LanguageRegistry::languageForExtension()` keys on `path.extension()`, which is
 already empty for a lone leading-dot filename, so these fall back to plain text automatically.
+
+### 14.107 CMake Syntax Highlighting (CMakeLists.txt / .cmake)
+
+Extends §14.27/§14.100's highlighting scope by a thirteenth language: CMake. Same mechanism as
+every prior grammar — no `SyntaxHighlightEngine`/`HighlightTheme` architecture
+change, no Domain/Application/Port change — with one wrinkle `languageForExtension`'s pure
+extension dispatch can't handle on its own: `CMakeLists.txt`, the file every CMake project actually
+authors most of its build logic in, carries no CMake-specific extension (it's a plain `.txt` file
+by name).
+
+* **Grammar sourcing**: `uyha/tree-sitter-cmake` (tag `v0.7.5`), same overlay-port shape as every
+  other vendored grammar — `vcpkg_from_github` pinned to the tag, compiling that tag's
+  already-committed `src/parser.c`/`src/scanner.c` directly, no tree-sitter-CLI codegen step. Flat
+  `src/`, no extra schema-variant files (unlike YAML's port, §14.100).
+* **`src/adapters/highlighting`**: `Language` gains `CMake`. `LanguageRegistry` gains two things:
+  `languageForExtension` maps `.cmake` → `CMake` (covers `.cmake` module/include files like
+  `FindFoo.cmake`); and a new `languageForPath(const std::filesystem::path&)` — the first
+  filename-based entry into this dispatch, alongside the existing extension-based one — that
+  special-cases a filename of `CMakeLists.txt` (case-insensitive) to `CMake` before falling back to
+  `languageForExtension` on the lowercased extension for everything else. `displayName` gains
+  `"CMake"`. `SyntaxHighlightEngine` gains the matching `tree_sitter_cmake` extern declaration and
+  `tsLanguageFor`/`queryResourcePathFor` cases, same pattern as every prior language.
+  `explorer_adapters_highlighting` picks up a new `explorer_domain` link dependency (for
+  `PathUtf8.h`, §6) purely to implement that filename comparison without
+  `std::filesystem::path::string()`'s non-ASCII crash risk.
+* **Call site**: `TextEditPreviewWidget::setPreview()` (the single call site for preview/edit-mode
+  highlighting) switches from `LanguageRegistry::languageForExtension(MediaExtensions::
+  lowercaseExtension(preview.path()))` to `LanguageRegistry::languageForPath(preview.path())` so
+  `CMakeLists.txt` actually resolves — extension-only dispatch there would otherwise always see
+  `.txt` and stay unhighlighted. No other call site exists.
+* **New `.scm` query** (`resources/tree-sitter-queries/cmake.scm`), hand-authored rather than
+  copied verbatim from the grammar's own upstream query: comments/string arguments/escape
+  sequences/variable references map onto the existing six-category base palette's
+  `@comment`/`@string`/`@string.escape`/`@variable`; a command invocation's name (e.g.
+  `add_executable(`) and a `function()`/`macro()` definition's own name argument map onto
+  `@function`; the `if`/`elseif`/`else`/`endif`/`foreach`/`endforeach`/`while`/`endwhile`/
+  `function`/`endfunction`/`macro`/`endmacro`/`block`/`endblock` control-flow keyword tokens plus
+  the `ENV`/`CACHE` variable-reference qualifiers map onto `@keyword`. Deliberately **not**
+  reused: the upstream query's large regex-based `@function.builtin`/`@boolean`/`@keyword.operator`
+  predicate rules — `SyntaxHighlightEngine::highlight()` never evaluates `#match?`/`#any-of?`/
+  predicates at all (it iterates every `TSQueryMatch` unconditionally), so a predicate-gated
+  pattern in this engine fires on *every* structural match regardless of whether the predicate
+  would actually pass; porting those rules verbatim would have mislabeled e.g. every CMake command
+  call as a "builtin" rather than just the ones upstream's regex intends. The upstream query's one
+  non-standard predicate (`#lua-match?`, a Neovim-specific Lua-pattern predicate rather than a
+  standard tree-sitter one) is avoided for the same reason. This is a pre-existing limitation of
+  the engine, not newly introduced here — it already affects how literally the existing
+  Python/C/C++ queries' own `#match?`-gated rules should be read — and fixing it is out of scope
+  for this pass.
+* **`HighlightThemeStore`**'s `Language`↔`QString` round-trip, `SettingsDialog`'s and
+  `TextEditorOptionsDialog`'s `kAllLanguages` arrays (both `12` → `13`) all extended the same way
+  every prior language is listed — no structural change to either dialog.
+* **`FilePreviewUseCase`**: `.cmake` added to `isTextExtension()`'s `kTextExtensions` (gate 1, so
+  standalone `.cmake` module files preview as text at all); `CMakeLists.txt` needed no change here
+  since `.txt` was already in that list.
+* **Not built**: no new base-palette categories — CMake's query leans on the existing six like
+  every prior language's query does; a dedicated CMake icon (file type icons are unrelated to this
+  highlighting pass, §14.11's shell-icon-extraction path already covers `CMakeLists.txt` generically
+  via Explorer's own icon association).
+* **Testing**: `tests/adapters/SyntaxHighlightEngineTest.cpp` — `MapsKnownExtensionsToTheirLanguage`
+  extended for `.cmake`; a new `LanguageForPathSpecialCasesCMakeListsByFilename` test covering the
+  filename special-case (including case-insensitivity and the `.cmake`/`.cpp`/plain-`.txt`
+  fallback paths); a new `HighlightsCMakeKeywordFunctionCallAndComment` test, same `hasSpanCovering`
+  helper every existing language's test already uses.
 

@@ -1,0 +1,14 @@
+{
+  "name": "tree-sitter-cmake",
+  "version": "0.7.5",
+  "description": "CMake grammar for tree-sitter",
+  "homepage": "https://github.com/uyha/tree-sitter-cmake",
+  "license": "MIT",
+  "dependencies": [
+    "tree-sitter",
+    {
+      "name": "vcpkg-cmake",
+      "host": true
+    }
+  ]
+}

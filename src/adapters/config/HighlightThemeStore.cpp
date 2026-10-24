@@ -41,6 +41,8 @@ namespace
                 return QStringLiteral("PowerShell");
             case Language::Markdown:
                 return QStringLiteral("Markdown");
+            case Language::CMake:
+                return QStringLiteral("CMake");
         }
         return QString();
     }
@@ -71,6 +73,8 @@ namespace
             return Language::PowerShell;
         if (text == QStringLiteral("Markdown"))
             return Language::Markdown;
+        if (text == QStringLiteral("CMake"))
+            return Language::CMake;
         return std::nullopt;
     }
 }

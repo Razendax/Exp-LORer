@@ -10,8 +10,10 @@ add_library(explorer_adapters_highlighting STATIC
 target_include_directories(explorer_adapters_highlighting PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 # Qt6::Core is linked only for the one resource-loading function in SyntaxHighlightEngine.cpp that
 # reads a language's bundled highlights.scm out of Qt resources (Architecture.md §14.26) -- this
-# module otherwise never touches Qt.
-target_link_libraries(explorer_adapters_highlighting PUBLIC Qt6::Core)
+# module otherwise never touches Qt. explorer_domain is linked only for PathUtf8.h, used by
+# LanguageRegistry::languageForPath (§14.107) to compare a file's lowercased name/extension without
+# std::filesystem::path::string()'s non-ASCII crash risk (Architecture.md §6).
+target_link_libraries(explorer_adapters_highlighting PUBLIC Qt6::Core explorer_domain)
 
 find_package(unofficial-tree-sitter CONFIG REQUIRED)
 target_link_libraries(explorer_adapters_highlighting PRIVATE unofficial::tree-sitter::tree-sitter)
@@ -21,7 +23,7 @@ target_link_libraries(explorer_adapters_highlighting PRIVATE unofficial::tree-si
 # already ships) as plain static libraries with no CMake package config, so they're located the
 # same way vcpkg itself expects a config-less port to be consumed: find_library against the
 # triplet's installed lib directory (which the vcpkg toolchain file already adds to the search path).
-foreach(grammar IN ITEMS c cpp c-sharp python javascript typescript json html css yaml powershell markdown)
+foreach(grammar IN ITEMS c cpp c-sharp python javascript typescript json html css yaml powershell markdown cmake)
     find_library(EXP_LORER_TS_${grammar}_LIB NAMES tree-sitter-${grammar} REQUIRED)
     target_link_libraries(explorer_adapters_highlighting PRIVATE ${EXP_LORER_TS_${grammar}_LIB})
 endforeach()

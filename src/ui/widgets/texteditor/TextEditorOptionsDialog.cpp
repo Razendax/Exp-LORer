@@ -12,11 +12,11 @@
 
 namespace
 {
-    // Same twelve languages/order as SettingsDialog's own per-language theme list.
-    constexpr std::array<Language, 12> kAllLanguages = {
+    // Same thirteen languages/order as SettingsDialog's own per-language theme list.
+    constexpr std::array<Language, 13> kAllLanguages = {
         Language::C,          Language::Cpp,        Language::CSharp,    Language::Python,     Language::JavaScript,
         Language::TypeScript, Language::Json,       Language::Html,      Language::Css,
-        Language::Yaml,       Language::PowerShell, Language::Markdown,
+        Language::Yaml,       Language::PowerShell, Language::Markdown,  Language::CMake,
     };
 }
 

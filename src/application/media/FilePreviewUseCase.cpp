@@ -19,9 +19,10 @@ namespace
 
     bool isTextExtension(const std::string& extension)
     {
-        static const std::array<std::string, 28> kTextExtensions{
+        static const std::array<std::string, 29> kTextExtensions{
             ".txt", ".html", ".htm", ".xml", ".json", ".md",  ".ini", ".log", ".yaml", ".yml",  ".csv",  ".cs",   ".cpp", ".cc",
             ".cxx", ".h",    ".hpp", ".c",   ".py",   ".js",  ".ts",  ".css", ".sql",  ".sh",   ".bat",  ".ps1",  ".xaml", ".toml",
+            ".cmake",
         };
         return std::find(kTextExtensions.begin(), kTextExtensions.end(), extension) != kTextExtensions.end();
     }

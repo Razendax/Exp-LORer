@@ -39,6 +39,20 @@ TEST(LanguageRegistry, MapsKnownExtensionsToTheirLanguage)
     EXPECT_EQ(LanguageRegistry::languageForExtension(".psm1"), Language::PowerShell);
     EXPECT_EQ(LanguageRegistry::languageForExtension(".psd1"), Language::PowerShell);
     EXPECT_EQ(LanguageRegistry::languageForExtension(".md"), Language::Markdown);
+    EXPECT_EQ(LanguageRegistry::languageForExtension(".cmake"), Language::CMake);
+}
+
+TEST(LanguageRegistry, LanguageForPathSpecialCasesCMakeListsByFilename)
+{
+    // CMakeLists.txt carries no CMake-specific extension of its own (it's a plain .txt file by
+    // name), so languageForExtension(".txt") alone can't resolve it -- languageForPath checks the
+    // filename first (Architecture.md §14.107).
+    EXPECT_EQ(LanguageRegistry::languageForPath("CMakeLists.txt"), Language::CMake);
+    EXPECT_EQ(LanguageRegistry::languageForPath("CMakeLists.TXT"), Language::CMake);
+    EXPECT_EQ(LanguageRegistry::languageForPath("sub/dir/CMakeLists.txt"), Language::CMake);
+    EXPECT_EQ(LanguageRegistry::languageForPath("FindFoo.cmake"), Language::CMake);
+    EXPECT_EQ(LanguageRegistry::languageForPath("notes.txt"), std::nullopt);
+    EXPECT_EQ(LanguageRegistry::languageForPath("main.cpp"), Language::Cpp);
 }
 
 TEST(LanguageRegistry, ReturnsNulloptForExtensionsOutOfScope)
@@ -187,6 +201,19 @@ TEST(SyntaxHighlightEngine, HighlightsMarkdownHeadingAndFencedCodeBlock)
     EXPECT_TRUE(hasSpanCovering(spans, source, "keyword", "Title"));
     EXPECT_TRUE(hasSpanCovering(spans, source, "comment", "#"));
     EXPECT_TRUE(hasSpanCovering(spans, source, "comment", "```"));
+}
+
+TEST(SyntaxHighlightEngine, HighlightsCMakeKeywordFunctionCallAndComment)
+{
+    SyntaxHighlightEngine engine;
+    const std::string source = "# a comment\nif(FOO)\n  add_executable(app main.cpp)\nendif()\n";
+
+    const std::vector<HighlightSpan> spans = engine.highlight(Language::CMake, source);
+
+    EXPECT_TRUE(hasSpanCovering(spans, source, "keyword", "if"));
+    EXPECT_TRUE(hasSpanCovering(spans, source, "keyword", "endif"));
+    EXPECT_TRUE(hasSpanCovering(spans, source, "function", "add_executable"));
+    EXPECT_TRUE(hasSpanCovering(spans, source, "comment", "# a comment"));
 }
 
 TEST(SyntaxHighlightEngine, HighlightsNonAsciiSourceWithCorrectByteOffsets)

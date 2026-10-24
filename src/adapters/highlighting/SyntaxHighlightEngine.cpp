@@ -27,6 +27,7 @@ extern "C"
     const TSLanguage* tree_sitter_yaml(void);
     const TSLanguage* tree_sitter_powershell(void);
     const TSLanguage* tree_sitter_markdown(void);
+    const TSLanguage* tree_sitter_cmake(void);
 }
 
 namespace
@@ -59,6 +60,8 @@ namespace
                 return tree_sitter_powershell();
             case Language::Markdown:
                 return tree_sitter_markdown();
+            case Language::CMake:
+                return tree_sitter_cmake();
         }
         return nullptr;
     }
@@ -91,6 +94,8 @@ namespace
                 return QStringLiteral(":/highlighting/powershell.scm");
             case Language::Markdown:
                 return QStringLiteral(":/highlighting/markdown.scm");
+            case Language::CMake:
+                return QStringLiteral(":/highlighting/cmake.scm");
         }
         return QString();
     }

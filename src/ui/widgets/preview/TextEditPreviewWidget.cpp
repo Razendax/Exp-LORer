@@ -14,7 +14,6 @@
 
 #include "FilePreview.h"
 #include "LanguageRegistry.h"
-#include "MediaExtensions.h"
 #include "TextEditorPanel.h"
 #include "TextEditorWidget.h"
 #include "TextFileEditViewModel.h"
@@ -98,7 +97,7 @@ void TextEditPreviewWidget::setPreview(const FilePreview& preview)
 
     TextEditorOptions options = defaultOptions();
     options.readOnly = true;
-    options.highlightLanguage = LanguageRegistry::languageForExtension(MediaExtensions::lowercaseExtension(preview.path()));
+    options.highlightLanguage = LanguageRegistry::languageForPath(preview.path());
 
     // Reuse the existing panel for the common plain-browsing case instead of tearing it down and
     // rebuilding it (editor + find/go-to-line bars + syntax highlighter) for every single

@@ -1,6 +1,11 @@
 #include "LanguageRegistry.h"
 
+#include <algorithm>
+#include <cctype>
+
 #include <QObject>
+
+#include "PathUtf8.h"
 
 std::optional<Language> LanguageRegistry::languageForExtension(const std::string& lowercaseExtension)
 {
@@ -56,7 +61,27 @@ std::optional<Language> LanguageRegistry::languageForExtension(const std::string
     {
         return Language::Markdown;
     }
+    if (lowercaseExtension == ".cmake")
+    {
+        return Language::CMake;
+    }
     return std::nullopt;
+}
+
+std::optional<Language> LanguageRegistry::languageForPath(const std::filesystem::path& path)
+{
+    std::string filename = PathUtf8::toUtf8(path.filename());
+    std::transform(filename.begin(), filename.end(), filename.begin(),
+                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    if (filename == "cmakelists.txt")
+    {
+        return Language::CMake;
+    }
+
+    std::string extension = PathUtf8::toUtf8(path.extension());
+    std::transform(extension.begin(), extension.end(), extension.begin(),
+                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return languageForExtension(extension);
 }
 
 QString LanguageRegistry::displayName(Language language)
@@ -87,6 +112,8 @@ QString LanguageRegistry::displayName(Language language)
             return QObject::tr("PowerShell");
         case Language::Markdown:
             return QObject::tr("Markdown");
+        case Language::CMake:
+            return QObject::tr("CMake");
     }
     return QString();
 }

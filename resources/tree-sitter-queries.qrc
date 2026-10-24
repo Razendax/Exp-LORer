@@ -12,5 +12,6 @@
         <file alias="yaml.scm">tree-sitter-queries/yaml.scm</file>
         <file alias="powershell.scm">tree-sitter-queries/powershell.scm</file>
         <file alias="markdown.scm">tree-sitter-queries/markdown.scm</file>
+        <file alias="cmake.scm">tree-sitter-queries/cmake.scm</file>
     </qresource>
 </RCC>
