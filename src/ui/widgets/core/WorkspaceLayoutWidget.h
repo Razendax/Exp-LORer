@@ -4,6 +4,7 @@
 #include <optional>
 #include <vector>
 
+#include <QPoint>
 #include <QWidget>
 
 #include "FileListModel.h"
@@ -50,10 +51,23 @@ public:
     void forceSinglePane(WorkspacePaneId id);
     void clearForcedSinglePane();
 
+    // Cross-pane tab move (spec §3, Milestone M2): the widget-level transplant sequencing --
+    // detaches sourcePane's page at sourceIndex, performs the model-level move (which also
+    // focuses destPane), then attaches the page into destPane at destIndex. This is the only
+    // object holding references to all 4 WorkspacePaneWidgets at once, so it's the one place that
+    // can bracket the detach/attach around the model move.
+    void moveTabBetweenPanes(WorkspacePaneId sourcePane, int sourceIndex, WorkspacePaneId destPane, int destIndex);
+
 private:
     void applyLayout(SplitLayout layout);
     QWidget* buildContent(SplitLayout layout);
     void onFocusChanged(QWidget* old, QWidget* now);
+
+    // "Move to Pane" context menu (spec §3, Milestone M2): connected from each of the 4 pane
+    // widgets' moveToPaneMenuRequested. sourcePane identifies which pane widget the signal came
+    // from -- this is the sole place that decides whether to show anything (a pane with 1 tab, or
+    // no other visible panes, shows no menu at all) and builds the "Move to Pane" submenu.
+    void onMoveToPaneMenuRequested(WorkspacePaneId sourcePane, int tabIndex, const QPoint& globalPos);
 
     // WorkspaceLayoutTopology::visiblePanes(layout), or { *m_forcedSinglePane } when the
     // display-only override is active.

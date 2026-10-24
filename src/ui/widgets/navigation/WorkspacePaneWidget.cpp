@@ -334,6 +334,13 @@ void WorkspacePaneWidget::createTabArea()
     m_tabWidget->tabBar()->installEventFilter(this);
     m_tabWidget->installEventFilter(this);
 
+    // "Move to Pane" context menu (spec §3, Milestone M2): this pane resolves which tab was
+    // clicked and bubbles the request up -- it has no visibility into sibling panes or the active
+    // SplitLayout, so it builds no menu itself.
+    m_tabWidget->tabBar()->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_tabWidget->tabBar(), &QTabBar::customContextMenuRequested, this,
+            &WorkspacePaneWidget::onTabBarContextMenuRequested);
+
     // usesScrollButtons(true) (the default on most styles, forced on here since we're relying on
     // it) makes the tab bar respond to running out of room by handing space to left/right scroll
     // arrows instead of squeezing tabs down to nothing -- but only once IT decides it's short on
@@ -473,14 +480,6 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     connect(advancedSearchPane->browserView(), &FileBrowserView::columnVisibilityChanged, tab,
             [tab](FileListModel::Column column, bool visible) { tab->setColumnHidden(column, !visible); });
 
-    connect(tab, &TabViewModel::currentPathChanged, this, [this, tab](const std::filesystem::path& path) {
-        const int idx = indexOfTab(tab);
-        if (idx >= 0)
-        {
-            m_tabWidget->setTabText(idx, tabLabelFor(path));
-        }
-    });
-
     // The Search tab's own quick search (Architecture.md §14.42) no longer has an in-place page
     // here -- its results render in the left panel's SearchPanelWidget instead, so this pane's
     // stack only ever switches between normal browsing, Advanced Search's in-place results, and
@@ -553,8 +552,6 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
     // Third bottom-panel tab, right after Folder Size (Architecture.md §14.52).
     auto* fragmentationWidget = new FragmentationWidget(m_fragmentationService, m_notificationCenter, tab, bottomPanel);
     bottomPanel->addPanelTab(tr("Fragmentation"), fragmentationWidget);
-    connect(fragmentationWidget, &FragmentationWidget::openContainingFolderRequested, this,
-            [this](const std::filesystem::path& path) { navigateAndSelect(path.parent_path(), path); });
 
     auto* splitter = new QSplitter(Qt::Vertical, m_tabWidget);
     splitter->addWidget(stack);
@@ -591,6 +588,8 @@ void WorkspacePaneWidget::addPageForTab(TabViewModel* tab, int index)
                     terminalSessions->activateDefaultSession();
                 }
             });
+
+    bindPageChromeToThisPane(tab, splitter);
 
     m_tabWidget->insertTab(index, splitter, tabLabelFor(tab->currentPath()));
 }
@@ -701,6 +700,26 @@ void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewM
         const auto ownerWindow = reinterpret_cast<NativeWindowHandle>(window()->winId());
         m_fileOperationsController->showProperties(tab->selectedEntries().front().path(), ownerWindow);
     });
+    connect(browserView, &FileBrowserView::renameRequested, tab,
+            [this](const std::filesystem::path& source, const std::filesystem::path& destination) {
+                m_fileOperationsController->renamePath(source, destination);
+            });
+
+    bindPageToThisPane(tab, browserView);
+
+    // Hover preview popup (Architecture.md §14.76): never fires for the Media-Viewer-grid
+    // instance (its eventFilter branch is gated on DisplayMode != MediaViewerGrid), so this
+    // connection is a safe no-op there, consistent with this function's existing pattern.
+    connect(browserView, &FileBrowserView::mediaHoverPreviewRequested, browserView, [browserView, tab](const FileNode& entry) {
+        tab->requestHoverPreviewThumbnail(entry, kHoverPreviewMaxSize, kHoverPreviewMaxSize,
+                                           [browserView, path = entry.path()](const QImage& image) {
+                                               browserView->showHoverPreviewResult(path, image);
+                                           });
+    });
+}
+
+void WorkspacePaneWidget::bindPageToThisPane(TabViewModel* tab, FileBrowserView* browserView)
+{
     connect(browserView, &FileBrowserView::navigateUpRequested, this, &WorkspacePaneWidget::onUpRequested);
     connect(browserView, &FileBrowserView::navigateBackRequested, this, &WorkspacePaneWidget::onBackRequested);
     connect(browserView, &FileBrowserView::navigateForwardRequested, this, &WorkspacePaneWidget::onForwardRequested);
@@ -716,28 +735,66 @@ void WorkspacePaneWidget::wireBrowserView(FileBrowserView* browserView, TabViewM
         m_addressBar->selectAll();
     });
 
-    connect(browserView, &FileBrowserView::renameRequested, tab,
-            [this](const std::filesystem::path& source, const std::filesystem::path& destination) {
-                m_fileOperationsController->renamePath(source, destination);
-            });
-
-    connect(browserView, &FileBrowserView::itemContextMenuRequested, tab,
+    // Receiver is `this` (not `tab`) so a cross-pane move's detachTabPage() can drop exactly these
+    // via disconnect(browserView, nullptr, this, nullptr) -- see Architecture.md's workspace docs
+    // for the "Move to Pane" feature.
+    connect(browserView, &FileBrowserView::itemContextMenuRequested, this,
             [this, tab, browserView](const std::vector<std::filesystem::path>& paths, const QPoint& globalPos) {
                 showItemContextMenu(tab, browserView, paths, globalPos);
             });
-    connect(browserView, &FileBrowserView::folderContextMenuRequested, tab, [this, tab, browserView](const QPoint& globalPos) {
+    connect(browserView, &FileBrowserView::folderContextMenuRequested, this, [this, tab, browserView](const QPoint& globalPos) {
         showBackgroundContextMenu(tab, browserView, globalPos);
     });
+}
 
-    // Hover preview popup (Architecture.md §14.76): never fires for the Media-Viewer-grid
-    // instance (its eventFilter branch is gated on DisplayMode != MediaViewerGrid), so this
-    // connection is a safe no-op there, consistent with this function's existing pattern.
-    connect(browserView, &FileBrowserView::mediaHoverPreviewRequested, browserView, [browserView, tab](const FileNode& entry) {
-        tab->requestHoverPreviewThumbnail(entry, kHoverPreviewMaxSize, kHoverPreviewMaxSize,
-                                           [browserView, path = entry.path()](const QImage& image) {
-                                               browserView->showHoverPreviewResult(path, image);
-                                           });
+void WorkspacePaneWidget::bindPageChromeToThisPane(TabViewModel* tab, QWidget* page)
+{
+    connect(tab, &TabViewModel::currentPathChanged, this, [this, tab](const std::filesystem::path& path) {
+        const int idx = indexOfTab(tab);
+        if (idx >= 0)
+        {
+            m_tabWidget->setTabText(idx, tabLabelFor(path));
+        }
     });
+
+    if (auto* fragmentationWidget = page->findChild<FragmentationWidget*>())
+    {
+        connect(fragmentationWidget, &FragmentationWidget::openContainingFolderRequested, this,
+                [this](const std::filesystem::path& path) { navigateAndSelect(path.parent_path(), path); });
+    }
+}
+
+QStackedWidget* WorkspacePaneWidget::stackForPage(QWidget* page) const
+{
+    auto* splitter = qobject_cast<QSplitter*>(page);
+    return splitter ? qobject_cast<QStackedWidget*>(splitter->widget(0)) : nullptr;
+}
+
+std::vector<FileBrowserView*> WorkspacePaneWidget::browserViewsInPage(QWidget* page) const
+{
+    std::vector<FileBrowserView*> views;
+
+    QStackedWidget* stack = stackForPage(page);
+    if (!stack)
+    {
+        return views;
+    }
+
+    // Heterogeneous stack (Architecture.md §14.61): page 0 and page 2 (Media Viewer grid) are
+    // plain FileBrowserViews, page 1 is a SearchResultsPane wrapping its own.
+    for (int i = 0; i < stack->count(); ++i)
+    {
+        if (auto* browserView = qobject_cast<FileBrowserView*>(stack->widget(i)))
+        {
+            views.push_back(browserView);
+        }
+        else if (auto* searchPane = qobject_cast<SearchResultsPane*>(stack->widget(i)))
+        {
+            views.push_back(searchPane->browserView());
+        }
+    }
+
+    return views;
 }
 
 void WorkspacePaneWidget::bindToolBarToTab(TabViewModel* tab)
@@ -923,7 +980,13 @@ void WorkspacePaneWidget::onTabClosed(int index)
 
 void WorkspacePaneWidget::onActiveTabChanged(int index)
 {
-    if (m_tabWidget->currentIndex() != index)
+    // Cross-pane move (spec §3, Milestone M2): WorkspaceController::moveTab's insertTab() into the
+    // destination pane's model fires this *before* WorkspaceLayoutWidget's subsequent
+    // attachTabPage() call has actually inserted the page into m_tabWidget -- index can briefly be
+    // one past the widget's current tab count. attachTabPage() re-syncs the widget's current index
+    // itself once the page actually exists, so just skip the widget-side sync here rather than
+    // calling QTabWidget::setCurrentIndex() with an out-of-range index.
+    if (index >= 0 && index < m_tabWidget->count() && m_tabWidget->currentIndex() != index)
     {
         m_tabWidget->setCurrentIndex(index);
     }
@@ -959,6 +1022,72 @@ void WorkspacePaneWidget::onTabCloseRequested(int index)
     }
 
     m_pane->closeTab(index);
+}
+
+void WorkspacePaneWidget::onTabBarContextMenuRequested(const QPoint& pos)
+{
+    const int index = m_tabWidget->tabBar()->tabAt(pos);
+    if (index < 0)
+    {
+        return;
+    }
+
+    emit moveToPaneMenuRequested(index, m_tabWidget->tabBar()->mapToGlobal(pos));
+}
+
+QWidget* WorkspacePaneWidget::detachTabPage(int index)
+{
+    QWidget* page = m_tabWidget->widget(index);
+    if (!page)
+    {
+        return nullptr;
+    }
+
+    // Drops exactly the connections bindPageToThisPane()/bindPageChromeToThisPane() made for this
+    // page -- everything else wired in addPageForTab() (column-visibility mirroring, search-
+    // criteria wiring, bottom-panel/terminal wiring, stack-page switching) has no receiver of
+    // `this`, so it's untouched and survives the move unchanged.
+    for (FileBrowserView* browserView : browserViewsInPage(page))
+    {
+        disconnect(browserView, nullptr, this, nullptr);
+    }
+    if (auto* fragmentationWidget = page->findChild<FragmentationWidget*>())
+    {
+        disconnect(fragmentationWidget, nullptr, this, nullptr);
+    }
+
+    // Blocked: removing the current tab's page can make QTabWidget pick a different current
+    // index and fire currentChanged() with that *widget-local* index, which onTabWidgetCurrentChanged
+    // would otherwise feed straight into m_pane->setActiveTab() -- but the model still has every
+    // tab (including the one being detached) at this point, since the model-level move
+    // (WorkspaceController::moveTab) hasn't run yet. onActiveTabChanged() re-syncs this widget's
+    // current index correctly once that model-level move actually happens.
+    {
+        const QSignalBlocker blocker(m_tabWidget);
+        m_tabWidget->removeTab(index);
+    }
+
+    return page;
+}
+
+void WorkspacePaneWidget::attachTabPage(TabViewModel* tab, QWidget* page, int index)
+{
+    m_tabWidget->insertTab(index, page, tabLabelFor(tab->currentPath()));
+
+    for (FileBrowserView* browserView : browserViewsInPage(page))
+    {
+        bindPageToThisPane(tab, browserView);
+    }
+    bindPageChromeToThisPane(tab, page);
+
+    // The model's own activeTabChanged (fired synchronously inside WorkspaceController::moveTab's
+    // insertTab() call, before this page physically existed in m_tabWidget) couldn't apply this --
+    // see onActiveTabChanged()'s guard -- so finish that sync now that the page actually exists.
+    if (m_tabWidget->currentIndex() != index)
+    {
+        m_tabWidget->setCurrentIndex(index);
+    }
+    bindToolBarToTab(tab);
 }
 
 void WorkspacePaneWidget::activateNewTab()

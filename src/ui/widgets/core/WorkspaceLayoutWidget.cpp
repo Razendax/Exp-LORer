@@ -4,6 +4,7 @@
 #include <filesystem>
 
 #include <QApplication>
+#include <QMenu>
 #include <QSplitter>
 #include <QVBoxLayout>
 
@@ -18,6 +19,25 @@ namespace
     int indexOf(WorkspacePaneId id)
     {
         return static_cast<int>(id);
+    }
+
+    // "Move to Pane" context menu (spec §3, Milestone M2): plain, geometry-agnostic labels
+    // matching WorkspacePaneId.h's own naming philosophy -- deliberately not "Top Left"-style,
+    // since the same slot plays a different visual role per SplitLayout.
+    QString paneDisplayName(WorkspacePaneId id)
+    {
+        switch (id)
+        {
+            case WorkspacePaneId::PaneA:
+                return QObject::tr("Pane A");
+            case WorkspacePaneId::PaneB:
+                return QObject::tr("Pane B");
+            case WorkspacePaneId::PaneC:
+                return QObject::tr("Pane C");
+            case WorkspacePaneId::PaneD:
+                return QObject::tr("Pane D");
+        }
+        return QString();
     }
 }
 
@@ -65,6 +85,16 @@ WorkspaceLayoutWidget::WorkspaceLayoutWidget(WorkspaceController* controller,
     connect(m_controller, &WorkspaceController::layoutChanged, this, &WorkspaceLayoutWidget::updatePaneActiveStates);
     connect(m_controller, &WorkspaceController::focusedPaneChanged, this, &WorkspaceLayoutWidget::updatePaneActiveStates);
     connect(qApp, &QApplication::focusChanged, this, &WorkspaceLayoutWidget::onFocusChanged);
+
+    // "Move to Pane" context menu (spec §3, Milestone M2): each pane widget bubbles up a bare
+    // tabIndex/globalPos -- this is the only object that knows which pane widget it came from, so
+    // the lambda captures that identity rather than threading it through the signal itself.
+    for (int i = 0; i < 4; ++i)
+    {
+        const auto sourcePane = static_cast<WorkspacePaneId>(i);
+        connect(m_paneWidgets[static_cast<size_t>(i)], &WorkspacePaneWidget::moveToPaneMenuRequested, this,
+                [this, sourcePane](int tabIndex, const QPoint& globalPos) { onMoveToPaneMenuRequested(sourcePane, tabIndex, globalPos); });
+    }
 
     applyLayout(m_controller->layout());
     updatePaneActiveStates();
@@ -217,6 +247,56 @@ void WorkspaceLayoutWidget::clearForcedSinglePane()
     m_forcedSinglePane.reset();
     applyLayout(m_controller->layout());
     updatePaneActiveStates();
+}
+
+void WorkspaceLayoutWidget::moveTabBetweenPanes(WorkspacePaneId sourcePane, int sourceIndex, WorkspacePaneId destPane, int destIndex)
+{
+    WorkspacePaneWidget* sourceWidget = paneWidget(sourcePane);
+    QWidget* page = sourceWidget->detachTabPage(sourceIndex); // widget first (still valid pre-move indices)
+
+    TabViewModel* tab = m_controller->moveTab(sourcePane, sourceIndex, destPane, destIndex); // model move + focus
+    if (!tab)
+    {
+        // Shouldn't happen in practice -- both the context menu (onMoveToPaneMenuRequested) and
+        // drag-to-move (Milestone M3) pre-check source->tabCount() > 1 before ever calling this --
+        // but defensively re-attach the page to where it came from rather than losing it.
+        TabViewModel* sourceTabStillAtIndex = m_controller->pane(sourcePane)->tabAt(sourceIndex);
+        if (sourceTabStillAtIndex)
+        {
+            sourceWidget->attachTabPage(sourceTabStillAtIndex, page, sourceIndex);
+        }
+        return;
+    }
+
+    paneWidget(destPane)->attachTabPage(tab, page, destIndex);
+}
+
+void WorkspaceLayoutWidget::onMoveToPaneMenuRequested(WorkspacePaneId sourcePane, int tabIndex, const QPoint& globalPos)
+{
+    WorkspacePaneViewModel* source = m_controller->pane(sourcePane);
+    if (source->tabCount() <= 1)
+    {
+        // Spec: the entry is never reachable when it would empty the pane.
+        return;
+    }
+
+    std::vector<WorkspacePaneId> others = WorkspaceLayoutTopology::visiblePanes(m_controller->layout());
+    others.erase(std::remove(others.begin(), others.end(), sourcePane), others.end());
+    if (others.empty())
+    {
+        // Single layout, or nothing else currently visible -- omit the menu entirely.
+        return;
+    }
+
+    QMenu menu(this);
+    QMenu* moveMenu = menu.addMenu(tr("Move to Pane"));
+    for (WorkspacePaneId destPane : others)
+    {
+        moveMenu->addAction(paneDisplayName(destPane), this, [this, sourcePane, tabIndex, destPane]() {
+            moveTabBetweenPanes(sourcePane, tabIndex, destPane, m_controller->pane(destPane)->tabCount());
+        });
+    }
+    menu.exec(globalPos);
 }
 
 void WorkspaceLayoutWidget::onFocusChanged(QWidget* old, QWidget* now)

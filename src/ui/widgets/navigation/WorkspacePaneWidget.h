@@ -124,6 +124,21 @@ public:
     // PC", or is inside an archive.
     void createNewFolderInCurrentDirectory();
 
+    // Cross-pane tab move (spec §3, Milestone M2) -- widget-level transplant primitives invoked by
+    // WorkspaceLayoutWidget, which is the only object with visibility into sibling panes. Neither
+    // touches m_pane's model list or m_boundTab/active-tab state -- that's WorkspaceController's
+    // job (model-level move) and onTabInserted/onActiveTabChanged's job (existing signal handling)
+    // respectively.
+
+    // Disconnects exactly the pane-specific connections bindPageToThisPane/bindPageChromeToThisPane
+    // made for this page, then QTabWidget::removeTab(index) (does not delete the returned page).
+    QWidget* detachTabPage(int index);
+
+    // QTabWidget::insertTab(index, page, ...), then re-runs bindPageToThisPane/
+    // bindPageChromeToThisPane against the page's views with this pane as the new owner -- a
+    // moved-in page gets identical wiring to a freshly created one, just skipping construction.
+    void attachTabPage(TabViewModel* tab, QWidget* page, int index);
+
 signals:
     // Bubbled up so MainWindow (whose QMainWindow::statusBar() is a separate, transient,
     // window-wide message bar for navigation/search failures -- distinct from this pane's own
@@ -139,6 +154,12 @@ signals:
     // navigationFailed.
     void bulkRenameRequested(TabViewModel* tab, const std::vector<std::filesystem::path>& paths);
 
+    // Cross-pane tab move (spec §3, Milestone M2): bubbled up to WorkspaceLayoutWidget, the only
+    // object with visibility into sibling panes and the active SplitLayout -- this pane does no
+    // gating and builds no menu itself. tabIndex is resolved from tabBar()->tabAt(pos) at the
+    // click site.
+    void moveToPaneMenuRequested(int tabIndex, const QPoint& globalPos);
+
 private:
     void createViewModeActions();
     QToolBar* createToolBar();
@@ -151,6 +172,32 @@ private:
 
     void addPageForTab(TabViewModel* tab, int index);
     void wireBrowserView(FileBrowserView* browserView, TabViewModel* tab);
+
+    // Cross-pane tab move (spec §3, Milestone M2): the subset of wireBrowserView's connections
+    // that capture this's pane-specific state (back/forward/up/refresh/this-pc/focus-address-bar,
+    // item/folder context menus) -- the only ones that need to change when a page moves to a
+    // different pane. Extracted so detachTabPage()/attachTabPage() can tear down and rebuild
+    // exactly these, and so freshly-created pages (addPageForTab, via wireBrowserView) and
+    // moved-in pages (attachTabPage) get identical wiring.
+    void bindPageToThisPane(TabViewModel* tab, FileBrowserView* browserView);
+
+    // Counterpart of bindPageToThisPane for the page's chrome that isn't a FileBrowserView: the
+    // tab-label-text updater and fragmentationWidget's openContainingFolderRequested -> this pane's
+    // navigateAndSelect.
+    void bindPageChromeToThisPane(TabViewModel* tab, QWidget* page);
+
+    // Resolves `page`'s QStackedWidget (page is a QSplitter whose widget(0) is the browse/search/
+    // Media-Viewer stack, Architecture.md §14.23) -- the splitter->stack unwrap shared by
+    // currentBrowserView() (reads the stack's *current* page) and browserViewsInPage() below
+    // (reads all of the stack's pages), parameterized by an explicit page instead of always
+    // m_tabWidget->currentWidget().
+    QStackedWidget* stackForPage(QWidget* page) const;
+
+    // All of `page`'s FileBrowserViews (the stack's page 0 -- normal browsing -- and page 2 --
+    // Media-Viewer grid -- directly, page 1's SearchResultsPane unwrapped to its own
+    // browserView()), used by detachTabPage()/attachTabPage() to rebind every one of them rather
+    // than just whichever is current.
+    std::vector<FileBrowserView*> browserViewsInPage(QWidget* page) const;
 
     // Caps the tab bar's own maximumWidth to tabWidgetWidth - kNewTabButtonReservedWidth (so its
     // scroll buttons, not m_newTabButton's reserved strip, absorb any overflow), then repositions
@@ -207,6 +254,10 @@ private:
     void onTabWidgetCurrentChanged(int index);
     void onNewTabRequested();
     void onTabCloseRequested(int index);
+
+    // Tab-bar right-click (spec §3, Milestone M2): resolves which tab was clicked and bubbles up
+    // moveToPaneMenuRequested -- this pane does no gating/menu-building itself.
+    void onTabBarContextMenuRequested(const QPoint& pos);
 
     void onCurrentPathChanged(const std::filesystem::path& path);
     void onAddressBarEdited();

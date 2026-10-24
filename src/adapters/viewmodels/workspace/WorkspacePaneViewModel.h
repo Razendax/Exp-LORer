@@ -65,11 +65,31 @@ public slots:
     // in sync -- callers must not re-touch the tab bar itself from this slot.
     void moveTab(int from, int to);
 
+    // Cross-pane move (spec §3, Milestone M2): removes the tab at `index` from this pane's model
+    // *without* destroying it -- unlike closeTab(), does not stop monitoring and does not
+    // deleteLater() it, since the whole point is that it survives unchanged into another pane.
+    // Same <= 1-tab no-op guard as closeTab(); reuses closeTab()'s exact active-index-adjustment
+    // math (tab before the removed one becomes active; if the removed tab was first, the new-first
+    // tab becomes active). Returns nullptr if index is invalid or this pane has only 1 tab.
+    TabViewModel* takeTab(int index);
+
+    // Cross-pane move counterpart of takeTab(): reparents `tab` to this pane (QObject::setParent),
+    // inserts it into this pane's model at `index` (clamped to [0, tabCount()]), and makes it the
+    // active tab -- every spec call site wants the moved tab active in its destination. Emits
+    // tabInserted(index) then the resulting activeTabChanged.
+    void insertTab(TabViewModel* tab, int index);
+
 signals:
     void tabAdded(int index);
     void tabClosed(int index);
     void activeTabChanged(int index);
     void tabMoved(int from, int to);
+
+    // Cross-pane move (spec §3, Milestone M2): deliberately distinct from tabClosed/tabAdded --
+    // WorkspacePaneWidget must not delete the page on tabRemoved, nor build a new one on
+    // tabInserted; it already has the page in hand via detachTabPage()/attachTabPage().
+    void tabRemoved(int index);
+    void tabInserted(int index);
 
 private:
     FileNavigationUseCase& m_fileNavigationUseCase;

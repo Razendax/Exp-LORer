@@ -86,6 +86,14 @@ public slots:
     void setLayout(SplitLayout layout);
     void setFocusedPane(WorkspacePaneId id);
 
+    // Cross-pane tab move (spec §3, Milestone M2): the model-only mediator step of a "Move to
+    // Pane" move -- takeTab()s the tab out of the source pane and insertTab()s it (active) into
+    // the destination, then focuses the destination pane. Returns the moved TabViewModel*, or
+    // nullptr if the move was rejected (source has only 1 tab, or sourcePane == destPane).
+    // destIndex is clamped to the destination pane's size by insertTab(). Widget-level page
+    // transplant is the caller's job (WorkspaceLayoutWidget) -- this never touches QWidgets.
+    TabViewModel* moveTab(WorkspacePaneId sourcePane, int sourceIndex, WorkspacePaneId destPane, int destIndex);
+
 signals:
     void layoutChanged(SplitLayout layout);
     void focusedPaneChanged(WorkspacePaneId id);

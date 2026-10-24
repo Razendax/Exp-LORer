@@ -183,6 +183,36 @@ void WorkspaceController::setFocusedPane(WorkspacePaneId id)
     emit focusedPaneChanged(id);
 }
 
+TabViewModel* WorkspaceController::moveTab(WorkspacePaneId sourcePane, int sourceIndex, WorkspacePaneId destPane, int destIndex)
+{
+    if (sourcePane == destPane)
+    {
+        return nullptr;
+    }
+
+    WorkspacePaneViewModel* source = pane(sourcePane);
+    if (source->tabCount() <= 1)
+    {
+        return nullptr;
+    }
+
+    TabViewModel* tab = source->takeTab(sourceIndex);
+    if (!tab)
+    {
+        return nullptr;
+    }
+
+    pane(destPane)->insertTab(tab, destIndex);
+
+    // Drives retargetFocusedTab()/updateLiveWatchedTabs() already connected to
+    // focusedPaneChanged/activeTabChanged -- both panes' activeTabChanged fired synchronously
+    // above (inside takeTab()/insertTab()), so updateLiveWatchedTabs() here reflects both panes'
+    // new active tabs, not just the last one to fire.
+    setFocusedPane(destPane);
+
+    return tab;
+}
+
 void WorkspaceController::retargetFocusedTab()
 {
     m_tagListViewModel->setActiveTab(focusedTab());

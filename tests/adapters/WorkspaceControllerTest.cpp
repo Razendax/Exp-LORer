@@ -240,6 +240,99 @@ TEST_F(WorkspaceControllerTest, MoveTabWithOutOfRangeIndexIsNoOp)
     EXPECT_EQ(paneA->tabAt(1), tabA1);
 }
 
+TEST_F(WorkspaceControllerTest, ControllerMoveTabMovesTabToDestinationPaneAndActivatesItThere)
+{
+    WorkspacePaneViewModel* paneA = m_controller.pane(WorkspacePaneId::PaneA);
+    TabViewModel* tabA0 = paneA->addTab();
+    TabViewModel* tabA1 = paneA->addTab();
+    TabViewModel* tabA2 = paneA->addTab();
+    paneA->setActiveTab(2); // active tab is the last one, tabA2
+
+    WorkspacePaneViewModel* paneB = m_controller.pane(WorkspacePaneId::PaneB);
+    TabViewModel* tabB0 = paneB->addTab();
+
+    TabViewModel* moved = m_controller.moveTab(WorkspacePaneId::PaneA, 2, WorkspacePaneId::PaneB, paneB->tabCount());
+
+    ASSERT_EQ(moved, tabA2);
+
+    ASSERT_EQ(paneA->tabCount(), 2);
+    EXPECT_EQ(paneA->tabAt(0), tabA0);
+    EXPECT_EQ(paneA->tabAt(1), tabA1);
+    // The removed tab was the active one and was last -- the tab before it (tabA1) becomes active.
+    EXPECT_EQ(paneA->activeIndex(), 1);
+    EXPECT_EQ(paneA->activeTab(), tabA1);
+
+    ASSERT_EQ(paneB->tabCount(), 2);
+    EXPECT_EQ(paneB->tabAt(0), tabB0);
+    EXPECT_EQ(paneB->tabAt(1), tabA2);
+    EXPECT_EQ(paneB->activeIndex(), 1);
+    EXPECT_EQ(paneB->activeTab(), tabA2);
+
+    EXPECT_EQ(m_controller.focusedPane(), WorkspacePaneId::PaneB);
+}
+
+TEST_F(WorkspaceControllerTest, ControllerMoveTabPromotesNewFirstTabInSourceWhenMovedTabWasFirst)
+{
+    WorkspacePaneViewModel* paneA = m_controller.pane(WorkspacePaneId::PaneA);
+    TabViewModel* tabA0 = paneA->addTab();
+    TabViewModel* tabA1 = paneA->addTab();
+    TabViewModel* tabA2 = paneA->addTab();
+    paneA->setActiveTab(0); // active tab is the first one, tabA0
+
+    WorkspacePaneViewModel* paneB = m_controller.pane(WorkspacePaneId::PaneB);
+    TabViewModel* tabB0 = paneB->addTab();
+
+    TabViewModel* moved = m_controller.moveTab(WorkspacePaneId::PaneA, 0, WorkspacePaneId::PaneB, paneB->tabCount());
+
+    ASSERT_EQ(moved, tabA0);
+
+    ASSERT_EQ(paneA->tabCount(), 2);
+    EXPECT_EQ(paneA->tabAt(0), tabA1);
+    EXPECT_EQ(paneA->tabAt(1), tabA2);
+    // The removed tab was first and active -- the new-first tab (tabA1) becomes active.
+    EXPECT_EQ(paneA->activeIndex(), 0);
+    EXPECT_EQ(paneA->activeTab(), tabA1);
+
+    ASSERT_EQ(paneB->tabCount(), 2);
+    EXPECT_EQ(paneB->tabAt(0), tabB0);
+    EXPECT_EQ(paneB->tabAt(1), tabA0);
+    EXPECT_EQ(paneB->activeTab(), tabA0);
+
+    EXPECT_EQ(m_controller.focusedPane(), WorkspacePaneId::PaneB);
+}
+
+TEST_F(WorkspaceControllerTest, ControllerMoveTabRejectsWhenSourceHasOnlyOneTab)
+{
+    WorkspacePaneViewModel* paneA = m_controller.pane(WorkspacePaneId::PaneA);
+    TabViewModel* tabA0 = paneA->addTab();
+
+    WorkspacePaneViewModel* paneB = m_controller.pane(WorkspacePaneId::PaneB);
+    TabViewModel* tabB0 = paneB->addTab();
+
+    TabViewModel* moved = m_controller.moveTab(WorkspacePaneId::PaneA, 0, WorkspacePaneId::PaneB, 0);
+
+    EXPECT_EQ(moved, nullptr);
+    ASSERT_EQ(paneA->tabCount(), 1);
+    EXPECT_EQ(paneA->tabAt(0), tabA0);
+    ASSERT_EQ(paneB->tabCount(), 1);
+    EXPECT_EQ(paneB->tabAt(0), tabB0);
+    EXPECT_EQ(m_controller.focusedPane(), WorkspacePaneId::PaneA);
+}
+
+TEST_F(WorkspaceControllerTest, ControllerMoveTabRejectsWhenSourcePaneEqualsDestPane)
+{
+    WorkspacePaneViewModel* paneA = m_controller.pane(WorkspacePaneId::PaneA);
+    TabViewModel* tabA0 = paneA->addTab();
+    TabViewModel* tabA1 = paneA->addTab();
+
+    TabViewModel* moved = m_controller.moveTab(WorkspacePaneId::PaneA, 0, WorkspacePaneId::PaneA, 1);
+
+    EXPECT_EQ(moved, nullptr);
+    ASSERT_EQ(paneA->tabCount(), 2);
+    EXPECT_EQ(paneA->tabAt(0), tabA0);
+    EXPECT_EQ(paneA->tabAt(1), tabA1);
+}
+
 TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsHiddenColumnsThroughRestoreFromConfig)
 {
     writeFile(m_tempDir / "a.txt", "hello");
