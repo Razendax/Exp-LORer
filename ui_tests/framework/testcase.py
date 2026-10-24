@@ -106,6 +106,39 @@ class ExpLorerFreshAppTestCase:
             yield
 
 
+class ExpLorerPreparedDataDirTestCase:
+    """Base for a test that needs a fresh Exp-LORer instance per test method (see
+    `ExpLorerFreshAppTestCase`'s own docstring for that general case), but must write something
+    into its `data_dir` -- `hotkeys.json`, `favorites.json`, ... -- BEFORE the app starts, which
+    `ExpLorerFreshAppTestCase`'s own fixture gives no hook for (it starts the app immediately).
+    Override `prepare_data_dir` to write whatever the test needs; `data_dir` does not exist yet
+    when it's called (it has already been created as an empty directory, so write into it, no
+    need to `mkdir()` it yourself -- only any subdirectories the file itself needs).
+
+        class TestSomething(ExpLorerPreparedDataDirTestCase):
+            def prepare_data_dir(self, data_dir: Path) -> None:
+                (data_dir / "hotkeys.json").write_text(json.dumps({...}), encoding="utf-8")
+
+            def test_something(self) -> None:
+                assert self.app.panes.a.file_browser.exists()
+    """
+
+    app: ExpLorerApp
+
+    def prepare_data_dir(self, data_dir: Path) -> None:
+        """No-op by default -- override to seed files before the app starts."""
+
+    @pytest.fixture(autouse=True)
+    def _fresh_app(self, tmp_path: Path) -> Iterator[None]:
+        data_dir = tmp_path / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        self.prepare_data_dir(data_dir)
+        ExpLorerApp.kill_stray_instances()
+        with ExpLorerApp.start(data_dir=data_dir) as app:
+            self.app = app
+            yield
+
+
 class ExpLorerRestartableTestCase:
     """Base for tests that need to close and relaunch Exp-LORer against the SAME data_dir, to
     verify state round-trips through a real close -> relaunch cycle rather than just landing in

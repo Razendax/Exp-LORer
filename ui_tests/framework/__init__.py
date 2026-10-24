@@ -71,9 +71,15 @@ from .modal_dialog import (
 )
 from .notification_overlay import NotificationOverlay
 from .settings_dialog import SettingsDialog, open_settings_dialog
+from .settings_hotkeys_page import SettingsHotkeysPage
 from .tag_chip import TagChip, chip_count_text, chip_names, find_chip, find_chip_label
 from .tag_manager_dialog import TagManagerDialog, open_tag_manager_dialog
-from .testcase import ExpLorerFreshAppTestCase, ExpLorerRestartableTestCase, ExpLorerTestCase
+from .testcase import (
+    ExpLorerFreshAppTestCase,
+    ExpLorerPreparedDataDirTestCase,
+    ExpLorerRestartableTestCase,
+    ExpLorerTestCase,
+)
 from .wait import wait_until
 
 __all__ = [
@@ -133,8 +139,10 @@ __all__ = [
     "ManageFavoritesDialog",
     "SettingsDialog",
     "open_settings_dialog",
+    "SettingsHotkeysPage",
     "ExpLorerTestCase",
     "ExpLorerFreshAppTestCase",
+    "ExpLorerPreparedDataDirTestCase",
     "ExpLorerRestartableTestCase",
     "wait_until",
 ]

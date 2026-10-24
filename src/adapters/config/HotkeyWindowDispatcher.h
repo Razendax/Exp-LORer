@@ -21,22 +21,38 @@ class QKeyEvent;
 // Watches both QEvent::ShortcutOverride and QEvent::KeyPress, because neither alone is reliable
 // for every widget:
 //   - Qt sends ShortcutOverride to the focus widget just before (almost) every non-autorepeat
-//     KeyPress, specifically so something can claim the chord for itself. Built-in widgets
-//     (QLineEdit, QTextEdit, QAbstractItemView, ...) accept it for their own hardcoded standard-key
-//     bindings (Ctrl+A, Ctrl+C, Delete, ...) *independently* of whether any QShortcut/QAction is
-//     registered for them -- but accepting ShortcutOverride does not stop Qt from still delivering
-//     the ordinary KeyPress afterward (it only skips Qt's shortcut-map lookup, which never matches
-//     anything here anyway, since this app never calls QAction::setShortcut/QShortcut for the
-//     actions this feature covers). So claiming the chord here, before the target widget's own
-//     event() runs (filters installed on qApp always run first), stops a focused QLineEdit/
-//     QTextEdit from quietly keeping the key for its own editing even when it wouldn't otherwise
-//     have accepted it, and -- since we also accept() the event ourselves -- a KeyPress for the
-//     very same physical press still follows right behind it unconditionally, so it must be
-//     swallowed too without re-invoking the callback a second time (handled via m_pendingChord
-//     below).
+//     KeyPress, which this dispatcher -- being installed on qApp -- always sees before the target
+//     widget's own event() runs. Dispatching here as well as on KeyPress means a Window-scoped
+//     action still fires reliably even for a focus widget (QLineEdit, QTextEdit,
+//     QAbstractItemView, ...) that would otherwise claim the chord for one of its own hardcoded
+//     standard-key bindings first.
 //   - Some surfaces (e.g. embedded QML content, which doesn't route through the normal
 //     QWidgetWindow key-event path) never send ShortcutOverride at all -- only a plain KeyPress.
 //     The KeyPress branch below is what catches those.
+// Dispatching on both means the same physical keypress can resolve twice (ShortcutOverride, then
+// the unconditional KeyPress Qt sends right behind it) -- m_pendingChord below suppresses the
+// second invocation without suppressing the KeyPress event itself.
+//
+// The event is normally swallowed after a successful dispatch (same as always): letting it keep
+// propagating unconditionally was tried and reverted -- confirmed by hand that once nothing along
+// the ancestor chain actually wants an unrecognized chord like Ctrl+T, each widget in turn ignores
+// it and Qt re-sends it to the next parent up, and since app-level filters see *every* one of
+// those re-sends too, tryDispatch ends up invoked (and the action re-fired) once per ancestor
+// instead of once. Two distinct cross-scope cases still need to deviate from plain swallowing, but
+// neither risks that storm (HotkeyManager::conflictingAction is deliberately same-scope-only, spec
+// §5, so neither shows up as a same-scope conflict either):
+//   - A chord that ALSO resolves to a View-scoped action (tryDispatch's own check) defers to it
+//     entirely -- the Window-scoped callback isn't even invoked, so there's nothing to swallow in
+//     the first place. The one context where both could apply (a file browser view focused) is
+//     exactly where the View-scoped action is meant to win outright, not merely share the keypress
+//     -- confirmed via test_cross_scope_duplicate_chord_both_still_fire_independently.
+//   - A chord that's live on a Window-scoped action while a Settings-page HotkeyEditWidget is
+//     actively listening for a new one still dispatches the live action as always, but is left
+//     unswallowed (recordingWidgetFocused() below) so the listening widget also gets this same
+//     keystroke as its candidate chord. Safe to leave unswallowed specifically here (unlike the
+//     general case above): HotkeyEditWidget::keyPressEvent always either handles the key itself or
+//     returns without calling ignore(), so it's a dead end -- it never continues bubbling up to
+//     re-trigger this same dispatch on some ancestor widget.
 class HotkeyWindowDispatcher : public QObject
 {
     Q_OBJECT
@@ -55,15 +71,15 @@ protected:
 
 private:
     // Resolves `event`'s chord against HotkeyManager (Scope::Window); if it matches a registered
-    // callback, invokes it and accepts `event`. Returns true (caller should also return true from
-    // eventFilter, to swallow the event) on a dispatch.
+    // callback, invokes it and accepts `event`. Returns true on a dispatch -- eventFilter decides
+    // from there whether to also swallow the event (see this header's own comment above).
     bool tryDispatch(QKeyEvent* event);
 
     HotkeyManager& m_hotkeyManager;
     std::unordered_map<HotkeyAction, std::function<void()>> m_callbacks;
 
     // Set after a ShortcutOverride dispatch to the chord just handled; checked by the very next
-    // KeyPress so the unconditional follow-up Qt sends for the same physical press is swallowed
-    // without invoking the callback a second time. Cleared once consumed.
+    // KeyPress so the unconditional follow-up Qt sends for the same physical press doesn't invoke
+    // the callback a second time. Cleared once consumed.
     QKeySequence m_pendingChord;
 };

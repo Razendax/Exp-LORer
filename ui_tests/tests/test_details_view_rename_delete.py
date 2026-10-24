@@ -55,6 +55,31 @@ def test_f2_rename_commits_with_enter(app: ExpLorerApp, tmp_path: Path) -> None:
     assert not (tmp_path / "old_name.txt").exists()
 
 
+def test_f2_rename_commits_with_enter_for_a_folder(app: ExpLorerApp, tmp_path: Path) -> None:
+    """Folder counterpart of `test_f2_rename_commits_with_enter` above -- regression coverage for
+    a confirmed production bug (unrelated to the hotkey feature, found incidentally while adding
+    that coverage): renaming a FOLDER via F2 was a silent no-op, while the identical mechanism on a
+    file always worked. Root cause: pressing Enter in the inline editor doesn't synchronously commit
+    the edit -- Qt's own item-delegate commit-on-Enter handling
+    (QAbstractItemDelegatePrivate::editorEventFilter) deliberately defers the actual commit to a
+    queued call so the still-focused editor gets to validate the input first, and the same Enter
+    keypress, left unconsumed by QLineEdit (which itself ignores it, by design, so a dialog's
+    default button can still react to it), bubbles up to `FileBrowserView`'s own key handling as a
+    plain "activate the current selection" -- which, for a directory, navigated into it and reset
+    the model before the still-pending queued commit ever ran, silently dropping the rename. A file
+    has no such disruptive side effect from being "activated" mid-rename, which is why only folders
+    were affected. Fixed by `FileBrowserView::eventFilter` only treating a KeyPress as targeting the
+    view itself (vs. one bubbled up from a focused child editor) when the view actually has focus.
+    """
+    (tmp_path / "old_folder").mkdir()
+    app.navigation.navigate_to(str(tmp_path))
+
+    rename(app.panes.a.file_tree_view, "old_folder", "new_folder")
+
+    wait_until(lambda: (tmp_path / "new_folder").is_dir())
+    assert not (tmp_path / "old_folder").exists()
+
+
 def test_escape_cancels_rename(app: ExpLorerApp, tmp_path: Path) -> None:
     (tmp_path / "keep_me.txt").write_text("x")
     app.navigation.navigate_to(str(tmp_path))

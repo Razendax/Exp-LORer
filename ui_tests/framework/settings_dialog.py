@@ -12,6 +12,7 @@ import win32gui
 
 from .automation_id import AutomationID, find
 from .modal_dialog import connect_by_handle, wait_for_window_handle
+from .settings_hotkeys_page import SettingsHotkeysPage
 
 # Fixed display order of SettingsDialog::buildGeneralUiPage()'s Theme combo box items
 # (UiTheme::Theme::Light/Dark) -- used to compute the on-screen row a given name's own dropdown
@@ -38,6 +39,7 @@ class SettingsDialog:
     def __init__(self, hwnd: int):
         self.hwnd = hwnd
         self._window = connect_by_handle(hwnd)
+        self.hotkeys = SettingsHotkeysPage(self._window)
 
     def exists(self) -> bool:
         return bool(win32gui.IsWindow(self.hwnd))

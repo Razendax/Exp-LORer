@@ -243,6 +243,19 @@ class AutomationID:
     SETTINGS_COLUMNS_TABLE = "settingsColumnsTable"
     SETTINGS_COLUMN_VISIBLE_CHECKBOX = "settingsColumnVisibleCheckBox"
     SETTINGS_CLOSE_BUTTON = "settingsCloseButton"
+    # Settings > General > Hotkeys page (SettingsHotkeysPage.cpp, Architecture.md §14.x). The
+    # filter edit, tree, and restore-all button are each one fixed widget. The per-row widgets
+    # below share ONE objectName across every row (dynamic/data-driven, same posture as the
+    # decorations/columns tables' per-row buttons) -- locate a specific row's instance via
+    # `settings_hotkeys_page.py`, which pairs a row's own TreeItem (matched by display text) with
+    # the per-row widget vertically aligned with it, rather than by id alone.
+    SETTINGS_HOTKEYS_FILTER_EDIT = "settingsHotkeysFilterEdit"
+    SETTINGS_HOTKEYS_TREE = "settingsHotkeysTree"
+    SETTINGS_HOTKEYS_RESTORE_ALL_BUTTON = "settingsHotkeysRestoreAllButton"
+    HOTKEY_EDIT_WIDGET = "hotkeyEditWidget"
+    SETTINGS_HOTKEY_CLEAR_BUTTON = "settingsHotkeyClearButton"
+    SETTINGS_HOTKEY_RESET_BUTTON = "settingsHotkeyResetButton"
+    SETTINGS_HOTKEY_CONFLICT_LABEL = "settingsHotkeyConflictLabel"
 
     # --- Tag Manager Dialog (TagManagerDialog.cpp, modal, single instance at a time) ---
     TAG_MANAGER_DIALOG = "tagManagerDialog"

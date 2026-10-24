@@ -359,7 +359,19 @@ FileBrowserView::FileBrowserView(FileListModel* model, QWidget* parent, HotkeyMa
 
 bool FileBrowserView::eventFilter(QObject* watched, QEvent* event)
 {
-    if ((watched == m_listView || watched == m_treeView) && event->type() == QEvent::KeyPress)
+    // A KeyPress delivered to the view itself isn't necessarily one the view's own focus caused:
+    // Qt's item-delegate commit-on-Enter handling (QAbstractItemDelegatePrivate::editorEventFilter)
+    // deliberately returns false and defers the actual commitData() to a queued call, precisely so
+    // the still-focused rename editor gets to process/validate Enter first -- and QLineEdit's own
+    // Return handling, in turn, explicitly ignore()s that same KeyPress (so a dialog's default
+    // button still reacts to it), which makes Qt's standard "unhandled key bubbles up to the parent
+    // widget" propagation redeliver it here, to the view, even though the view itself never had
+    // focus. Treating that bubbled-up Enter as handleKeyPress's own "activate selection" would, for
+    // a selected directory, navigate into it and reset the model before the still-pending queued
+    // commit runs -- silently losing the rename with no error. Only handle a KeyPress that
+    // genuinely targets the view itself (no child editor currently focused).
+    if ((watched == m_listView || watched == m_treeView) && event->type() == QEvent::KeyPress
+        && static_cast<QWidget*>(watched)->hasFocus())
     {
         if (handleKeyPress(static_cast<QKeyEvent*>(event)))
         {
