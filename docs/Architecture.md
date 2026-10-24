@@ -548,13 +548,13 @@ layer redesign** — and is recorded as a decision log per feature, not an imple
 walkthrough; see git history and the code's own comments (many cite these subsection numbers
 directly) for the detail.
 
-The log grew too large for one document and is split across ten files under `docs/features/`,
-organized **by feature topic** rather than by when each was built. Section numbers (§14.1–§14.94)
+The log grew too large for one document and is split across twelve files under `docs/features/`,
+organized **by feature topic** rather than by when each was built. Section numbers (§14.1–§14.108)
 were assigned chronologically as each feature shipped and are kept stable within whichever file
 now holds them, since code comments cite them directly — so a file's own section numbers are not
 necessarily contiguous; each file's intro lists its exact set. **Keep each file at or under 1000
 lines** — if a file would grow past that, split its most self-contained sub-topic into a new file
-(picking the next free number in `docs/features/`, e.g. `10-...`) rather than letting it keep
+(picking the next free number in `docs/features/`, e.g. `13-...`) rather than letting it keep
 growing, and update both that file's intro and this index to match.
 
 * **[features/01-workspaces-and-panels.md](features/01-workspaces-and-panels.md)** — split-window
@@ -591,4 +591,8 @@ growing, and update both that file's intro and this index to match.
   Replace addition.
 * **[features/11-decoration.md](features/11-decoration.md)** — per-file/folder font & color
   decoration (split out of features/05 once that file approached the 1000-line cap).
+* **[features/12-keyboard-hotkeys-and-navigation.md](features/12-keyboard-hotkeys-and-navigation.md)**
+  — the customizable, app-wide keyboard hotkey catalog (navigation, tabs, panes, layout, panels,
+  search/tools, and §14.10's file-operations hotkeys, now folded into the same mechanism) and its
+  Settings > General > Hotkeys page.
 

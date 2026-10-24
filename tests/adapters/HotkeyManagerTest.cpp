@@ -120,10 +120,16 @@ TEST_F(HotkeyManagerTest, ResolveReturnsTheMostRecentlyBoundActionAmongSameScope
 
 TEST_F(HotkeyManagerTest, ResolveNeverCrossesScopeBoundaries)
 {
-    const auto resolved = m_manager->resolve(HotkeyCatalogEntry::Scope::Window, chord(QStringLiteral("Ctrl+C")));
+    // Copy (View) and test.windowPaste (Window) both default to Ctrl+C -- with every
+    // scope/category now coexisting for real (M7 spot-check), each scope's own resolve() call must
+    // independently return its own action, unaffected by the other scope sharing the exact chord.
+    const auto windowResolved = m_manager->resolve(HotkeyCatalogEntry::Scope::Window, chord(QStringLiteral("Ctrl+C")));
+    ASSERT_TRUE(windowResolved.has_value());
+    EXPECT_EQ(*windowResolved, HotkeyAction::Paste); // the Window-scoped stand-in, not View-scoped Copy
 
-    ASSERT_TRUE(resolved.has_value());
-    EXPECT_EQ(*resolved, HotkeyAction::Paste); // the Window-scoped stand-in, not View-scoped Copy
+    const auto viewResolved = m_manager->resolve(HotkeyCatalogEntry::Scope::View, chord(QStringLiteral("Ctrl+C")));
+    ASSERT_TRUE(viewResolved.has_value());
+    EXPECT_EQ(*viewResolved, HotkeyAction::Copy); // the View-scoped action, unaffected by Window's Paste
 }
 
 TEST_F(HotkeyManagerTest, ClearBindingMakesResolveReturnNulloptForThatChordWhenNothingElseIsBoundToIt)

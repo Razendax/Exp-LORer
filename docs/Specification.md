@@ -156,7 +156,7 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   the same cache-only posture as Folder Size's Size-column integration described above it.
 * **Settings dialog (Architecture.md §14.27):** `File > Settings...` opens a dialog with a
   hierarchical category tree on the left and that category's settings on the right; in v1 this
-  holds five categories: Highlight > Languages, listing the languages with syntax highlighting
+  holds six categories: Highlight > Languages, listing the languages with syntax highlighting
   (2.2 "Preview Panel") and, per language, each of its token types with a color swatch the user can
   change via a color picker; General > UI, holding a "Show close button on tabs" toggle
   (default on) controlling whether each pane's tabs render a close ("x") button, app-wide and
@@ -164,11 +164,12 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   editable, ordered list of file/folder appearance rules (see below); General > Notifications
   (Architecture.md §14.37), a fixed 3-row table (Type / Enabled / Timeout) letting the user
   enable/disable each popup notification type and set how long it stays on screen before
-  auto-dismissing; and General > Columns (Architecture.md §14.39), a "Default visibility for new
+  auto-dismissing; General > Columns (Architecture.md §14.39), a "Default visibility for new
   tab" group box with one checkbox per available Details-view column (Name excluded — always
-  visible) controlling which columns a newly opened tab starts with. Changes in all five
-  categories apply and persist immediately, though Columns' effect is scoped to tabs opened from
-  then on, not already-open ones.
+  visible) controlling which columns a newly opened tab starts with; and General > Hotkeys (see
+  "Keyboard navigation and hotkey customization" above), a searchable, per-action shortcut table.
+  Changes in all six categories apply and persist immediately, though Columns' effect is scoped to
+  tabs opened from then on, not already-open ones.
 * **Notifications (Architecture.md §14.37):** two kinds of app-wide notification appear stacked in
   the bottom-right corner of the window. Popup notifications — Info (blue), Warning (yellow), or
   Error (red), each showing an icon/type header and a message body — auto-dismiss after a
@@ -188,6 +189,20 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   list with a matching pattern determines its appearance everywhere it's listed (browsing, quick
   search, and advanced search, in every view mode); rules can be reordered, since order determines
   precedence when more than one would match.
+* **Keyboard navigation and hotkey customization:** a catalog of quick-navigation actions
+  (back/forward, refresh, go to "This PC", focus the address bar, new/close/cycle tabs, switch or
+  cycle pane focus, switch layout, toggle/focus each collapsible panel and its tabs, Advanced
+  Search, toggle hidden files, Media Viewer mode, Tag Manager, add to Favorites, new folder) ship
+  with default shortcuts and are rebindable, alongside the existing selection/file-operation
+  hotkeys below (Ctrl+C/X/V, Delete/Shift+Delete, F2, Backspace, Enter, Select all, Properties),
+  from a `Settings > General > Hotkeys` page (see below): a searchable, per-action table where
+  clicking a shortcut field and pressing a new key combination rebinds it, with per-row Clear/
+  Reset-to-default and a "Restore All Defaults" action. Assigning a combination already used by
+  another action shows a warning but doesn't block the change. Each action keeps its existing
+  non-keyboard entry point (menu/toolbar/context-menu) regardless of whether it has a shortcut
+  assigned. Details-view ArrowLeft/ArrowRight parent/open-folder navigation and `[a-z]` letter
+  type-ahead remain fixed, non-customizable behavior, as do the integrated terminal's and built-in
+  text editor's own in-widget editing shortcuts.
 * **Status bar (Architecture.md §14.28):** each pane shows a status bar at the bottom, always
   reflecting whichever tab in that pane currently has focus: the number of objects in the
   current listing (the browsed folder, or the active search/advanced-search results) and, once
