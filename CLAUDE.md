@@ -97,7 +97,7 @@ Requires `VCPKG_ROOT` set to a vcpkg checkout, and either a Visual Studio Develo
 discoverable via `vswhere`. Building the optional Windows installer (`-Package` below) additionally
 requires NSIS's `makensis.exe` on PATH.
 
-Before building, ensure that the application is not running, if it is, kill it.
+`build.ps1` kills a running `Exp-LORer.exe` before building, so it doesn't need to be stopped manually first.
 
 ```powershell
 .\build.ps1                    # configure (if needed) + build the Release preset

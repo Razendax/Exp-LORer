@@ -31,6 +31,13 @@ $CMakePreset = switch ($Preset) {
 }
 $BinaryDir = Join-Path $PSScriptRoot "build\$CMakePreset"
 
+# Kill the app if it's running, so the build doesn't fail trying to overwrite a locked .exe.
+$runningApp = Get-Process -Name "Exp-LORer" -ErrorAction SilentlyContinue
+if ($runningApp) {
+    Write-Host "Exp-LORer is running; stopping it before building..."
+    $runningApp | Stop-Process -Force
+}
+
 # vcpkg manifest mode needs VCPKG_ROOT to locate the toolchain file.
 if (-not $env:VCPKG_ROOT) {
     Write-Error "VCPKG_ROOT is not set. Set it to your vcpkg checkout, e.g. `$env:VCPKG_ROOT = 'C:\vcpkg'`."
