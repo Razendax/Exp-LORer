@@ -80,6 +80,41 @@ namespace
         entries.push_back({ HotkeyAction::PreviousTab, "tabs.previous", Category::Tabs, hotkeyTr("Previous tab"),
                              HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Tab)), Scope::Window, false });
 
+        // Panes & Layout (spec §3.3) -- Milestone 4. Window-scoped like Tabs above. Cycle
+        // next/previous allow a bare rebind (spec §4's exception list names them explicitly, their
+        // own shipped defaults being F6/Shift+F6); every other row here always ships with a
+        // modifier combo, so none of the rest allow a bare rebind.
+        entries.push_back({ HotkeyAction::FocusPaneA, "panes.focusA", Category::PanesAndLayout,
+                             hotkeyTr("Switch focus to Pane A"), HotkeyChord(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_1)),
+                             Scope::Window, false });
+        entries.push_back({ HotkeyAction::FocusPaneB, "panes.focusB", Category::PanesAndLayout,
+                             hotkeyTr("Switch focus to Pane B"), HotkeyChord(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_2)),
+                             Scope::Window, false });
+        entries.push_back({ HotkeyAction::FocusPaneC, "panes.focusC", Category::PanesAndLayout,
+                             hotkeyTr("Switch focus to Pane C"), HotkeyChord(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_3)),
+                             Scope::Window, false });
+        entries.push_back({ HotkeyAction::FocusPaneD, "panes.focusD", Category::PanesAndLayout,
+                             hotkeyTr("Switch focus to Pane D"), HotkeyChord(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_4)),
+                             Scope::Window, false });
+        entries.push_back({ HotkeyAction::CycleNextPane, "panes.cycleNext", Category::PanesAndLayout,
+                             hotkeyTr("Cycle focus to next pane"), HotkeyChord(QKeySequence(Qt::Key_F6)), Scope::Window,
+                             true });
+        entries.push_back({ HotkeyAction::CyclePreviousPane, "panes.cyclePrevious", Category::PanesAndLayout,
+                             hotkeyTr("Cycle focus to previous pane"), HotkeyChord(QKeySequence(Qt::SHIFT | Qt::Key_F6)),
+                             Scope::Window, true });
+        entries.push_back({ HotkeyAction::LayoutSingle, "layout.single", Category::PanesAndLayout,
+                             hotkeyTr("Layout: single pane"), HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_1)),
+                             Scope::Window, false });
+        entries.push_back({ HotkeyAction::LayoutTwoVertical, "layout.twoVertical", Category::PanesAndLayout,
+                             hotkeyTr("Layout: two-pane vertical split"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_2)), Scope::Window, false });
+        entries.push_back({ HotkeyAction::LayoutTwoHorizontal, "layout.twoHorizontal", Category::PanesAndLayout,
+                             hotkeyTr("Layout: two-pane horizontal split"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_3)), Scope::Window, false });
+        entries.push_back({ HotkeyAction::LayoutFourGrid, "layout.fourGrid", Category::PanesAndLayout,
+                             hotkeyTr("Layout: four-pane grid"), HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_4)),
+                             Scope::Window, false });
+
         return entries;
     }
 }

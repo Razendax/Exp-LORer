@@ -985,6 +985,14 @@ void WorkspacePaneWidget::activatePreviousTab()
     m_tabWidget->setCurrentIndex((m_tabWidget->currentIndex() - 1 + count) % count);
 }
 
+void WorkspacePaneWidget::focusBrowserView()
+{
+    if (FileBrowserView* browserView = currentBrowserView())
+    {
+        browserView->focusView();
+    }
+}
+
 void WorkspacePaneWidget::onUpRequested()
 {
     if (!m_boundTab)

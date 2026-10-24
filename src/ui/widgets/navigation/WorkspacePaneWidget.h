@@ -99,6 +99,15 @@ public:
     void activateNextTab();
     void activatePreviousTab();
 
+    // Panes & Layout (spec §3.3, Milestone 4) -- public entry point for HotkeyWindowDispatcher's
+    // pane-focus/cycle callbacks. Gives real Qt keyboard focus to this pane's current
+    // FileBrowserView; WorkspaceLayoutWidget's QApplication::focusChanged connection then calls
+    // WorkspaceController::setFocusedPane as a *consequence* of that real focus move -- this method
+    // deliberately never calls setFocusedPane itself (see plan.md's M4 notes: setFocusedPane is a
+    // one-way result of focus movement, not a way to cause it). No-op if the pane currently has no
+    // tabs (currentBrowserView() returns nullptr).
+    void focusBrowserView();
+
 signals:
     // Bubbled up so MainWindow (whose QMainWindow::statusBar() is a separate, transient,
     // window-wide message bar for navigation/search failures -- distinct from this pane's own

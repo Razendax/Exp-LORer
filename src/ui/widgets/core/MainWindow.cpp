@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
+#include <vector>
 
 #include <QAction>
 #include <QActionGroup>
@@ -67,6 +69,7 @@
 #include "TagPanelWidget.h"
 #include "VirtualPaths.h"
 #include "WorkspaceController.h"
+#include "WorkspaceLayoutTopology.h"
 #include "WorkspaceLayoutWidget.h"
 #include "WorkspaceManagerDialog.h"
 #include "WorkspacePaneId.h"
@@ -840,6 +843,71 @@ void MainWindow::createHotkeyWindowDispatcher()
             pane->activatePreviousTab();
         }
     });
+
+    // Panes & Layout (spec §3.3, Milestone 4). Focus-Pane-A/B/C/D: resolved at invocation time
+    // (not captured once), same reasoning as focusedPaneWidget above. Guarded against focusing a
+    // currently-hidden pane (e.g. Pane D under SplitLayout::Single) via
+    // WorkspaceLayoutTopology::visiblePanes -- focusing an invisible pane makes no sense, so this
+    // is a deliberate no-op rather than, say, switching layout to make it visible first.
+    //
+    // Every one of these calls WorkspacePaneWidget::focusBrowserView() -- never
+    // WorkspaceController::setFocusedPane() directly -- since setFocusedPane is only ever a
+    // consequence of real Qt focus movement (WorkspaceLayoutWidget's QApplication::focusChanged
+    // connection), not a way to cause it; see plan.md's M4 notes.
+    auto focusPaneIfVisible = [this](WorkspacePaneId id) {
+        const std::vector<WorkspacePaneId> visible = WorkspaceLayoutTopology::visiblePanes(m_workspaceController->layout());
+        if (std::find(visible.begin(), visible.end(), id) == visible.end())
+        {
+            return;
+        }
+        if (WorkspacePaneWidget* pane = m_workspaceLayoutWidget->paneWidget(id))
+        {
+            pane->focusBrowserView();
+        }
+    };
+
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::FocusPaneA,
+                                                [focusPaneIfVisible]() { focusPaneIfVisible(WorkspacePaneId::PaneA); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::FocusPaneB,
+                                                [focusPaneIfVisible]() { focusPaneIfVisible(WorkspacePaneId::PaneB); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::FocusPaneC,
+                                                [focusPaneIfVisible]() { focusPaneIfVisible(WorkspacePaneId::PaneC); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::FocusPaneD,
+                                                [focusPaneIfVisible]() { focusPaneIfVisible(WorkspacePaneId::PaneD); });
+
+    // Cycle focus to next/previous pane: index math factored into
+    // WorkspaceLayoutTopology::cyclePane (pure, unit-tested) so it's shared with its test rather
+    // than duplicated here. nullopt covers both "fewer than 2 panes visible" (e.g. Single layout --
+    // nothing to cycle to) and "focused pane isn't even in the visible set" (shouldn't happen, but
+    // a safe no-op either way). Same "cause real focus, let setFocusedPane follow" rule as above.
+    auto cyclePane = [this](int step) {
+        const std::optional<WorkspacePaneId> next =
+            WorkspaceLayoutTopology::cyclePane(m_workspaceController->layout(), m_workspaceController->focusedPane(), step);
+        if (!next)
+        {
+            return;
+        }
+        if (WorkspacePaneWidget* pane = m_workspaceLayoutWidget->paneWidget(*next))
+        {
+            pane->focusBrowserView();
+        }
+    };
+
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::CycleNextPane, [cyclePane]() { cyclePane(1); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::CyclePreviousPane, [cyclePane]() { cyclePane(-1); });
+
+    // Layout: single/2V/2H/4-grid. Reuses the exact same m_workspaceController->setLayout(layout)
+    // call createLayoutActions() already wired to each QAction::triggered -- the dispatcher is a
+    // second trigger path onto the same code, never a QAction::setShortcut call, keeping the
+    // shared design's "no Qt-native shortcuts" rule consistent even for these pre-existing actions.
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::LayoutSingle,
+                                                [this]() { m_workspaceController->setLayout(SplitLayout::Single); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::LayoutTwoVertical,
+                                                [this]() { m_workspaceController->setLayout(SplitLayout::TwoVertical); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::LayoutTwoHorizontal,
+                                                [this]() { m_workspaceController->setLayout(SplitLayout::TwoHorizontal); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::LayoutFourGrid,
+                                                [this]() { m_workspaceController->setLayout(SplitLayout::FourGrid); });
 }
 
 void MainWindow::showTagManagerDialog()

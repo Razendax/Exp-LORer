@@ -37,4 +37,20 @@ enum class HotkeyAction
     CloseTab,
     NextTab,
     PreviousTab,
+
+    // Panes & Layout (spec §3.3) -- Milestone 4. Window-scoped, like Tabs above. FocusPaneA-D and
+    // CycleNextPane/CyclePreviousPane give real Qt keyboard focus to a pane's current
+    // FileBrowserView (WorkspacePaneWidget::focusBrowserView); the Layout* actions reuse
+    // MainWindow's existing exclusive m_layoutActionGroup QActions' own WorkspaceController::setLayout
+    // call as a second trigger path.
+    FocusPaneA,
+    FocusPaneB,
+    FocusPaneC,
+    FocusPaneD,
+    CycleNextPane,
+    CyclePreviousPane,
+    LayoutSingle,
+    LayoutTwoVertical,
+    LayoutTwoHorizontal,
+    LayoutFourGrid,
 };
