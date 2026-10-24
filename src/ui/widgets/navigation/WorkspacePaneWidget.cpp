@@ -330,7 +330,7 @@ void WorkspacePaneWidget::createTabArea()
     m_tabWidget = new QTabWidget(this);
     m_tabWidget->setObjectName(QStringLiteral("paneTabWidget"));
     m_tabWidget->setTabsClosable(tabCloseButtonsEnabled());
-    m_tabWidget->setMovable(false);
+    m_tabWidget->setMovable(true);
     m_tabWidget->tabBar()->installEventFilter(this);
     m_tabWidget->installEventFilter(this);
 
@@ -365,6 +365,12 @@ void WorkspacePaneWidget::createTabArea()
 
     connect(m_tabWidget, &QTabWidget::currentChanged, this, &WorkspacePaneWidget::onTabWidgetCurrentChanged);
     connect(m_tabWidget, &QTabWidget::tabCloseRequested, this, &WorkspacePaneWidget::onTabCloseRequested);
+
+    // Mirrors the tab bar's own drag-to-reorder (QTabBar::setMovable(true) above) into the
+    // backing model so captureConfig() persists the new order. The tab bar/stack have already
+    // moved by the time this fires -- must not touch m_tabWidget here, only the model.
+    connect(m_tabWidget->tabBar(), &QTabBar::tabMoved, this,
+            [this](int from, int to) { m_pane->moveTab(from, to); });
 }
 
 void WorkspacePaneWidget::applyThemeColors()

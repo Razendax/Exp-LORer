@@ -107,6 +107,43 @@ void WorkspacePaneViewModel::closeTab(int index)
     }
 }
 
+void WorkspacePaneViewModel::moveTab(int from, int to)
+{
+    if (from < 0 || static_cast<size_t>(from) >= m_tabs.size() || to < 0 || static_cast<size_t>(to) >= m_tabs.size())
+    {
+        return;
+    }
+
+    if (from == to)
+    {
+        return;
+    }
+
+    TabViewModel* tab = m_tabs[static_cast<size_t>(from)];
+    m_tabs.erase(m_tabs.begin() + from);
+    m_tabs.insert(m_tabs.begin() + to, tab);
+
+    // Keep m_activeIndex pointing at the same TabViewModel* it did before the move -- same kind
+    // of bookkeeping as closeTab()'s index adjustment, just for a move instead of an erase. No
+    // activeTabChanged emission: the active tab's identity hasn't changed, and the tab bar/stack
+    // already tracks it correctly on its own (QTabWidget keeps currentWidget() in sync with
+    // QTabBar::tabMoved internally), so there's nothing for WorkspacePaneWidget to re-sync.
+    if (m_activeIndex == from)
+    {
+        m_activeIndex = to;
+    }
+    else if (from < m_activeIndex && m_activeIndex <= to)
+    {
+        --m_activeIndex;
+    }
+    else if (to <= m_activeIndex && m_activeIndex < from)
+    {
+        ++m_activeIndex;
+    }
+
+    emit tabMoved(from, to);
+}
+
 void WorkspacePaneViewModel::setActiveTab(int index)
 {
     if (index < 0 || static_cast<size_t>(index) >= m_tabs.size())

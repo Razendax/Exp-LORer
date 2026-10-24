@@ -172,6 +172,74 @@ TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsThroughRestoreFromConfig)
     EXPECT_EQ(restoredPaneC->tabCount(), 0);
 }
 
+TEST_F(WorkspaceControllerTest, MoveTabReordersTabsKeepsActiveTabPointerAndPersists)
+{
+    WorkspacePaneViewModel* paneA = m_controller.pane(WorkspacePaneId::PaneA);
+    TabViewModel* tabA0 = paneA->addTab();
+    TabViewModel* tabA1 = paneA->addTab();
+    TabViewModel* tabA2 = paneA->addTab();
+    paneA->setActiveTab(1); // active tab is tabA1
+
+    bool tabMovedEmitted = false;
+    int emittedFrom = -1;
+    int emittedTo = -1;
+    QObject::connect(paneA, &WorkspacePaneViewModel::tabMoved, [&](int from, int to) {
+        tabMovedEmitted = true;
+        emittedFrom = from;
+        emittedTo = to;
+    });
+
+    paneA->moveTab(1, 2);
+
+    EXPECT_TRUE(tabMovedEmitted);
+    EXPECT_EQ(emittedFrom, 1);
+    EXPECT_EQ(emittedTo, 2);
+
+    ASSERT_EQ(paneA->tabCount(), 3);
+    EXPECT_EQ(paneA->tabAt(0), tabA0);
+    EXPECT_EQ(paneA->tabAt(1), tabA2);
+    EXPECT_EQ(paneA->tabAt(2), tabA1);
+
+    // tabA1 was active before the move; it must still be the active tab after its index shifted.
+    EXPECT_EQ(paneA->activeIndex(), 2);
+    EXPECT_EQ(paneA->activeTab(), tabA1);
+
+    const WorkspaceConfig captured = m_controller.captureConfig();
+
+    SQLiteTagRepository restoredTagRepository{ fs::path(":memory:") };
+    TagManagementUseCase restoredTagManagementUseCase{ restoredTagRepository, m_fileSystemRepository };
+    WorkspaceController restoredController{ m_fileNavigationUseCase,  restoredTagManagementUseCase, m_filePreviewUseCase,
+                                             m_fileSystemRepository, m_fileDecorationRules,        m_fileDecorationsViewModel,
+                                             m_gitStatusService,     m_directoryWatchUseCase,      m_folderMonitorUseCase,
+                                             m_notificationCenter,   m_advancedSearchService,      m_contentSearchService,
+                                             m_fileTagsService,      m_diskUsageService,           m_fragmentationService,
+                                             m_iconLoadingService,   m_mediaThumbnailLoadingService, m_tagChangeNotifier,
+                                             m_fileTransferService };
+    ASSERT_TRUE(restoredController.restoreFromConfig(captured));
+
+    WorkspacePaneViewModel* restoredPaneA = restoredController.pane(WorkspacePaneId::PaneA);
+    ASSERT_EQ(restoredPaneA->tabCount(), 3);
+    EXPECT_EQ(restoredPaneA->activeIndex(), 2);
+}
+
+TEST_F(WorkspaceControllerTest, MoveTabWithOutOfRangeIndexIsNoOp)
+{
+    WorkspacePaneViewModel* paneA = m_controller.pane(WorkspacePaneId::PaneA);
+    TabViewModel* tabA0 = paneA->addTab();
+    TabViewModel* tabA1 = paneA->addTab();
+
+    bool tabMovedEmitted = false;
+    QObject::connect(paneA, &WorkspacePaneViewModel::tabMoved, [&](int, int) { tabMovedEmitted = true; });
+
+    paneA->moveTab(-1, 1);
+    paneA->moveTab(0, 5);
+    paneA->moveTab(0, 0);
+
+    EXPECT_FALSE(tabMovedEmitted);
+    EXPECT_EQ(paneA->tabAt(0), tabA0);
+    EXPECT_EQ(paneA->tabAt(1), tabA1);
+}
+
 TEST_F(WorkspaceControllerTest, CaptureConfigRoundTripsHiddenColumnsThroughRestoreFromConfig)
 {
     writeFile(m_tempDir / "a.txt", "hello");

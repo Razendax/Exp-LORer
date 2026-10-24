@@ -59,10 +59,17 @@ public slots:
 
     void setActiveTab(int index);
 
+    // Reorders the tab at `from` to `to` (both must be valid indices; a no-op if they're equal).
+    // Keeps m_activeIndex pointing at the same TabViewModel* it did before the move, then emits
+    // tabMoved(from, to). Mirrors the tab bar's own QTabBar::tabMoved reordering so the two stay
+    // in sync -- callers must not re-touch the tab bar itself from this slot.
+    void moveTab(int from, int to);
+
 signals:
     void tabAdded(int index);
     void tabClosed(int index);
     void activeTabChanged(int index);
+    void tabMoved(int from, int to);
 
 private:
     FileNavigationUseCase& m_fileNavigationUseCase;
