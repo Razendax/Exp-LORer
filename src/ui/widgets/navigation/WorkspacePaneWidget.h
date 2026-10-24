@@ -115,6 +115,15 @@ public:
     // if that can't be resolved (e.g. the pane has no tabs at all).
     void toggleBottomPanel();
 
+    // Search & Tools (spec §3.5, Milestone 6) -- public entry point for both the new File-menu
+    // "New Folder" entry and HotkeyWindowDispatcher's "New folder" callback, acting on this pane's
+    // currently bound tab (m_boundTab->currentPath()) rather than a fixed context-menu click
+    // position. Mirrors showBackgroundContextMenu's kNewFolderActionId case's guard and body
+    // exactly (same VirtualPaths::ThisPC/archive-ancestor guard, same
+    // createFolder-then-beginRename call) -- a no-op if the pane has no tabs, is browsing "This
+    // PC", or is inside an archive.
+    void createNewFolderInCurrentDirectory();
+
 signals:
     // Bubbled up so MainWindow (whose QMainWindow::statusBar() is a separate, transient,
     // window-wide message bar for navigation/search failures -- distinct from this pane's own

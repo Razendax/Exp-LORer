@@ -352,6 +352,19 @@ void MainWindow::createMenuBar()
     fileMenu->addAction(tr("&Settings..."), this, &MainWindow::showSettingsDialog);
     fileMenu->addSeparator();
 
+    // New Folder (spec §3.5, Milestone 6): genuinely new entry point (unlike the rest of this
+    // milestone's actions), so it gains this menu-bar item alongside its shortcut per spec §5.
+    // Resolves the focused pane lazily, same posture as createFavoritesMenu()'s paneWidgetResolver
+    // just below -- createWorkspace() (which constructs m_workspaceLayoutWidget) hasn't run yet at
+    // this point in the constructor (createMenuBar() runs first).
+    fileMenu->addAction(tr("New &Folder"), this, [this]() {
+        if (WorkspacePaneWidget* pane = m_workspaceLayoutWidget->paneWidget(m_workspaceController->focusedPane()))
+        {
+            pane->createNewFolderInCurrentDirectory();
+        }
+    });
+    fileMenu->addSeparator();
+
     createWorkspacesMenu(fileMenu);
 
     fileMenu->addSeparator();
@@ -933,6 +946,38 @@ void MainWindow::createHotkeyWindowDispatcher()
                                                 [this]() { m_leftPanelWidget->activateTab(2); });
     m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::ShowRightTagsTab, [this]() { m_rightPanelWidget->activateTab(0); });
     m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::ShowRightPreviewTab, [this]() { m_rightPanelWidget->activateTab(1); });
+
+    // Search & Tools (spec §3.5, Milestone 6) -- the last category to land, finishing all 38
+    // catalog rows. Mostly a second trigger path onto an already-existing QAction/method, same
+    // "no Qt-native shortcuts, dispatcher reuses the existing code path" posture as every prior
+    // milestone's callbacks:
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::OpenAdvancedSearch, [this]() {
+        if (TabViewModel* tab = m_workspaceController->focusedTab())
+        {
+            tab->showAdvancedSearchPanel();
+        }
+    });
+    // toggle() flips the checkable QAction's checked state, which fires its own already-wired
+    // QAction::toggled handler -- don't duplicate that handler's body here.
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::ToggleHiddenFiles, [this]() { m_showHiddenFilesAction->toggle(); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::ToggleMediaViewerMode,
+                                                [this]() { m_mediaViewerModeAction->toggle(); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::OpenSettings, [this]() { showSettingsDialog(); });
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::OpenTagManager, [this]() { showTagManagerDialog(); });
+    // "Add to Favorites" already has a menu-bar entry (FavoritesMenuController's static first
+    // entry) -- trigger() re-runs that same action, no new entry point needed. trigger() already
+    // no-ops if the action is currently disabled (e.g. no focused tab).
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::AddToFavorites,
+                                                [this]() { m_favoritesMenuController->addToFavoritesAction()->trigger(); });
+    // "New folder" is the one genuinely new entry point this milestone adds (also gains the
+    // File-menu item created in createMenuBar() above) -- acts on the focused pane, same
+    // focusedPaneWidget lambda as the Tabs/ToggleBottomPanel callbacks above.
+    m_hotkeyWindowDispatcher->registerCallback(HotkeyAction::NewFolder, [focusedPaneWidget]() {
+        if (WorkspacePaneWidget* pane = focusedPaneWidget())
+        {
+            pane->createNewFolderInCurrentDirectory();
+        }
+    });
 }
 
 void MainWindow::showTagManagerDialog()

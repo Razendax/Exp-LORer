@@ -48,6 +48,13 @@ public:
 
     QMenu* menu() const noexcept { return m_menu; }
 
+    // HotkeyWindowDispatcher's "Add selection to Favorites" callback (spec §3.5, Milestone 6)
+    // triggers this directly rather than duplicating onAddToFavoritesTriggered()'s body --
+    // QAction::trigger() already no-ops if the action is currently disabled (e.g. no focused tab),
+    // since updateActionEnabled()/setFocusedTab() keep its enabled state correct regardless of
+    // which trigger path (menu click or hotkey) fires it.
+    QAction* addToFavoritesAction() const noexcept { return m_addToFavoritesAction; }
+
 public slots:
     // Called by MainWindow::onFocusedTabChanged (both its no-focused-tab early return and its
     // normal path) to keep the "Add to Favorites" action's enabled state in sync with the

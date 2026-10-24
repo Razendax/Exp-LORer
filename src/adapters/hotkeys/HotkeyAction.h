@@ -68,4 +68,20 @@ enum class HotkeyAction
     ShowLeftFindInFilesTab,
     ShowRightTagsTab,
     ShowRightPreviewTab,
+
+    // Search & Tools (spec §3.5) -- Milestone 6. Window-scoped, like Tabs/PanesAndLayout/Panels
+    // above. Mostly attaching a chord to an already-existing action/entry point
+    // (OpenAdvancedSearch/ToggleHiddenFiles/ToggleMediaViewerMode/OpenSettings/OpenTagManager);
+    // AddToFavorites reuses FavoritesMenuController's existing "Add to Favorites" QAction
+    // (addToFavoritesAction()->trigger()); NewFolder is the one genuinely new entry point here,
+    // gaining its own File-menu item alongside the shortcut per spec §5
+    // (WorkspacePaneWidget::createNewFolderInCurrentDirectory()). This is the last category to
+    // land -- once these 7 rows exist, all 38 spec §3 catalog rows are present.
+    OpenAdvancedSearch,
+    ToggleHiddenFiles,
+    ToggleMediaViewerMode,
+    OpenSettings,
+    OpenTagManager,
+    AddToFavorites,
+    NewFolder,
 };

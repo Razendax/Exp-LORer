@@ -1477,6 +1477,31 @@ void WorkspacePaneWidget::showItemContextMenu(TabViewModel* tab, FileBrowserView
     FileItemContextMenu::show(this, *m_fileOperationsController, paths, browsingInsideArchive, callbacks, globalPos);
 }
 
+void WorkspacePaneWidget::createNewFolderInCurrentDirectory()
+{
+    if (!m_boundTab)
+    {
+        return;
+    }
+
+    const std::filesystem::path directory = m_boundTab->currentPath();
+    if (directory == VirtualPaths::ThisPC || ArchiveExtensions::archiveAncestorInPath(directory).has_value())
+    {
+        return;
+    }
+
+    FileBrowserView* browserView = currentBrowserView();
+    if (!browserView)
+    {
+        return;
+    }
+
+    if (auto createdPath = m_fileOperationsController->createFolder(directory))
+    {
+        browserView->beginRename(*createdPath);
+    }
+}
+
 void WorkspacePaneWidget::showBackgroundContextMenu(TabViewModel* tab, FileBrowserView* browserView, const QPoint& globalPos)
 {
     const std::filesystem::path directory = tab->currentPath();

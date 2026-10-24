@@ -142,6 +142,30 @@ namespace
                              hotkeyTr("Show right panel's Preview tab"),
                              HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P)), Scope::Window, false });
 
+        // Search & Tools (spec §3.5) -- Milestone 6, the last category: once these 7 rows exist,
+        // all 38 spec §3 catalog rows are present. Window-scoped like Tabs/PanesAndLayout/Panels
+        // above. None allow a bare rebind -- none are in spec §4's bare-key exception list.
+        entries.push_back({ HotkeyAction::OpenAdvancedSearch, "tools.openAdvancedSearch", Category::SearchAndTools,
+                             hotkeyTr("Open Advanced Search"), HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_A)),
+                             Scope::Window, false });
+        entries.push_back({ HotkeyAction::ToggleHiddenFiles, "tools.toggleHiddenFiles", Category::SearchAndTools,
+                             hotkeyTr("Toggle \"Show hidden files\""), HotkeyChord(QKeySequence(Qt::CTRL | Qt::Key_H)),
+                             Scope::Window, false });
+        entries.push_back({ HotkeyAction::ToggleMediaViewerMode, "tools.toggleMediaViewerMode", Category::SearchAndTools,
+                             hotkeyTr("Toggle Media Viewer mode"), HotkeyChord(QKeySequence(Qt::CTRL | Qt::Key_M)),
+                             Scope::Window, false });
+        entries.push_back({ HotkeyAction::OpenSettings, "tools.openSettings", Category::SearchAndTools,
+                             hotkeyTr("Open Settings"), HotkeyChord(QKeySequence(Qt::CTRL | Qt::Key_Comma)), Scope::Window,
+                             false });
+        entries.push_back({ HotkeyAction::OpenTagManager, "tools.openTagManager", Category::SearchAndTools,
+                             hotkeyTr("Open Tag Manager"), HotkeyChord(QKeySequence(Qt::CTRL | Qt::ALT | Qt::Key_T)),
+                             Scope::Window, false });
+        entries.push_back({ HotkeyAction::AddToFavorites, "tools.addToFavorites", Category::SearchAndTools,
+                             hotkeyTr("Add selection to Favorites"), HotkeyChord(QKeySequence(Qt::CTRL | Qt::Key_D)),
+                             Scope::Window, false });
+        entries.push_back({ HotkeyAction::NewFolder, "tools.newFolder", Category::SearchAndTools, hotkeyTr("New folder"),
+                             HotkeyChord(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_N)), Scope::Window, false });
+
         return entries;
     }
 }
