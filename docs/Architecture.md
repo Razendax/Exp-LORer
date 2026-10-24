@@ -549,7 +549,7 @@ walkthrough; see git history and the code's own comments (many cite these subsec
 directly) for the detail.
 
 The log grew too large for one document and is split across twelve files under `docs/features/`,
-organized **by feature topic** rather than by when each was built. Section numbers (§14.1–§14.108)
+organized **by feature topic** rather than by when each was built. Section numbers (§14.1–§14.109)
 were assigned chronologically as each feature shipped and are kept stable within whichever file
 now holds them, since code comments cite them directly — so a file's own section numbers are not
 necessarily contiguous; each file's intro lists its exact set. **Keep each file at or under 1000
@@ -559,7 +559,8 @@ growing, and update both that file's intro and this index to match.
 
 * **[features/01-workspaces-and-panels.md](features/01-workspaces-and-panels.md)** — split-window
   layout/panes/tabs, session persistence, the bottom/right/left collapsible panel shells (Terminal/
-  Tags/folder Tree), left/right panel state persistence, named workspaces (multi-instance launch).
+  Tags/folder Tree), left/right panel state persistence, named workspaces (multi-instance launch),
+  tab drag-to-reorder/drag-to-move/"Move to Pane" between panes.
 * **[features/02-file-operations-and-navigation.md](features/02-file-operations-and-navigation.md)**
   — clipboard file operations, opening files, custom context menu, "This PC", multi-selection,
   address bar autocomplete & environment-variable expansion, hidden files, custom copy/move with

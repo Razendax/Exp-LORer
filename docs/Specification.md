@@ -57,7 +57,28 @@ The purpose of this project is to develop a custom desktop file explorer in C++ 
   tab into it; clicking a favorited file navigates to its parent folder with the file selected.
 * Support for long paths (beyond the traditional 260-character Windows limit) and Unicode file/folder names throughout navigation, search, and tagging.
 * **Split-window layouts:** The window arranges into one of four fixed layouts — single pane, two-pane vertical split, two-pane horizontal split, or a four-pane grid — chosen from the View menu/toolbar. No arbitrary or recursive nesting.
-* **Multi-tab browsing, per pane:** Each pane independently owns its own tabs (add/close/switch), each retaining its own navigation history (back/forward stack), current path, view mode, and sort order; a pane's tabs are unaffected by other panes or by switching layouts (a pane's tabs persist even while hidden by a layout that shows fewer panes). The tag filter panel and media preview are single shared instances that follow whichever pane/tab currently has focus, rather than existing per-pane. **Session persistence:** the active layout, each pane's tabs (path, view mode, sort order), the focused pane, and the main window's geometry are saved to a local JSON config file when the app closes and restored the next time it starts (Architecture.md §14.14); a fresh install with no saved config falls back to a single pane opened at the "This PC" virtual location (Architecture.md §14.15), rather than the user's home directory.
+* **Multi-tab browsing, per pane:** Each pane independently owns its own tabs (add/close/switch),
+  each retaining its own navigation history (back/forward stack), current path, view mode, and
+  sort order; a pane's tabs are unaffected by other panes or by switching layouts (a pane's tabs
+  persist even while hidden by a layout that shows fewer panes). The tag filter panel and media
+  preview are single shared instances that follow whichever pane/tab currently has focus, rather
+  than existing per-pane. **Session persistence:** the active layout, each pane's tabs (path, view
+  mode, sort order), the focused pane, and the main window's geometry are saved to a local JSON
+  config file when the app closes and restored the next time it starts (Architecture.md §14.14); a
+  fresh install with no saved config falls back to a single pane opened at the "This PC" virtual
+  location (Architecture.md §14.15), rather than the user's home directory.
+* **Tab dragging, reordering, and moving between panes (Architecture.md §14.109):** dragging a
+  tab's label within its own pane's tab strip reorders it there, at the position implied by the
+  drop. Dragging a tab onto a different, currently-visible pane moves it there instead — onto that
+  pane's tab strip at the implied position, or appended if dropped on that pane's content area —
+  carrying its full state (history, view mode/sort, search state, Terminal sessions, folder
+  monitoring, etc.) with it; the moved tab becomes active in its new pane, which becomes the
+  focused pane, while the source pane falls back to the tab that was before the moved one. A
+  tab's right-click menu also offers a "Move to Pane" entry listing the other visible panes, as a
+  non-drag alternative. A pane can never be left with zero tabs: moving (by drag or menu) a pane's
+  only remaining tab elsewhere is not allowed. Dragging to a pane hidden by the current layout, or
+  detaching a tab into a new window, are not supported — the fixed 4-pane/4-layout model is
+  unaffected by any of this.
 * **Sort order:** Directory contents can be sorted by Name, Size, Type, or Date modified, ascending or descending, via a "Sort by" submenu under the View menu (Architecture.md §14.12) or by clicking a column header in Details view. The chosen sort applies uniformly across all seven view modes and is preserved per tab across navigation within that tab; a newly opened tab starts at the default (Name, ascending) rather than inheriting another tab's choice.
 * **Customizable Details-view columns (Architecture.md §14.39):** right-clicking a Details-view
   column header opens a menu listing every available column — Name, Size, Type, Date Modified,

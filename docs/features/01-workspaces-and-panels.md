@@ -5,10 +5,11 @@ layers only — **no Domain or Application layer redesign** — and is recorded 
 per feature, not an implementation walkthrough; see git history and the code's own comments
 (many cite these subsection numbers directly) for the detail.
 
-Covers §14.1–14.8, §14.14, §14.24–14.25, §14.41, §14.48, §14.60, §14.96 — split-window
+Covers §14.1–14.8, §14.14, §14.24–14.25, §14.41, §14.48, §14.60, §14.96, §14.109 — split-window
 layout/panes/tabs, session persistence, the bottom/right/left collapsible panel shells (and their
 first tab each: Terminal, Tags, folder Tree), left/right panel state persistence, named workspaces
-(multi-instance launch), and decomposing `TabViewModel`/`MainWindow` into owned sub-objects.
+(multi-instance launch), decomposing `TabViewModel`/`MainWindow` into owned sub-objects, and tab
+drag-to-reorder/drag-to-move/"Move to Pane" between panes.
 Section numbers are **not** contiguous with this file's neighbors — they
 were assigned chronologically as each feature was built and are kept stable since code comments
 cite them directly. See [Architecture.md](../Architecture.md) §14 for the full topic index across
@@ -492,4 +493,80 @@ and `main.cpp` (the sole `MainWindow` construction site) are unaffected.
   fully self-contained piece, validating the ownership/accessor/call-site-update pattern end to end;
   `TabMediaViewerViewModel` and `MediaViewerModeController` last and in that order, since the latter
   depends on the former).
+
+### 14.109 Tab Drag-to-Reorder, Drag-to-Move, and "Move to Pane" Context Menu
+
+Three related tab operations, none of which existed before: dragging a tab within its own pane's
+strip to reorder it, dragging a tab onto a different *currently-visible* pane to move it there, and
+a non-drag "Move to Pane ▸" context-menu alternative for the same move. Pure UI/Adapters session
+state, like the rest of this file — no Domain/Application/Port/schema change, and no new field in
+`WorkspaceConfig`/`AppConfigStore` (a moved/reordered tab persists via the existing per-pane tab
+list, in order, exactly as §14.14 already captures it).
+
+* **Same-pane reorder** (`WorkspacePaneWidget::createTabArea()`) uses `QTabBar::setMovable(true)`
+  as-is — Qt's own drag-with-indicator and release-outside-cancels behavior needed no custom
+  gesture code. `WorkspacePaneViewModel` gained `moveTab(int from, int to)`
+  (slot)/`tabMoved(int, int)` (signal), kept in sync with the tab bar's own reordering via a
+  `QTabBar::tabMoved` connection that updates the model only — the bar has already moved itself
+  visually by the time the signal fires.
+* **Cross-pane move** is the one genuinely new mechanism, and the reason it isn't trivial: a tab's
+  page widget (the `QStackedWidget` of browse/search/Media-Viewer views plus its
+  `BottomPanelWidget`, built once by `WorkspacePaneWidget::addPageForTab`) must physically move
+  into the destination pane's `QTabWidget` with **everything still running** — most notably any
+  live Terminal sessions (§14.24), which live in that page widget, not in `TabViewModel` — rather
+  than being torn down and rebuilt. `addPageForTab`/`wireBrowserView` wire a specific subset of
+  each page's signals with the *owning* `WorkspacePaneWidget` (`this`) as receiver (navigation
+  toolbar actions, address-bar focus, the tab-label-text updater, item/background context menus);
+  that subset — and only that subset — has to be disconnected from the source pane and
+  reconnected against the destination pane on a move. This is split three ways:
+  * `WorkspacePaneViewModel` gained `takeTab(int)`/`tabRemoved(int)` (remove without destroying;
+    reuses `closeTab`'s existing active-index-adjustment math for "the tab before the moved one
+    becomes active") and `insertTab(TabViewModel*, int)`/`tabInserted(int)` (reparents the tab's
+    `QObject` ownership to the new pane, inserts, and always activates it — every call site wants
+    that). Deliberately separate signals from `tabClosed`/`tabAdded` so `WorkspacePaneWidget`
+    doesn't delete or rebuild the page widget in response.
+  * `WorkspacePaneWidget` gained `detachTabPage(int)`/`attachTabPage(TabViewModel*, QWidget*,
+    int)` — the widget-level halves: disconnect-then-`removeTab` (no delete) on the source side,
+    `insertTab`-then-reconnect on the destination side, both reusing one extracted helper
+    (`bindPageToThisPane`) that is now also how a freshly created page gets this same subset of
+    connections, so there is exactly one place that creates them.
+  * `WorkspaceController` gained `moveTab(WorkspacePaneId sourcePane, int sourceIndex,
+    WorkspacePaneId destPane, int destIndex)` — model-only (no `QWidget`, preserving this class's
+    existing Qt-widget-free posture): rejects `sourcePane == destPane` and a source pane with only
+    one tab (the "a pane must always retain at least one tab" rule), otherwise
+    `takeTab`+`insertTab`+`setFocusedPane(destPane)`. The existing `activeTabChanged`/
+    `focusedPaneChanged` wiring (live-watch set, Tag/Preview/Tree retargeting) picks this up with
+    no new connections, since a move fires those same signals on both affected panes.
+  * `WorkspaceLayoutWidget` — the one object already holding all 4 `WorkspacePaneWidget`s —
+    sequences the above into `moveTabBetweenPanes(sourcePane, sourceIndex, destPane, destIndex)`:
+    detach the widget first (still-valid indices), then `WorkspaceController::moveTab` (model +
+    focus), then attach the widget at the destination. Both of M109's trigger paths below funnel
+    into this one method, so the model/widget transplant logic is written and tested exactly once.
+* **"Move to Pane ▸" context menu**: the tab bar had no context menu at all before this feature.
+  `WorkspacePaneWidget`'s tab bar now has `Qt::CustomContextMenu`, emitting a bubble-up
+  `moveToPaneMenuRequested(int tabIndex, QPoint globalPos)` signal with **no gating and no menu
+  construction of its own** — it has no visibility into sibling panes or the active `SplitLayout`.
+  `WorkspaceLayoutWidget` owns the actual menu: omitted entirely (not shown disabled) when the
+  source pane has only one tab, or when `WorkspaceLayoutTopology::visiblePanes(layout)` minus the
+  source pane is empty (`SplitLayout::Single`); otherwise one "Move to Pane" submenu entry per
+  other visible pane, labeled "Pane A"/"Pane B"/etc. (plain, geometry-agnostic names, matching
+  `WorkspacePaneId`'s own naming rationale), always appending the tab as the destination's last
+  tab.
+* **Drag-to-move across panes** reuses the same `moveTabBetweenPanes` the menu calls, adding only
+  gesture/drop mechanics on top: a `PaneTabBar : public QTabBar` subclass (new,
+  `src/ui/widgets/navigation/`) that lets `QTabBar`'s own native in-bar drag (same-pane reorder,
+  above) run as long as the cursor stays inside the bar's own rect, and starts a custom `QDrag`
+  carrying `{sourcePaneId, sourceTabIndex, sourceTabCountAtDragStart}` in a private MIME type the
+  moment it leaves that rect. Both `PaneTabBar` (tab-strip drop → drop-position-implied insertion
+  index) and `WorkspacePaneWidget` itself (content-area drop → append-last) accept the drag; a
+  hidden pane needs no special-casing as an invalid target since Qt never routes drag events to a
+  `hide()`'d widget. The dragged tab count is captured at drag-start (not re-queried live) so a
+  drag of a pane's only tab shows no drop feedback over any other pane without a mid-drag
+  cross-widget query.
+* **Not built**: detaching a tab into a new top-level window (§14.2's "exactly one `MainWindow`"
+  stands unchanged); dragging a tab to create a new split/pane (the fixed 4-pane/4-layout model is
+  unaffected); an empty-pane "+ New Tab" placeholder (still deferred, §14.8 — avoided entirely by
+  disallowing a move that would empty a pane); a rebindable hotkey for pane-to-pane tab moves
+  (could be added later to §14.108's catalog without revisiting this entry); any change to tab
+  *content* behavior.
 
