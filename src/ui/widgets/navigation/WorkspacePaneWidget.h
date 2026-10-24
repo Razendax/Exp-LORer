@@ -13,6 +13,7 @@
 #include "FileListModel.h"
 #include "GitRepositorySummary.h"
 #include "ViewMode.h"
+#include "WorkspacePaneId.h"
 
 class QTabWidget;
 class QLineEdit;
@@ -21,6 +22,9 @@ class QActionGroup;
 class QToolBar;
 class QToolButton;
 class QStackedWidget;
+class QDragEnterEvent;
+class QDragMoveEvent;
+class QDropEvent;
 class FileBrowserView;
 class WorkspacePaneViewModel;
 class TabViewModel;
@@ -159,6 +163,23 @@ signals:
     // gating and builds no menu itself. tabIndex is resolved from tabBar()->tabAt(pos) at the
     // click site.
     void moveToPaneMenuRequested(int tabIndex, const QPoint& globalPos);
+
+    // Drag-to-move (spec §3, Milestone M3): bubbled up to WorkspaceLayoutWidget -- same posture as
+    // moveToPaneMenuRequested above (this pane does no gating, WorkspaceLayoutWidget is the only
+    // object with visibility into sibling panes). sourcePaneId/sourceTabIndex come from whichever
+    // drag payload was decoded (PaneTabBar::DragPayload); destIndex is resolved at the drop site --
+    // either PaneTabBar::dropEvent (position-aware insert into the tab strip, forwarded here via a
+    // signal-to-signal connection) or this widget's own dropEvent (content-area drop, append-last).
+    void tabDropped(WorkspacePaneId sourcePaneId, int sourceTabIndex, int destIndex);
+
+protected:
+    // Drag-to-move (spec §3, Milestone M3): content-area drop target (append-last) -- the
+    // tab-strip's own PaneTabBar handles position-aware inserts for drops landing directly on it;
+    // Qt routes a drag to the nearest ancestor with setAcceptDrops(true) under the cursor, so these
+    // only ever fire for drops outside the tab strip.
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dragMoveEvent(QDragMoveEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
 
 private:
     void createViewModeActions();

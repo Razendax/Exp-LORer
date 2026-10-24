@@ -6,6 +6,9 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QDir>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QEvent>
 #include <QLineEdit>
 #include <QMenu>
@@ -35,6 +38,7 @@
 #include "HotkeyManager.h"
 #include "IContextMenuProvider.h"
 #include "MediaViewerSortViewBar.h"
+#include "PaneTabBar.h"
 #include "PathContainment.h"
 #include "SearchCriteriaPanel.h"
 #include "SearchResultsPane.h"
@@ -124,6 +128,16 @@ namespace
     // (MediaHoverPreviewPopup's own max display size), no upscaling.
     constexpr int kHoverPreviewMaxSize = 360;
 
+    // QTabWidget::setTabBar() is protected -- this trivial subclass re-exposes it so
+    // createTabArea() can install a PaneTabBar in place of the default bar Qt creates (Milestone
+    // M3's drag-to-move needs a bar that knows this pane's own WorkspacePaneId).
+    class TabWidgetWithSettableTabBar : public QTabWidget
+    {
+    public:
+        using QTabWidget::QTabWidget;
+        using QTabWidget::setTabBar;
+    };
+
     QString viewModeLabel(ViewMode mode)
     {
         switch (mode)
@@ -168,6 +182,11 @@ WorkspacePaneWidget::WorkspacePaneWidget(WorkspacePaneViewModel* pane, FileOpera
     , m_initialColumnOrder(initialColumnOrder)
 {
     setObjectName(QStringLiteral("workspacePane_") + paneAutomationSuffix(pane->id()));
+
+    // Drag-to-move (spec §3, Milestone M3): content-area drop target (append-last) -- see
+    // dragEnterEvent/dragMoveEvent/dropEvent below. m_tabWidget->tabBar() (a PaneTabBar, see
+    // createTabArea()) has its own setAcceptDrops(true) for the position-aware tab-strip target.
+    setAcceptDrops(true);
 
     createViewModeActions();
     QToolBar* toolBar = createToolBar();
@@ -327,8 +346,18 @@ QToolBar* WorkspacePaneWidget::createToolBar()
 
 void WorkspacePaneWidget::createTabArea()
 {
-    m_tabWidget = new QTabWidget(this);
+    auto* tabWidget = new TabWidgetWithSettableTabBar(this);
+    m_tabWidget = tabWidget;
     m_tabWidget->setObjectName(QStringLiteral("paneTabWidget"));
+
+    // Drag-to-move (spec §3, Milestone M3): replaces Qt's default tab bar with one that knows this
+    // pane's own identity (needed for the drag payload below) and hands a drag off into a QDrag
+    // once it leaves the bar's own rect() -- see PaneTabBar's class comment. Must happen before any
+    // of the tabBar()-touching setup below so every one of those keeps working against the actual
+    // bar in use.
+    tabWidget->setTabBar(new PaneTabBar(m_pane->id(), m_tabWidget));
+    connect(static_cast<PaneTabBar*>(m_tabWidget->tabBar()), &PaneTabBar::tabDropped, this, &WorkspacePaneWidget::tabDropped);
+
     m_tabWidget->setTabsClosable(tabCloseButtonsEnabled());
     m_tabWidget->setMovable(true);
     m_tabWidget->tabBar()->installEventFilter(this);
@@ -1033,6 +1062,43 @@ void WorkspacePaneWidget::onTabBarContextMenuRequested(const QPoint& pos)
     }
 
     emit moveToPaneMenuRequested(index, m_tabWidget->tabBar()->mapToGlobal(pos));
+}
+
+void WorkspacePaneWidget::dragEnterEvent(QDragEnterEvent* event)
+{
+    const std::optional<PaneTabBar::DragPayload> payload = PaneTabBar::decode(event->mimeData());
+    if (!payload || payload->sourcePaneId == m_pane->id() || payload->sourceTabCountAtDragStart <= 1)
+    {
+        event->ignore();
+        return;
+    }
+    event->acceptProposedAction();
+}
+
+void WorkspacePaneWidget::dragMoveEvent(QDragMoveEvent* event)
+{
+    const std::optional<PaneTabBar::DragPayload> payload = PaneTabBar::decode(event->mimeData());
+    if (!payload || payload->sourcePaneId == m_pane->id() || payload->sourceTabCountAtDragStart <= 1)
+    {
+        event->ignore();
+        return;
+    }
+    event->acceptProposedAction();
+}
+
+void WorkspacePaneWidget::dropEvent(QDropEvent* event)
+{
+    const std::optional<PaneTabBar::DragPayload> payload = PaneTabBar::decode(event->mimeData());
+    if (!payload || payload->sourcePaneId == m_pane->id() || payload->sourceTabCountAtDragStart <= 1)
+    {
+        event->ignore();
+        return;
+    }
+
+    event->acceptProposedAction();
+    // Content-area drop (as opposed to a position-aware tab-strip drop, handled instead by
+    // PaneTabBar::dropEvent) -- append-last, per spec §2.
+    emit tabDropped(payload->sourcePaneId, payload->sourceTabIndex, m_pane->tabCount());
 }
 
 QWidget* WorkspacePaneWidget::detachTabPage(int index)

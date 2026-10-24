@@ -38,6 +38,8 @@ add_library(explorer_ui_widgets STATIC
     core/FlowLayout.cpp
     navigation/WorkspacePaneWidget.h
     navigation/WorkspacePaneWidget.cpp
+    navigation/PaneTabBar.h
+    navigation/PaneTabBar.cpp
     navigation/AddressBarWidget.h
     navigation/AddressBarWidget.cpp
     navigation/MediaViewerSortViewBar.h

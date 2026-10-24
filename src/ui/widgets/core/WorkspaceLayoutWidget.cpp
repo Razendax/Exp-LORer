@@ -89,11 +89,20 @@ WorkspaceLayoutWidget::WorkspaceLayoutWidget(WorkspaceController* controller,
     // "Move to Pane" context menu (spec §3, Milestone M2): each pane widget bubbles up a bare
     // tabIndex/globalPos -- this is the only object that knows which pane widget it came from, so
     // the lambda captures that identity rather than threading it through the signal itself.
+    //
+    // Drag-to-move (spec §3, Milestone M3): each pane widget's tabDropped signal already carries
+    // which pane the dragged tab came FROM (decoded from the drag's mime payload at the drop
+    // site); which pane widget emitted the signal tells us which pane it was dropped ON -- same
+    // "the connecting lambda captures identity" pattern as the menu signal just below.
     for (int i = 0; i < 4; ++i)
     {
-        const auto sourcePane = static_cast<WorkspacePaneId>(i);
+        const auto paneId = static_cast<WorkspacePaneId>(i);
         connect(m_paneWidgets[static_cast<size_t>(i)], &WorkspacePaneWidget::moveToPaneMenuRequested, this,
-                [this, sourcePane](int tabIndex, const QPoint& globalPos) { onMoveToPaneMenuRequested(sourcePane, tabIndex, globalPos); });
+                [this, paneId](int tabIndex, const QPoint& globalPos) { onMoveToPaneMenuRequested(paneId, tabIndex, globalPos); });
+        connect(m_paneWidgets[static_cast<size_t>(i)], &WorkspacePaneWidget::tabDropped, this,
+                [this, paneId](WorkspacePaneId sourcePane, int sourceIndex, int destIndex) {
+                    moveTabBetweenPanes(sourcePane, sourceIndex, paneId, destIndex);
+                });
     }
 
     applyLayout(m_controller->layout());
