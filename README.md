@@ -16,8 +16,10 @@ Full requirements and design live in [`Specification.md`](docs/Specification.md)
 
 - **Workspaces & multi-pane browsing** — named, persisted session profiles (multi-instance
   capable); single/two-way/four-way split layouts, each pane owning its own tabs with independent
-  navigation history, view mode, and sort order.
-- **Left panel** — folder tree and a search tab (quick + inline advanced search).
+  navigation history, view mode, and sort order; drag-to-reorder tabs, drag a tab onto another pane
+  (or use its context menu) to move it there.
+- **Left panel** — folder tree, a search tab (quick + inline advanced search), and a content
+  ("Find in Files") search tab with match highlighting in the Preview panel.
 - **Right panel** — collapsible, tabbed tag list and file preview.
 - **Tag support** — tags live in a local SQLite database (never modify the tagged files);
   nested (`/`-separated) tags, AND/OR combine mode for multi-item tagging, keyboard autocomplete,
@@ -25,25 +27,35 @@ Full requirements and design live in [`Specification.md`](docs/Specification.md)
   plus tag-integrated advanced search.
 - **Search** — recursive filename quick search (regex/case/whole-word/exact-name toggles,
   git-ignore skip) and an async advanced criteria search, both with hierarchical
-  (exact-or-include-children) tag matching.
-- **Content preview** — folders, text (with syntax highlighting), images (including animated GIF
-  and SVG), video (static poster or a built-in play/pause/seek/volume player), and read-only
-  archive browsing/extraction, via dedicated per-kind preview widgets with zoom; a mouse-hover
-  preview popup and real decoded thumbnails in Extra Large Icons view in the main file listing.
+  (exact-or-include-children) tag matching, plus an async content search ("Find in Files") with
+  the same match-mode toggles and a double-click jump into the previewed file.
+- **Content preview** — folders, text (with syntax highlighting, directly editable in place),
+  images (including animated GIF and SVG), video (static poster or a built-in play/pause/seek/
+  volume player), PDF (static first page), and read-only archive browsing/extraction, via
+  dedicated per-kind preview widgets with zoom; a mouse-hover preview popup and real decoded
+  thumbnails in Extra Large Icons view in the main file listing.
+- **Built-in text editor** — `Tools > Text Editor...` opens a standalone multi-cursor editor
+  (line-number gutter, Find/Replace with regex capture groups and select-all-occurrences, Go to
+  Line, syntax highlighting, read-only mode) with each feature independently switchable; the same
+  editor is embedded in the Preview panel for direct in-place editing of text files.
 - **Media Viewer mode** — a full-grid gallery for recursively browsing every image/video under a
   folder, filterable by tag (Filter/Apply tag-click toggle) and name, with Thumbnails/Filmstrip/
   Details view layouts, sort controls, video hover-scrub previews, and the ability to tag items
   directly from the grid.
 - **File operations** — clipboard cut/copy/paste interoperable with File Explorer, custom copy/move
-  with progress notifications, trash/permanent delete, batch rename, and a registry-sourced context
-  menu (shell extensions included).
+  with progress notifications, trash/permanent delete, batch rename, and the real native shell
+  context menu (same lazily-populated cascades/icons/extensions Explorer itself shows).
 - **Navigation** — "This PC" virtual root, address bar autocomplete + environment-variable
   expansion, hidden files/folders toggle, quick select by name, and fast arrow-key navigation in
   details view.
+- **Customizable hotkeys** — every rebindable action (navigation, tabs, panes, layout, panels,
+  search/tools, file operations) is one catalog, editable and conflict-aware from
+  `Settings > General > Hotkeys`.
 - **Status & decoration** — per-pane and window-wide status bars, Git branch/status integration
   with checkout, pattern-based color/font rules, customizable detail columns (tags, dates,
   fragments, ...), and live/monitored directory updates.
-- **Disk tools** — duplicate file finder and a disk fragmentation viewer.
+- **Disk tools** — duplicate file finder, a disk usage/folder-size viewer, and a disk
+  fragmentation viewer.
 - **Integrated terminal** and a per-process environment variable viewer/editor.
 - **Session persistence** — window geometry, layout, tabs, columns, and panel state restored on
   restart, plus Favorites and a Light/Dark theme.
@@ -72,6 +84,8 @@ DB schema, and file-hashing strategy.
   your local checkout. Dependencies (Qt6 widgets+sql, qtdeclarative, qtmultimedia, sqlite3,
   ffmpeg, spdlog, gtest, xxhash, and others) are declared in `vcpkg.json` and resolved
   automatically by the vcpkg toolchain at configure time.
+- NSIS's `makensis.exe` on `PATH`, only if building the optional Windows installer (`-Package`
+  below).
 
 Before building, make sure the application isn't currently running (kill it first if it is).
 
@@ -86,6 +100,7 @@ Before building, make sure the application isn't currently running (kill it firs
 .\build.ps1                    # configure (if needed) + build the Release preset
 .\build.ps1 -Reconfigure       # force a fresh CMake configure
 .\build.ps1 -Target Exp-LORer  # build a specific target
+.\build.ps1 -Package           # also build the per-user Windows installer (.exe) via CPack/NSIS
 ```
 
 `build.ps1` auto-imports the MSVC environment via `vswhere`/`vcvarsall.bat` if `cl.exe` isn't
