@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, List
+import time
+from typing import Any, Callable, List, Tuple
 
 from .automation_id import AutomationID
 from .bottom_panel import BottomPanel
@@ -114,6 +115,94 @@ class PaneTabs:
         grid root is fixed to whichever tab entered it.
         """
         return bool(self._tab_items()[index].is_enabled())
+
+    def item(self, index: int) -> Any:
+        """The raw pywinauto `TabItem` wrapper at `index` -- for `.right_click_input()` (opening
+        the "Move to Pane" context menu) or any other raw pywinauto API `titles`/`select`/
+        `is_enabled` don't cover.
+        """
+        return self._tab_items()[index]
+
+    def item_rect(self, index: int) -> Any:
+        """The on-screen rectangle of the tab at `index` -- for computing drag source/target
+        coordinates (see `drag_tab_to_reorder`/`drag_tab_to_other_pane` below).
+        """
+        return self.item(index).rectangle()
+
+
+def drag_tab_to_reorder(tabs: "PaneTabs", from_index: int, to_index: int, steps: int = 12, step_delay: float = 0.05) -> None:
+    """Drags the tab at `from_index` onto the tab currently at `to_index`'s position, reordering
+    tabs within one pane's own strip (`QTabBar::setMovable(true)`, Architecture.md §14.109's
+    same-pane reorder). Mirrors `details_view.drag_header`'s manual step-and-settle approach
+    (small incremental moves, landing past the destination's midpoint, re-locating the
+    destination on every step) for the same reason: a single canned jump doesn't feed
+    `QTabBar`'s live drag-reorder tracking enough intermediate mouseMoveEvents to actually
+    trigger a swap, and the destination's own position can shift mid-drag as tabs swap places.
+    """
+    source = tabs.item(from_index)
+    src_rect = source.rectangle()
+    y = (src_rect.top + src_rect.bottom) // 2
+    x_start = (src_rect.left + src_rect.right) // 2
+
+    def target_x() -> int:
+        dest_rect = tabs.item_rect(to_index)
+        return dest_rect.left + int((dest_rect.right - dest_rect.left) * 0.8)
+
+    source.press_mouse_input(coords=(x_start, y))
+    time.sleep(0.2)
+    for i in range(1, steps + 1):
+        x = x_start + (target_x() - x_start) * i // steps
+        source.move_mouse_input(coords=(x, y))
+        time.sleep(step_delay)
+    time.sleep(0.2)
+    source.release_mouse_input(coords=(target_x(), y))
+
+
+def drag_tab_to_other_pane(
+    source_tabs: "PaneTabs",
+    source_index: int,
+    target_point: Callable[[], Tuple[int, int]],
+    steps: int = 20,
+    step_delay: float = 0.05,
+) -> None:
+    """Drags the tab at `source_index` in `source_tabs` out of its own pane and releases it at
+    `target_point()` -- either another pane's tab strip (position-aware insertion, see
+    `PaneTabBar::insertionIndexForDrop`) or its content area (always appended last, see
+    `WorkspacePaneWidget::dropEvent`), depending only on where `target_point` lands.
+
+    Unlike `drag_tab_to_reorder`'s `target_x()` (re-evaluated every step -- an in-process,
+    Qt-internal drag that keeps the whole app's UI Automation tree responsive throughout),
+    `target_point` is resolved exactly once, *before* the drag starts. Confirmed against a real
+    build: the moment this drag leaves the source bar's own rect, `PaneTabBar` hands off into a
+    real OS-level `QDrag::exec()` (Architecture.md §14.109's `mouseMoveEvent` hand-off), and the
+    app's UI Automation provider stops answering queries from this process for as long as that
+    native drag loop is running -- re-querying a destination element's position mid-drag (as a
+    per-step callable would) hangs until `wait_until`'s default timeout and then raises, which
+    previously left the mouse button physically held down (the exception skipped the eventual
+    `release_mouse_input` entirely), corrupting every later interaction in the whole test run.
+    The `try`/`finally` below guarantees a release at the resolved target even if some other step
+    still raises.
+    """
+    source = source_tabs.item(source_index)
+    rect = source.rectangle()
+    x0, y0 = (rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2
+    tx, ty = target_point()
+    exit_y = rect.bottom + 40
+
+    source.press_mouse_input(coords=(x0, y0))
+    try:
+        time.sleep(0.2)
+        source.move_mouse_input(coords=(x0, exit_y))
+        time.sleep(0.2)
+
+        for i in range(1, steps + 1):
+            x = x0 + (tx - x0) * i // steps
+            y = exit_y + (ty - exit_y) * i // steps
+            source.move_mouse_input(coords=(x, y))
+            time.sleep(step_delay)
+        time.sleep(0.2)
+    finally:
+        source.release_mouse_input(coords=(tx, ty))
 
 
 class PaneStatusBar:

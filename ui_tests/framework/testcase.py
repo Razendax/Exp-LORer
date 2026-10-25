@@ -106,6 +106,57 @@ class ExpLorerFreshAppTestCase:
             yield
 
 
+class ExpLorerConfiguredFreshAppTestCase:
+    """Like `ExpLorerFreshAppTestCase` (a fresh instance per test method), but lets a subclass
+    pre-seed the workspace layout/panes/tabs each fresh instance boots into via
+    `configure_workspace` -- the same idea as `ExpLorerTestCase`'s classmethod hook of the same
+    name, except called once per test method (with that method's own `tmp_path`) rather than
+    once per class.
+
+    Needed when a test's assertions depend on an exact multi-pane/multi-tab starting layout
+    (e.g. tab counts/order across two specific panes) that would be awkward and slow to reach by
+    clicking through the UI in `setup_method`, and where a shared instance's leftover tab
+    positions from a previous test method would make the next one's exact-position assertions
+    unreliable (see `ExpLorerTestCase`'s own docstring on when a shared instance is fine).
+
+    `configure_workspace` receives `tmp_path` (unlike `ExpLorerTestCase`'s classmethod hook,
+    which has no fixture access) so a subclass can create real folders under it and reference
+    them as tab paths:
+
+        class TestSomething(ExpLorerConfiguredFreshAppTestCase):
+            @classmethod
+            def configure_workspace(cls, config: ExpLorerConfig, tmp_path: Path) -> None:
+                config.workspace.layout = SplitLayout.TWO_VERTICAL
+                first = tmp_path / "first"
+                first.mkdir()
+                config.workspace.panes.a.add_tab(path=str(first))
+                config.workspace.panes.b.add_tab()
+
+            def test_something(self) -> None:
+                assert self.app.panes.a.tabs.titles() == ["first"]
+    """
+
+    app: ExpLorerApp
+
+    @classmethod
+    def configure_workspace(cls, config: ExpLorerConfig, tmp_path: Path) -> None:
+        """No-op by default -- override to set `config.workspace.layout`/`.panes` before each
+        fresh instance boots.
+        """
+
+    @pytest.fixture(autouse=True)
+    def _fresh_app(self, tmp_path: Path) -> Iterator[None]:
+        data_dir = tmp_path / "data"
+        config = ExpLorerConfig(data_dir)
+        self.configure_workspace(config, tmp_path)
+        config.workspace.save()
+
+        ExpLorerApp.kill_stray_instances()
+        with ExpLorerApp.start(data_dir=data_dir) as app:
+            self.app = app
+            yield
+
+
 class ExpLorerPreparedDataDirTestCase:
     """Base for a test that needs a fresh Exp-LORer instance per test method (see
     `ExpLorerFreshAppTestCase`'s own docstring for that general case), but must write something

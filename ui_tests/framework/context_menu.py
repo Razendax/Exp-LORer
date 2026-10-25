@@ -52,6 +52,21 @@ class ContextMenu:
 
         send_keys("{ESC}")
 
+    def open_submenu(self, text: str, timeout: float = 5) -> "ContextMenu":
+        """Clicks the submenu-owning entry with exact text `text` (e.g. the "Move to Pane ▸"
+        entry, Architecture.md §14.109) and returns a new `ContextMenu` bound to the submenu that
+        opens.
+
+        A `QMenu::addMenu()` submenu is itself a separate native top-level popup, not a
+        descendant of this popup's own HWND -- the same reason `open_context_menu` connects
+        directly by HWND rather than by title/tree search (see this module's docstring); reusing
+        `self._items()` after clicking would therefore never see the submenu's entries.
+        """
+        before = visible_top_level_window_handles()
+        self.click(text)
+        hwnd = wait_for_new_top_level_window(before, timeout=timeout)
+        return ContextMenu(connect_by_handle(hwnd))
+
 
 def open_context_menu(element: Any, timeout: float = 5) -> ContextMenu:
     """Right-clicks `element` (a raw pywinauto wrapper -- e.g. `details_view.row_item(...)` for

@@ -70,11 +70,13 @@ from .modal_dialog import (
     wait_for_window_handle,
 )
 from .notification_overlay import NotificationOverlay
+from .pane import drag_tab_to_other_pane, drag_tab_to_reorder
 from .settings_dialog import SettingsDialog, open_settings_dialog
 from .settings_hotkeys_page import SettingsHotkeysPage
 from .tag_chip import TagChip, chip_count_text, chip_names, find_chip, find_chip_label
 from .tag_manager_dialog import TagManagerDialog, open_tag_manager_dialog
 from .testcase import (
+    ExpLorerConfiguredFreshAppTestCase,
     ExpLorerFreshAppTestCase,
     ExpLorerPreparedDataDirTestCase,
     ExpLorerRestartableTestCase,
@@ -142,7 +144,10 @@ __all__ = [
     "SettingsHotkeysPage",
     "ExpLorerTestCase",
     "ExpLorerFreshAppTestCase",
+    "ExpLorerConfiguredFreshAppTestCase",
     "ExpLorerPreparedDataDirTestCase",
     "ExpLorerRestartableTestCase",
+    "drag_tab_to_reorder",
+    "drag_tab_to_other_pane",
     "wait_until",
 ]
